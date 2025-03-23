@@ -1,28 +1,19 @@
+use ll_frontend::parser::*;
+use ll_frontend::pretty::*;
 use std::fs;
-use std::path::PathBuf;
-#[macro_use]
-extern crate lalrpop_util;
-lalrpop_mod!(pub grammar); // 注意要和文件名 grammar.lalrpop 对应
+use std::io;
 
-fn main() {
-    // 从命令行读取要解析的文件路径，或者默认解析 "example.sl"
-    // 你可以用 `cargo run -- path/to/input.sl` 来指定文件
-    let args: Vec<String> = std::env::args().collect();
-    let path = if args.len() > 1 {
-        PathBuf::from(&args[1])
-    } else {
-        PathBuf::from("../examples/ll/graph.smt") // 你可以把脚本改名
-    };
-
-    let input = fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("Cannot read file {:?}", path));
-    let parser = grammar::FileParser::new();
-    match parser.parse(&input) {
-        Ok(ast) => {
-            println!("Parse OK! AST = {:#?}", ast);
+fn main() -> Result<(), io::Error> {
+    let filename = "examples/ll/graph.smt";
+    let input = fs::read_to_string(filename)?;
+    match ProgramParser::new().parse(&input) {
+        Ok(program) => {
+            println!("Parsing successful!");
+            println!("{:#?}", program);
         }
-        Err(err) => {
-            eprintln!("Parse error: {:?}", err);
+        Err(e) => {
+            report_parse_error(e, &input);
         }
     }
+    Ok(())
 }

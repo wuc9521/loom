@@ -1,57 +1,106 @@
-pub enum Command {
-    SetLogic(String),              // (set-logic FOL)
-    DeclareSort { name: String, arity: u32 },  // (declare-sort U 0)
+#[derive(Debug)]
+pub struct Program {
+    pub stmts: Vec<Stmt>,
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+    SetLogic {
+        logic: String,
+    },
+    DeclareSort {
+        name: String,
+        arity: i32,
+    },
     DefineSignature {
         name: String,
-        items: Vec<SignatureItem>, // (declare-fun s () U)之类的
+        signature: Signature,
     },
     DefineModel {
         model_name: String,
         signature_name: String,
-        items: Vec<ModelItem>,
+        universe: UniverseDef,
+        interps: Interpretations,
     },
     DefineGrammar {
-        grammar_name: String,
-        rules: Vec<GrammarRule>,
+        name: String,
+        grammar: Grammar,
     },
     SynthForm {
-        func_name: String,
-        signature: String,
-        grammar: String,
+        name: String,
+        signature_name: String,
+        grammar_name: String,
     },
-    Constraint(String),            // (constraint (models G1 f))，先简单字符串化
-    CheckSynth,                    // (check-synth)
+    Constraint {
+        formula: (),
+    }, // Placeholder for formula representation
+    CheckSynth,
 }
 
-#[derive(Debug, Clone)]
-pub enum SignatureItem {
+#[derive(Debug)]
+pub struct Signature {
+    pub statements: Vec<SignatureStmt>,
+}
+
+#[derive(Debug)]
+pub enum SignatureStmt {
     DeclareFun {
         name: String,
-        arg_sorts: Vec<String>,
-        ret_sort: String,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum ModelItem {
-    DefineUniverse {
+        sorts: Vec<String>,
         sort: String,
-        elements: Vec<String>,
-    },
-    Interpret {
-        name: String,         
-        body: InterpretBody,  
     },
 }
 
-#[derive(Debug, Clone)]
-pub enum InterpretBody {
-    Const(String),  // (interpret s a)
-    Match(Vec<(Vec<String>, bool)>), // 简化表示 (match ((a a) True) ((_ _) False) ...)
+#[derive(Debug)]
+pub struct Interpretations {
+    pub statements: Vec<InterpretationStmt>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub enum InterpretationStmt {
+    DefineUniverse {
+        definition: UniverseDef,
+    },
+    InterpretGroup {
+        bindings: Vec<(String, InterpretationValue)>,
+    },
+}
+#[derive(Debug)]
+pub struct UniverseDef {
+    pub sort: String,
+    pub elements: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum InterpretationValue {
+    Ident(String),
+    Match(Match),
+}
+
+#[derive(Debug)]
+pub struct Match {
+    pub cases: Vec<MatchCase>,
+}
+
+#[derive(Debug)]
+pub struct MatchCase {
+    pub terms: Vec<String>,
+    pub bool_value: bool,
+}
+
+#[derive(Debug)]
+pub struct Grammar {
+    pub rules: Vec<GrammarRule>,
+}
+
+#[derive(Debug)]
 pub enum GrammarRule {
-    NonTerminal(String, String),   // (Term U)
-    Expansions(String, Vec<String>), // (Term s t x y) or (Fml (and Fml Fml) ...)
+    Terminal {
+        name: String,
+        sort: String,
+    },
+    Production {
+        name: String,
+        production: Vec<String>,
+    },
 }

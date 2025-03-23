@@ -1,0 +1,189 @@
+use crate::ast::*;
+use std::str::FromStr;
+
+grammar;
+
+match {
+    // keywords and symbols
+    "set-logic" => "set-logic",
+    "declare-sort" => "declare-sort",
+    "define-signature" => "define-signature",
+    "define-model" => "define-model", 
+    "define-grammar" => "define-grammar",
+    "synth-form" => "synth-form",
+    "constraint" => "constraint",
+    "check-synth" => "check-synth",
+    "declare-fun" => "declare-fun",
+    "define-universe" => "define-universe",
+    "interpret" => "interpret",
+    "signature" => "signature",
+    "grammar" => "grammar",
+    "match" => "match",
+    "and" => "and",
+    "or" => "or", 
+    "not" => "not",
+    "True" => "True",
+    "False" => "False",
+    "_" => "_",
+    ":" => ":",
+    r#"\s+"# => { }, // skip whitespace
+    r#";[^\n]*"# => { }, // comments
+    r#"\("# => "(", 
+    r#"\)"# => ")",
+    r#"\{"# => "{", 
+    r#"\}"# => "}",
+    r#","# => ",", 
+    r#"[0-9]+"# => NUM,
+    r#"[a-zA-Z][a-zA-Z0-9_]*|_[a-zA-Z0-9_]+"# => ID,
+}
+
+pub Program: Program = {
+    <stmts:Stmts> => Program { stmts }
+};
+
+Stmts: Vec<Stmt> = {
+    <stmts:Stmts> <stmt:Stmt> => { let mut v = stmts; v.push(stmt); v },
+    <stmt:Stmt> => vec![stmt],
+};
+
+Stmt: Stmt = {
+    "(" "set-logic" <logic:Logic> ")" => Stmt::SetLogic { logic },
+    "(" "declare-sort" <name:Ident> <arity:Nat> ")" => Stmt::DeclareSort { name, arity },
+    "(" "define-signature" <name:Ident> <signature:Signature> ")" => Stmt::DefineSignature { name, signature },
+    "(" "define-model" <model_name:Ident> ":" "signature" <signature_name:Ident> <universe:Universe> <interps:Interpretations> ")" => 
+        Stmt::DefineModel { model_name, signature_name, universe, interps },
+    "(" "define-grammar" <name:Ident> <gram:Grammar> ")" => Stmt::DefineGrammar { name, grammar: gram },
+    "(" "synth-form" <name:Ident> <signature_name:Ident> <grammar_name:Ident> ")" => 
+        Stmt::SynthForm { name, signature_name, grammar_name },
+    "(" "constraint" <formula:Fml> ")" => Stmt::Constraint { formula: () },
+    "(" "check-synth" ")" => Stmt::CheckSynth,
+};
+
+// Basic types
+Logic: String = ID => <>.to_string();
+Ident: String = ID => <>.to_string();
+Nat: i32 = NUM => i32::from_str(<>).unwrap();
+
+// Signatures
+Signature: Signature = {
+    <statements:SignatureStmts> => Signature { statements },
+};
+
+SignatureStmts: Vec<SignatureStmt> = {
+    <statements:SignatureStmts> <statement:SignatureStmt> => { let mut v = statements; v.push(statement); v },
+    <statement:SignatureStmt> => vec![statement],
+};
+
+SignatureStmt: SignatureStmt = {
+    "(" "declare-fun" <name:Ident> "(" <sorts:OptSorts> ")" <sort:Sort> ")" =>
+        SignatureStmt::DeclareFun { name, sorts, sort },
+};
+
+OptSorts: Vec<String> = {
+    <s:Sort> <rest:Sort*> => { let mut v = vec![s]; v.extend(rest); v },
+    => vec![]
+};
+
+Sort: String = <Ident>;
+
+// Universe
+Universe: UniverseDef = {
+    "(" "define-universe" <def:UniverseDef> ")" => def,
+};
+
+UniverseDef: UniverseDef = {
+    "(" <sort:Ident> "{" <elems:IdentList> "}" ")" => UniverseDef { sort, elements: elems },
+};
+
+IdentList: Vec<String> = {
+    <head:Ident> <tail:Ident*> => {
+        let mut v = vec![head];
+        v.extend(tail);
+        v
+    }
+};
+
+// Interpretations
+Interpretations: Interpretations = {
+    <stmts:InterpretationStmts> => Interpretations { statements: stmts },
+};
+
+InterpretationStmts: Vec<InterpretationStmt> = {
+    <stmts:InterpretationStmts> <stmt:InterpretationStmt> => { let mut v = stmts; v.push(stmt); v },
+    <stmt:InterpretationStmt> => vec![stmt],
+};
+
+InterpretationStmt: InterpretationStmt = {
+    "(" "define-universe" <def:UniverseDef> ")" => InterpretationStmt::DefineUniverse { definition: def },
+    "(" "interpret" <bindings:InterpretBindings> ")" => InterpretationStmt::InterpretGroup { bindings },
+};
+
+InterpretBindings: Vec<(String, InterpretationValue)> = {
+    <pairs:InterpretPair*> => pairs,
+};
+
+InterpretPair: (String, InterpretationValue) = {
+    "(" <name:Ident> <val:InterpretationValue> ")" => (name, val),
+};
+
+InterpretationValue: InterpretationValue = {
+    <ident:Ident> => InterpretationValue::Ident(ident),
+    <match_val:Match> => InterpretationValue::Match(match_val),
+};
+
+// Match
+Match: Match = {
+    "(" "match" <cases:MatchCases> ")" => Match { cases },
+};
+
+MatchCases: Vec<MatchCase> = {
+    <cases:MatchCases> <case_val:MatchCase> => { let mut v = cases; v.push(case_val); v },
+    <case_val:MatchCase> => vec![case_val],
+};
+
+MatchCase: MatchCase = {
+    "(" "(" <terms:TermList> ")" <bool_value:Bool> ")" => MatchCase { terms, bool_value },
+    "(" "(" "_" "_" ")" <bool_value:Bool> ")" => MatchCase { terms: vec!["_".to_string(), "_".to_string()], bool_value },
+};
+
+TermList: Vec<String> = {
+    <terms:TermList> <term:Term> => { let mut v = terms; v.push(term); v },
+    <term:Term> => vec![term],
+};
+
+Bool: bool = {
+    "True" => true,
+    "False" => false,
+};
+
+// Grammar
+Grammar: Grammar = {
+    <rules:GrammarRules> => Grammar { rules },
+};
+
+GrammarRules: Vec<GrammarRule> = {
+    <rules:GrammarRules> <rule:GrammarRule> => { let mut v = rules; v.push(rule); v },
+    <rule:GrammarRule> => vec![rule],
+};
+
+GrammarRule: GrammarRule = {
+    "(" <name:Ident> <sort:Sort> ")" => GrammarRule::Terminal { name, sort },
+    "(" <name:Ident> <items:ProductionItems> ")" => GrammarRule::Production { name, production: items },
+};
+
+ProductionItems: Vec<String> = {
+    <i1:Ident> <i2:Ident> <rest:Ident*> => {
+        let mut result = vec![i1, i2];
+        result.extend(rest);
+        result
+    },
+};
+
+Term: String = <Ident>;
+
+Fml: () = {
+    "(" "and" <Fml> <Fml> ")" => (),
+    "(" "or" <Fml> <Fml> ")" => (),
+    "(" "not" <Fml> ")" => (),
+    "(" <op:Ident> <arg1:Term> <arg2:Term> ")" => (),
+};
