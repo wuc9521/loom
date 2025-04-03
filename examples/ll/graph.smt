@@ -1,16 +1,19 @@
 (set-logic FOL)
+; TODO: 这里set-logic 的意义是什么? 我们会允许用户自己定义logic吗? 还是只能用已有的logic
 
 (declare-sort U 0) ; decalre sort
+(declare-sort V 0) ; 
 
-(define-signature S
-	(declare-fun s () U)   
-	(declare-fun t () U)   
-	(declare-fun E (U U) Bool)
-	(declare-fun F (U U) Bool)
-	(declare-fun G (U U) Bool)
-	(declare-fun IET (Bool U U) U)
-	(declare-qvar x1 U)
-)
+; TODO: 是否需要 define-signature 这样的东西? 看起来只会用到一个 signature ?
+; (define-signature S
+(declare-fun s () U)   
+(declare-fun t () U)   
+(declare-fun E (U U) Bool)
+(declare-fun F (U U) Bool)
+(declare-fun G (U U) Bool)
+(declare-fun IET (Bool U U) U)
+(declare-qvar qv U)
+; )
 
 ; (show-grammar S)
 
@@ -20,69 +23,73 @@
 ;   3. ``not'', 
 ;   4. ``ite'' /// ????
 
+
 (define-model M  
-	:signature S
-	(define-universe
-		(U {a b c d})       ;;? universe seems a bit strange    
+	; :signature S
+	(define-universe U ($a $b $c $d))   ; everything in the universe starts with `$` to distinguish from normal symbols
+	;? universe seems a bit strange    
+	; (define-universe (V {c d}))       ;? allow elements of same name in U. we can type inference
+	; (interpret S					   ;? if we can ignore define-signature, it will look much more neat.
+	(interp-fun s (($a)))              ; symbol name and an (arity+1)- tuple
+	(interp-fun t ($b))                ; a shortcut: remove the inner parenthensis
+	(interp-fun E  					  ;; check if pattern matching is exhaustive at compile time
+		(					
+			($b $c true)    ; if 
+			($a _ true)		; else if
+			(_ b false)		; else if
+			(_ _ false) 	; else
+		)
 	)
-	(interpret S
-		(s (a))                 ;; symbol name and an (arity+1)- tuple
-		(t (b))
-		(E  					;; check if pattern matching is exhaustive at compile time
-			(					
-				(b c true)    	; if 
-				(a $_ true)		; else if
-				($_ b false)	; else if
-				($_ $_ false) 	; else
-			)
+	(interp-fun F  
+		(
+			(x y (not (E x y)))  ;; $x and $y are variables
 		)
-		(F  
-			(
-				($x $y (not (E $x $y)))  ;; $x and $y are variables
-			)
+	)
+	(interp-fun G 	
+		(
+			(x y (or (E x $a) (F $b y)))  ;; Variables and elements clearly distinguished
 		)
-		(G 	
-			(
-				($x $y (or (E $x a) (F b $y)))  ;; Variables and elements clearly distinguished
-			)
+	)
+	(interp-fun IET (
+			(b x y (ite b y x))
 		)
-		(IET ; the complement of ITE 
-			(
-				(true $_ a a)
-				(true $_ b b)
-				(true $_ c c)
-				(true $_ d d)
-				(false a $_ a)
-				(false b $_ b)
-				(false c $_ c)
-				(false d $_ d)
-			) 
-		)
-		; (IET 
-		; 	(
-		; 		(($b $x $y) (ite $b $y $x))
-		; 	) 
-		; )   
-	)         
+	)
 )
 
-; You can specify grammars explicitly, or you can extend the signature. 
-; (define-grammar G 
-; 	;; Declare the non-terminals that would be used in the grammar
-;     ((B Bool))
-;     ;; Define the grammar for allowed implementations.
-;     (
-; 		(U (x (s) (t) (ite B U U))
-; 		(B ((= U U) (and B B) (or B B) (not B) (forall x B) (exists x B) (E U U)))
-; 	)
-; )
-
 (synth-fun 
-	:signature S   ; use the signature S 
+	; :signature S   ; use the signature S 
 	myform () Bool ; A boolean nullary function == A logic sentence.
+	; I want a first order sentence of the pattern: exists <v>. and a conjunction of literals
 	(
-		:override (UVar)
-		(UVar U (x1 x2))
+		(Start Bool (
+			(exists qv Conjunction)
+		))
+		(Conjunction Bool (
+			Literal
+			(and Conjunction Literal)
+		))
+		(Literal Bool (
+			Atom
+			(not Atom)
+		))
+        (Atom Bool
+			(
+				true 						    
+				false       			        
+				(E Term Term)           	    
+				(F Term Term)
+				(G Term Term)
+				(= Term Term)
+			)
+		)   
+		(Term U
+			(
+				qv  
+				s 
+				t                            
+				(ITE Literal Term Term)         
+			)
+		)
 	)
 )
 

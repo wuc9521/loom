@@ -2,20 +2,38 @@ LSProg = { SOI ~ LSCmd* ~ EOI }
 
 LSCmd = {
   SyGuSCmd
-| "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | QVarDecl)+ ~ ")"
-| "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UniverseDef ~ SignatureInterp ~ ")"
+| SignatureDef
+| FuncDecl
+| QVarDecl
+| "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")"
 }
-
+SignatureDef = { "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | QVarDecl)+ ~ ")" }
 QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
-FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } // ! same as SMT-lib
-UniverseDef = { "(" ~ "define-universe" ~ ( "(" ~ Sort ~ "{" ~ Symbol* ~ "}" ~ ")" )+ ~ ")" }
-SignatureInterp = { "(" ~ "interpret" ~ Symbol ~ ( "(" ~ Symbol ~ "(" ~ InterpedCase+ ~ ")" ~ ")" )* ~ ")" }
-InterpedCase = { "(" ~ Pattern ~ Symbol ~ ")" } // ! same as SMT-lib
+FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } // ! same as SMT-lib, doesn't exist in SyGuS.
+UnivDef = { "(" ~ "define-universe" ~ Sort ~ "(" ~ UnivEle* ~ ")" ~ ")" }
+UnivEle = @{
+    "$" ~ Symbol 
+}
+InterpedValue = {
+  UnivEle 
+| BoolConst 
+| "(" ~ Identifier ~ SyGuSTerm+ ~ ")"
+}
+FuncInterp = {  "(" ~ "interp-fun" ~ Symbol ~  "(" ~ InterpedCase+ ~ ")" ~ ")" }
+InterpedCase = { 
+  "(" ~ Pattern ~ InterpedValue ~ ")" // ! same as SMT-lib
+| InterpedValue             // if the symbol is 0-ary, we can ignore parenthesis
+| "(" ~ InterpedValue ~ ")"
+} 
 Term = {
     SyGuSTerm
 }
 Pattern = { 
-  Symbol ~ "(" ~ Identifier ~ Term+ ~ ")"
-| "(" ~ Pattern ~ ")"
+  (UnivEle | Symbol | "_")+
 }
 
+
+// 0. 这个包 (pest) 很好, 允许用户增量地开发.
+// 1. 怎么设计这个语言是最合理的. (目前的实现完全 compatible to SyGuS 的 syntax)
+// 2. 感觉能够(几乎)全部借用 SMT-lib 中的函数
+// 3. 后端要做的事情是什么: 我的理解对不对/ 后续要怎么调用solver? (调用solver解决一部分的问题?)
