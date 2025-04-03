@@ -1,0 +1,21 @@
+LSProg = { SOI ~ LSCmd* ~ EOI }
+
+LSCmd = {
+  SyGuSCmd
+| "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | QVarDecl)+ ~ ")"
+| "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UniverseDef ~ SignatureInterp ~ ")"
+}
+
+QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
+FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } // ! same as SMT-lib
+UniverseDef = { "(" ~ "define-universe" ~ ( "(" ~ Sort ~ "{" ~ Symbol* ~ "}" ~ ")" )+ ~ ")" }
+SignatureInterp = { "(" ~ "interpret" ~ Symbol ~ ( "(" ~ Symbol ~ "(" ~ InterpedCase+ ~ ")" ~ ")" )* ~ ")" }
+InterpedCase = { "(" ~ Pattern ~ Symbol ~ ")" } // ! same as SMT-lib
+Term = {
+    SyGuSTerm
+}
+Pattern = { 
+  Symbol ~ "(" ~ Identifier ~ Term+ ~ ")"
+| "(" ~ Pattern ~ ")"
+}
+

@@ -1,10 +1,10 @@
 [package]
-name = "ll-frontend"
+name = "sygus-parser-rs"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-lalrpop-util = { version = "0.20.2", features = ["lexer"] }
-
-[build-dependencies]
-lalrpop = "0.20.2"
+pest = "2.7.3"
+pest_derive = "2.7.3"
+itertools = "0.14.0"
+clap = {version = "4.4", features = ["derive"]}# command line argument parser 

@@ -21,10 +21,10 @@
 (interpret t d)        ; t := d
 (interpret E
 (match
-	((a a) True)
-	((b a) True)
-	((c a) True)
-	((_ _) False)
+	((a a) true)
+	((b a) true)
+	((c a) true)
+	((_ _) false)
 )
 )                      ; E := such a function of U^2 -> Bool
 ; TODO: how to interpret ``='' on symbolic values?

@@ -1,0 +1,376 @@
+// refer to SyGuS standard version 2.7. Appendix B
+
+// Predefined symbols
+PredefinedSymbol = {
+  "Bool" 
+| "continued-execution" 
+| "error" 
+| "false" 
+| "immediate-exit" 
+| "incomplete" 
+| "logic" 
+| "memout" 
+| "sat" 
+| "success" 
+| "theory" 
+| "true" 
+| "unknown" 
+| "unsupported" 
+| "unsat"
+}
+
+// Predefined keywords
+PredefinedKeyword = {
+  ":" ~ "all-statistics" 
+| ":" ~ "assertion-stack-levels"
+| ":" ~ "authors"
+| ":" ~ "category"
+| ":" ~ "chainable"
+| ":" ~ "definition"
+| ":" ~ "diagnostic-output-channel" 
+| ":" ~ "error-behavior" 
+| ":" ~ "extensions" 
+| ":" ~ "funs" 
+| ":" ~ "funs-description"
+| ":" ~ "global-declarations" 
+| ":" ~ "interactive-mode" 
+| ":" ~ "language"
+| ":" ~ "left-assoc" 
+| ":" ~ "license" 
+| ":" ~ "name" 
+| ":" ~ "named"
+| ":" ~ "notes" 
+| ":" ~ "pattern" 
+| ":" ~ "print-success" 
+| ":" ~ "produce-assignments" 
+| ":" ~ "produce-models" 
+| ":" ~ "produce-proofs"
+| ":" ~ "produce-unsat-assumptions" 
+| ":" ~ "produce-unsat-cores" 
+| ":" ~ "random-seed" 
+| ":" ~ "reason-unknown"
+| ":" ~ "regular-output-channel" 
+| ":" ~ "reproducible-resource-limit" 
+| ":" ~ "right-assoc" 
+| ":" ~ "smt-lib-version"
+| ":" ~ "sorts" 
+| ":" ~ "sorts-description"
+| ":" ~ "source" 
+| ":" ~ "status" 
+| ":" ~ "theories" 
+| ":" ~ "values" 
+| ":" ~ "verbosity" 
+| ":" ~ "version"
+}
+
+// Auxiliary Lexical Categories
+WHITESPACE = _{ "\u{09}" | "\u{0A}" | "\u{0D}" | "\u{20}" } // rewrite internal WHITESPACE.
+PrintableChar = { '\u{20}'..'\u{7E}' | '\u{80}' .. '\u{FF}' }
+ZeroDigit = { "0" }
+NonzeroDigit = { ASCII_NONZERO_DIGIT }
+Digit = { ASCII_DIGIT }
+Letter = { ASCII_ALPHA }
+
+// Tokens 
+Reserved = { ReservedGeneralWord | ReservedCommandName }
+
+ReservedGeneralWord = {
+  "!" | "_" | "as" | "BINARY" | "DECIMAL" | "exists" | "HEXADECIMAL" | "forall" | "let" | "match" | "NUMERAL" | "par" | "STRING"
+}
+
+ReservedCommandName = {
+  "assert" 
+| "check-sat" 
+| "check-sat-assuming" 
+| "declare-const" 
+| "declare-datatype" 
+| "declare-datatypes" 
+| "declare-fun" 
+| "declare-sort" 
+| "declare-sort-parameter" 
+| "define-const" 
+| "define-fun" 
+| "define-fun-rec" 
+| "define-sort" 
+| "echo" 
+| "exit" 
+| "get-assertions" 
+| "get-assignment" 
+| "get-info" 
+| "get-model" 
+| "get-option" 
+| "get-proof" 
+| "get-unsat-assumptions" 
+| "get-unsat-core" 
+| "get-value" 
+| "pop" 
+| "push" 
+| "reset" 
+| "reset-assertions" 
+| "set-info" 
+| "set-logic" 
+| "set-option"
+}
+
+
+Numeral = @{ZeroDigit | NonzeroDigit ~ Digit*}
+Decimal = @{ Numeral ~ "." ~ ZeroDigit* ~ Numeral }
+Hexadecimal = @{ "#x" ~ ASCII_HEX_DIGIT+ }
+Binary = @{ "#b" ~ ASCII_BIN_DIGIT+ }
+String = ${ "\"" ~ (RawString | "\\" ~ ANY)* ~ "\"" }
+RawString = { (!("\\" | "\"") ~ ANY)+ }
+SimpleSymbol = @{ (Letter | SpecialChar) ~ (Letter | Digit | SpecialChar)* }
+SpecialChar = @{ "+" | "-" | "/" | "*" | "=" | "%" | "?" | "!" | "." | "$" | "_" | "~" | "&" | "^" | "<" | ">" | "@" }
+Symbol = @{
+  SimpleSymbol 
+| "|" ~ (!("|") ~ PrintableChar)* ~ "|"
+}
+Keyword = {":" ~ Symbol }
+Comment = _{ LineComment | BlockComment }
+LineComment = { ";" ~ (!NEWLINE ~ ANY)* }
+BlockComment = { "/" ~ "*" ~ ( BlockComment | ! "*" ~ "/" ~ ANY )* ~ "*" ~ "/" }
+
+// S-expressions
+SpecConstant  = {
+  Numeral 
+| Decimal 
+| Hexadecimal 
+| Binary 
+| String
+}
+
+SExpr = {
+  SpecConstant 
+| Symbol 
+| Reserved 
+| Keyword 
+| "(" ~ SExpr* ~ ")"
+}
+
+// Identifiers
+Identifier = { Symbol | "(" ~ "_" ~ Symbol ~ Index+ ~ ")" }
+Index = { Numeral | Symbol }
+
+// Sorts
+Sort = { 
+  Identifier 
+| "(" ~ Identifier ~ Sort+ ~ ")"  
+}
+
+// Attributes
+Attribute = { Keyword | Keyword ~ AttributeValue }
+AttributeValue = { SpecConstant | Symbol | "(" ~ SExpr* ~ ")" }
+
+// Terms
+QualIdentifier = {
+  Identifier 
+| "(" ~ "as" ~ Identifier ~ Sort ~ ")"
+}
+VarBinding = {"(" ~ Symbol ~ Term ~ ")"}
+SortedVar = { "(" ~ Symbol ~ Sort ~ ")" }
+Pattern = {
+  Symbol 
+| "(" ~ Symbol ~ Symbol+ ~ ")"
+}
+MatchCase = { "(" ~ Pattern ~ Term ~ ")" }
+Term = { 
+  SpecConstant
+| QualIdentifier 
+| "(" ~ QualIdentifier ~ Term+ ~ ")"
+| "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ Term ~ ")"
+| "(" ~ "lambda" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+| "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+| "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ Term ~ ")"
+| "(" ~ "match" ~ Term ~ "(" ~ MatchCase+ ~ ")" ~ ")"
+| "(" ~ "!" ~ Term ~ Attribute+ ~ ")"
+}
+
+// Theories
+SortSymbolDec = {
+  "(" ~ Identifier ~ Numeral ~ Attribute* ~ ")"
+}
+MetaSpecConstant = {
+  "NUMERAL" | "DECIMAL" | "STRING"
+}
+FunSymbolDec = {
+  "(" ~ SpecConstant ~ Sort ~ Attribute* ~ ")"
+| "(" ~ MetaSpecConstant ~ Sort ~ Attribute* ~ ")"
+| "(" ~ Identifier ~ Sort+ ~ Attribute* ~ ")"
+}
+ParFunSymbolDec = {
+  FunSymbolDec 
+| "(" ~ "(" ~ Symbol+ ~ ")" ~ "(" ~ Identifier ~ Sort+ ~ Attribute* ~")" ~ ")"
+}
+TheoreAttribute = {
+  ":" ~ "sorts" ~ "(" ~ SortSymbolDec+ ~ ")"
+| ":" ~ "funs" ~ "(" ~ ParFunSymbolDec+ ~ ")"
+| ":" ~ "sorts-description" ~ String
+| ":" ~ "funs-description" ~ String
+| ":" ~ "definition" ~ String
+| ":" ~ "values" ~ String
+| ":" ~ "notes" ~ String
+| Attribute
+}
+
+// Logics
+LogicAttribute = {
+  ":" ~ "theories" ~ "(" ~ Symbol+ ~ ")"
+| ":" ~ "language" ~ String
+| ":" ~ "extensions" ~ String
+| ":" ~ "values" ~ String
+| ":" ~ "notes" ~ String
+| Attribute
+}
+Logic = {
+  "(" ~ "logic" ~ Symbol ~ LogicAttribute+ ~ ")"
+}
+
+// InfoFlags
+InfoFlag = {
+  ":" ~ "all-statistics"
+| ":" ~ "assertion-stack-levels"
+| ":" ~ "authors"
+| ":" ~ "error-behavior"
+| ":" ~ "name"
+| ":" ~ "reason-unknown"
+| ":" ~ "version"
+| Keyword
+}
+
+// Command options
+BValue = {
+  "true" | "false"
+}
+Option = {
+  ":" ~ "diagnostic-output-channel" ~ String
+| ":" ~ "global-declarations" ~ BValue
+| ":" ~ "interactive-mode" ~ BValue
+| ":" ~ "print-success" ~ BValue
+| ":" ~ "produce-assertions" ~ BValue
+| ":" ~ "produce-assignments" ~ BValue
+| ":" ~ "produce-models" ~ BValue
+| ":" ~ "produce-proofs" ~ BValue
+| ":" ~ "produce-unsat-assumptions" ~ BValue
+| ":" ~ "produce-unsat-cores" ~ BValue
+| ":" ~ "random-seed" ~ Numeral
+| ":" ~ "regular-output-channel" ~ String
+| ":" ~ "reproducible-resource-limit" ~ Numeral
+| ":" ~ "verbosity" ~ Numeral
+| Attribute
+}
+
+// Commands
+SortDec = { "(" ~ Symbol ~ Numeral ~ ")" }
+SelectorDec = { "(" ~ Symbol ~ Sort ~ ")" }
+ConstructorDec = { "(" ~ Symbol ~ SelectorDec* ~ ")" }
+DatatypeDec = {
+  "(" ~ ConstructorDec+ ~ ")"
+| "(" ~ "par" ~ Symbol+ ~ ConstructorDec+ ~ ")"
+}
+FunctionDec = { "(" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ ")" }
+FunctionDef = { Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ Term ~ ")" }
+ProbLiteral = {
+  Symbol 
+| "(" ~ "not" ~ Symbol ~ ")"
+}
+Command = {
+  "(" ~ "assert" ~ Term ~ ")"
+| "(" ~ "check-sat" ~ ")"
+| "(" ~ "check-sat-assuming" ~ "(" ~ ProbLiteral* ~ ")" ~ ")"
+| "(" ~ "declare-const" ~ Symbol ~ Sort ~ ")"
+| "(" ~ "declare-datatype" ~ Symbol ~ DatatypeDec ~ ")"
+| "(" ~ "declare-datatypes" ~ "(" ~ SortDec+ ~ ")" ~ "(" ~ DatatypeDec+ ~ ")" ~ ")" // TODO: n+1 instead of +
+| "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")"
+| "(" ~ "declare-sort" ~ Symbol ~ Numeral ~ ")"
+| "(" ~ "declare-sort-parameter" ~ Symbol ~ ")"
+| "(" ~ "define-const" ~ Symbol ~ Sort ~ Term ~ ")"
+| "(" ~ "define-fun" ~ FunctionDef ~ ")"
+| "(" ~ "define-fun-rec" ~ FunctionDef ~ ")"
+| "(" ~ "define-funs-rec" ~ "(" ~ FunctionDec+ ~ ")" ~ "(" ~ Term+ ~ ")" ~ ")" // TODO: n+1 instead of +
+| "(" ~ "define-sort" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ Sort ~ ")"
+| "(" ~ "echo" ~ String ~ ")"
+| "(" ~ "exit" ~ ")"
+| "(" ~ "get-assertions" ~ ")"
+| "(" ~ "get-assignment" ~ ")"
+| "(" ~ "get-info" ~ InfoFlag ~ ")"
+| "(" ~ "get-model" ~ ")"
+| "(" ~ "get-option" ~ Keyword ~ ")"
+| "(" ~ "get-proof" ~ ")"
+| "(" ~ "get-unsat-assumptions" ~ ")"
+| "(" ~ "get-unsat-core" ~ ")"
+| "(" ~ "get-value" ~ "(" ~ Term+ ~ ")" ~ ")"
+| "(" ~ "pop" ~ Numeral ~ ")"
+| "(" ~ "push" ~ Numeral ~ ")"
+| "(" ~ "reset" ~ ")"
+| "(" ~ "reset-assertions" ~ ")"
+| "(" ~ "set-info" ~ InfoFlag ~ ")"
+| "(" ~ "set-logic" ~ Symbol ~ ")"
+| "(" ~ "set-option" ~ Option ~ ")"
+}
+
+
+// Command responses
+ErrorBehavior = {
+  "immediate-exit" 
+| "continued-execution"
+}
+ReasonUnknown = {
+  "memout" 
+| "incomplete" 
+| SExpr
+}
+ModelResponse = {
+  "(" ~ "define-fun" ~ FunctionDef ~ ")" 
+| "(" ~ "define-fun-rec" ~ FunctionDef ~ ")"
+| "(" ~ "define-funs-rec" ~ "(" ~ FunctionDef+ ~ ")" ~ "(" ~ Term+ ~ ")" ~ ")"
+// TODO: mannual says n+1 instead of +
+}
+
+InfoResponse = {
+  ":" ~ "assertion-stack-levels" ~ Numeral
+| ":" ~ "authors" ~ String
+| ":" ~ "error-behavior" ~ ErrorBehavior
+| ":" ~ "name" ~ String
+| ":" ~ "reason-unknown" ~ ReasonUnknown
+| ":" ~ "version" ~ String
+| Attribute
+}
+ValuationPair = {"(" ~ Term ~ Term ~ ")"}
+TValuationPair = {"(" ~ Symbol ~ BValue ~ ")"}
+CheckSatResponse = {
+  "sat" 
+| "unsat" 
+| "unknown"
+}
+EchoResponse = {String}
+GetAssertionsResponse = {"(" ~ Term* ~ ")"}
+GetAssignmentResponse = {"(" ~ TValuationPair* ~ ")"}
+GetInfoResponse = {"(" ~ InfoResponse+ ~ ")"}
+GetModelResponse = {"(" ~ ModelResponse* ~ ")"}
+GetOptionResponse = {AttributeValue}
+GetProofResponse = {"(" ~ SExpr ~ ")"}
+GetUnsatAssumpResponse = {"(" ~ Term* ~ ")"}
+GetUnsatCoreResponse = {"(" ~ Symbol* ~ ")"}
+GetValueResponse = {"(" ~ ValuationPair* ~ ")"}
+
+SpecificSuccessResponse = {
+  CheckSatResponse
+| EchoResponse
+| GetAssertionsResponse
+| GetAssignmentResponse
+| GetInfoResponse
+| GetModelResponse
+| GetOptionResponse
+| GetProofResponse
+| GetUnsatAssumpResponse
+| GetUnsatCoreResponse
+| GetValueResponse
+}
+GeneralResponse = {
+  "success" 
+| SpecificSuccessResponse
+| "unsupported"
+| "(" ~ "error" ~ String ~ ")"
+}
+
+Script = { SOI ~ Command* ~ EOI}
