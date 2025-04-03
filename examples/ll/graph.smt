@@ -1,5 +1,5 @@
 (set-logic FOL)
-; TODO: 这里set-logic 的意义是什么? 我们会允许用户自己定义logic吗? 还是只能用已有的logic
+; TODO: 我们会允许用户自己定义logic吗? 还是只能用已有的logic
 
 (declare-sort U 0) ; decalre sort
 (declare-sort V 0) ; 
@@ -12,7 +12,7 @@
 (declare-fun F (U U) Bool)
 (declare-fun G (U U) Bool)
 (declare-fun IET (Bool U U) U)
-(declare-qvar qv U)
+(declare-qvar qv U)    ; TODO: why even qvar? Why cannot just var?
 ; )
 
 ; (show-grammar S)
@@ -28,7 +28,7 @@
 	; :signature S
 	(define-universe U ($a $b $c $d))   ; everything in the universe starts with `$` to distinguish from normal symbols
 	;? universe seems a bit strange    
-	; (define-universe (V {c d}))       ;? allow elements of same name in U. we can type inference
+	; (define-universe (V ($c $d)))     ; allow elements of same name in U, because we can do type inference.
 	; (interpret S					   ;? if we can ignore define-signature, it will look much more neat.
 	(interp-fun s (($a)))              ; symbol name and an (arity+1)- tuple
 	(interp-fun t ($b))                ; a shortcut: remove the inner parenthensis
@@ -93,5 +93,6 @@
 	)
 )
 
-(constraint (models M form)) 
+(constraint (models M myform)) 
 (check-synth)              
+

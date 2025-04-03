@@ -77,7 +77,7 @@ SortedVar = {  "(" ~ Symbol ~ Sort ~ ")"  }
 VarBinding = { "(" ~ Symbol ~ SyGuSTerm ~ ")" }
 
 // 2.8 Features
-Feature = {
+SyGuSFeature = {
   ":" ~ "grammars"
 | ":" ~ "fwd-decls"
 | ":" ~ "recursion"
@@ -86,7 +86,6 @@ Feature = {
 }
 
 // 2.9 Commands
-
 SyGuSCmd = {
   "(" ~ "assume" ~ SyGuSTerm ~ ")"
 | "(" ~ "check-synth" ~ ")"
@@ -96,7 +95,7 @@ SyGuSCmd = {
 | "(" ~ "declare-weight" ~ Symbol ~ Attribute* ~ ")"
 | "(" ~ "inv-constraint" ~ Symbol{4} ~ ")"
 | "(" ~ "optimize-synth" ~ "(" ~ SyGuSTerm* ~ ")" ~ Attribute* ~ ")"
-| "(" ~ "set-feature" ~ Feature ~ BoolConst ~ ")"
+| "(" ~ "set-feature" ~ SyGuSFeature ~ BoolConst ~ ")"
 | "(" ~ "synth-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ GrammarDef? ~ ")"
 | OracleCmd
 | SMTCmd

@@ -1,12 +1,10 @@
 use clap::Parser as ClapParser;
-use pest::iterators::Pair;
-use std::any::type_name_of_val;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 // use sygus_parser_rs::sygus::parser::SyGuSV2Parser as SyGuSV2Parser;
-use sygus_parser_rs::ls::parser::LSParser as LSParser;
-use sygus_parser_rs::ls::parser::Rule;
+use sygus_parser_rs::parser::ls::LSParser as LSParser;
+use sygus_parser_rs::parser::ls::Rule;
 use pest::Parser as PestParser;
 
 /// CLI application for parsing your custom language
@@ -34,7 +32,7 @@ fn main() -> Result<(), io::Error> {
     match result {
         Ok(pairs) => {
             for pair in pairs {
-                print!("{}", type_name_of_val(&pair));
+                print!("{}", &pair);
             }
         }
         Err(e) => {
