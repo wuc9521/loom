@@ -1,10 +1,11 @@
 (set-logic FOL)
-; TODO: 我们会允许用户自己定义logic吗? 还是只能用已有的logic
-
 (declare-sort U 0) ; decalre sort
 (declare-sort V 0) ; 
 
-; TODO: 是否需要 define-signature 这样的东西? 看起来只会用到一个 signature ?
+;? do we really need `define-signature`? Looks like we are only using one signature so we can just make every declaration global?
+;? This seems like a trivial problem, but removing `define-signature` makes our code much neater, and `synth-fun` would be (totally) 
+;? same as that in SyGuS
+
 ; (define-signature S
 (declare-fun s () U)   
 (declare-fun t () U)   
@@ -12,7 +13,7 @@
 (declare-fun F (U U) Bool)
 (declare-fun G (U U) Bool)
 (declare-fun IET (Bool U U) U)
-(declare-qvar qv U)    ; TODO: why even qvar? Why cannot just var?
+(declare-qvar qv U)    
 ; )
 
 ; (show-grammar S)
@@ -42,7 +43,7 @@
 	)
 	(interp-fun F  
 		(
-			(x y (not (E x y)))  ;; $x and $y are variables
+			(x y (not (E x y)))  ;; x and y are variables
 		)
 	)
 	(interp-fun G 	

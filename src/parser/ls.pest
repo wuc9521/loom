@@ -26,12 +26,3 @@ InterpedCase = {
 | "(" ~ InterpedValue ~ ")" // or may not.
 } 
 Pattern = { (UnivElem | Symbol | "_")+ }
-
-
-// 0. 这个包 (pest) 很好, 允许用户增量地开发.
-// 1. 目前的设计足够合理吗? (目前的实现完全 compatible to SyGuS syntax)
-// 2. 感觉能够(几乎)全部借用 SMT-lib 中的函数 
-//      在最新的SMT-lib 手册 (2025 Feb) 中, 已经有了lambda语法.
-//      SMT 是谁在维护? SMT 有没有官方的parser? 
-//      SyGuS 是谁在维护? 我只找到一个古老的 (5y 没有更新) 的 github repo
-// 3. 后端要做的事情是什么: 我的理解对不对/ 后续要怎么调用solver? (调用solver解决一部分的问题?)
