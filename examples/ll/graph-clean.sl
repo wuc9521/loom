@@ -1,62 +1,67 @@
 (set-logic FOL)
 (declare-sort U 0)
-(define-signature S
-	(declare-fun s () U)   
-	(declare-fun t () U)   
-	(declare-fun E (U U) Bool)
-	(declare-fun ITE (Bool U U) U)
+(declare-sort V 0)
+(declare-fun s () U)   
+(declare-fun t () U)   
+(declare-fun E (U U) Bool)
+(declare-fun F (U U) Bool)
+(declare-fun G (U U) Bool)
+(declare-fun IET (Bool U U) U)
+(declare-qvar qv U)    
+(define-model M  
+    (define-universe U ($a $b $c $d))
+    (interp-fun s ($a))                   ; Simple 0-ary function
+    (interp-fun t ($b))                   ; Simple 0-ary function
+    (interp-fun E (match (           ; Using match with pattern-value pairs
+        (($b $c) true)
+        (($a _) true) 
+		((_ $b) false)
+        ((_ _) false)
+    )))
+    (interp-fun F (match (
+        ((x y) (not (E x y)))
+    )))
+    (interp-fun G (match (
+        ((x y) (or (E x $a) (F $b y)))
+    )))
+    (interp-fun IET (match (
+        ((b x y) (ite b y x))
+    )))
 )
-
-(define-model M 
-	:signature S
-	(define-universe
-		(U {a b c d})         
-	)
-	(interpret
-		(s (() a))
-		(t (() b))
-		(E (match
-				((b c) true)
-				((a _) true)
-				((_ b) true)
-				((_ _) false)
-			)
-		)
-		(ITE (match
-				((true a _) a)
-				((true b _) b)
-				((true c _) c)
-				((true d _) d)
-				((false _ a) a)
-				((false _ b) b)
-				((false _ c) c)
-				((false _ d) d)
-			) 
-		)
-	)                                           
-)
-
 (synth-fun 
-	:signature S  ; use the signature S 
-	myform () Bool ; A boolean nullary function == A logic sentence.
+	myform () Bool
 	(
-		(Start Bool 
-			(true false       			    ; provided by FOL
-				(and Start Start)			; provided by FOL
-				(or Start Start)  			; provided by FOL
-				(not Start)       			; provided by FOL
-				(forall Var Start)  			; provided by FOL
-				(exists Var Start)  			; provided by FOL
-				(E Var Var)           			; provided by FOL
+		(Start Bool (
+			(exists qv Conjunction)
+		))
+		(Conjunction Bool (
+			Literal
+			(and Conjunction Literal)
+		))
+		(Literal Bool (
+			Atom
+			(not Atom)
+		))
+        (Atom Bool
+			(
+				true 						    
+				false       			        
+				(E Term Term)           	    
+				(F Term Term)
+				(G Term Term)
+				(= Term Term)
 			)
 		)   
-		(Var U)
 		(Term U
-			(Var
-				(ITE Start Term Term)     ; provided by FOL
+			(
+				qv  
+				s 
+				t                            
+				(ITE Literal Term Term)         
 			)
 		)
 	)
 )
-(constraint (models M myform))
+
+(constraint (models M myform)) 
 (check-synth)              
