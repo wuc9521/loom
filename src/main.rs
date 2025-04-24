@@ -27,7 +27,7 @@ fn main() -> Result<(), io::Error> {
     let input = fs::read_to_string(&args.input)?;
     let problem = file::parse(&input.as_str()).unwrap();
     if args.verbose {
-        println!("Parsed problem: {:?}", problem);
+        println!("Parsed problem:\n{:?}", problem);
     }
     Ok(())
 }

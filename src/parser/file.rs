@@ -3,6 +3,7 @@ use crate::lang::{
     signature::{FuncSig, QVarSig},
 };
 use crate::parser::{LSParseError, LSParser, Rule};
+use derive_more::Display;
 use itertools::Itertools;
 use pest::Parser;
 use sygus_parser::SyGuSCmd;
@@ -15,8 +16,35 @@ pub enum LSCmd {
     ModelDef(Model),
 }
 
-// #[derive(Display)]
-pub type LSFile = Vec<LSCmd>;
+impl std::fmt::Display for LSCmd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LSCmd::As(cmd) => write!(f, "{cmd}"),
+            LSCmd::FuncDecl(cmd) => write!(f, "{cmd}"),
+            LSCmd::QVarDecl(cmd) => write!(f, "{cmd}"),
+            LSCmd::ModelDef(cmd) => write!(f, "{cmd}"),
+        }
+    }
+}
+
+#[derive(Debug, Display)]
+// display every cmd
+#[display(
+    fmt = "{}",
+    "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\"\n\")"
+)]
+pub struct LSFile {
+    pub cmds: Vec<LSCmd>,
+}
+
+impl LSFile {
+    pub fn new() -> Self {
+        LSFile { cmds: Vec::new() }
+    }
+    pub fn push(&mut self, cmd: LSCmd) {
+        self.cmds.push(cmd);
+    }
+}
 
 pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
     let [file]: [_; 1] = LSParser::parse(Rule::LSProg, content)?
@@ -51,5 +79,5 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
             }
         }
     }
-    Ok(Vec::new())
+    Ok(ls_file)
 }

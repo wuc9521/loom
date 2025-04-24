@@ -11,4 +11,5 @@ clap = {version = "4.4", features = ["derive"]}# command line argument parser
 serde = {version = "1.0", features = ["derive"]}# serialization 
 serde_json = "1.0" # json serialization
 derive_more = "0.99.17"
+# sygus-parser = "0.1.0"
 sygus-parser = { path = "../sygus-parser-rs" }

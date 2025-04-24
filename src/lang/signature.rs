@@ -1,9 +1,17 @@
 use crate::parser::Rule;
 use pest::iterators::Pair;
 pub type Error = pest::error::Error<Rule>;
+use derive_more::Display;
 use sygus_parser::Sort;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
+// FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" }
+#[display(
+    fmt = "(declare-fun {} ({}) {})",
+    name,
+    "args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")",
+    ret
+)]
 pub struct FuncSig {
     pub name: String,
     pub args: Vec<Sort>,
@@ -32,7 +40,9 @@ impl FuncSig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
+// QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
+#[display(fmt = "(declare-qvar {} {})", name, sort)]
 pub struct QVarSig {
     pub name: String,
     pub sort: Sort,

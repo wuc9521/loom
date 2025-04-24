@@ -1,40 +1,3 @@
-// LSProg = { SOI ~ LSCmd* ~ EOI }
-
-// LSCmd = {
-//   SyGuSCmd
-// | SignatureDef
-// | FuncDecl
-// | QVarDecl
-// | ModelDef
-// }
-
-// SignatureDef = { "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | QVarDecl)+ ~ ")" }
-// FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } // ! extends SMT-lib, doesn't exist in SyGuS.
-// QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
-// ModelDef = { "(" ~ "define-model" ~ Symbol ~ UnivDef* ~ FuncInterp* ~ ")" }
-// FuncInterp = {  "(" ~ "interp-fun" ~ Symbol ~  "(" ~ InterpedCase+ ~ ")" ~ ")" }
-// UnivDef = { "(" ~ "define-universe" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-// UnivElem = @{ "$" ~ Symbol }
-// // Make Pattern more explicit
-// Pattern = { (UnivElem | Symbol | "_")+ }
-
-// // Make sure InterpedValue doesn't start with "(" to avoid confusion
-// InterpedValue = {
-//   UnivElem 
-// | BoolConst 
-// | CompoundValue
-// }
-
-// CompoundValue = { "(" ~ Identifier ~ SyGuSTerm+ ~ ")" }
-
-// // Clearer InterpedCase with explicit handling of each case
-// InterpedCase = { 
-//   "(" ~ Pattern ~ InterpedValue ~ ")" |  // Case with pattern
-//   "(" ~ CompoundValue ~ ")" |           // Case with compound value
-//   "(" ~ UnivElem ~ ")" |               // Case with universe element
-//   "(" ~ BoolConst ~ ")"                // Case with boolean constant
-// }
-
 LSProg = { SOI ~ LSCmd* ~ EOI }
 
 LSCmd = {
@@ -53,7 +16,7 @@ SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
 MatchInterp = { "(" ~ "match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
 MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
 UnivDef = { "(" ~ "define-universe" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-UnivElem = @{ "$" ~ Symbol }
+UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
 
 // Define values that can be interpreted
 InterpedValue = {
