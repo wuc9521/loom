@@ -1,5 +1,5 @@
 use crate::lang::{
-    model::Model,
+    model::ModelDef,
     signature::{FuncSig, QVarSig},
 };
 use crate::parser::{LSParseError, LSParser, Rule};
@@ -8,26 +8,22 @@ use itertools::Itertools;
 use pest::Parser;
 use sygus_parser::SyGuSCmd;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
 pub enum LSCmd {
+    #[display(fmt = "{}", _0)]
     As(SyGuSCmd), // as a sygus command.
+
+    #[display(fmt = "{}", _0)]
     FuncDecl(FuncSig),
+
+    #[display(fmt = "{}", _0)]
     QVarDecl(QVarSig),
-    ModelDef(Model),
+
+    #[display(fmt = "{}", _0)]
+    ModelDef(ModelDef),
 }
 
-impl std::fmt::Display for LSCmd {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LSCmd::As(cmd) => write!(f, "{cmd}"),
-            LSCmd::FuncDecl(cmd) => write!(f, "{cmd}"),
-            LSCmd::QVarDecl(cmd) => write!(f, "{cmd}"),
-            LSCmd::ModelDef(cmd) => write!(f, "{cmd}"),
-        }
-    }
-}
-
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Clone)]
 // display every cmd
 #[display(
     fmt = "{}",
@@ -69,7 +65,7 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
             }
             Rule::ModelDef => {
                 // "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")"
-                ls_file.push(LSCmd::ModelDef(Model::parse(cmd.clone()).unwrap()));
+                ls_file.push(LSCmd::ModelDef(ModelDef::parse(cmd.clone()).unwrap()));
             }
             _ => {
                 Err(LSParseError::InvalidSyntax(format!(

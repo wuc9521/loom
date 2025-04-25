@@ -14,7 +14,7 @@ use std::path::PathBuf;
 pub struct CLI {
     /// Path to the input file
     #[arg(short, long, required = true)]
-    input: PathBuf,
+    file: PathBuf,
 
     /// Enable verbose output
     #[arg(short, long, default_value_t = false)]
@@ -24,10 +24,10 @@ pub struct CLI {
 /// Run the language parsing application
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
-    let input = fs::read_to_string(&args.input)?;
+    let input = fs::read_to_string(&args.file)?;
     let problem = file::parse(&input.as_str()).unwrap();
     if args.verbose {
-        println!("Parsed problem:\n{:?}", problem);
+        println!("Parsed problem:\n {:?}", problem);
     }
     Ok(())
 }

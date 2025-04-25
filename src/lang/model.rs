@@ -1,10 +1,10 @@
 // src/logic/model.rs
 
-use core::str;
-
 use crate::parser::{LSParseError, Rule};
+use core::str;
 use derive_more::Display;
 use pest::iterators::Pair;
+use sygus_parser::Literal;
 use sygus_parser::Sort;
 use sygus_parser::SyGuSTerm;
 
@@ -16,13 +16,13 @@ use sygus_parser::SyGuSTerm;
     "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
     "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
-pub struct Model {
+pub struct ModelDef {
     pub name: String,
     pub univ_defs: Vec<UnivDef>,
     pub func_interps: Vec<FuncInterp>,
 }
 
-impl Model {
+impl ModelDef {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -63,7 +63,7 @@ impl Model {
     }
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
     fmt = "(define-universe {} ({}))",
     sort,
@@ -98,7 +98,7 @@ impl UnivDef {
     }
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, PartialEq, Eq, Hash)]
 #[display(fmt = "{}", name)]
 pub struct UnivElem {
     pub name: String,
@@ -113,6 +113,9 @@ impl UnivElem {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         Ok(Self::new(pair.as_str()))
     }
+    pub fn from_str(s: &str) -> Result<Self, LSParseError> {
+        Ok(Self::new(s))
+    }
 }
 
 // FuncInterp = {  "(" ~ "interp-fun" ~ Symbol ~  "(" ~ InterpedCase+ ~ ")" ~ ")" }
@@ -123,9 +126,9 @@ pub enum FuncInterp {
         _0,
         "_1.iter().map(|c| format!(\"{}\", c)).collect::<Vec<_>>().join(\" \")"
     )]
-    Match(String, Vec<MatchCase>),
-    #[display(fmt = "(interp-fun {} {})", _0, _1)]
-    Simple(String, InterpedValue),
+    MatchInterp(String, Vec<MatchCase>),
+    #[display(fmt = "(interp-fun {} ({}))", _0, _1)]
+    SimpleInterp(String, InterpedValue),
 }
 // FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
 // SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
@@ -133,6 +136,20 @@ pub enum FuncInterp {
 // MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
 
 impl FuncInterp {
+    pub fn name(&self) -> &str {
+        match self {
+            FuncInterp::MatchInterp(name, _) => name,
+            FuncInterp::SimpleInterp(name, _) => name,
+        }
+    }
+    pub fn arity(&self) -> usize {
+        match self {
+            FuncInterp::MatchInterp(_, cases) => cases.get(0).map_or(0, |case| {
+                case.pattern.as_ref().map_or(0, |p| p.elements.len())
+            }),
+            FuncInterp::SimpleInterp(_, _) => 0,
+        }
+    }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         let mut inner_pairs = pair.clone().into_inner();
         let name = inner_pairs.next().unwrap().as_str();
@@ -141,7 +158,7 @@ impl FuncInterp {
         match interp_pair.as_rule() {
             Rule::SimpleInterp => {
                 let interped_value = InterpedValue::parse(interp_pair)?;
-                return Ok(Self::Simple(name.to_string(), interped_value));
+                return Ok(Self::SimpleInterp(name.to_string(), interped_value));
             }
             Rule::MatchInterp => {
                 // Get all match cases directly from the inner elements of MatchInterp
@@ -158,7 +175,7 @@ impl FuncInterp {
                         )));
                     }
                 }
-                return Ok(Self::Match(name.to_string(), cases));
+                return Ok(Self::MatchInterp(name.to_string(), cases));
             }
             _ => {
                 return Err(LSParseError::UnsupportedFeature(format!(
@@ -171,26 +188,25 @@ impl FuncInterp {
 }
 
 // MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, PartialEq)]
 #[display(
     fmt = "({} {})",
     "pattern.as_ref().map_or_else(|| \"_\".to_string(), |p| format!(\"{}\", p))",
-    interped_value
+    value
 )]
 pub struct MatchCase {
     pub pattern: Option<Pattern>,
-    pub interped_value: InterpedValue,
+    pub value: InterpedValue,
 }
 
-// InterpedValue = { UnivElem   | BoolConst  | "(" ~ Identifier ~ SyGuSTerm+ ~ ")"   }
-
-#[derive(Clone, Debug, Display)]
-#[display(fmt = )]
+#[derive(Clone, Debug, Display, PartialEq)]
 pub enum InterpedValue {
     #[display(fmt = "{}", _0)]
-    UnivElem(UnivElem),
+    UnivElem(UnivElem), // elements from new-defined universes.
+
     #[display(fmt = "{}", _0)]
-    BoolConst(bool),
+    Literal(Literal), // elements from existing sorts.
+
     #[display(
         fmt = "({} {})",
         _0,
@@ -199,28 +215,25 @@ pub enum InterpedValue {
     FuncApp(String, Vec<SyGuSTerm>),
 }
 
-// InterpedValue = {
-//   UnivElem
-//   | BoolConst
-//   | "(" ~ Identifier ~ SyGuSTerm+ ~ ")"
-//   }
 impl InterpedValue {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        let inner = pair.into_inner().next().unwrap();
-        match inner.as_rule() {
-            Rule::UnivElem => Ok(Self::UnivElem(UnivElem::parse(inner)?)),
-            Rule::BoolConst => {
-                let value = inner.as_str() == "true";
-                Ok(Self::BoolConst(value))
+        let mut pair = pair.into_inner().next().unwrap();
+        if pair.as_rule() == Rule::InterpedValue {
+            pair = pair.into_inner().next().unwrap();
+        }
+        match pair.as_rule() {
+            Rule::UnivElem => {
+                Ok(Self::UnivElem(UnivElem::from_str(pair.as_str())?))
             }
+            Rule::Literal => Ok(Self::Literal(Literal::from_str(pair.as_str()))),
             _ => {
-                let mut inner_pairs = inner.into_inner();
-                let func_name = inner_pairs.next().unwrap().as_str();
-                let args = inner_pairs
-                    .map(|arg| SyGuSTerm::from_str(arg.as_str()).unwrap())
-                    .collect();
-
-                Ok(Self::FuncApp(func_name.to_string(), args))
+                let mut children = pair.into_inner();
+                let func_name = children.next().unwrap().as_str().to_string();
+                let args = children
+                    .map(|p| SyGuSTerm::from_str(p.as_str()))
+                    .collect::<Result<_, _>>()
+                    .unwrap();
+                Ok(Self::FuncApp(func_name, args))
             }
         }
     }
@@ -232,8 +245,12 @@ impl MatchCase {
     pub fn new(pattern: Pattern, interped_value: InterpedValue) -> Self {
         Self {
             pattern: Some(pattern),
-            interped_value,
+            value: interped_value,
         }
+    }
+
+    pub fn pattern(&self) -> &Option<Pattern> {
+        &self.pattern
     }
 
     // InterpedCase =    "(" ~ Pattern? ~ InterpedValue ~ ")"
@@ -244,12 +261,12 @@ impl MatchCase {
         let interped_value = InterpedValue::parse(inner_pairs.next().unwrap())?;
         Ok(Self {
             pattern,
-            interped_value,
+            value: interped_value,
         })
     }
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, PartialEq, Eq)]
 pub enum PatternElem {
     #[display(fmt = "{}", _0)]
     UnivElem(UnivElem),
@@ -259,7 +276,7 @@ pub enum PatternElem {
     Wildcard,
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
     fmt = "({})",
     "elements.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"

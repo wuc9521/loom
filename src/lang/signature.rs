@@ -2,20 +2,20 @@ use crate::parser::Rule;
 use pest::iterators::Pair;
 pub type Error = pest::error::Error<Rule>;
 use derive_more::Display;
-use sygus_parser::Sort;
+use sygus_parser::{Sort, Symbol};
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Display, PartialEq)]
 // FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" }
 #[display(
     fmt = "(declare-fun {} ({}) {})",
     name,
-    "args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")",
-    ret
+    "arg_sorts.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")",
+    ret_sort
 )]
 pub struct FuncSig {
     pub name: String,
-    pub args: Vec<Sort>,
-    pub ret: Sort,
+    pub arg_sorts: Vec<Sort>,
+    pub ret_sort: Sort,
 }
 
 impl FuncSig {
@@ -34,8 +34,8 @@ impl FuncSig {
         // ls_file.push(LSCmd::FuncDecl(func_name, sort_list, ret_sort));
         Ok(FuncSig {
             name: func_name,
-            args: sort_list,
-            ret: ret_sort,
+            arg_sorts: sort_list,
+            ret_sort,
         })
     }
 }
@@ -44,7 +44,7 @@ impl FuncSig {
 // QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
 #[display(fmt = "(declare-qvar {} {})", name, sort)]
 pub struct QVarSig {
-    pub name: String,
+    pub name: Symbol,
     pub sort: Sort,
 }
 

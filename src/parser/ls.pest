@@ -21,7 +21,7 @@ UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
 // Define values that can be interpreted
 InterpedValue = {
   UnivElem 
-| BoolConst 
+| Literal
 | "(" ~ Identifier ~ SyGuSTerm+ ~ ")"
 }
 
