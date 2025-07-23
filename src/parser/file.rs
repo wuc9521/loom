@@ -1,6 +1,6 @@
 use crate::lang::{
-    model::ModelDef,
-    signature::{FuncSig, QVarSig},
+    model::{ModelDef, ThSpecCmd},
+    signature::FuncSig,
 };
 use crate::parser::{LSParseError, LSParser, Rule};
 use derive_more::Display;
@@ -17,10 +17,10 @@ pub enum LSCmd {
     FuncDecl(FuncSig),
 
     #[display(fmt = "{}", _0)]
-    QVarDecl(QVarSig),
+    ModelDef(ModelDef),
 
     #[display(fmt = "{}", _0)]
-    ModelDef(ModelDef),
+    ThSpecCmd(ThSpecCmd),
 }
 
 #[derive(Debug, Display, Clone)]
@@ -59,13 +59,15 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
                 // "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")"
                 ls_file.push(LSCmd::FuncDecl(FuncSig::parse(cmd.clone()).unwrap()));
             }
-            Rule::QVarDecl => {
-                // "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")"
-                ls_file.push(LSCmd::QVarDecl(QVarSig::parse(cmd.clone()).unwrap()));
-            }
             Rule::ModelDef => {
                 // "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")"
                 ls_file.push(LSCmd::ModelDef(ModelDef::parse(cmd.clone()).unwrap()));
+            }
+            Rule::ThSpecCmd => {
+                let mut inner = cmd.clone().into_inner();
+                let symbol = inner.next().unwrap().as_str().to_string();
+                let args = inner.map(|p| p.as_str().to_string()).collect::<Vec<_>>().join(" ");
+                ls_file.push(LSCmd::ThSpecCmd(crate::lang::model::ThSpecCmd { name: symbol, args }));
             }
             _ => {
                 Err(LSParseError::InvalidSyntax(format!(

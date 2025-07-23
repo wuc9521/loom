@@ -2,7 +2,7 @@ use crate::parser::Rule;
 use pest::iterators::Pair;
 pub type Error = pest::error::Error<Rule>;
 use derive_more::Display;
-use sygus_parser::{Sort, Symbol};
+use sygus_parser::Sort;
 
 #[derive(Clone, Debug, Display, PartialEq)]
 // FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" }
@@ -37,29 +37,5 @@ impl FuncSig {
             arg_sorts: sort_list,
             ret_sort,
         })
-    }
-}
-
-#[derive(Clone, Debug, Display)]
-// QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
-#[display(fmt = "(declare-qvar {} {})", name, sort)]
-pub struct QVarSig {
-    pub name: Symbol,
-    pub sort: Sort,
-}
-
-impl QVarSig {
-    pub fn new(name: &str, sort: Sort) -> Self {
-        Self {
-            name: name.to_owned(),
-            sort,
-        }
-    }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, Error> {
-        let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str();
-        let sort = inner.next().unwrap();
-        let sort = Sort::from_str(sort.as_str()).unwrap();
-        Ok(Self::new(name, sort))
     }
 }

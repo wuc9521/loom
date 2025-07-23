@@ -10,16 +10,34 @@ use sygus_parser::SyGuSTerm;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
+#[display(fmt = "({} {})", name, args)]
+pub struct ThSpecCmd {
+    pub name: String,
+    pub args: String, // may be refined to Vec<String>
+}
+
+impl ThSpecCmd {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        let mut inner = pair.into_inner();
+        let name = inner.next().unwrap().as_str().to_string();
+        let args = inner.map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
+        Ok(Self { name, args })
+    }
+}
+
+#[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(define-model {} {} {})",
+    fmt = "(define-model {} {} {} {})",
     name,
     "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
-    "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")"
+    "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")",
+    "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
 pub struct ModelDef {
     pub name: String,
     pub univ_defs: Vec<UnivDef>,
     pub func_interps: Vec<FuncInterp>,
+    pub ext_cmds: Vec<ThSpecCmd>,
 }
 
 impl ModelDef {
@@ -28,6 +46,7 @@ impl ModelDef {
             name: name.to_string(),
             univ_defs: Vec::new(),
             func_interps: Vec::new(),
+            ext_cmds: Vec::new(),
         }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
@@ -44,7 +63,16 @@ impl ModelDef {
                     let func_interp = FuncInterp::parse(item_pair)?;
                     model.add_func_interp(func_interp);
                 }
+                Rule::ThSpecCmd => {
+                    let th_spec_cmd = ThSpecCmd::parse(item_pair)?;
+                    model.ext_cmds.push(th_spec_cmd);
+                }
                 _ => {
+                    eprintln!(
+                        "[DEBUG] Unmatched rule: {:?}, content: {}",
+                        item_pair.as_rule(),
+                        item_pair.as_str()
+                    );
                     Err(LSParseError::UnsupportedFeature(format!(
                         "Unsupported feature in model definition: {}",
                         item_pair.as_str()
@@ -52,7 +80,6 @@ impl ModelDef {
                 }
             }
         }
-
         Ok(model)
     }
     pub fn add_univ_def(&mut self, univ_def: UnivDef) {
@@ -65,7 +92,7 @@ impl ModelDef {
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
-    fmt = "(define-universe {} ({}))",
+    fmt = "(define-univ {} ({}))",
     sort,
     "elems.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
@@ -74,7 +101,7 @@ pub struct UnivDef {
     pub elems: Vec<UnivElem>,
 }
 
-// UnivDef = { "(" ~ "define-universe" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
+// UnivDef = { "(" ~ "define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
 impl UnivDef {
     pub fn new(sort: Sort, elems: Vec<UnivElem>) -> Self {
         Self { sort, elems }
@@ -115,6 +142,15 @@ impl UnivElem {
     }
     pub fn from_str(s: &str) -> Result<Self, LSParseError> {
         Ok(Self::new(s))
+    }
+    pub fn sort_guess(&self) -> Sort {
+        // Highly simplified: try to guess sort from name.
+        // In reality, you need type checking or context.
+        if self.name == "true" || self.name == "false" {
+            Sort::from_str("Bool").unwrap()
+        } else {
+            Sort::from_str("U").unwrap() // Default or error
+        }
     }
 }
 
@@ -222,9 +258,7 @@ impl InterpedValue {
             pair = pair.into_inner().next().unwrap();
         }
         match pair.as_rule() {
-            Rule::UnivElem => {
-                Ok(Self::UnivElem(UnivElem::from_str(pair.as_str())?))
-            }
+            Rule::UnivElem => Ok(Self::UnivElem(UnivElem::from_str(pair.as_str())?)),
             Rule::Literal => Ok(Self::Literal(Literal::from_str(pair.as_str()))),
             _ => {
                 let mut children = pair.into_inner();

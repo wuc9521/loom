@@ -180,7 +180,7 @@ GroupedRuleList = { "(" ~ Symbol ~ Sort ~ "(" ~ SyGuSGTerm+ ~ ")" ~ ")" }
 SyGuSGTerm = {
   "(" ~ "Constant" ~ Sort ~ ")"
 | "(" ~ "Variable" ~ Sort ~ ")"
-| SyGuSBfTerm
+| SyGuSTerm
 }
 
 Reserved = { ReservedGeneralWord | ReservedCommandName }

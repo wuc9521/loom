@@ -4,18 +4,20 @@ LSCmd = {
   SyGuSCmd
 | SignatureDef
 | FuncDecl
-| QVarDecl
 | ModelDef
+| ThSpecCmd
 }
-SignatureDef = { "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | QVarDecl)+ ~ ")" }
+SignatureDef = { "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | ThSpecCmd)+ ~ ")" }
 FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
-QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
-ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
+// QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
+ModelDef = { "(" ~ "define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
+LSReservedCmd = { "define-univ" | "interp-fun"}
+ThSpecCmd = { "(" ~ !LSReservedCmd ~ Symbol ~ (SExpr*) ~ ")" }
 FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
 SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
 MatchInterp = { "(" ~ "match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
 MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
-UnivDef = { "(" ~ "define-universe" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
+UnivDef = { "(" ~ "define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
 UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
 
 // Define values that can be interpreted
