@@ -14,6 +14,7 @@ use sygus_parser::SyGuSTerm;
 pub struct ThSpecCmd {
     pub name: String,
     pub args: String, // may be refined to Vec<String>
+    pub sexpr: Option<lexpr::Value>, // 新增
 }
 
 impl ThSpecCmd {
@@ -21,7 +22,8 @@ impl ThSpecCmd {
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap().as_str().to_string();
         let args = inner.map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
-        Ok(Self { name, args })
+        let sexpr = lexpr::from_str(&format!("({} {})", name, args)).ok();
+        Ok(Self { name, args, sexpr })
     }
 }
 
@@ -38,6 +40,7 @@ pub struct ModelDef {
     pub univ_defs: Vec<UnivDef>,
     pub func_interps: Vec<FuncInterp>,
     pub ext_cmds: Vec<ThSpecCmd>,
+    pub ext_ctx: Option<crate::theory::Ctx>, // 新增
 }
 
 impl ModelDef {
@@ -47,6 +50,7 @@ impl ModelDef {
             univ_defs: Vec::new(),
             func_interps: Vec::new(),
             ext_cmds: Vec::new(),
+            ext_ctx: None,
         }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {

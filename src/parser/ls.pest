@@ -2,17 +2,12 @@ LSProg = { SOI ~ LSCmd* ~ EOI }
 
 LSCmd = {
   SyGuSCmd
-| SignatureDef
 | FuncDecl
 | ModelDef
 | ThSpecCmd
 }
-SignatureDef = { "(" ~ "define-signature" ~ Symbol ~ (FuncDecl | ThSpecCmd)+ ~ ")" }
 FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
-// QVarDecl = { "(" ~ "declare-qvar" ~ Symbol ~ Sort ~ ")" }
 ModelDef = { "(" ~ "define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
-LSReservedCmd = { "define-univ" | "interp-fun"}
-ThSpecCmd = { "(" ~ !LSReservedCmd ~ Symbol ~ (SExpr*) ~ ")" }
 FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
 SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
 MatchInterp = { "(" ~ "match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
@@ -32,3 +27,13 @@ Pattern = {
   UnivElem | Symbol | "_" |           // Simple pattern elements
   "(" ~ (UnivElem | Symbol | "_")+ ~ ")"  // Compound pattern in parentheses
 }
+
+LSReservedCmd = { 
+  "define-univ" | "interp-fun" | "define-model" | "declare-fun"
+}
+
+// Theory specific commands
+ThSpecCmd = { "(" ~ !LSReservedCmd ~ Symbol ~ ThSpecBody* ~ ")" }
+ThSpecBody = { ThSpecAtom | ThSpecList }
+ThSpecAtom = { (!("(" | ")") ~ ANY)+ }
+ThSpecList = { "(" ~ ThSpecBody* ~ ")" }

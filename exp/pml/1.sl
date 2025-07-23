@@ -15,8 +15,7 @@
 
 (define-model K1 ;; Kripke Structure 1
     (define-univ U ($0 $1 $2 $3))
-    (define-init I ($0)) ; initial state
-    (define-label R (match ; reachability relation.
+    (interp-fun R (match (; reachability relation.
         (($0 $2) true)
 		(($0 $3) true)
 		(($1 $0) true)
@@ -24,7 +23,7 @@
 		(($3 $1) true)
 		(($3 $0) true)
 		((_ _) false)
-    ))
+    )))
 	(interp-fun a (match (
         (($0) true)
         ((_) false)
@@ -38,12 +37,15 @@
         (($3) true)
         ((_) false)
     )))
+    (interp-fun I ($0))
+    (set-init I)
+    (set-tran R)
 )
 
 (define-model K2 ;; Kripke Structure 2
     (define-univ U ($0 $1 $2 $3 $4 $5 $6))
-    (define-init I ($0))
-    (define-label R (match
+    (interp-fun I ($0))
+    (interp-fun R (match (; reachability relation.
 		(($0 $1) true)
 		(($0 $2) true)
         (($1 $3) true)
@@ -51,7 +53,7 @@
 		(($2 $5) true)
 		(($2 $6) true)
 		((_ _) false)
-    ))
+    )))
 	(interp-fun a (match (
         (($5) true)
         ((_) false)
@@ -65,15 +67,17 @@
         (($3) true)
         ((_) false)
     )))
+    (set-init I)
+    (set-tran R)
 )
 
 (define-model K3 ;; Kripke Structure 3
     (define-univ U ($0 $1))
-    (define-init I ($0))
-    (define-label R  (match
+    (interp-fun I ($0))
+    (interp-fun R  (match (; reachability relation.
 		(($0 $1) true)
 		((_ _) false)
-    ))
+    )))
 	(interp-fun a (match (
         (($0) true)
         ((_) false)
@@ -85,17 +89,19 @@
         (($1) true)
         ((_) false)
     )))
+    (set-init I)
+    (set-tran R)
 )
 
 (define-model K4 ;; Kripke Structure 4
     (define-univ U ($0 $1 $2))
-    (define-init I ($0))
-    (define-label R (match
+    (interp-fun I ($0))
+    (interp-fun R (match (; reachability relation.
     	(($0 $2) true)
 		(($1 $0) true)
 		(($2 $1) true)
 		((_ _) false)
-    ))
+    )))
 	(interp-fun a (match (
         (($2) true)
         ((_) false)
@@ -108,6 +114,8 @@
         (($0) true)
         ((_) false)
     )))
+    (set-init I)
+    (set-tran R)
 )
 
 (synth-fun phi () Bool
@@ -118,11 +126,11 @@
 				a
                 c
                 v		
-				(not Start)
-				(and Start Start)
-				(or Start Start)
-				(box Start)
-				(dia Start)
+				(modal.not Start)
+				(modal.and Start Start)
+				(modal.or Start Start)
+				(modal.box Start)
+				(modal.dia Start)
 			)
 		)
 	)
@@ -137,5 +145,5 @@
 
 ;; a potential output
 ; (define-fun () Bool 
-;     (dia c)
+;     (modal.dia c)
 ; ) 

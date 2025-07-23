@@ -67,7 +67,8 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
                 let mut inner = cmd.clone().into_inner();
                 let symbol = inner.next().unwrap().as_str().to_string();
                 let args = inner.map(|p| p.as_str().to_string()).collect::<Vec<_>>().join(" ");
-                ls_file.push(LSCmd::ThSpecCmd(crate::lang::model::ThSpecCmd { name: symbol, args }));
+                let sexpr = lexpr::from_str(&format!("({} {})", symbol, args)).ok();
+                ls_file.push(LSCmd::ThSpecCmd(crate::lang::model::ThSpecCmd { name: symbol, args, sexpr }));
             }
             _ => {
                 Err(LSParseError::InvalidSyntax(format!(
