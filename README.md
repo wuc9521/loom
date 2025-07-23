@@ -1,10 +1,24 @@
-# ll-frontend
+# Logic Learning Language Parser
 
 Frontend of Logic Learning Problems
 
-To run the project
+To run the project.
 
-```Bash
+Install dependencies.
+
+```bash
 cargo install
-cargo run -- --input ./examples/ll/graph.smt
+```
+
+Some examples
+
+```bash
+# First Order Logic
+cargo run -- --input ./exp/fol/1.sl
+
+# Propositional Modal Logic
+cargo run -- --input ./exp/pml/1.sl
+
+# Regular Expression
+cargo run -- --input ./exp/re/1.sl 
 ```

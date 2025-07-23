@@ -82,28 +82,27 @@
   )))
 )
 
-(synth-fun regex () Regex
-    (Start Regex)
+(synth-fun regex () RegExp
+    (Start RegExp)
     ( 
-        (Start Regex
+        (Start RegExp
             ( 
-                re.empty               ; non-recursive, const
-                re.none                ; ∅
-                re.a                   ; 单字符 'a', const
-                re.b                   ; 单字符 'b', const
-                (Concat Start Start)
-                (Or Start Start)
-                (And Start Start)
-                (Optional Start)
-                (KleeneStar Start)
-                (Repeat Start Num)
-                (RepeatAtLeast Start Num)
-                (RepeatRange Start Num Num)
+                re.nostr               ; \epsilon
+                re.none                ; \emptyset
+                (str.to.re "a")        ; regex of string "a"
+                (str.to.re "b")        ; regex of string "b" 
+                (re.++ Start Start)    ; concat
+                (re.union Start Start) ; union
+                (re.inter Start Start) ; intersection
+                (re.opt Start)         ; optional
+                (re.* Start)           ; Kleene star
+                (re.loop Start Num Num); (re.loop r l u) repeat r for [l, u] times. If l \geq u, repeat exactly l times.
+                (re.loop Start Num)    ; (re.loop r l) repeat r at least l times.
             )
         )
         (Num Int 
             (
-                0 1 2 3
+                0 1 2 3 4 5 6
             )
         )
     )
