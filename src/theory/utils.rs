@@ -1,7 +1,6 @@
 use crate::lang::model::{Pattern, PatternElem};
 use crate::lang::model::ModelDef;
-use sygus_parser::{Literal, Sort, SyGuSCmd};
-use sygus_parser::api::{BitVec, Bool, Cmd, Term};
+use sygus_parser::Sort;
 use std::collections::{HashMap, HashSet};
 
 pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
@@ -170,50 +169,6 @@ pub fn replace_grammardef_sort(
             .collect();
         new_g
     })
-}
-
-/// generate constraint commands
-pub fn gen_constraints(
-    models: &HashMap<String, &ModelDef>,
-    syn_name: &str,
-    constraint_models: &[(String, bool)],
-) -> Vec<SyGuSCmd> {
-    let mut res = Vec::new();
-    let mut offset = 0;
-    for (model_name, is_true) in constraint_models {
-        if let Some(model) = models.get(model_name) {
-            let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
-            let domain_size = domain_syms.len();
-            // subwords: (start, end) for 0..=domain_size
-            let mut subword_idx = 0;
-            let mut target_idx = None;
-            for start in 0..=domain_size {
-                for end in start..=domain_size {
-                    if start == 0 && end == domain_size {
-                        target_idx = Some(offset + subword_idx);
-                    }
-                    subword_idx += 1;
-                }
-            }
-            if let Some(bit_to_check_index) = target_idx {
-                let target_bit = if *is_true { "1" } else { "0" };
-                res.push(
-                    Cmd::constraint()
-                        .body(Bool::eq(
-                            BitVec::extract(
-                                bit_to_check_index,
-                                bit_to_check_index,
-                                Term::var(syn_name),
-                            ),
-                            Term::lit(Literal::BinConst(target_bit.to_string())),
-                        ))
-                        .build(),
-                );
-            }
-            offset += subword_idx;
-        }
-    }
-    res
 }
 
 /// collect constraint_models (Vec<(model_name, is_true)>)

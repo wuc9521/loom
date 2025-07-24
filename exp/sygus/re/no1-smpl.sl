@@ -1,5 +1,5 @@
 ; https://smt-lib.org/theories-UnicodeStrings.shtml
-(set-logic SLIA) ; regular grammar
+(set-logic SLIA) 
 
 (define-fun w1 () String 
     "ab"

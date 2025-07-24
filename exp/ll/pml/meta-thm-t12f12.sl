@@ -138,5 +138,7 @@
 
 (constraint (models K1 phi))
 (constraint (not (models K1 phi)))
+(constraint (models K2 phi))
+(constraint (not (models K2 phi)))
 
 (check-synth)

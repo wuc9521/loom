@@ -1,7 +1,7 @@
 use crate::lang::model::ModelDef;
 use crate::parser::LSFile;
-use crate::theory::re::utils::{re_inter, re_comp, re_union};
-use crate::theory::utils::{gen_constraints, get_universe_domain_and_map};
+use crate::theory::re::utils::{re_comp, re_inter, re_union};
+use crate::theory::utils::get_universe_domain_and_map;
 use crate::theory::Logic;
 use std::collections::{HashMap, HashSet};
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
@@ -67,45 +67,71 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     }
     let mut all_props: Vec<_> = all_props.into_iter().collect();
     all_props.sort();
+    // 4. build subwords and subword_to_local_idx, and record global_offset
+    struct ModelSubwordInfo {
+        global_offset: usize,
+        subwords: Vec<(usize, usize)>,
+        subword_to_local_idx: HashMap<(usize, usize), usize>,
+        domain_size: usize,
+    }
+    let mut model_infos = Vec::new();
+    let mut current_offset = 0;
+    for model in &loaded_models {
+        let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
+        let domain_size = domain_syms.len();
+        let mut subwords = Vec::new();
+        for start in 0..=domain_size {
+            for end in start..=domain_size {
+                subwords.push((start, end));
+            }
+        }
+        let subword_to_local_idx = subwords
+            .iter()
+            .enumerate()
+            .map(|(i, &se)| (se, i))
+            .collect();
+        model_infos.push(ModelSubwordInfo {
+            global_offset: current_offset,
+            subwords,
+            subword_to_local_idx,
+            domain_size,
+        });
+        current_offset += (domain_size + 1) * domain_size / 2 + domain_size + 1;
+        // (n+1)*n/2 + n+1 = (n+1)*(n+2)/2
+    }
+    let total_bv_length = current_offset;
+    let bv_sort = Sort::bitvec(total_bv_length);
     // 5. define proposition bitvector
-    let mut total_bv_length = 0;
     let mut grammar_terms = Vec::new();
     let mut prop_bitvecs = HashMap::new();
     for prop in &all_props {
-        let (bv_str, length) = {
+        let (bv_str, _) = {
             let mut full_bitstring_list = Vec::new();
-            for model in &loaded_models {
-                let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
-                let domain_size = domain_syms.len();
-                for start in 0..=domain_size {
-                    for end in start..=domain_size {
-                        // only when start+1==end is atomic proposition
-                        if end == start + 1 {
-                            let node = start;
-                            let val = crate::theory::utils::eval(
-                                prop,
-                                &[node],
-                                &model.func_interps,
-                                &id2sym,
-                            );
-                            if matches!(val, Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true")
-                            {
-                                full_bitstring_list.push('1');
-                            } else {
-                                full_bitstring_list.push('0');
-                            }
+            for info in &model_infos {
+                for &(start, end) in &info.subwords {
+                    let model = &loaded_models[model_infos
+                        .iter()
+                        .position(|x| x.global_offset == info.global_offset)
+                        .unwrap()];
+                    let (_, id2sym, _) = get_universe_domain_and_map(model);
+                    if end == start + 1 {
+                        let node = start;
+                        let val =
+                            crate::theory::utils::eval(prop, &[node], &model.func_interps, &id2sym);
+                        if matches!(val, Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true")
+                        {
+                            full_bitstring_list.push('1');
                         } else {
                             full_bitstring_list.push('0');
                         }
+                    } else {
+                        full_bitstring_list.push('0');
                     }
                 }
             }
             let bv_str: String = full_bitstring_list.iter().rev().collect();
             (bv_str, full_bitstring_list.len())
         };
-        if total_bv_length == 0 {
-            total_bv_length = length;
-        }
         cmds.push(
             Cmd::define_fun(&prop)
                 .ret(Sort::bitvec(total_bv_length))
@@ -115,74 +141,34 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         grammar_terms.push(prop.clone());
         prop_bitvecs.insert(prop.clone(), bv_str);
     }
-    let bv_sort = Sort::bitvec(total_bv_length);
     cmds.push(re_union(&bv_sort));
     cmds.push(re_inter(&bv_sort));
     cmds.push(re_comp(&bv_sort));
     // 6. structural operations re-concat/re-star
     // --- re-concat ---
-    // first enumerate all substrings of all models, build global index
-    let mut subwords = Vec::new();
-    let mut subword_offsets = Vec::new(); // start offset of each model
-    let mut current_offset = 0;
-    for model in &loaded_models {
-        let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
-        let domain_size = domain_syms.len();
-        let mut model_subwords = Vec::new();
-        for start in 0..=domain_size {
-            for end in start..=domain_size {
-                model_subwords.push((start, end));
-                subwords.push((current_offset, start, end)); // (offset, start, end)
-            }
-        }
-        subword_offsets.push(current_offset);
-        current_offset += model_subwords.len();
-    }
-    let total_bv_length = current_offset;
-    // build mapping from (model_idx, start, end) to global index
-    let mut subword_idx_map = Vec::new(); // Vec<HashMap<(usize, usize), usize>>
-    let mut global_idx = 0;
-    for model in &loaded_models {
-        let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
-        let domain_size = domain_syms.len();
-        let mut map = HashMap::new();
-        for start in 0..=domain_size {
-            for end in start..=domain_size {
-                map.insert((start, end), global_idx);
-                global_idx += 1;
-            }
-        }
-        subword_idx_map.push(map);
-    }
-    // re-concat
     let mut concat_bits = Vec::new();
-    for (model_idx, model) in loaded_models.iter().enumerate() {
-        let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
-        let domain_size = domain_syms.len();
-        let map = &subword_idx_map[model_idx];
-        for start in 0..=domain_size {
-            for end in start..=domain_size {
-                let mut split_checks = Vec::new();
-                for k in start..=end {
-                    let idx1 = map[&(start, k)];
-                    let idx2 = map[&(k, end)];
-                    let check1 = Term::eq(
-                        BitVec::extract(idx1, idx1, Term::var("phi1")),
-                        BitVec::const_(1, 1),
-                    );
-                    let check2 = Term::eq(
-                        BitVec::extract(idx2, idx2, Term::var("phi2")),
-                        BitVec::const_(1, 1),
-                    );
-                    split_checks.push(Bool::and(vec![check1, check2]));
-                }
-                let bit = if split_checks.is_empty() {
-                    BitVec::const_(0, 1)
-                } else {
-                    Term::app("bool->bv1", vec![Bool::or(split_checks)])
-                };
-                concat_bits.push(bit);
+    for info in &model_infos {
+        for &(start, end) in &info.subwords {
+            let mut split_checks = Vec::new();
+            for k in start..=end {
+                let idx1 = info.global_offset + info.subword_to_local_idx[&(start, k)];
+                let idx2 = info.global_offset + info.subword_to_local_idx[&(k, end)];
+                let check1 = Term::eq(
+                    BitVec::extract(idx1, idx1, Term::var("phi1")),
+                    BitVec::const_(1, 1),
+                );
+                let check2 = Term::eq(
+                    BitVec::extract(idx2, idx2, Term::var("phi2")),
+                    BitVec::const_(1, 1),
+                );
+                split_checks.push(Bool::and(vec![check1, check2]));
             }
+            let bit = if split_checks.is_empty() {
+                BitVec::const_(0, 1)
+            } else {
+                Term::app("bool->bv1", vec![Bool::or(split_checks)])
+            };
+            concat_bits.push(bit);
         }
     }
     let mut concat_expr = concat_bits[0].clone();
@@ -199,16 +185,12 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     );
     // --- re-star ---
     let mut empty_str_bits = Vec::new();
-    for (_, model) in loaded_models.iter().enumerate() {
-        let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
-        let domain_size = domain_syms.len();
-        for start in 0..=domain_size {
-            for end in start..=domain_size {
-                if start == end {
-                    empty_str_bits.push(BitVec::const_(1, 1));
-                } else {
-                    empty_str_bits.push(BitVec::const_(0, 1));
-                }
+    for info in &model_infos {
+        for &(start, end) in &info.subwords {
+            if start == end {
+                empty_str_bits.push(BitVec::const_(1, 1));
+            } else {
+                empty_str_bits.push(BitVec::const_(0, 1));
             }
         }
     }
@@ -221,44 +203,36 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         }
         expr
     };
-    let max_len = loaded_models
+    let max_len = model_infos
         .iter()
-        .map(|m| {
-            let (domain_syms, _, _) = get_universe_domain_and_map(m);
-            domain_syms.len()
-        })
+        .map(|info| info.domain_size)
         .max()
         .unwrap_or(0);
     let_bindings.push((prev_var.clone(), prev_expr.clone()));
     for i in 0..max_len {
         let mut one_step_bits = Vec::new();
-        for (model_idx, model) in loaded_models.iter().enumerate() {
-            let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
-            let domain_size = domain_syms.len();
-            let map = &subword_idx_map[model_idx];
-            for start in 0..=domain_size {
-                for end in start..=domain_size {
-                    let mut split_checks = Vec::new();
-                    for k in (start + 1)..=end {
-                        let idx_phi = map[&(start, k)];
-                        let idx_star = map[&(k, end)];
-                        let check_phi = Term::eq(
-                            BitVec::extract(idx_phi, idx_phi, Term::var("phi")),
-                            BitVec::const_(1, 1),
-                        );
-                        let check_star = Term::eq(
-                            BitVec::extract(idx_star, idx_star, Term::var(&prev_var)),
-                            BitVec::const_(1, 1),
-                        );
-                        split_checks.push(Bool::and(vec![check_phi, check_star]));
-                    }
-                    let bit = if split_checks.is_empty() {
-                        BitVec::const_(0, 1)
-                    } else {
-                        Term::app("bool->bv1", vec![Bool::or(split_checks)])
-                    };
-                    one_step_bits.push(bit);
+        for info in &model_infos {
+            for &(start, end) in &info.subwords {
+                let mut split_checks = Vec::new();
+                for k in (start + 1)..=end {
+                    let idx_phi = info.global_offset + info.subword_to_local_idx[&(start, k)];
+                    let idx_star = info.global_offset + info.subword_to_local_idx[&(k, end)];
+                    let check_phi = Term::eq(
+                        BitVec::extract(idx_phi, idx_phi, Term::var("phi")),
+                        BitVec::const_(1, 1),
+                    );
+                    let check_star = Term::eq(
+                        BitVec::extract(idx_star, idx_star, Term::var(&prev_var)),
+                        BitVec::const_(1, 1),
+                    );
+                    split_checks.push(Bool::and(vec![check_phi, check_star]));
                 }
+                let bit = if split_checks.is_empty() {
+                    BitVec::const_(0, 1)
+                } else {
+                    Term::app("bool->bv1", vec![Bool::or(split_checks)])
+                };
+                one_step_bits.push(bit);
             }
         }
         let mut one_step_expr = one_step_bits[0].clone();
@@ -269,9 +243,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         let cur_expr = BitVec::bvor(Term::var(&prev_var), one_step_expr);
         let_bindings.push((cur_var.clone(), cur_expr.clone()));
         prev_var = cur_var;
-        // prev_expr = cur_expr;
     }
-    // nested let, each layer binds only one variable, body is the next let, innermost body is the final variable name
     let mut star_body = Term::var(&let_bindings.last().unwrap().0);
     for (let_name, expr) in let_bindings.iter().rev() {
         star_body = Term::let_binding(vec![(let_name.clone(), expr.clone())], star_body);
@@ -310,7 +282,6 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             new_g
         })
     }
-
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
         if let crate::parser::LSCmd::As(sygus_parser::SyGuSCmd::SynthFun(
@@ -343,15 +314,29 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             syn_name = Some(name.clone());
         }
     }
+    // 8. generate constraints, use global offset
     if let Some(syn_name) = syn_name {
-        let constraints = gen_constraints(
-            &models,
-            &syn_name,
-            &constraint_models
-        );
-        cmds.extend(constraints);
+        for (model_name, is_true) in &constraint_models {
+            if let Some(info_idx) = loaded_models.iter().position(|m| &m.name == model_name) {
+                let info = &model_infos[info_idx];
+                let bit_to_check_index =
+                    info.global_offset + info.subword_to_local_idx[&(0, info.domain_size)];
+                let target_bit = if *is_true { "1" } else { "0" };
+                cmds.push(
+                    Cmd::constraint()
+                        .body(Bool::eq(
+                            BitVec::extract(
+                                bit_to_check_index,
+                                bit_to_check_index,
+                                Term::var(&syn_name),
+                            ),
+                            Term::lit(Literal::BinConst(target_bit.to_string())),
+                        ))
+                        .build(),
+                );
+            }
+        }
     }
-    // 8. check-synth
     cmds.push(SyGuSCmd::CheckSynth);
     cmds
 }

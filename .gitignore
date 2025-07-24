@@ -3,7 +3,6 @@ Icon?
 Cargo.lock
 src/.antlr
 target
-bin
 .vscode/
 logs/
 .cursorrules
