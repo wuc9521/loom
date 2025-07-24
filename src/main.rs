@@ -1,7 +1,12 @@
 use clap::Parser as ClapParser;
 use ls_parser::{
     parser::*,
-    theory::{dispatch_extcmd, fol::FOLCtx, pml::PMLCtx, Ctx, Logic},
+    theory::{
+        dispatch_extcmd,
+        fol::FOLCtx,
+        pml::{self, PMLCtx},
+        Ctx, Logic,
+    },
 };
 use std::{fs, io, path::PathBuf};
 
@@ -56,21 +61,18 @@ fn main() -> Result<(), io::Error> {
             return Err(io::Error::new(io::ErrorKind::Other, "Unknown logic"));
         }
     };
-    // print current logic
-    println!("Current logic: {}", logic_str);
 
     // --to-bv 分流
     if args.to_bv {
         match logic {
             Logic::PML => {
-                use ls_parser::theory::pml::bv::translate_to_bv;
-                let bv_str = translate_to_bv(&problem);
-                println!("{}", bv_str);
-                return Ok(());
+                let cmds = pml::bv::translate_to_bv_cmds(&problem);
+                for cmd in cmds {
+                    println!("{}", cmd);
+                }
             }
-            // 其它逻辑分流可在此扩展
             _ => {
-                eprintln!("[to-bv] Translation for this logic is not implemented.");
+                eprintln!(";; Translation for this logic is not implemented.");
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
                     "to-bv not implemented for this logic",
@@ -92,13 +94,6 @@ fn main() -> Result<(), io::Error> {
         })
         .collect();
 
-    // 初始化 context
-    let ctx = match logic {
-        Logic::FOL => Ctx::FOL(FOLCtx::default()),
-        Logic::PML => Ctx::PML(PMLCtx::default()),
-        _ => unreachable!(),
-    };
-
     for i in 0..problem.cmds.len() {
         if let LSCmd::ModelDef(model) = &mut problem.cmds[i] {
             let mut ctx = match logic {
@@ -114,11 +109,6 @@ fn main() -> Result<(), io::Error> {
             }
             model.ext_ctx = Some(ctx.clone());
         }
-    }
-
-    if args.verbose {
-        println!("Parsed problem:\n {:?}", problem);
-        println!("Context: {:?}", ctx);
     }
 
     if let Some(dump_path) = &args.dump {
@@ -137,43 +127,25 @@ fn main() -> Result<(), io::Error> {
             ));
         }
         for cmd in &problem.cmds {
-            eprintln!("[MAIN DEBUG] LSCmd variant: {:?}", cmd);
             if let LSCmd::ModelDef(model) = cmd {
                 match &model.ext_ctx {
                     Some(Ctx::FOL(fol_ctx)) => {
-                        eprintln!("[MAIN DEBUG] model {} ext_ctx is FOL", model.name);
                         let json = fol_model_to_json(model, fol_ctx);
                         let file_path = dump_path.join(format!("{}.json", model.name));
                         let mut file =
                             File::create(&file_path).expect("Failed to create dump file");
                         file.write_all(serde_json::to_string_pretty(&json).unwrap().as_bytes())
                             .expect("Failed to write dump file");
-                        println!(
-                            "Model {} info dumped to {}",
-                            model.name,
-                            file_path.display()
-                        );
                     }
                     Some(Ctx::PML(pml_ctx)) => {
-                        eprintln!("[MAIN DEBUG] model {} ext_ctx is PML", model.name);
                         let json = pml_model_to_json(model, pml_ctx);
                         let file_path = dump_path.join(format!("{}.json", model.name));
                         let mut file =
                             File::create(&file_path).expect("Failed to create dump file");
                         file.write_all(serde_json::to_string_pretty(&json).unwrap().as_bytes())
                             .expect("Failed to write dump file");
-                        println!(
-                            "Model {} info dumped to {}",
-                            model.name,
-                            file_path.display()
-                        );
                     }
-                    other => {
-                        eprintln!(
-                            "[MAIN DEBUG] model {} ext_ctx is OTHER: {:?}",
-                            model.name, other
-                        );
-                    }
+                    _ => {}
                 }
             }
         }

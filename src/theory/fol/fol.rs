@@ -1,7 +1,7 @@
 use sygus_parser::Sort;
 use crate::lang::model::{ModelDef, FuncInterp, InterpedValue};
 use serde_json::{json, Value};
-use crate::theory::utils::{build_symbol_map, pattern_match};
+use crate::theory::utils::{eval, get_universe_domain_and_map};
 
 #[derive(Debug, Default, Clone)]
 pub struct FOLCtx {
@@ -27,16 +27,8 @@ pub fn handle_extcmd(ctx: &mut FOLCtx, extcmd: &crate::lang::model::ThSpecCmd) {
 /// 主导出函数
 pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
     // 1. domain: 提取符号
-    let mut domain_syms = vec![];
-    for univ in &model.univ_defs {
-        if univ.sort.to_string() == "U" {
-            for elem in &univ.elems {
-                domain_syms.push(elem.name.clone());
-            }
-        }
-    }
-    domain_syms.sort();
-    let (sym2id, id2sym) = build_symbol_map(&domain_syms);
+    let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
+    let sym2id: std::collections::HashMap<String, usize> = domain_syms.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect();
     let domain: Vec<usize> = (0..domain_syms.len()).collect();
 
     // 2. constants
@@ -70,33 +62,9 @@ pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
                         _ => vec![],
                     };
                     for tuple in tuples {
-                        // pattern match
-                        let mut matched = false;
-                        for case in cases {
-                            if let Some(pat) = &case.pattern {
-                                if pattern_match(&tuple, pat, &id2sym) {
-                                    if let InterpedValue::Literal(lit) = &case.value {
-                                        if lit.to_string() == "true" {
-                                            value_tuples.push(tuple.clone());
-                                        }
-                                    }
-                                    matched = true;
-                                    break;
-                                }
-                            }
-                        }
-                        // (_ ...) fallback
-                        if !matched {
-                            for case in cases {
-                                if let Some(pat) = &case.pattern {
-                                    if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
-                                        if let InterpedValue::Literal(lit) = &case.value {
-                                            if lit.to_string() == "true" {
-                                                value_tuples.push(tuple.clone());
-                                            }
-                                        }
-                                    }
-                                }
+                        if let Some(InterpedValue::Literal(lit)) = eval(name, &tuple, &model.func_interps, &id2sym) {
+                            if lit.to_string() == "true" {
+                                value_tuples.push(tuple.clone());
                             }
                         }
                     }

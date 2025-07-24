@@ -48,27 +48,70 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
         .try_into()
         .unwrap();
     let mut ls_file = LSFile::new();
+    let mut current_logic: Option<String> = None;
+    // first scan: record set-logic
+    let mut cmds_raw = vec![];
     for cmd in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {
-        let [cmd, ..]: [_; 1] = cmd.into_inner().collect_vec().try_into().unwrap();
+        let [cmd, ..]: [_; 1] = cmd.clone().into_inner().collect_vec().try_into().unwrap();
+        if cmd.as_rule() == Rule::SyGuSCmd {
+            if let SyGuSCmd::SetLogic(logic) = SyGuSCmd::from_str(cmd.as_str()).unwrap() {
+                current_logic = Some(logic.to_string());
+            }
+        }
+        cmds_raw.push(cmd);
+    }
+    // second scan: process commands
+    for cmd in cmds_raw {
         match cmd.as_rule() {
             Rule::SyGuSCmd => {
-                let sygus_single_file = SyGuSCmd::from_str(cmd.as_str()).unwrap();
-                ls_file.push(LSCmd::As(sygus_single_file.clone()));
+                ls_file.push(LSCmd::As(SyGuSCmd::from_str(cmd.as_str()).unwrap()));
             }
             Rule::FuncDecl => {
-                // "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")"
                 ls_file.push(LSCmd::FuncDecl(FuncSig::parse(cmd.clone()).unwrap()));
             }
             Rule::ModelDef => {
-                // "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")"
-                ls_file.push(LSCmd::ModelDef(ModelDef::parse(cmd.clone()).unwrap()));
+                let mut model = ModelDef::parse(cmd.clone()).unwrap();
+                // dispatch ext_cmds to corresponding theory's handle_extcmd
+                if !model.ext_cmds.is_empty() {
+                    match current_logic.as_deref() {
+                        Some("PML") => {
+                            let mut ctx = crate::theory::pml::PMLCtx::default();
+                            for thcmd in &model.ext_cmds {
+                                crate::theory::pml::handle_extcmd(&mut ctx, thcmd);
+                            }
+                            model.ext_ctx = Some(crate::theory::Ctx::PML(ctx));
+                        }
+                        Some("FOL") => {
+                            let mut ctx = crate::theory::fol::FOLCtx::default();
+                            for thcmd in &model.ext_cmds {
+                                crate::theory::fol::handle_extcmd(&mut ctx, thcmd);
+                            }
+                            model.ext_ctx = Some(crate::theory::Ctx::FOL(ctx));
+                        }
+                        // other theories can be extended
+                        _ => {
+                            eprintln!(
+                                "Warning: Unsupported theory: {}",
+                                current_logic.as_ref().unwrap()
+                            );
+                        }
+                    }
+                }
+                ls_file.push(LSCmd::ModelDef(model));
             }
             Rule::ThSpecCmd => {
                 let mut inner = cmd.clone().into_inner();
                 let symbol = inner.next().unwrap().as_str().to_string();
-                let args = inner.map(|p| p.as_str().to_string()).collect::<Vec<_>>().join(" ");
+                let args = inner
+                    .map(|p| p.as_str().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 let sexpr = lexpr::from_str(&format!("({} {})", symbol, args)).ok();
-                ls_file.push(LSCmd::ThSpecCmd(crate::lang::model::ThSpecCmd { name: symbol, args, sexpr }));
+                ls_file.push(LSCmd::ThSpecCmd(crate::lang::model::ThSpecCmd {
+                    name: symbol,
+                    args,
+                    sexpr,
+                }));
             }
             _ => {
                 Err(LSParseError::InvalidSyntax(format!(

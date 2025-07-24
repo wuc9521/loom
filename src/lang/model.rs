@@ -147,15 +147,6 @@ impl UnivElem {
     pub fn from_str(s: &str) -> Result<Self, LSParseError> {
         Ok(Self::new(s))
     }
-    pub fn sort_guess(&self) -> Sort {
-        // Highly simplified: try to guess sort from name.
-        // In reality, you need type checking or context.
-        if self.name == "true" || self.name == "false" {
-            Sort::from_str("Bool").unwrap()
-        } else {
-            Sort::from_str("U").unwrap() // Default or error
-        }
-    }
 }
 
 // FuncInterp = {  "(" ~ "interp-fun" ~ Symbol ~  "(" ~ InterpedCase+ ~ ")" ~ ")" }

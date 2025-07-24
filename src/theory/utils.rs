@@ -29,3 +29,59 @@ pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) ->
     }
     true
 }
+
+pub fn eval<'a>(
+    func_name: &str,
+    args: &[usize],
+    func_interps: &'a [crate::lang::model::FuncInterp],
+    id2sym: &Vec<String>,
+) -> Option<&'a crate::lang::model::InterpedValue> {
+    // 0-arity: SimpleInterp
+    if args.is_empty() {
+        for interp in func_interps {
+            if let crate::lang::model::FuncInterp::SimpleInterp(name, val) = interp {
+                if name == func_name {
+                    return Some(val);
+                }
+            }
+        }
+    }
+    // MatchInterp
+    for interp in func_interps {
+        if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
+            if name == func_name {
+                for case in cases { // precise match
+                    if let Some(pat) = &case.pattern {
+                        if pattern_match(&args.to_vec(), pat, id2sym) {
+                            return Some(&case.value);
+                        }
+                    }
+                }
+                for case in cases { // fallback (_)
+                    if let Some(pat) = &case.pattern {
+                        if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
+                            return Some(&case.value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 自动识别universe sort, 返回(domain_syms, id2sym, universe_sort)
+pub fn get_universe_domain_and_map(model: &crate::lang::model::ModelDef) -> (Vec<String>, Vec<String>, String) {
+    let universe_sort = model.univ_defs.get(0).map(|u| u.sort.to_string()).unwrap_or_else(|| "U".to_string());
+    let mut domain_syms = vec![];
+    for univ in &model.univ_defs {
+        if univ.sort.to_string() == universe_sort {
+            for elem in &univ.elems {
+                domain_syms.push(elem.name.clone());
+            }
+        }
+    }
+    domain_syms.sort();
+    let (_sym2id, id2sym) = build_symbol_map(&domain_syms);
+    (domain_syms, id2sym, universe_sort)
+}

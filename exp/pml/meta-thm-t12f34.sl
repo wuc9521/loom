@@ -63,7 +63,7 @@
         (($5) false)
         ((_) true)
     )))
-    (interp-fun c (match (
+    (interp-fun v (match (
         (($3) true)
         ((_) false)
     )))
@@ -142,8 +142,3 @@
 (constraint (not (models K4 phi)))
 
 (check-synth)
-
-;; a potential output
-; (define-fun () Bool 
-;     (modal.dia c)
-; ) 
