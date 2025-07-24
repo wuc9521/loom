@@ -5,8 +5,10 @@ use ls_parser::{
         dispatch_extcmd,
         fol::FOLCtx,
         pml::{self, PMLCtx},
+        re::{self, RECtx},
         Ctx, Logic,
     },
+    utils::*,
 };
 use std::{fs, io, path::PathBuf};
 
@@ -33,40 +35,53 @@ pub struct CLI {
     /// Translate to SyGuS BV and print to stdout
     #[arg(long = "to-bv", default_value_t = false)]
     to_bv: bool,
-}
 
-fn extract_logic(problem: &LSFile) -> Option<&str> {
-    for cmd in &problem.cmds {
-        if let LSCmd::As(sygus_cmd) = cmd {
-            if let sygus_parser::SyGuSCmd::SetLogic(ref logic) = sygus_cmd {
-                return Some(logic.as_str());
-            }
-        }
-    }
-    None
+    #[arg(long = "from-sygus", default_value_t = false)]
+    from_sygus: bool,
 }
 
 /// Run the language parsing application
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     let input = fs::read_to_string(&args.file)?;
+    if args.from_sygus {
+        let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
+        let logic_str = extract_logic_sygus(&sygus_file).unwrap();
+        match logic_str {
+            "SLIA" => Logic::SLIA,
+            _ => {
+                eprintln!("Unsupported logic: {}", logic_str);
+                return Err(io::Error::new(io::ErrorKind::Other, "Unsupported logic"));
+            }
+        };
+        let ls_file = re::sugar::desugar(&sygus_file);
+        println!("{}", ls_file);
+        return Ok(());
+    }
     let mut problem = file::parse(&input.as_str()).unwrap();
 
     let logic_str = extract_logic(&problem).unwrap();
     let logic = match logic_str {
         "FOL" => Logic::FOL,
         "PML" => Logic::PML,
+        "RE" => Logic::RE,
         _ => {
             eprintln!("Error: Unknown logic: {}", logic_str);
             return Err(io::Error::new(io::ErrorKind::Other, "Unknown logic"));
         }
     };
 
-    // --to-bv 分流
+    // --to-bv dispatch
     if args.to_bv {
         match logic {
             Logic::PML => {
                 let cmds = pml::bv::translate_to_bv_cmds(&problem);
+                for cmd in cmds {
+                    println!("{}", cmd);
+                }
+            }
+            Logic::RE => {
+                let cmds = re::bv::translate_to_bv_cmds(&problem);
                 for cmd in cmds {
                     println!("{}", cmd);
                 }
@@ -81,7 +96,7 @@ fn main() -> Result<(), io::Error> {
         }
     }
 
-    // 先收集所有 ext_cmd
+    // collect all ext_cmds
     let ext_cmds: Vec<_> = problem
         .cmds
         .iter()
@@ -99,6 +114,7 @@ fn main() -> Result<(), io::Error> {
             let mut ctx = match logic {
                 Logic::FOL => Ctx::FOL(FOLCtx::default()),
                 Logic::PML => Ctx::PML(PMLCtx::default()),
+                Logic::RE => Ctx::RE(RECtx::default()),
                 _ => unreachable!(),
             };
             for thcmd in &ext_cmds {

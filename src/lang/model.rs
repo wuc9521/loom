@@ -7,6 +7,7 @@ use pest::iterators::Pair;
 use sygus_parser::Literal;
 use sygus_parser::Sort;
 use sygus_parser::SyGuSTerm;
+use sygus_parser::Identifier;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -14,7 +15,7 @@ use sygus_parser::SyGuSTerm;
 pub struct ThSpecCmd {
     pub name: String,
     pub args: String, // may be refined to Vec<String>
-    pub sexpr: Option<lexpr::Value>, // 新增
+    pub sexpr: Option<lexpr::Value>, 
 }
 
 impl ThSpecCmd {
@@ -40,7 +41,7 @@ pub struct ModelDef {
     pub univ_defs: Vec<UnivDef>,
     pub func_interps: Vec<FuncInterp>,
     pub ext_cmds: Vec<ThSpecCmd>,
-    pub ext_ctx: Option<crate::theory::Ctx>, // 新增
+    pub ext_ctx: Option<crate::theory::Ctx>, 
 }
 
 impl ModelDef {
@@ -126,6 +127,12 @@ impl UnivDef {
             }
         }
         Ok(Self::new(sort, elems))
+    }
+    pub fn define_univ(name: &str, elems: Vec<UnivElem>) -> Self {
+        Self {
+            sort: Sort::Simple(Identifier::Symbol(name.to_string())),
+            elems,
+        }
     }
 }
 

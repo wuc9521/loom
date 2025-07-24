@@ -1,7 +1,6 @@
 (set-logic RE)
 
 (declare-sort Pos 0)
-(declare-sort Regex 0) 
 
 ; define signatures here.
 (declare-fun a (Pos) Bool)
@@ -26,7 +25,7 @@
   (define-univ Pos ($0 $1 $2 $3))
   (interp-fun a (match (
       (($0) true)
-      (($1) true)
+      (($2) true)
       ((_) false)
   )))
   (interp-fun b (match (
@@ -82,31 +81,25 @@
   )))
 )
 
-(synth-fun regex () RegExp
-    (Start RegExp)
+(synth-fun regex () RegLan
+    ((Start RegLan))
     ( 
-        (Start RegExp
+        (Start RegLan
             ( 
-                re.nostr               ; \epsilon
-                re.none                ; \emptyset
-                (str.to.re "a")        ; regex of string "a"
-                (str.to.re "b")        ; regex of string "b" 
-                (re.++ Start Start)    ; concat
+                ; (str.to.re "a")        ; regex of string "a"
+                ; (str.to.re "b")        ; regex of string "b" 
+                a
+                b
+                (re.++ Start Start)    ; concat (re.++ r1 r2) = (re.union (re.concat r1 r2) (re.concat r2 r1))
                 (re.union Start Start) ; union
                 (re.inter Start Start) ; intersection
-                (re.opt Start)         ; optional
+                (re.comp Start)        ; complement
                 (re.* Start)           ; Kleene star
-                (re.loop Start Num Num); (re.loop r l u) repeat r for [l, u] times. If l \geq u, repeat exactly l times.
-                (re.loop Start Num)    ; (re.loop r l) repeat r at least l times.
-            )
-        )
-        (Num Int 
-            (
-                0 1 2 3 4 5 6
             )
         )
     )
 )
+
 
 
 (constraint (models w1 regex))        

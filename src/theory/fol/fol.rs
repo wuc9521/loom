@@ -19,28 +19,28 @@ pub fn handle_extcmd(ctx: &mut FOLCtx, extcmd: &crate::lang::model::ThSpecCmd) {
         }
         // other FOL-specific commands
         _ => {
-            // 可以扩展更多指令
+                // can extend more commands
         }
     }
 }
 
-/// 主导出函数
+/// export functions
 pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
-    // 1. domain: 提取符号
+    // 1. domain: extract symbols
     let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
     let sym2id: std::collections::HashMap<String, usize> = domain_syms.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect();
     let domain: Vec<usize> = (0..domain_syms.len()).collect();
 
-    // 2. constants
+    // 2. constants: extract constants
     let mut constants = serde_json::Map::new();
 
-    // 3. predicates
+    // 3. predicates: extract predicates
     let mut predicates = serde_json::Map::new();
 
     for interp in &model.func_interps {
         match interp {
             FuncInterp::SimpleInterp(name, val) => {
-                // 0-arity
+                // 0-arity: extract constants
                 if let InterpedValue::UnivElem(elem) = val {
                     if let Some(&idx) = sym2id.get(&elem.name) {
                         constants.insert(name.clone(), json!(idx));
@@ -48,12 +48,12 @@ pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
                 }
             }
             FuncInterp::MatchInterp(name, cases) => {
-                // 判断 arity
+                // check arity
                 let arity = cases.iter().find_map(|c| c.pattern.as_ref()).map(|p| p.elements.len()).unwrap_or(0);
-                // 只处理 Bool 返回值
+                // only handle Bool return value
                 let is_bool = cases.iter().any(|c| matches!(&c.value, InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
                 if is_bool {
-                    // 枚举所有参数元组
+                    // enumerate all parameter tuples
                     let mut value_tuples = vec![];
                     let dom = &domain;
                     let tuples = match arity {

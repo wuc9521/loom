@@ -18,6 +18,8 @@ pub enum Logic {
     RE,
     #[display(fmt = "CFE")]
     CFE,
+    #[display(fmt = "SLIA")]
+    SLIA,
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +34,6 @@ pub fn dispatch_extcmd(logic: Logic, ctx: &mut Ctx, extcmd: &ThSpecCmd) {
         (Logic::FOL, Ctx::FOL(ref mut fol_ctx)) => fol::handle_extcmd(fol_ctx, extcmd),
         (Logic::PML, Ctx::PML(ref mut pml_ctx)) => pml::handle_extcmd(pml_ctx, extcmd),
         (Logic::RE, Ctx::RE(ref mut re_ctx)) => re::handle_extcmd(re_ctx, extcmd),
-        // 其它理论可扩展
         _ => {}
     }
 }

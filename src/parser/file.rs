@@ -6,7 +6,7 @@ use crate::parser::{LSParseError, LSParser, Rule};
 use derive_more::Display;
 use itertools::Itertools;
 use pest::Parser;
-use sygus_parser::SyGuSCmd;
+use sygus_parser::{Sort, SyGuSCmd};
 
 #[derive(Clone, Debug, Display)]
 pub enum LSCmd {
@@ -148,4 +148,16 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
         }
     }
     Ok(ls_file)
+}
+
+
+impl LSCmd {
+    pub fn declare_fun(name: &str, arg_sorts: Vec<Sort>, ret_sort: Sort) -> Self {
+        LSCmd::FuncDecl(FuncSig {
+            name: name.to_string(),
+            arg_sorts,
+            ret_sort,
+        })
+    }
+    
 }

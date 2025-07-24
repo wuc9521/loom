@@ -89,8 +89,8 @@
             ( 
                 re.empty               ; non-recursive, const
                 re.none                ; ∅
-                re.a                   ; 单字符 'a', const
-                re.b                   ; 单字符 'b', const
+                re.a                   ; single char 'a', const
+                re.b                   ; single char 'b', const
                 (Concat Start Start)
                 (Or Start Start)
                 (And Start Start)

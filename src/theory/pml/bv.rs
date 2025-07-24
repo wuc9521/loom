@@ -1,11 +1,11 @@
 use crate::lang::model::ModelDef;
 use crate::parser::LSFile;
-use crate::theory::utils::{eval, get_universe_domain_and_map};
+use crate::theory::utils::{eval, get_universe_domain_and_map, collect_bool_props, prop_bitvecs, replace_grammardef_sort, gen_constraints, collect_constraint_models};
 use crate::theory::{
     pml::{get_relation_adjacency, get_transition_pred, utils::*},
     Logic,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
 use sygus_parser::{Literal, Sort, SortedVar, SyGuSCmd, SyGuSTerm};
 
@@ -53,40 +53,21 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             .body(Bool::eq(Term::var("b"), BitVec::const_(1, 1)))
             .build(),
     );
-    // 3. 收集所有 ModelDef
+    // 1. collect all models
     let mut models = HashMap::new();
+    let mut domain_sort = None;
     for cmd in &lsfile.cmds {
         if let crate::parser::LSCmd::ModelDef(model) = cmd {
+            // dynamically get domain_sort
+            if domain_sort.is_none() {
+                if let Some(univ) = model.univ_defs.get(0) {
+                    domain_sort = Some(univ.sort.to_string());
+                }
+            }
             models.insert(model.name.clone(), model);
         }
     }
-    // 4. 按constraint出现顺序收集模型名和正负
-    let mut constraint_models = Vec::new(); // Vec<(model_name, is_true)>
-    for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::As(sygus_cmd) = cmd {
-            if let sygus_parser::SyGuSCmd::Constraint(term) = sygus_cmd {
-                use sygus_parser::SyGuSTerm::*;
-                match term {
-                    Application(sym, args) if sym.to_string() == "models" && args.len() >= 1 => {
-                        if let Identifier(model_sym) = &args[0] {
-                            constraint_models.push((model_sym.to_string(), true));
-                        }
-                    }
-                    Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-                        if let Application(models_sym, models_args) = &args[0] {
-                            if models_sym.to_string() == "models" && models_args.len() >= 1 {
-                                if let Identifier(model_sym) = &models_args[0] {
-                                    constraint_models.push((model_sym.to_string(), false));
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    // 5. 按顺序收集所有需要的模型（去重，保留首次出现顺序）
+    let constraint_models = collect_constraint_models(lsfile);
     let mut all_model_names = Vec::new();
     for (name, _) in &constraint_models {
         if models.contains_key(name) && !all_model_names.contains(name) {
@@ -97,45 +78,22 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         .iter()
         .filter_map(|n| models.get(n).copied())
         .collect();
-    // 6. 收集所有 proposition
-    let mut all_props = HashSet::new();
-    for model in &loaded_models {
-        for interp in &model.func_interps {
-            if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
-                let arity = cases
-                    .iter()
-                    .find_map(|c| c.pattern.as_ref())
-                    .map(|p| p.elements.len())
-                    .unwrap_or(0);
-                let is_bool = cases.iter().any(|c| matches!(&c.value, crate::lang::model::InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
-                if is_bool && arity == 1 {
-                    all_props.insert(name.clone());
-                }
-            }
-        }
-    }
-    let mut all_props: Vec<_> = all_props.into_iter().collect();
-    all_props.sort();
-    // 7. proposition bitvector定义
-    let mut final_bv_length = 0;
-    let mut grammar_terms = Vec::new();
-    let mut prop_bitvecs = HashMap::new();
-    for prop in &all_props {
-        let (bv_str, length) = generate_concatenated_bitvector(
-            &loaded_models,
-            |node, model, id2sym, _| matches!(eval(prop, &[node], &model.func_interps, id2sym), Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true"),
-        );
-        if final_bv_length == 0 {
-            final_bv_length = length;
-        }
+    // 4. collect propositions and concatenate with bitvector
+    let props = collect_bool_props(&loaded_models, 1);
+    let (prop_bitvecs, final_bv_length) = prop_bitvecs(
+        &loaded_models,
+        &props,
+        &|prop, node, model, id2sym| {
+            matches!(eval(prop, &[node], &model.func_interps, id2sym), Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true")
+        },
+    );
+    for prop in &props {
         cmds.push(
             Cmd::define_fun(&prop)
                 .ret(Sort::bitvec(final_bv_length))
-                .body(Term::lit(Literal::BinConst(bv_str.clone())))
+                .body(Term::lit(Literal::BinConst(prop_bitvecs[prop].clone())))
                 .build(),
         );
-        grammar_terms.push(prop.clone());
-        prop_bitvecs.insert(prop.clone(), bv_str);
     }
     let bv_sort = Sort::bitvec(final_bv_length);
     cmds.push(modal_and(&bv_sort));
@@ -222,32 +180,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     );
 
     //TODO: check here.
-    fn replace_grammardef_sort(
-        g: &Option<sygus_parser::GrammarDef>,
-        bv_len: usize,
-    ) -> Option<sygus_parser::GrammarDef> {
-        g.as_ref().map(|grammar| {
-            let mut new_g = grammar.clone();
-            new_g.sorted_vars = grammar
-                .sorted_vars
-                .iter()
-                .map(|v| sygus_parser::SortedVar {
-                    name: v.name.clone(),
-                    sort: Sort::bitvec(bv_len)
-                })
-                .collect();
-            new_g.grouped_rule_lists = grammar
-                .grouped_rule_lists
-                .iter()
-                .map(|gr| {
-                    let mut new_gr = gr.clone();
-                    new_gr.sort = Sort::bitvec(bv_len);
-                    new_gr
-                })
-                .collect();
-            new_g
-        })
-    }
+    // grammar/synth-fun
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
         if let crate::parser::LSCmd::As(sygus_parser::SyGuSCmd::SynthFun(
@@ -261,10 +194,10 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 .iter()
                 .map(|v| sygus_parser::SortedVar {
                     name: v.name.clone(),
-                    sort: Sort::bitvec(final_bv_length),
+                    sort: bv_sort.clone(),
                 })
                 .collect();
-            let new_sort = Sort::bitvec(final_bv_length);
+            let new_sort = bv_sort.clone();
             let new_grammar = replace_grammardef_sort(grammar, final_bv_length);
             let mut builder = Cmd::synth_fun(name.as_str());
             for arg in new_args.iter() {
@@ -280,39 +213,19 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             syn_name = Some(name.clone());
         }
     }
-    // 11. constraint
-    for (model_name, is_true) in &constraint_models {
-        if let Some(idx) = all_model_names.iter().position(|n| n == model_name) {
-            let bit_to_check_index = all_model_names
-                .iter()
-                .take(idx)
-                .map(|n| {
-                    models
-                        .get(n)
-                        .unwrap()
-                        .univ_defs
-                        .iter()
-                        .find(|u| u.sort.to_string() == "U")
-                        .map(|u| u.elems.len())
-                        .unwrap_or(0)
-                })
-                .sum::<usize>();
-            let target_bit = if *is_true { "1" } else { "0" };
-            cmds.push(
-                Cmd::constraint()
-                    .body(Bool::eq(
-                        BitVec::extract(
-                            bit_to_check_index,
-                            bit_to_check_index,
-                            Term::var(syn_name.as_ref().unwrap()),
-                        ),
-                        Term::lit(Literal::BinConst(target_bit.to_string())),
-                    ))
-                    .build(),
-            );
-        }
+    // generate constraints
+    let model_map: HashMap<String, &ModelDef> = all_model_names
+        .iter()
+        .map(|n| (n.clone(), models.get(n).copied().unwrap()))
+        .collect();
+    if let Some(syn_name) = syn_name {
+        let constraints = gen_constraints(
+            &model_map,
+            &syn_name,
+            &constraint_models
+        );
+        cmds.extend(constraints);
     }
-    // 12. check-synth
     cmds.push(SyGuSCmd::CheckSynth);
     cmds
 }

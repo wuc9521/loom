@@ -1,5 +1,8 @@
-use std::collections::HashMap;
 use crate::lang::model::{Pattern, PatternElem};
+use crate::lang::model::ModelDef;
+use sygus_parser::{Literal, Sort, SyGuSCmd};
+use sygus_parser::api::{BitVec, Bool, Cmd, Term};
+use std::collections::{HashMap, HashSet};
 
 pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
@@ -70,9 +73,9 @@ pub fn eval<'a>(
     None
 }
 
-/// 自动识别universe sort, 返回(domain_syms, id2sym, universe_sort)
+/// automatically identify universe sort, return (domain_syms, id2sym, universe_sort)
 pub fn get_universe_domain_and_map(model: &crate::lang::model::ModelDef) -> (Vec<String>, Vec<String>, String) {
-    let universe_sort = model.univ_defs.get(0).map(|u| u.sort.to_string()).unwrap_or_else(|| "U".to_string());
+    let universe_sort = model.univ_defs.get(0).map(|u| u.sort.to_string()).unwrap();
     let mut domain_syms = vec![];
     for univ in &model.univ_defs {
         if univ.sort.to_string() == universe_sort {
@@ -84,4 +87,187 @@ pub fn get_universe_domain_and_map(model: &crate::lang::model::ModelDef) -> (Vec
     domain_syms.sort();
     let (_sym2id, id2sym) = build_symbol_map(&domain_syms);
     (domain_syms, id2sym, universe_sort)
+}
+
+/// collect all unary boolean proposition names
+pub fn collect_bool_props(models: &[&ModelDef], arity: usize) -> Vec<String> {
+    let mut all_props = HashSet::new();
+    for model in models {
+        for interp in &model.func_interps {
+            if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
+                let this_arity = cases
+                    .iter()
+                    .find_map(|c| c.pattern.as_ref())
+                    .map(|p| p.elements.len())
+                    .unwrap_or(0);
+                let is_bool = cases.iter().any(|c| matches!(&c.value, crate::lang::model::InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
+                if is_bool && this_arity == arity {
+                    all_props.insert(name.clone());
+                }
+            }
+        }
+    }
+    let mut all_props: Vec<_> = all_props.into_iter().collect();
+    all_props.sort();
+    all_props
+}
+
+/// generate concatenated bitvector string and total length of propositions
+pub fn prop_bitvecs(
+    models: &[&ModelDef],
+    props: &[String],
+    eval: &dyn Fn(&str, usize, &ModelDef, &Vec<String>) -> bool,
+) -> (HashMap<String, String>, usize) {
+    let mut prop_bitvecs = HashMap::new();
+    let mut final_bv_length = 0;
+    for prop in props {
+        let mut full_bitstring_list = Vec::new();
+        let mut total_bits = 0;
+        for model in models {
+            let (domain_syms, id2sym, _universe_sort) = crate::theory::utils::get_universe_domain_and_map(model);
+            let domain_size = domain_syms.len();
+            for node in 0..domain_size {
+                if eval(prop, node, model, &id2sym) {
+                    full_bitstring_list.push('1');
+                } else {
+                    full_bitstring_list.push('0');
+                }
+            }
+            total_bits += domain_size;
+        }
+        let bv_str: String = full_bitstring_list.iter().rev().collect();
+        if final_bv_length == 0 {
+            final_bv_length = total_bits;
+        }
+        prop_bitvecs.insert(prop.clone(), bv_str);
+    }
+    (prop_bitvecs, final_bv_length)
+}
+
+/// replace sort in grammarDef
+pub fn replace_grammardef_sort(
+    g: &Option<sygus_parser::GrammarDef>,
+    bv_len: usize,
+) -> Option<sygus_parser::GrammarDef> {
+    g.as_ref().map(|grammar| {
+        let mut new_g = grammar.clone();
+        new_g.sorted_vars = grammar
+            .sorted_vars
+            .iter()
+            .map(|v| sygus_parser::SortedVar {
+                name: v.name.clone(),
+                sort: Sort::bitvec(bv_len)
+            })
+            .collect();
+        new_g.grouped_rule_lists = grammar
+            .grouped_rule_lists
+            .iter()
+            .map(|gr| {
+                let mut new_gr = gr.clone();
+                new_gr.sort = Sort::bitvec(bv_len);
+                new_gr
+            })
+            .collect();
+        new_g
+    })
+}
+
+/// generate constraint commands
+pub fn gen_constraints(
+    models: &HashMap<String, &ModelDef>,
+    syn_name: &str,
+    constraint_models: &[(String, bool)],
+) -> Vec<SyGuSCmd> {
+    let mut res = Vec::new();
+    let mut offset = 0;
+    for (model_name, is_true) in constraint_models {
+        if let Some(model) = models.get(model_name) {
+            let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
+            let domain_size = domain_syms.len();
+            // subwords: (start, end) for 0..=domain_size
+            let mut subword_idx = 0;
+            let mut target_idx = None;
+            for start in 0..=domain_size {
+                for end in start..=domain_size {
+                    if start == 0 && end == domain_size {
+                        target_idx = Some(offset + subword_idx);
+                    }
+                    subword_idx += 1;
+                }
+            }
+            if let Some(bit_to_check_index) = target_idx {
+                let target_bit = if *is_true { "1" } else { "0" };
+                res.push(
+                    Cmd::constraint()
+                        .body(Bool::eq(
+                            BitVec::extract(
+                                bit_to_check_index,
+                                bit_to_check_index,
+                                Term::var(syn_name),
+                            ),
+                            Term::lit(Literal::BinConst(target_bit.to_string())),
+                        ))
+                        .build(),
+                );
+            }
+            offset += subword_idx;
+        }
+    }
+    res
+}
+
+/// collect constraint_models (Vec<(model_name, is_true)>)
+pub fn collect_constraint_models(lsfile: &crate::parser::LSFile) -> Vec<(String, bool)> {
+    let mut constraint_models = Vec::new();
+    for cmd in &lsfile.cmds {
+        if let crate::parser::LSCmd::As(sygus_cmd) = cmd {
+            if let sygus_parser::SyGuSCmd::Constraint(term) = sygus_cmd {
+                use sygus_parser::SyGuSTerm::*;
+                match term {
+                    Application(sym, args) if sym.to_string() == "models" && args.len() >= 1 => {
+                        if let Identifier(model_sym) = &args[0] {
+                            constraint_models.push((model_sym.to_string(), true));
+                        }
+                    }
+                    Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
+                        if let Application(models_sym, models_args) = &args[0] {
+                            if models_sym.to_string() == "models" && models_args.len() >= 1 {
+                                if let Identifier(model_sym) = &models_args[0] {
+                                    constraint_models.push((model_sym.to_string(), false));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    constraint_models
+}
+
+/// collect all needed model names (deduplicate, preserve first occurrence order)
+pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &HashMap<String, &ModelDef>) -> Vec<String> {
+    let mut all_model_names = Vec::new();
+    for (name, _) in constraint_models {
+        if models.contains_key(name) && !all_model_names.contains(name) {
+            all_model_names.push(name.clone());
+        }
+    }
+    all_model_names
+}
+
+/// collect ModelDef list according to all_model_names
+pub fn collect_loaded_models<'a>(all_model_names: &[String], models: &'a HashMap<String, &ModelDef>) -> Vec<&'a ModelDef> {
+    all_model_names.iter().filter_map(|n| models.get(n).copied()).collect()
+}
+
+/// automatically get domain_sort (e.g. U/Pos/S)
+pub fn get_domain_sort_from_models(models: &HashMap<String, &ModelDef>) -> Option<String> {
+    for model in models.values() {
+        if let Some(univ) = model.univ_defs.get(0) {
+            return Some(univ.sort.to_string());
+        }
+    }
+    None
 }

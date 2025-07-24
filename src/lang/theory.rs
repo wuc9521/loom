@@ -71,6 +71,7 @@ impl Theory {
 
 fn parse_fun_decl(val: &Value) -> Option<FunDecl> {
     // (name arg1 arg2 ... ret_sort [attrs...])
+    // last one is return type or attributes
     let list = val.to_ref_vec()?;
     if list.len() < 2 { return None; }
     let name = list[0].as_symbol()?.to_string();
@@ -81,13 +82,10 @@ fn parse_fun_decl(val: &Value) -> Option<FunDecl> {
             arg_sorts.push(s.to_string());
         }
     }
-    // 最后一个是返回类型或属性
     let last = list.last()?;
     if let Some(s) = last.as_symbol() {
-        // 没有属性
         Some(FunDecl { name, arg_sorts, ret_sort: s.to_string(), attrs })
     } else if let Some(sublist) = last.to_ref_vec() {
-        // 有属性
         if sublist.is_empty() { return None; }
         let ret_sort = sublist[0].as_symbol()?.to_string();
         for attr in &sublist[1..] {
