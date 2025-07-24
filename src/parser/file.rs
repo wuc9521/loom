@@ -64,7 +64,33 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
     for cmd in cmds_raw {
         match cmd.as_rule() {
             Rule::SyGuSCmd => {
-                ls_file.push(LSCmd::As(SyGuSCmd::from_str(cmd.as_str()).unwrap()));
+                let cmd_str = cmd.as_str();
+                let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
+                if let SyGuSCmd::Constraint(ref term) = sygus_cmd {
+                    use sygus_parser::SyGuSTerm::*;
+                    let supported = match term {
+                        Application(sym, args)
+                            if sym.to_string() == "models" && args.len() >= 1 =>
+                        {
+                            true
+                        }
+                        Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
+                            if let Application(models_sym, models_args) = &args[0] {
+                                models_sym.to_string() == "models" && models_args.len() >= 1
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    };
+                    if !supported {
+                        return Err(LSParseError::UnsupportedFeature(format!(
+                            "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
+                            cmd_str
+                        )));
+                    }
+                }
+                ls_file.push(LSCmd::As(sygus_cmd));
             }
             Rule::FuncDecl => {
                 ls_file.push(LSCmd::FuncDecl(FuncSig::parse(cmd.clone()).unwrap()));

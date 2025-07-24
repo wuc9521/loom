@@ -47,7 +47,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             .build(),
     );
     cmds.push(
-        Cmd::define_fun("b1->bool")
+        Cmd::define_fun("bv1->bool")
             .arg("b", Sort::bitvec(1))
             .ret(Sort::bool())
             .body(Bool::eq(Term::var("b"), BitVec::const_(1, 1)))
@@ -141,7 +141,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     cmds.push(modal_and(&bv_sort));
     cmds.push(modal_or(&bv_sort));
     cmds.push(modal_not(&bv_sort));
-    let mut let_bindings = Vec::new();
+    let mut let_bindings: Vec<(String, SyGuSTerm)> = Vec::new();
     let mut current_offset = 0;
     for (i, model) in loaded_models.iter().enumerate() {
         let (domain_syms, _id2sym, _universe_sort) = get_universe_domain_and_map(model);
@@ -149,10 +149,10 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         let high = current_offset + domain_size - 1;
         let low = current_offset;
         let seg_name = format!("seg{}", i);
-        let_bindings.push(sygus_parser::VarBinding {
-            name: seg_name.clone(),
-            term: Box::new(BitVec::extract(high, low, Term::var("phi_val"))),
-        });
+        let_bindings.push((
+            seg_name.clone(),
+            BitVec::extract(high, low, Term::var("phi_val")),
+        ));
         current_offset += domain_size;
     }
     let build_modal_body = |is_box: bool| -> SyGuSTerm {
@@ -175,7 +175,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                         .iter()
                         .map(|&n| {
                             Term::app(
-                                "b1->bool",
+                                "bv1->bool",
                                 vec![BitVec::extract(n, n, Term::var(&format!("seg{}", i)))],
                             )
                         })
@@ -185,7 +185,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 }
             }
             let mut seg_term = None;
-            for bit in new_segment_bits.into_iter().rev() {
+            for bit in new_segment_bits.into_iter() {
                 seg_term = Some(if let Some(acc) = seg_term {
                     BitVec::concat(bit, acc)
                 } else {
@@ -195,15 +195,14 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             model_segments.push(seg_term.unwrap());
         }
         let mut body = None;
-        for seg in model_segments.into_iter().rev() {
+        for seg in model_segments.into_iter() {
             body = Some(if let Some(acc) = body {
                 BitVec::concat(seg, acc)
             } else {
                 seg
             });
         }
-        //TODO: check here
-        SyGuSTerm::Let(let_bindings.clone(), Box::new(body.unwrap()))
+        Term::let_binding(let_bindings.clone(), body.unwrap())
     };
     // box
     cmds.push(
@@ -222,11 +221,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             .build(),
     );
 
-    // 10. synth-fun
-    // 查找输入文件的 synth-fun，递归替换所有 sort 为 (_ BitVec N)
-    fn replace_sort_with_bv(bv_len: usize) -> Sort {
-        Sort::bitvec(bv_len)
-    }
+    //TODO: check here.
     fn replace_grammardef_sort(
         g: &Option<sygus_parser::GrammarDef>,
         bv_len: usize,
@@ -238,7 +233,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 .iter()
                 .map(|v| sygus_parser::SortedVar {
                     name: v.name.clone(),
-                    sort: replace_sort_with_bv(bv_len),
+                    sort: Sort::bitvec(bv_len)
                 })
                 .collect();
             new_g.grouped_rule_lists = grammar
@@ -246,7 +241,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 .iter()
                 .map(|gr| {
                     let mut new_gr = gr.clone();
-                    new_gr.sort = replace_sort_with_bv(bv_len);
+                    new_gr.sort = Sort::bitvec(bv_len);
                     new_gr
                 })
                 .collect();
@@ -266,10 +261,10 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 .iter()
                 .map(|v| sygus_parser::SortedVar {
                     name: v.name.clone(),
-                    sort: replace_sort_with_bv(final_bv_length),
+                    sort: Sort::bitvec(final_bv_length),
                 })
                 .collect();
-            let new_sort = replace_sort_with_bv(final_bv_length);
+            let new_sort = Sort::bitvec(final_bv_length);
             let new_grammar = replace_grammardef_sort(grammar, final_bv_length);
             let mut builder = Cmd::synth_fun(name.as_str());
             for arg in new_args.iter() {
@@ -286,10 +281,22 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         }
     }
     // 11. constraint
-    let mut current_offset = 0;
     for (model_name, is_true) in &constraint_models {
-        if let Some(model) = models.get(model_name) {
-            let bit_to_check_index = current_offset;
+        if let Some(idx) = all_model_names.iter().position(|n| n == model_name) {
+            let bit_to_check_index = all_model_names
+                .iter()
+                .take(idx)
+                .map(|n| {
+                    models
+                        .get(n)
+                        .unwrap()
+                        .univ_defs
+                        .iter()
+                        .find(|u| u.sort.to_string() == "U")
+                        .map(|u| u.elems.len())
+                        .unwrap_or(0)
+                })
+                .sum::<usize>();
             let target_bit = if *is_true { "1" } else { "0" };
             cmds.push(
                 Cmd::constraint()
@@ -303,12 +310,6 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                     ))
                     .build(),
             );
-            current_offset += model
-                .univ_defs
-                .iter()
-                .find(|u| u.sort.to_string() == "U")
-                .map(|u| u.elems.len())
-                .unwrap_or(0);
         }
     }
     // 12. check-synth
