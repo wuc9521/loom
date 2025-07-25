@@ -1,7 +1,8 @@
 use crate::lang::model::{Pattern, PatternElem};
-use crate::lang::model::ModelDef;
+use crate::lang::model::Model;
 use sygus_parser::Sort;
 use std::collections::{HashMap, HashSet};
+use crate::lang::runtime::ModelSymbolTable;
 
 pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
@@ -72,8 +73,29 @@ pub fn eval<'a>(
     None
 }
 
+pub fn eval_with_table<'a>(
+    func_name: &str,
+    args: &[usize],
+    interp_table: Option<&'a ModelSymbolTable>,
+    func_interps: &'a [crate::lang::model::FuncInterp],
+    id2sym: &Vec<String>,
+) -> Option<&'a crate::lang::model::InterpedValue> {
+    // 1. 优先查小符号表
+    if let Some(table) = interp_table {
+        if let Some(crate::lang::runtime::SymbolInterp::InterpFun(_name, val)) = table.get(func_name) {
+            // 这里只处理 SimpleInterp 的情况
+            if args.is_empty() {
+                return Some(val);
+            }
+            // MatchInterp 需要更复杂的处理，暂略
+        }
+    }
+    // 2. 回退查 func_interps
+    eval(func_name, args, func_interps, id2sym)
+}
+
 /// automatically identify universe sort, return (domain_syms, id2sym, universe_sort)
-pub fn get_universe_domain_and_map(model: &crate::lang::model::ModelDef) -> (Vec<String>, Vec<String>, String) {
+pub fn get_universe_domain_and_map(model: &crate::lang::model::Model) -> (Vec<String>, Vec<String>, String) {
     let universe_sort = model.univ_defs.get(0).map(|u| u.sort.to_string()).unwrap();
     let mut domain_syms = vec![];
     for univ in &model.univ_defs {
@@ -89,7 +111,7 @@ pub fn get_universe_domain_and_map(model: &crate::lang::model::ModelDef) -> (Vec
 }
 
 /// collect all unary boolean proposition names
-pub fn collect_bool_props(models: &[&ModelDef], arity: usize) -> Vec<String> {
+pub fn collect_bool_props(models: &[&Model], arity: usize) -> Vec<String> {
     let mut all_props = HashSet::new();
     for model in models {
         for interp in &model.func_interps {
@@ -113,9 +135,9 @@ pub fn collect_bool_props(models: &[&ModelDef], arity: usize) -> Vec<String> {
 
 /// generate concatenated bitvector string and total length of propositions
 pub fn prop_bitvecs(
-    models: &[&ModelDef],
+    models: &[&Model],
     props: &[String],
-    eval: &dyn Fn(&str, usize, &ModelDef, &Vec<String>) -> bool,
+    eval: &dyn Fn(&str, usize, &Model, &Vec<String>) -> bool,
 ) -> (HashMap<String, String>, usize) {
     let mut prop_bitvecs = HashMap::new();
     let mut final_bv_length = 0;
@@ -202,7 +224,7 @@ pub fn collect_constraint_models(lsfile: &crate::parser::LSFile) -> Vec<(String,
 }
 
 /// collect all needed model names (deduplicate, preserve first occurrence order)
-pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &HashMap<String, &ModelDef>) -> Vec<String> {
+pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &HashMap<String, &Model>) -> Vec<String> {
     let mut all_model_names = Vec::new();
     for (name, _) in constraint_models {
         if models.contains_key(name) && !all_model_names.contains(name) {
@@ -213,12 +235,12 @@ pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &Ha
 }
 
 /// collect ModelDef list according to all_model_names
-pub fn collect_loaded_models<'a>(all_model_names: &[String], models: &'a HashMap<String, &ModelDef>) -> Vec<&'a ModelDef> {
+pub fn collect_loaded_models<'a>(all_model_names: &[String], models: &'a HashMap<String, &Model>) -> Vec<&'a Model> {
     all_model_names.iter().filter_map(|n| models.get(n).copied()).collect()
 }
 
 /// automatically get domain_sort (e.g. U/Pos/S)
-pub fn get_domain_sort_from_models(models: &HashMap<String, &ModelDef>) -> Option<String> {
+pub fn get_domain_sort_from_models(models: &HashMap<String, &Model>) -> Option<String> {
     for model in models.values() {
         if let Some(univ) = model.univ_defs.get(0) {
             return Some(univ.sort.to_string());

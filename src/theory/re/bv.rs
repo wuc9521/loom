@@ -1,4 +1,4 @@
-use crate::lang::model::ModelDef;
+use crate::lang::model::Model;
 use crate::parser::LSFile;
 use crate::theory::re::utils::{re_comp, re_inter, re_union};
 use crate::theory::utils::get_universe_domain_and_map;
@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
 use sygus_parser::{Literal, Sort, SortedVar, SyGuSCmd};
 
-pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut cmds = Vec::new();
     cmds.push(SyGuSCmd::SetLogic(Logic::BV.to_string()));
     cmds.push(
@@ -25,7 +25,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut models = HashMap::new();
     let mut domain_sort = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::ModelDef(model) = cmd {
+        if let crate::parser::LSCmd::DefineModel(model) = cmd {
             // dynamically get domain_sort
             if domain_sort.is_none() {
                 if let Some(univ) = model.univ_defs.get(0) {
@@ -44,7 +44,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             all_model_names.push(name.clone());
         }
     }
-    let loaded_models: Vec<&ModelDef> = all_model_names
+    let loaded_models: Vec<&Model> = all_model_names
         .iter()
         .filter_map(|n| models.get(n).copied())
         .collect();

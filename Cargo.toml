@@ -16,3 +16,4 @@ chrono = "0.4"
 lexpr = "0.2.7"
 sygus-parser = {path = "../sygus-parser-rs"}
 walkdir = "2"
+rustyline = "13"

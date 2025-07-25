@@ -1,5 +1,5 @@
 use crate::lang::model::{
-    FuncInterp, InterpedValue, MatchCase, ModelDef, Pattern, PatternElem, UnivDef, UnivElem,
+    FuncInterp, InterpedValue, MatchCase, Model, Pattern, PatternElem, DefineUniv, UnivElem,
 };
 use crate::parser::{LSCmd, LSFile};
 use crate::signature::FuncSig;
@@ -26,7 +26,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                     }
                     // generate model
                     let len = s.chars().count();
-                    let univ = UnivDef {
+                    let univ = DefineUniv {
                         sort: Sort::from_name("Pos"),
                         elems: (0..len)
                             .map(|i| UnivElem::new(&format!("${}", i)))
@@ -48,14 +48,14 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                         }
                         func_interps.push(FuncInterp::MatchInterp(fname, cases));
                     }
-                    let model = ModelDef {
+                    let model = Model {
                         name: name.clone(),
                         univ_defs: vec![univ],
                         func_interps,
                         ext_cmds: vec![],
                         ext_ctx: None,
                     };
-                    models.push(LSCmd::ModelDef(model));
+                    models.push(LSCmd::DefineModel(model));
                     skip_definefun.insert(idx);
                 }
             }
@@ -149,7 +149,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     let mut inserted_sort = false;
     for cmd in output_cmds.iter() {
         if !inserted_sort {
-            if let LSCmd::FuncDecl(FuncSig {
+            if let LSCmd::DeclareFunc(FuncSig {
                 name,
                 arg_sorts,
                 ret_sort,
@@ -176,12 +176,12 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     char_funs.sort();
     let mut insert_idx = final_cmds
         .iter()
-        .position(|cmd| matches!(cmd, LSCmd::FuncDecl(_)))
+        .position(|cmd| matches!(cmd, LSCmd::DeclareFunc(_)))
         .unwrap_or(1); // if there is no declare-fun, insert after declare-sort
     for fname in char_funs {
         final_cmds.insert(
             insert_idx,
-            LSCmd::FuncDecl(FuncSig {
+            LSCmd::DeclareFunc(FuncSig {
                 name: fname,
                 arg_sorts: vec![Sort::from_name("Pos")],
                 ret_sort: Sort::bool(),
@@ -194,7 +194,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     // insert after declare-fun
     let mut model_insert_idx = final_cmds
         .iter()
-        .position(|cmd| matches!(cmd, LSCmd::FuncDecl(_)))
+        .position(|cmd| matches!(cmd, LSCmd::DeclareFunc(_)))
         .map(|idx| idx + char_set.len())
         .unwrap_or(final_cmds.len());
     for m in models {

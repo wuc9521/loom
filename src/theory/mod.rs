@@ -23,17 +23,30 @@ pub enum Logic {
 }
 
 #[derive(Debug, Clone)]
-pub enum Ctx {
-    FOL(fol::FOLCtx),
-    PML(pml::PMLCtx),
-    RE(re::RECtx),
+pub enum ModelCtx {
+    FOL(fol::FOModelCtx),
+    PML(pml::KripkeCtx),
+    RE(re::StringCtx),
 }
 
-pub fn dispatch_extcmd(logic: Logic, ctx: &mut Ctx, extcmd: &ThSpecCmd) {
+pub fn dispatch_extcmd(logic: Logic, ctx: &mut ModelCtx, extcmd: &ThSpecCmd) {
     match (logic, ctx) {
-        (Logic::FOL, Ctx::FOL(ref mut fol_ctx)) => fol::handle_extcmd(fol_ctx, extcmd),
-        (Logic::PML, Ctx::PML(ref mut pml_ctx)) => pml::handle_extcmd(pml_ctx, extcmd),
-        (Logic::RE, Ctx::RE(ref mut re_ctx)) => re::handle_extcmd(re_ctx, extcmd),
+        (Logic::FOL, ModelCtx::FOL(ref mut fol_ctx)) => fol::handle_extcmd(fol_ctx, extcmd),
+        (Logic::PML, ModelCtx::PML(ref mut pml_ctx)) => pml::handle_extcmd(pml_ctx, extcmd),
+        (Logic::RE, ModelCtx::RE(ref mut re_ctx)) => re::handle_extcmd(re_ctx, extcmd),
         _ => {}
+    }
+}
+
+pub trait SygusDesugar {
+    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> String;
+}
+
+impl SygusDesugar for Logic {
+    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> String {
+        match self {
+            Logic::RE => crate::theory::re::sugar::desugar(sygus_file).to_string(),
+            _ => unimplemented!("desugar not implemented for this logic"),
+        }
     }
 }

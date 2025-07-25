@@ -1,6 +1,9 @@
-use crate::lang::model::ModelDef;
+use crate::lang::model::Model;
 use crate::parser::LSFile;
-use crate::theory::utils::{eval, get_universe_domain_and_map, collect_bool_props, prop_bitvecs, replace_grammardef_sort, collect_constraint_models};
+use crate::theory::utils::{
+    collect_bool_props, collect_constraint_models, eval, get_universe_domain_and_map, prop_bitvecs,
+    replace_grammardef_sort,
+};
 use crate::theory::{
     pml::{get_relation_adjacency, get_transition_pred, utils::*},
     Logic,
@@ -9,9 +12,9 @@ use std::collections::HashMap;
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
 use sygus_parser::{Literal, Sort, SortedVar, SyGuSCmd, SyGuSTerm};
 
-pub fn generate_concatenated_bitvector<F>(models: &[&ModelDef], eval_func: F) -> (String, usize)
+pub fn generate_concatenated_bitvector<F>(models: &[&Model], eval_func: F) -> (String, usize)
 where
-    F: Fn(usize, &ModelDef, &Vec<String>, &String) -> bool,
+    F: Fn(usize, &Model, &Vec<String>, &String) -> bool,
 {
     let mut full_bitstring_list = Vec::new();
     let mut total_bits = 0;
@@ -32,7 +35,7 @@ where
     (bv_str, total_bits)
 }
 
-pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut cmds = Vec::new();
     cmds.push(SyGuSCmd::SetLogic(Logic::BV.to_string()));
     cmds.push(
@@ -57,7 +60,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut models = HashMap::new();
     let mut domain_sort = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::ModelDef(model) = cmd {
+        if let crate::parser::LSCmd::DefineModel(model) = cmd {
             if domain_sort.is_none() {
                 if let Some(univ) = model.univ_defs.get(0) {
                     domain_sort = Some(univ.sort.to_string());
@@ -74,7 +77,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             all_model_names.push(name.clone());
         }
     }
-    let loaded_models: Vec<&ModelDef> = all_model_names
+    let loaded_models: Vec<&Model> = all_model_names
         .iter()
         .filter_map(|n| models.get(n).copied())
         .collect();
@@ -93,9 +96,7 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let (prop_bitvecs, _bv_len) = prop_bitvecs(
         &loaded_models,
         &props,
-        &|prop, node, model, id2sym| {
-            matches!(eval(prop, &[node], &model.func_interps, id2sym), Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true")
-        },
+        &|prop, node, model, id2sym| matches!(eval(prop, &[node], &model.func_interps, id2sym), Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true"),
     );
     for prop in &props {
         cmds.push(
@@ -128,7 +129,11 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                         .map(|&n| {
                             Term::app(
                                 "bv1->bool",
-                                vec![BitVec::extract(offset + n, offset + n, Term::var("phi_val"))],
+                                vec![BitVec::extract(
+                                    offset + n,
+                                    offset + n,
+                                    Term::var("phi_val"),
+                                )],
                             )
                         })
                         .collect();
@@ -198,8 +203,9 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
             if let Some((offset, _domain_size)) = model_offsets.get(model_name) {
                 // look up models and get ext_ctx,
                 if let Some(model) = loaded_models.iter().find(|m| &m.name == model_name) {
-                    if let Some(crate::theory::Ctx::PML(ctx)) = &model.ext_ctx {
-                        let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
+                    if let Some(crate::theory::ModelCtx::PML(ctx)) = &model.ext_ctx {
+                        let (domain_syms, id2sym, _universe_sort) =
+                            get_universe_domain_and_map(model);
                         let sym2id: std::collections::HashMap<String, usize> = domain_syms
                             .iter()
                             .enumerate()
@@ -207,7 +213,14 @@ pub fn translate_to_bv_cmds(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                             .collect();
                         let mut init_idx = 0; // fallback: 0
                         if let Some(init_name) = &ctx.init_name {
-                            if let Some(crate::lang::model::InterpedValue::UnivElem(elem)) = crate::theory::utils::eval(init_name, &[], &model.func_interps, &id2sym) {
+                            if let Some(crate::lang::model::InterpedValue::UnivElem(elem)) =
+                                crate::theory::utils::eval(
+                                    init_name,
+                                    &[],
+                                    &model.func_interps,
+                                    &id2sym,
+                                )
+                            {
                                 if let Some(&idx) = sym2id.get(&elem.name) {
                                     init_idx = idx;
                                 }

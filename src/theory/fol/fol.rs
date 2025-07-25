@@ -1,14 +1,15 @@
-use sygus_parser::Sort;
-use crate::lang::model::{ModelDef, FuncInterp, InterpedValue};
-use serde_json::{json, Value};
+use crate::lang::model::{Model, FuncInterp, InterpedValue};
 use crate::theory::utils::{eval, get_universe_domain_and_map};
+use serde_json::{json, Value};
+use sygus_parser::Sort;
 
 #[derive(Debug, Default, Clone)]
-pub struct FOLCtx {
+pub struct FOModelCtx {
     pub qvars: Vec<(String, sygus_parser::Sort)>, // (name, sort)
+    pub interp_table: crate::lang::runtime::ModelSymbolTable, // 新增：小符号表
 }
 
-pub fn handle_extcmd(ctx: &mut FOLCtx, extcmd: &crate::lang::model::ThSpecCmd) {
+pub fn handle_extcmd(ctx: &mut FOModelCtx, extcmd: &crate::lang::model::ThSpecCmd) {
     match extcmd.name.as_str() {
         "declare-qvar" => {
             let mut args = extcmd.args.split_whitespace();
@@ -19,16 +20,20 @@ pub fn handle_extcmd(ctx: &mut FOLCtx, extcmd: &crate::lang::model::ThSpecCmd) {
         }
         // other FOL-specific commands
         _ => {
-                // can extend more commands
+            // can extend more commands
         }
     }
 }
 
 /// export functions
-pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
+pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value {
     // 1. domain: extract symbols
     let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
-    let sym2id: std::collections::HashMap<String, usize> = domain_syms.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect();
+    let sym2id: std::collections::HashMap<String, usize> = domain_syms
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.clone(), i))
+        .collect();
     let domain: Vec<usize> = (0..domain_syms.len()).collect();
 
     // 2. constants: extract constants
@@ -49,7 +54,11 @@ pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
             }
             FuncInterp::MatchInterp(name, cases) => {
                 // check arity
-                let arity = cases.iter().find_map(|c| c.pattern.as_ref()).map(|p| p.elements.len()).unwrap_or(0);
+                let arity = cases
+                    .iter()
+                    .find_map(|c| c.pattern.as_ref())
+                    .map(|p| p.elements.len())
+                    .unwrap_or(0);
                 // only handle Bool return value
                 let is_bool = cases.iter().any(|c| matches!(&c.value, InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
                 if is_bool {
@@ -58,20 +67,28 @@ pub fn model_to_json_with_symbol_map(model: &ModelDef, _ctx: &FOLCtx) -> Value {
                     let dom = &domain;
                     let tuples = match arity {
                         1 => dom.iter().map(|&a| vec![a]).collect(),
-                        2 => dom.iter().flat_map(|&a| dom.iter().map(move |&b| vec![a, b])).collect(),
+                        2 => dom
+                            .iter()
+                            .flat_map(|&a| dom.iter().map(move |&b| vec![a, b]))
+                            .collect(),
                         _ => vec![],
                     };
                     for tuple in tuples {
-                        if let Some(InterpedValue::Literal(lit)) = eval(name, &tuple, &model.func_interps, &id2sym) {
+                        if let Some(InterpedValue::Literal(lit)) =
+                            eval(name, &tuple, &model.func_interps, &id2sym)
+                        {
                             if lit.to_string() == "true" {
                                 value_tuples.push(tuple.clone());
                             }
                         }
                     }
-                    predicates.insert(name.clone(), json!({
-                        "arity": arity,
-                        "value": value_tuples
-                    }));
+                    predicates.insert(
+                        name.clone(),
+                        json!({
+                            "arity": arity,
+                            "value": value_tuples
+                        }),
+                    );
                 }
             }
         }

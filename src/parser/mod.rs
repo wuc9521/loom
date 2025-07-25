@@ -5,8 +5,8 @@
 pub struct LSParser;
 
 
-pub mod file;
+pub mod ast;
 pub mod error;
 
-pub use file::*;
+pub use ast::*;
 pub use error::*;

@@ -36,15 +36,15 @@ impl ThSpecCmd {
     "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")",
     "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
-pub struct ModelDef {
+pub struct Model {
     pub name: String,
-    pub univ_defs: Vec<UnivDef>,
+    pub univ_defs: Vec<DefineUniv>,
     pub func_interps: Vec<FuncInterp>,
     pub ext_cmds: Vec<ThSpecCmd>,
-    pub ext_ctx: Option<crate::theory::Ctx>, 
+    pub ext_ctx: Option<crate::theory::ModelCtx>, 
 }
 
-impl ModelDef {
+impl Model {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -61,7 +61,7 @@ impl ModelDef {
         for item_pair in inner_pairs {
             match item_pair.as_rule() {
                 Rule::UnivDef => {
-                    let univ_def = UnivDef::parse(item_pair)?;
+                    let univ_def = DefineUniv::parse(item_pair)?;
                     model.add_univ_def(univ_def);
                 }
                 Rule::FuncInterp => {
@@ -87,11 +87,26 @@ impl ModelDef {
         }
         Ok(model)
     }
-    pub fn add_univ_def(&mut self, univ_def: UnivDef) {
+    pub fn add_univ_def(&mut self, univ_def: DefineUniv) {
         self.univ_defs.push(univ_def);
     }
     pub fn add_func_interp(&mut self, func_interp: FuncInterp) {
         self.func_interps.push(func_interp);
+    }
+    pub fn fill_interp_table(&self, table: &mut crate::lang::runtime::ModelSymbolTable) {
+        for interp in &self.func_interps {
+            match interp {
+                FuncInterp::SimpleInterp(name, val) => {
+                    table.insert(name.clone(), crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), val.clone()));
+                }
+                FuncInterp::MatchInterp(name, _cases) => {
+                    table.insert(name.clone(), crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), InterpedValue::FuncApp(name.clone(), vec![])));
+                }
+            }
+        }
+        for univ in &self.univ_defs {
+            table.insert(univ.sort.to_string(), crate::lang::runtime::SymbolInterp::Univ(univ.clone()));
+        }
     }
 }
 
@@ -101,13 +116,13 @@ impl ModelDef {
     sort,
     "elems.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
-pub struct UnivDef {
+pub struct DefineUniv {
     pub sort: Sort,
     pub elems: Vec<UnivElem>,
 }
 
 // UnivDef = { "(" ~ "define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-impl UnivDef {
+impl DefineUniv {
     pub fn new(sort: Sort, elems: Vec<UnivElem>) -> Self {
         Self { sort, elems }
     }

@@ -1,15 +1,16 @@
-use crate::lang::model::{FuncInterp, InterpedValue, ModelDef};
+use crate::lang::model::{FuncInterp, InterpedValue, Model};
 use crate::theory::utils::{eval, get_universe_domain_and_map};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone)]
-pub struct PMLCtx {
+pub struct KripkeCtx {
     pub init_name: Option<String>,
     pub tran_name: Option<String>,
+    pub interp_table: crate::lang::runtime::ModelSymbolTable, // 新增：小符号表
 }
 
-pub fn handle_extcmd(ctx: &mut PMLCtx, extcmd: &crate::lang::model::ThSpecCmd) {
+pub fn handle_extcmd(ctx: &mut KripkeCtx, extcmd: &crate::lang::model::ThSpecCmd) {
     match extcmd.name.as_str() {
         "set-init" => {
             ctx.init_name = Some(
@@ -35,9 +36,9 @@ pub fn handle_extcmd(ctx: &mut PMLCtx, extcmd: &crate::lang::model::ThSpecCmd) {
     }
 }
 
-pub fn get_transition_pred(model: &ModelDef) -> Option<&str> {
+pub fn get_transition_pred(model: &Model) -> Option<&str> {
     match &model.ext_ctx {
-        Some(crate::theory::Ctx::PML(ctx)) => ctx.tran_name.as_deref(),
+        Some(crate::theory::ModelCtx::PML(ctx)) => ctx.tran_name.as_deref(),
         _ => {
             eprintln!("Warning: Transition predicate not found");
             None
@@ -45,7 +46,7 @@ pub fn get_transition_pred(model: &ModelDef) -> Option<&str> {
     }
 }
 
-pub fn model_to_json_with_symbol_map(model: &ModelDef, ctx: &PMLCtx) -> Value {
+pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     // 1. domain
     let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
     let sym2id: std::collections::HashMap<String, usize> = domain_syms
@@ -124,7 +125,7 @@ pub fn model_to_json_with_symbol_map(model: &ModelDef, ctx: &PMLCtx) -> Value {
     })
 }
 
-pub fn get_relation_adjacency(model: &ModelDef, relation: &str) -> Vec<Vec<usize>> {
+pub fn get_relation_adjacency(model: &Model, relation: &str) -> Vec<Vec<usize>> {
     let (domain_syms, id2sym, _universe_sort) = get_universe_domain_and_map(model);
     let domain: Vec<usize> = (0..domain_syms.len()).collect();
     let mut adjacency: Vec<Vec<usize>> = vec![vec![]; domain.len()];

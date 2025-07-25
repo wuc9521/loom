@@ -1,16 +1,17 @@
 use clap::Parser as ClapParser;
-use ls_parser::{
-    parser::*,
-    theory::{
-        dispatch_extcmd,
-        fol::FOLCtx,
-        pml::{self, PMLCtx},
-        re::{self, RECtx},
-        Ctx, Logic,
-    },
-    utils::*,
+use ls_parser::lang::runtime::Session;
+use ls_parser::parser::ast::LSCmd;
+use ls_parser::theory::pml;
+use ls_parser::theory::SygusDesugar;
+use ls_parser::theory::{fol, re, Logic, ModelCtx};
+use ls_parser::utils::extract_logic_sygus;
+use std::{
+    fs,
+    io::{self},
+    path::PathBuf,
 };
-use std::{fs, io::{self, Write}, path::PathBuf};
+
+mod repl;
 
 /// CLI application for parsing your custom language
 #[derive(clap::Parser, Debug)]
@@ -33,165 +34,105 @@ pub struct CLI {
     dump: Option<PathBuf>,
 
     /// Translate to SyGuS BV and print to stdout
-    #[arg(long = "to-bv", default_value_t = false)]
-    to_bv: bool,
+    #[arg(long = "dump-sygus", default_value_t = false)]
+    dump_sygus: bool,
 
     #[arg(long = "from-sygus", default_value_t = false)]
     from_sygus: bool,
+
+    #[arg(long = "guard", default_value_t = false)]
+    guard: bool,
 }
 
 /// Run the language parsing application
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
-    if let Some(file_path) = &args.file {
-        let input = fs::read_to_string(file_path)?;
-        if args.from_sygus {
-            let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
-            let logic_str = extract_logic_sygus(&sygus_file).unwrap();
-            match logic_str {
-                "SLIA" => Logic::SLIA,
-                _ => {
-                    eprintln!("Unsupported logic: {}", logic_str);
-                    return Err(io::Error::new(io::ErrorKind::Other, "Unsupported logic"));
-                }
-            };
-            let ls_file = re::sugar::desugar(&sygus_file);
-            println!("{}", ls_file);
-            return Ok(());
-        }
-        let mut problem = file::parse(&input.as_str()).unwrap();
-
-        let logic_str = extract_logic(&problem).unwrap();
+    let file_path = args.file;
+    if file_path == None {
+        return repl::repl();
+    }
+    let input = fs::read_to_string(file_path.unwrap())?;
+    if args.from_sygus {
+        let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
+        let logic_str = extract_logic_sygus(&sygus_file).unwrap();
         let logic = match logic_str {
-            "FOL" => Logic::FOL,
-            "PML" => Logic::PML,
             "RE" => Logic::RE,
             _ => {
-                eprintln!("Error: Unknown logic: {}", logic_str);
-                return Err(io::Error::new(io::ErrorKind::Other, "Unknown logic"));
+                eprintln!("Unsupported logic: {}", logic_str);
+                return Err(io::Error::new(io::ErrorKind::Other, "Unsupported logic"));
             }
         };
-
-        // --to-bv dispatch
-        if args.to_bv {
-            match logic {
-                Logic::PML => {
-                    let cmds = pml::bv::translate_to_bv_cmds(&problem);
-                    for cmd in cmds {
-                        println!("{}", cmd);
-                    }
-                }
-                Logic::RE => {
-                    let cmds = re::bv::translate_to_bv_cmds(&problem);
-                    for cmd in cmds {
-                        println!("{}", cmd);
-                    }
-                }
-                _ => {
-                    eprintln!(";; Translation for this logic is not implemented.");
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "to-bv not implemented for this logic",
-                    ));
-                }
+        println!("{}", logic.desugar(&sygus_file));
+        return Ok(());
+    }
+    let mut session = Session::new();
+    let results = ls_parser::parser::ast::parse_commands(&input, Some(&mut session.runtime));
+    let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
+    for res in results {
+        match res {
+            Ok(cmd) => {
+                let _ = session.handle_command(&cmd);
+                lscmd_vec.push(cmd);
             }
-        }
-
-        // collect all ext_cmds
-        let ext_cmds: Vec<_> = problem
-            .cmds
-            .iter()
-            .filter_map(|cmd| {
-                if let LSCmd::ThSpecCmd(thcmd) = cmd {
-                    Some(thcmd.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        for i in 0..problem.cmds.len() {
-            if let LSCmd::ModelDef(model) = &mut problem.cmds[i] {
-                let mut ctx = match logic {
-                    Logic::FOL => Ctx::FOL(FOLCtx::default()),
-                    Logic::PML => Ctx::PML(PMLCtx::default()),
-                    Logic::RE => Ctx::RE(RECtx::default()),
-                    _ => unreachable!(),
-                };
-                for thcmd in &ext_cmds {
-                    dispatch_extcmd(logic, &mut ctx, thcmd);
-                }
-                for extcmd in &model.ext_cmds {
-                    dispatch_extcmd(logic, &mut ctx, extcmd);
-                }
-                model.ext_ctx = Some(ctx.clone());
-            }
-        }
-
-        if let Some(dump_path) = &args.dump {
-            use ls_parser::theory::fol::model_to_json_with_symbol_map as fol_model_to_json;
-            use ls_parser::theory::pml::model_to_json_with_symbol_map as pml_model_to_json;
-            use std::fs::{create_dir_all, File};
-            if !dump_path.exists() {
-                create_dir_all(dump_path).expect("Failed to create dump directory");
-            }
-            if !dump_path.is_dir() {
-                eprintln!("Error: --dump path must be a directory");
+            Err(e) => {
+                eprintln!("parse error: {}", e);
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
-                    "Dump path must be a directory",
+                    format!("parse error: {}", e),
                 ));
             }
-            for cmd in &problem.cmds {
-                if let LSCmd::ModelDef(model) = cmd {
-                    match &model.ext_ctx {
-                        Some(Ctx::FOL(fol_ctx)) => {
-                            let json = fol_model_to_json(model, fol_ctx);
-                            let file_path = dump_path.join(format!("{}.json", model.name));
-                            let mut file =
-                                File::create(&file_path).expect("Failed to create dump file");
-                            file.write_all(serde_json::to_string_pretty(&json).unwrap().as_bytes())
-                                .expect("Failed to write dump file");
+        }
+    }
+    let mut ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
+    if args.dump_sygus {
+        match session.logic {
+            Some(Logic::FOL) => {
+                for cmd in &mut ls_file.cmds {
+                    if let LSCmd::DefineModel(model) = cmd {
+                        let mut ctx = fol::FOModelCtx::default();
+                        for thcmd in &model.ext_cmds {
+                            fol::handle_extcmd(&mut ctx, thcmd);
                         }
-                        Some(Ctx::PML(pml_ctx)) => {
-                            let json = pml_model_to_json(model, pml_ctx);
-                            let file_path = dump_path.join(format!("{}.json", model.name));
-                            let mut file =
-                                File::create(&file_path).expect("Failed to create dump file");
-                            file.write_all(serde_json::to_string_pretty(&json).unwrap().as_bytes())
-                                .expect("Failed to write dump file");
-                        }
-                        _ => {}
+                        model.ext_ctx = Some(ModelCtx::FOL(ctx));
                     }
                 }
-            }
-        }
-        Ok(())
-    } else {
-        println!("ls-parser interactive mode (type :quit or :exit to exit)");
-        let mut buffer = String::new();
-        loop {
-            print!("> ");
-            io::stdout().flush().unwrap();
-            let mut line = String::new();
-            if io::stdin().read_line(&mut line)? == 0 {
-                break;
-            }
-            let line = line.trim_end();
-            if line == ":quit" || line == ":exit" {
-                break;
-            }
-            buffer.push_str(line);
-            buffer.push('\n');
-            match file::parse(&buffer) {
-                Ok(_) => {
-                    println!("parse success, type :quit or :exit to exit");
-                }
-                Err(e) => {
-                    println!("parse error: {:?}", e);
+                let output = pml::to_sygus(&ls_file);
+                for cmd in output {
+                    println!("{}", cmd);
                 }
             }
+            Some(Logic::PML) => {
+                for cmd in &mut ls_file.cmds {
+                    if let LSCmd::DefineModel(model) = cmd {
+                        let mut ctx = pml::KripkeCtx::default();
+                        for thcmd in &model.ext_cmds {
+                            pml::handle_extcmd(&mut ctx, thcmd);
+                        }
+                        model.ext_ctx = Some(ModelCtx::PML(ctx));
+                    }
+                }
+                let output = pml::to_sygus(&ls_file);
+                for cmd in output {
+                    println!("{}", cmd);
+                }
+            }
+            Some(Logic::RE) => {
+                for cmd in &mut ls_file.cmds {
+                    if let LSCmd::DefineModel(model) = cmd {
+                        let mut ctx = re::StringCtx::default();
+                        for thcmd in &model.ext_cmds {
+                            re::handle_extcmd(&mut ctx, thcmd);
+                        }
+                        model.ext_ctx = Some(ModelCtx::RE(ctx));
+                    }
+                }
+                let output = re::to_sygus(&ls_file);
+                for cmd in output {
+                    println!("{}", cmd);
+                }
+            }
+            _ => {}
         }
-        Ok(())
     }
+    Ok(())
 }

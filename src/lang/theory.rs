@@ -1,3 +1,5 @@
+use crate::parser::LSFile;
+use crate::theory::Logic;
 use lexpr::Value;
 
 #[derive(Debug, Clone)]
@@ -21,6 +23,19 @@ pub struct Theory {
     pub sorts: Vec<SortDecl>,
 }
 
+pub trait SygusDesugar {
+    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> LSFile;
+}
+
+impl SygusDesugar for Logic {
+    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> LSFile {
+        match self {
+            Logic::RE => crate::theory::re::sugar::desugar(sygus_file),
+            _ => unimplemented!("desugar not implemented for this logic"),
+        }
+    }
+}
+
 fn iter_sexp_list(val: &Value) -> Vec<&Value> {
     if val.is_list() {
         val.list_iter().unwrap().collect()
@@ -35,8 +50,12 @@ impl Theory {
     pub fn from_sexp(sexp: &Value) -> Option<Self> {
         // (theory NAME ...)
         let list = sexp.to_ref_vec()?;
-        if list.len() < 2 { return None; }
-        if list[0].as_symbol()? != "theory" { return None; }
+        if list.len() < 2 {
+            return None;
+        }
+        if list[0].as_symbol()? != "theory" {
+            return None;
+        }
         let name = list[1].as_symbol()?.to_string();
         let mut funs = Vec::new();
         let mut sorts = Vec::new();
@@ -73,7 +92,9 @@ fn parse_fun_decl(val: &Value) -> Option<FunDecl> {
     // (name arg1 arg2 ... ret_sort [attrs...])
     // last one is return type or attributes
     let list = val.to_ref_vec()?;
-    if list.len() < 2 { return None; }
+    if list.len() < 2 {
+        return None;
+    }
     let name = list[0].as_symbol()?.to_string();
     let mut arg_sorts = Vec::new();
     let mut attrs = Vec::new();
@@ -84,16 +105,28 @@ fn parse_fun_decl(val: &Value) -> Option<FunDecl> {
     }
     let last = list.last()?;
     if let Some(s) = last.as_symbol() {
-        Some(FunDecl { name, arg_sorts, ret_sort: s.to_string(), attrs })
+        Some(FunDecl {
+            name,
+            arg_sorts,
+            ret_sort: s.to_string(),
+            attrs,
+        })
     } else if let Some(sublist) = last.to_ref_vec() {
-        if sublist.is_empty() { return None; }
+        if sublist.is_empty() {
+            return None;
+        }
         let ret_sort = sublist[0].as_symbol()?.to_string();
         for attr in &sublist[1..] {
             if let Some(a) = attr.as_symbol() {
                 attrs.push(a.to_string());
             }
         }
-        Some(FunDecl { name, arg_sorts, ret_sort, attrs })
+        Some(FunDecl {
+            name,
+            arg_sorts,
+            ret_sort,
+            attrs,
+        })
     } else {
         None
     }
@@ -102,7 +135,9 @@ fn parse_fun_decl(val: &Value) -> Option<FunDecl> {
 fn parse_sort_decl(val: &Value) -> Option<SortDecl> {
     // (name arity)
     let list = val.to_ref_vec()?;
-    if list.len() != 2 { return None; }
+    if list.len() != 2 {
+        return None;
+    }
     let name = list[0].as_symbol()?.to_string();
     let arity = list[1].as_u64()? as usize;
     Some(SortDecl { name, arity })
@@ -140,4 +175,4 @@ mod tests {
         assert_eq!(theory.funs[0].ret_sort, "Int");
         assert_eq!(theory.funs[2].attrs[0], ":left-assoc");
     }
-} 
+}

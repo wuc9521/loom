@@ -35,7 +35,7 @@ fn benchmark_file(file: &Path, output_dir: &Path, iterations: usize) {
     fs::create_dir_all(&file_output_dir).unwrap();
     println!("Benchmarking: {}", file.display());
     let command = format!(
-        "./target/release/ls-parser --file '{}' --to-bv --dump '{}' | cvc5 --lang=sygus2",
+        "./target/release/ls-parser --file '{}' --dump-sygus --dump '{}' | cvc5 --lang=sygus2",
         file.display(),
         file_output_dir.display()
     );
