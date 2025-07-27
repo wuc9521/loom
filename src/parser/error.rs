@@ -3,7 +3,7 @@ use derive_more::Display;
 
 #[derive(Debug, Display)]
 pub enum LSParseError {
-    #[display(fmt = "[ERROR] Pest parser error: {}", _0)]
+    #[display(fmt = "[ERROR] Parsing error: {}", _0)]
     PestError(pest::error::Error<crate::parser::Rule>),
 
     #[display(fmt = "[ERROR] Invalid syntax: {}", _0)]

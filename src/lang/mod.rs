@@ -1,5 +1,7 @@
+pub mod func;
 pub mod signature;
 pub mod model;
 pub mod theory;
 pub mod runtime;
 pub use model::*;
+pub use func::*;

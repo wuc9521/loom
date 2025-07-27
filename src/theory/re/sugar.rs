@@ -1,6 +1,7 @@
 use crate::lang::model::{
-    FuncInterp, InterpedValue, MatchCase, Model, Pattern, PatternElem, DefineUniv, UnivElem,
+    DefineUniv, FuncInterp, MatchCase, Model, Pattern, PatternElem, UnivElem,
 };
+use crate::parser::ast::LSTerm;
 use crate::parser::{LSCmd, LSFile};
 use crate::signature::FuncSig;
 use std::collections::HashSet;
@@ -40,13 +41,21 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                             let pat = Pattern {
                                 elements: vec![PatternElem::Var(format!("${}", i))],
                             };
-                            let val = InterpedValue::Literal(Literal::Bool(*c == ch));
+                            let val = LSTerm::Literal(Literal::Bool(*c == ch));
                             cases.push(MatchCase {
                                 pattern: Some(pat),
                                 value: val,
                             });
                         }
-                        func_interps.push(FuncInterp::MatchInterp(fname, cases));
+                        func_interps.push(FuncInterp::MatchInterp(
+                            fname,
+                            vec![],
+                            sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(
+                                "Bool".to_string(),
+                            )),
+                            LSTerm::Identifier(Identifier::Symbol("x".to_string())),
+                            cases,
+                        ));
                     }
                     let model = Model {
                         name: name.clone(),

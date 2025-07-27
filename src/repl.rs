@@ -31,7 +31,7 @@ fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
                         Ok(cmd) => {
                             let _ = session.handle_command(&cmd);
                         }
-                        Err(e) => println!("parse error: {}", e),
+                        Err(e) => println!("{}", e),
                     }
                 }
             }
@@ -106,7 +106,7 @@ pub fn repl() -> io::Result<()> {
                             let _ = session.handle_command(&cmd);
                         }
                         Err(e) => {
-                            println!("parse error: {}", e);
+                            println!("{}", e);
                             has_error = true;
                             break;
                         }

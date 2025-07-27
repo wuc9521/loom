@@ -1,4 +1,5 @@
 use crate::lang::model::Model;
+use crate::parser::ast::LSTerm;
 use crate::parser::LSFile;
 use crate::theory::re::utils::{re_comp, re_inter, re_union};
 use crate::theory::utils::get_universe_domain_and_map;
@@ -52,13 +53,12 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut all_props = HashSet::new();
     for model in &loaded_models {
         for interp in &model.func_interps {
-            if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
-                let arity = cases
-                    .iter()
-                    .find_map(|c| c.pattern.as_ref())
-                    .map(|p| p.elements.len())
-                    .unwrap_or(0);
-                let is_bool = cases.iter().any(|c| matches!(&c.value, crate::lang::model::InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
+            if let crate::lang::model::FuncInterp::MatchInterp(name, args, _, _, cases) = interp {
+                let arity = args.len();
+                let is_bool = cases.iter().any(|c| {
+                    matches!(&c.value, LSTerm::Literal(lit) 
+                        if lit.to_string() == "true" || lit.to_string() == "false")
+                });
                 if is_bool && arity == 1 {
                     all_props.insert(name.clone());
                 }
@@ -118,7 +118,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                         let node = start;
                         let val =
                             crate::theory::utils::eval(prop, &[node], &model.func_interps, &id2sym);
-                        if matches!(val, Some(crate::lang::model::InterpedValue::Literal(lit)) if lit.to_string() == "true")
+                        if matches!(val, Some(LSTerm::Literal(lit)) if lit.to_string() == "true")
                         {
                             full_bitstring_list.push('1');
                         } else {

@@ -1,4 +1,5 @@
-use crate::lang::model::{Model, FuncInterp, InterpedValue};
+use crate::lang::model::{FuncInterp, Model};
+use crate::parser::ast::LSTerm;
 use crate::theory::utils::{eval, get_universe_domain_and_map};
 use serde_json::{json, Value};
 use sygus_parser::Sort;
@@ -44,23 +45,28 @@ pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value 
 
     for interp in &model.func_interps {
         match interp {
-            FuncInterp::SimpleInterp(name, val) => {
-                // 0-arity: extract constants
-                if let InterpedValue::UnivElem(elem) = val {
-                    if let Some(&idx) = sym2id.get(&elem.name) {
-                        constants.insert(name.clone(), json!(idx));
+            FuncInterp::SimpleInterp(name, args, _, term) => {
+                // 0-arity functions are constants
+                if args.is_empty() {
+                    if let LSTerm::AppTerm(sym, _) = term {
+                        if sym.to_string().starts_with('$') {
+                            if let Some(&idx) = sym2id.get(&sym.to_string()) {
+                                constants.insert(name.clone(), json!(idx));
+                            }
+                        }
                     }
                 }
             }
-            FuncInterp::MatchInterp(name, cases) => {
+            FuncInterp::MatchInterp(name, args, _, _, cases) => {
                 // check arity
-                let arity = cases
-                    .iter()
-                    .find_map(|c| c.pattern.as_ref())
-                    .map(|p| p.elements.len())
-                    .unwrap_or(0);
+                let arity = args.len();
+
                 // only handle Bool return value
-                let is_bool = cases.iter().any(|c| matches!(&c.value, InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
+                let is_bool = cases.iter().any(|c| {
+                    matches!(&c.value, LSTerm::Literal(lit)
+                        if lit.to_string() == "true" || lit.to_string() == "false")
+                });
+
                 if is_bool {
                     // enumerate all parameter tuples
                     let mut value_tuples = vec![];
@@ -73,8 +79,9 @@ pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value 
                             .collect(),
                         _ => vec![],
                     };
+
                     for tuple in tuples {
-                        if let Some(InterpedValue::Literal(lit)) =
+                        if let Some(LSTerm::Literal(lit)) =
                             eval(name, &tuple, &model.func_interps, &id2sym)
                         {
                             if lit.to_string() == "true" {
@@ -82,6 +89,7 @@ pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value 
                             }
                         }
                     }
+
                     predicates.insert(
                         name.clone(),
                         json!({

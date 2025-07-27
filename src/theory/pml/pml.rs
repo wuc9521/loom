@@ -1,4 +1,5 @@
-use crate::lang::model::{FuncInterp, InterpedValue, Model};
+use crate::lang::model::{FuncInterp, Model};
+use crate::parser::ast::LSTerm;
 use crate::theory::utils::{eval, get_universe_domain_and_map};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -61,7 +62,7 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     if let Some(tran_name) = get_transition_pred(model) {
         for from in &domain {
             for to in &domain {
-                if let Some(InterpedValue::Literal(lit)) =
+                    if let Some(LSTerm::Literal(lit)) =
                     eval(tran_name, &[*from, *to], &model.func_interps, &id2sym)
                 {
                     if lit.to_string() == "true" {
@@ -75,10 +76,10 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     // 3. init
     let mut init = vec![];
     if let Some(init_name) = &ctx.init_name {
-        if let Some(InterpedValue::UnivElem(elem)) =
+        if let Some(LSTerm::AppTerm(sym, _)) =
             eval(init_name, &[], &model.func_interps, &id2sym)
         {
-            if let Some(&idx) = sym2id.get(&elem.name) {
+            if let Some(&idx) = sym2id.get(&sym.to_string()) {
                 init.push(idx);
             }
         }
@@ -89,13 +90,12 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     let mut prop_cases = HashMap::new();
     let mut labels: HashMap<usize, Vec<String>> = HashMap::new();
     for interp in &model.func_interps {
-        if let FuncInterp::MatchInterp(name, cases) = interp {
-            let arity = cases
-                .iter()
-                .find_map(|c| c.pattern.as_ref())
-                .map(|p| p.elements.len())
-                .unwrap_or(0);
-            let is_bool = cases.iter().any(|c| matches!(&c.value, InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
+        if let FuncInterp::MatchInterp(name, args, _, _, cases) = interp {
+            let arity = args.len();
+            let is_bool = cases.iter().any(|c| {
+                matches!(&c.value, LSTerm::Literal(lit) 
+                    if lit.to_string() == "true" || lit.to_string() == "false")
+            });
             if is_bool && arity == 1 {
                 propositions.push(name.clone());
                 prop_cases.insert(name.clone(), cases);
@@ -105,7 +105,7 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     for &state in &domain {
         let mut props = vec![];
         for prop in &propositions {
-            if let Some(InterpedValue::Literal(lit)) =
+            if let Some(LSTerm::Literal(lit)) =
                 eval(prop, &[state], &model.func_interps, &id2sym)
             {
                 if lit.to_string() == "true" {
@@ -131,7 +131,7 @@ pub fn get_relation_adjacency(model: &Model, relation: &str) -> Vec<Vec<usize>> 
     let mut adjacency: Vec<Vec<usize>> = vec![vec![]; domain.len()];
     for from in &domain {
         for to in &domain {
-            if let Some(InterpedValue::Literal(lit)) =
+            if let Some(LSTerm::Literal(lit)) =
                 eval(relation, &[*from, *to], &model.func_interps, &id2sym)
             {
                 if lit.to_string() == "true" {

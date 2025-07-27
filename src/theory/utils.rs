@@ -3,6 +3,7 @@ use crate::lang::model::Model;
 use sygus_parser::Sort;
 use std::collections::{HashMap, HashSet};
 use crate::lang::runtime::ModelSymbolTable;
+use crate::parser::ast::LSTerm;
 
 pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
@@ -38,32 +39,32 @@ pub fn eval<'a>(
     args: &[usize],
     func_interps: &'a [crate::lang::model::FuncInterp],
     id2sym: &Vec<String>,
-) -> Option<&'a crate::lang::model::InterpedValue> {
+) -> Option<LSTerm> {
     // 0-arity: SimpleInterp
     if args.is_empty() {
         for interp in func_interps {
-            if let crate::lang::model::FuncInterp::SimpleInterp(name, val) = interp {
+            if let crate::lang::model::FuncInterp::SimpleInterp(name, _, _, term) = interp {
                 if name == func_name {
-                    return Some(val);
+                    return Some(term.clone());
                 }
             }
         }
     }
     // MatchInterp
     for interp in func_interps {
-        if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
+        if let crate::lang::model::FuncInterp::MatchInterp(name, _, _, _, cases) = interp {
             if name == func_name {
                 for case in cases { // precise match
                     if let Some(pat) = &case.pattern {
                         if pattern_match(&args.to_vec(), pat, id2sym) {
-                            return Some(&case.value);
+                            return Some(case.value.clone());
                         }
                     }
                 }
                 for case in cases { // fallback (_)
                     if let Some(pat) = &case.pattern {
                         if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
-                            return Some(&case.value);
+                            return Some(case.value.clone());
                         }
                     }
                 }
@@ -79,13 +80,13 @@ pub fn eval_with_table<'a>(
     interp_table: Option<&'a ModelSymbolTable>,
     func_interps: &'a [crate::lang::model::FuncInterp],
     id2sym: &Vec<String>,
-) -> Option<&'a crate::lang::model::InterpedValue> {
+) -> Option<crate::parser::ast::LSTerm> {
     // 1. 优先查小符号表
     if let Some(table) = interp_table {
         if let Some(crate::lang::runtime::SymbolInterp::InterpFun(_name, val)) = table.get(func_name) {
             // 这里只处理 SimpleInterp 的情况
             if args.is_empty() {
-                return Some(val);
+                return Some(val.clone());
             }
             // MatchInterp 需要更复杂的处理，暂略
         }
@@ -115,13 +116,12 @@ pub fn collect_bool_props(models: &[&Model], arity: usize) -> Vec<String> {
     let mut all_props = HashSet::new();
     for model in models {
         for interp in &model.func_interps {
-            if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
-                let this_arity = cases
-                    .iter()
-                    .find_map(|c| c.pattern.as_ref())
-                    .map(|p| p.elements.len())
-                    .unwrap_or(0);
-                let is_bool = cases.iter().any(|c| matches!(&c.value, crate::lang::model::InterpedValue::Literal(lit) if lit.to_string() == "true" || lit.to_string() == "false"));
+            if let crate::lang::model::FuncInterp::MatchInterp(name, args, _, _, cases) = interp {
+                let this_arity = args.len();
+                let is_bool = cases.iter().any(|c| {
+                    matches!(&c.value, LSTerm::Literal(lit) 
+                        if lit.to_string() == "true" || lit.to_string() == "false")
+                });
                 if is_bool && this_arity == arity {
                     all_props.insert(name.clone());
                 }
@@ -247,4 +247,38 @@ pub fn get_domain_sort_from_models(models: &HashMap<String, &Model>) -> Option<S
         }
     }
     None
+}
+
+pub fn get_interped_value<'a>(
+    interp: &'a crate::lang::model::FuncInterp,
+    args: &[usize],
+    id2sym: &[String],
+) -> Option<&'a crate::parser::ast::LSTerm> {
+    match interp {
+        crate::lang::model::FuncInterp::SimpleInterp(_, _, _, term) => {
+            if args.is_empty() {
+                Some(term)
+            } else {
+                None
+            }
+        }
+        crate::lang::model::FuncInterp::MatchInterp(_, _, _, _, cases) => {
+            // 实现match的逻辑，直接匹配参数
+            for case in cases { // precise match
+                if let Some(pat) = &case.pattern {
+                    if pattern_match(&args.to_vec(), pat, &id2sym.to_vec()) {
+                        return Some(&case.value);
+                    }
+                }
+            }
+            for case in cases { // fallback (_)
+                if let Some(pat) = &case.pattern {
+                    if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
+                        return Some(&case.value);
+                    }
+                }
+            }
+            None
+        }
+    }
 }

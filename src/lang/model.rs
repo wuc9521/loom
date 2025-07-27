@@ -1,13 +1,12 @@
 // src/logic/model.rs
 
+use crate::parser::ast::LSTerm;
 use crate::parser::{LSParseError, Rule};
 use core::str;
 use derive_more::Display;
 use pest::iterators::Pair;
-use sygus_parser::Literal;
 use sygus_parser::Sort;
-use sygus_parser::SyGuSTerm;
-use sygus_parser::Identifier;
+use sygus_parser::{Identifier, SortedVar};
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -15,7 +14,7 @@ use sygus_parser::Identifier;
 pub struct ThSpecCmd {
     pub name: String,
     pub args: String, // may be refined to Vec<String>
-    pub sexpr: Option<lexpr::Value>, 
+    pub sexpr: Option<lexpr::Value>,
 }
 
 impl ThSpecCmd {
@@ -41,7 +40,7 @@ pub struct Model {
     pub univ_defs: Vec<DefineUniv>,
     pub func_interps: Vec<FuncInterp>,
     pub ext_cmds: Vec<ThSpecCmd>,
-    pub ext_ctx: Option<crate::theory::ModelCtx>, 
+    pub ext_ctx: Option<crate::theory::ModelCtx>,
 }
 
 impl Model {
@@ -96,16 +95,34 @@ impl Model {
     pub fn fill_interp_table(&self, table: &mut crate::lang::runtime::ModelSymbolTable) {
         for interp in &self.func_interps {
             match interp {
-                FuncInterp::SimpleInterp(name, val) => {
-                    table.insert(name.clone(), crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), val.clone()));
+                FuncInterp::SimpleInterp(name, _, _, term) => {
+                    table.insert(
+                        name.clone(),
+                        crate::lang::runtime::SymbolInterp::InterpFun(
+                            name.clone(),
+                            match &term {
+                                LSTerm::AppTerm(sym, _) => LSTerm::AppTerm(sym.clone(), vec![]),
+                                LSTerm::AttrTerm(term, _) => LSTerm::AttrTerm(term.clone(), vec![]),
+                                _ => unimplemented!(),
+                            },
+                        ),
+                    );
                 }
-                FuncInterp::MatchInterp(name, _cases) => {
-                    table.insert(name.clone(), crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), InterpedValue::FuncApp(name.clone(), vec![])));
+                FuncInterp::MatchInterp(name, _, _, _, _) => {
+                    // 对于match表达式，我们创建一个简单的函数应用
+                    let func_app = LSTerm::AppTerm(Identifier::Symbol(name.clone()), vec![]);
+                    table.insert(
+                        name.clone(),
+                        crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), func_app),
+                    );
                 }
             }
         }
         for univ in &self.univ_defs {
-            table.insert(univ.sort.to_string(), crate::lang::runtime::SymbolInterp::Univ(univ.clone()));
+            table.insert(
+                univ.sort.to_string(),
+                crate::lang::runtime::SymbolInterp::Univ(univ.clone()),
+            );
         }
     }
 }
@@ -151,7 +168,7 @@ impl DefineUniv {
     }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(fmt = "{}", name)]
 pub struct UnivElem {
     pub name: String,
@@ -171,77 +188,91 @@ impl UnivElem {
     }
 }
 
-// FuncInterp = {  "(" ~ "interp-fun" ~ Symbol ~  "(" ~ InterpedCase+ ~ ")" ~ ")" }
+// FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
 #[derive(Clone, Debug, Display)]
 pub enum FuncInterp {
     #[display(
-        fmt = "(interp-fun {} (match ({})))",
+        fmt = "(interp-fun {} ({}) {} (match {} ({})))",
         _0,
-        "_1.iter().map(|c| format!(\"{}\", c)).collect::<Vec<_>>().join(\" \")"
+        "_1.iter().map(|v| format!(\"({} {})\", v.0, v.1)).collect::<Vec<_>>().join(\" \")",
+        _2,
+        _3,
+        "_4.iter().map(|c| format!(\"{}\", c)).collect::<Vec<_>>().join(\" \")"
     )]
-    MatchInterp(String, Vec<MatchCase>),
-    #[display(fmt = "(interp-fun {} ({}))", _0, _1)]
-    SimpleInterp(String, InterpedValue),
+    MatchInterp(String, Vec<(String, Sort)>, Sort, LSTerm, Vec<MatchCase>),
+    #[display(
+        fmt = "(interp-fun {} ({}) {} {})",
+        _0,
+        "_1.iter().map(|v| format!(\"({} {})\", v.0, v.1)).collect::<Vec<_>>().join(\" \")",
+        _2,
+        _3
+    )]
+    SimpleInterp(String, Vec<(String, Sort)>, Sort, LSTerm),
 }
-// FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
-// SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
-// MatchInterp = { "(" ~ "match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
-// MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
 
+// FuncInterp = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
 impl FuncInterp {
     pub fn name(&self) -> &str {
         match self {
-            FuncInterp::MatchInterp(name, _) => name,
-            FuncInterp::SimpleInterp(name, _) => name,
+            FuncInterp::MatchInterp(name, _, _, _, _) => name,
+            FuncInterp::SimpleInterp(name, _, _, _) => name,
         }
     }
     pub fn arity(&self) -> usize {
         match self {
-            FuncInterp::MatchInterp(_, cases) => cases.get(0).map_or(0, |case| {
-                case.pattern.as_ref().map_or(0, |p| p.elements.len())
-            }),
-            FuncInterp::SimpleInterp(_, _) => 0,
+            FuncInterp::MatchInterp(_, args, _, _, _) => args.len(),
+            FuncInterp::SimpleInterp(_, args, _, _) => args.len(),
         }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         let mut inner_pairs = pair.clone().into_inner();
         let name = inner_pairs.next().unwrap().as_str();
-        let mut cases = Vec::new();
-        let interp_pair = inner_pairs.next().unwrap();
-        match interp_pair.as_rule() {
-            Rule::SimpleInterp => {
-                let interped_value = InterpedValue::parse(interp_pair)?;
-                return Ok(Self::SimpleInterp(name.to_string(), interped_value));
-            }
-            Rule::MatchInterp => {
-                // Get all match cases directly from the inner elements of MatchInterp
-                let match_cases = interp_pair.into_inner();
 
-                for case_pair in match_cases {
+        // Parse argument list
+        let mut args = Vec::new();
+        let args_pair = inner_pairs.next().unwrap();
+        for arg_pair in args_pair.into_inner() {
+            if arg_pair.as_rule() == Rule::SortedVar {
+                let sorted_var = SortedVar::from_str(arg_pair.as_str()).unwrap();
+                args.push((sorted_var.name.clone(), sorted_var.sort.clone()));
+            }
+        }
+
+        // Parse return sort
+        let ret_sort = Sort::from_str(inner_pairs.next().unwrap().as_str()).unwrap();
+
+        // Parse body
+        let body_pair = inner_pairs.next().unwrap().into_inner().next().unwrap();
+        match body_pair.as_rule() {
+            Rule::MatchTerm => {
+                let mut match_inner = body_pair.into_inner();
+                let match_term = LSTerm::parse(match_inner.next().unwrap())?;
+                let mut cases = Vec::new();
+
+                while let Some(case_pair) = match_inner.next() {
                     if case_pair.as_rule() == Rule::MatchCase {
-                        let match_case = MatchCase::parse(case_pair)?;
-                        cases.push(match_case);
-                    } else {
-                        return Err(LSParseError::InvalidSyntax(format!(
-                            "Invalid element in function interpretation: {}",
-                            case_pair.as_str()
-                        )));
+                        let case = MatchCase::parse(case_pair)?;
+                        cases.push(case);
                     }
                 }
-                return Ok(Self::MatchInterp(name.to_string(), cases));
+                Ok(Self::MatchInterp(
+                    name.to_string(),
+                    args,
+                    ret_sort,
+                    match_term,
+                    cases,
+                ))
             }
             _ => {
-                return Err(LSParseError::UnsupportedFeature(format!(
-                    "Unsupported feature in function interpretation: {}",
-                    pair.as_str()
-                )));
+                let term = LSTerm::parse(body_pair)?;
+                Ok(Self::SimpleInterp(name.to_string(), args, ret_sort, term))
             }
         }
     }
 }
 
-// MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
-#[derive(Clone, Debug, Display, PartialEq)]
+// MatchCase = { "(" ~ Pattern ~ LSTerm ~ ")" }
+#[derive(Clone, Debug, Display)]
 #[display(
     fmt = "({} {})",
     "pattern.as_ref().map_or_else(|| \"_\".to_string(), |p| format!(\"{}\", p))",
@@ -249,71 +280,27 @@ impl FuncInterp {
 )]
 pub struct MatchCase {
     pub pattern: Option<Pattern>,
-    pub value: InterpedValue,
+    pub value: LSTerm,
 }
 
-#[derive(Clone, Debug, Display, PartialEq)]
-pub enum InterpedValue {
-    #[display(fmt = "{}", _0)]
-    UnivElem(UnivElem), // elements from new-defined universes.
-
-    #[display(fmt = "{}", _0)]
-    Literal(Literal), // elements from existing sorts.
-
-    #[display(
-        fmt = "({} {})",
-        _0,
-        "_1.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"
-    )]
-    FuncApp(String, Vec<SyGuSTerm>),
-}
-
-impl InterpedValue {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        let mut pair = pair.into_inner().next().unwrap();
-        if pair.as_rule() == Rule::InterpedValue {
-            pair = pair.into_inner().next().unwrap();
-        }
-        match pair.as_rule() {
-            Rule::UnivElem => Ok(Self::UnivElem(UnivElem::from_str(pair.as_str())?)),
-            Rule::Literal => Ok(Self::Literal(Literal::from_str(pair.as_str()))),
-            _ => {
-                let mut children = pair.into_inner();
-                let func_name = children.next().unwrap().as_str().to_string();
-                let args = children
-                    .map(|p| SyGuSTerm::from_str(p.as_str()))
-                    .collect::<Result<_, _>>()
-                    .unwrap();
-                Ok(Self::FuncApp(func_name, args))
-            }
-        }
-    }
-}
-
-//   InterpedCase = { "(" ~ Pattern ~ InterpedValue ~ ")" // ! same as SMT-lib
-// a SINGLE case
+// MatchCase = { "(" ~ Pattern ~ SyGuSTerm ~ ")" }
 impl MatchCase {
-    pub fn new(pattern: Pattern, interped_value: InterpedValue) -> Self {
+    pub fn new(pattern: Pattern, value: LSTerm) -> Self {
         Self {
             pattern: Some(pattern),
-            value: interped_value,
+            value,
         }
     }
-
     pub fn pattern(&self) -> &Option<Pattern> {
         &self.pattern
     }
 
-    // InterpedCase =    "(" ~ Pattern? ~ InterpedValue ~ ")"
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         let mut inner_pairs = pair.into_inner();
         // inner_pairs.next(); // skip the opening parenthesis
         let pattern = inner_pairs.next().map(|p| Pattern::parse(p).unwrap());
-        let interped_value = InterpedValue::parse(inner_pairs.next().unwrap())?;
-        Ok(Self {
-            pattern,
-            value: interped_value,
-        })
+        let value = LSTerm::parse(inner_pairs.next().unwrap())?;
+        Ok(Self { pattern, value })
     }
 }
 
@@ -341,6 +328,25 @@ impl Pattern {
         Self { elements }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        // 检查是否是括号包围的pattern
+        if pair.as_str().starts_with('(') && pair.as_str().ends_with(')') {
+            let content = &pair.as_str()[1..pair.as_str().len() - 1];
+            // 尝试解析为UnivElem
+            if content.starts_with('$') {
+                let elem = UnivElem::from_str(content)?;
+                return Ok(Self::new(vec![PatternElem::UnivElem(elem)]));
+            }
+            // 尝试解析为Symbol
+            if content.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Ok(Self::new(vec![PatternElem::Var(content.to_string())]));
+            }
+            // 尝试解析为wildcard
+            if content == "_" {
+                return Ok(Self::new(vec![PatternElem::Wildcard]));
+            }
+        }
+
+        // 原有的解析逻辑
         let elements = pair
             .into_inner()
             .map(|elem| match elem.as_rule() {

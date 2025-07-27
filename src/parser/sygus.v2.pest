@@ -79,7 +79,7 @@ SyGuSTerm = {
 | "(" ~ "!" ~ SyGuSTerm ~ Attribute+ ~ ")" 
 | "(" ~ "exists" ~ "(" ~ SortedVar+ ~ ")" ~ SyGuSTerm ~ ")"
 | "(" ~ "forall" ~ "(" ~ SortedVar+ ~ ")" ~ SyGuSTerm ~ ")"
-| "(" ~ "let" ~ "(" ~ VarBinding+ ~ SyGuSTerm ~ ")" ~ ")"
+| "(" ~ "let" ~ "(" ~ VarBinding+ ~ ")" ~ SyGuSTerm ~ ")"
 }
 
 SyGuSBfTerm = {

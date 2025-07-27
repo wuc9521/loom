@@ -1,6 +1,6 @@
 use crate::lang::model::{DefineUniv, Model};
 use crate::lang::signature::FuncSig;
-use crate::parser::ast::LSCmd;
+use crate::parser::ast::{LSCmd, LSTerm};
 use crate::theory::{dispatch_extcmd, Logic, ModelCtx};
 use std::collections::HashMap;
 
@@ -46,7 +46,7 @@ pub struct ModelSymbolTable {
 
 #[derive(Debug, Clone)]
 pub enum SymbolInterp {
-    InterpFun(String, crate::lang::model::InterpedValue),
+    InterpFun(String, LSTerm),
     Univ(crate::lang::model::DefineUniv),
 }
 

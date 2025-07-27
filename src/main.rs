@@ -33,6 +33,9 @@ pub struct CLI {
     #[arg(short, long = "dump-sygus", default_value_t = false)]
     dump_sygus: bool,
 
+    #[arg(long = "dump-ls", default_value_t = false)]
+    dump_ls: bool,
+
     #[arg(short, long = "as-sygus", default_value_t = false)]
     as_sygus: bool,
 
@@ -75,15 +78,17 @@ fn main() -> Result<(), io::Error> {
                 lscmd_vec.push(cmd);
             }
             Err(e) => {
-                eprintln!("parse error: {}", e);
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("parse error: {}", e),
-                ));
+                eprintln!("{}", e);
+                return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
             }
         }
     }
     let mut ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
+    if args.dump_ls {
+        for cmd in &ls_file.cmds {
+            println!("{}", cmd);
+        }
+    }
     if args.dump_sygus {
         match session.logic {
             Some(Logic::FOL) => {
