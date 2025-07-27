@@ -10,7 +10,7 @@ pub struct KripkeCtx {
     pub interp_table: crate::lang::runtime::ModelSymbolTable, // 新增：小符号表
 }
 
-pub fn handle_extcmd(ctx: &mut KripkeCtx, extcmd: &crate::lang::model::ThSpecCmd) {
+    pub fn handle_model_extcmd(ctx: &mut KripkeCtx, extcmd: &crate::lang::model::ThSpecCmd) {
     match extcmd.name.as_str() {
         "set-init" => {
             ctx.init_name = Some(

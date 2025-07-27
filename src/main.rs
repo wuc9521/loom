@@ -1,10 +1,10 @@
 use clap::Parser as ClapParser;
-use ls_parser::lang::runtime::Session;
-use ls_parser::parser::ast::LSCmd;
-use ls_parser::theory::pml;
-use ls_parser::theory::SygusDesugar;
-use ls_parser::theory::{fol, re, Logic, ModelCtx};
-use ls_parser::utils::extract_logic_sygus;
+use ls_parser::{
+    lang::runtime::Session,
+    parser::ast::LSCmd,
+    theory::{fol, pml, re, Logic, ModelCtx, SygusDesugar},
+    utils::extract_logic_sygus,
+};
 use std::{
     fs,
     io::{self},
@@ -29,18 +29,17 @@ pub struct CLI {
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
-    /// Dump model info as JSON to this path
-    #[arg(short = 'd', long = "dump")]
-    dump: Option<PathBuf>,
-
     /// Translate to SyGuS BV and print to stdout
-    #[arg(long = "dump-sygus", default_value_t = false)]
+    #[arg(short, long = "dump-sygus", default_value_t = false)]
     dump_sygus: bool,
 
-    #[arg(long = "from-sygus", default_value_t = false)]
-    from_sygus: bool,
+    #[arg(short, long = "as-sygus", default_value_t = false)]
+    as_sygus: bool,
 
-    #[arg(long = "guard", default_value_t = false)]
+    #[arg(short, long = "theory-file")]
+    theory_file: Option<PathBuf>,
+
+    #[arg(short, long = "guard", default_value_t = false)]
     guard: bool,
 }
 
@@ -48,15 +47,16 @@ pub struct CLI {
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     let file_path = args.file;
+    // let theory_file = args.theory_file.unwrap();
     if file_path == None {
         return repl::repl();
     }
     let input = fs::read_to_string(file_path.unwrap())?;
-    if args.from_sygus {
+    if args.as_sygus {
         let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
         let logic_str = extract_logic_sygus(&sygus_file).unwrap();
         let logic = match logic_str {
-            "RE" => Logic::RE,
+            "SLIA" => Logic::RE,
             _ => {
                 eprintln!("Unsupported logic: {}", logic_str);
                 return Err(io::Error::new(io::ErrorKind::Other, "Unsupported logic"));
@@ -91,13 +91,12 @@ fn main() -> Result<(), io::Error> {
                     if let LSCmd::DefineModel(model) = cmd {
                         let mut ctx = fol::FOModelCtx::default();
                         for thcmd in &model.ext_cmds {
-                            fol::handle_extcmd(&mut ctx, thcmd);
+                            fol::handle_model_extcmd(&mut ctx, thcmd);
                         }
                         model.ext_ctx = Some(ModelCtx::FOL(ctx));
                     }
                 }
-                let output = pml::to_sygus(&ls_file);
-                for cmd in output {
+                for cmd in fol::to_sygus(&ls_file) {
                     println!("{}", cmd);
                 }
             }
@@ -106,13 +105,12 @@ fn main() -> Result<(), io::Error> {
                     if let LSCmd::DefineModel(model) = cmd {
                         let mut ctx = pml::KripkeCtx::default();
                         for thcmd in &model.ext_cmds {
-                            pml::handle_extcmd(&mut ctx, thcmd);
+                            pml::handle_model_extcmd(&mut ctx, thcmd);
                         }
                         model.ext_ctx = Some(ModelCtx::PML(ctx));
                     }
                 }
-                let output = pml::to_sygus(&ls_file);
-                for cmd in output {
+                for cmd in pml::to_sygus(&ls_file) {
                     println!("{}", cmd);
                 }
             }
@@ -121,13 +119,12 @@ fn main() -> Result<(), io::Error> {
                     if let LSCmd::DefineModel(model) = cmd {
                         let mut ctx = re::StringCtx::default();
                         for thcmd in &model.ext_cmds {
-                            re::handle_extcmd(&mut ctx, thcmd);
+                            re::handle_model_extcmd(&mut ctx, thcmd);
                         }
                         model.ext_ctx = Some(ModelCtx::RE(ctx));
                     }
                 }
-                let output = re::to_sygus(&ls_file);
-                for cmd in output {
+                for cmd in re::to_sygus(&ls_file) {
                     println!("{}", cmd);
                 }
             }

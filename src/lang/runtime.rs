@@ -93,7 +93,7 @@ impl Session {
         match cmd {
             LSCmd::As(SyGuSCmd::SetLogic(logic_str)) => {
                 if self.logic.is_some() {
-                    println!("logic is already set");
+                    // println!("logic is already set");
                     return None;
                 }
                 let logic = match logic_str.as_str() {
@@ -132,6 +132,7 @@ impl Session {
                 return Some(cmd.clone());
             }
             LSCmd::ThSpec(cmd) => {
+                println!("dispatching extcmd: {}", cmd);
                 dispatch_extcmd(self.logic.unwrap(), self.ctx.as_mut().unwrap(), &cmd);
                 return Some(LSCmd::ThSpec(cmd.clone()));
             }

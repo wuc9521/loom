@@ -9,7 +9,7 @@ pub struct FOModelCtx {
     pub interp_table: crate::lang::runtime::ModelSymbolTable, // 新增：小符号表
 }
 
-pub fn handle_extcmd(ctx: &mut FOModelCtx, extcmd: &crate::lang::model::ThSpecCmd) {
+pub fn handle_model_extcmd(ctx: &mut FOModelCtx, extcmd: &crate::lang::model::ThSpecCmd) {
     match extcmd.name.as_str() {
         "declare-qvar" => {
             let mut args = extcmd.args.split_whitespace();
