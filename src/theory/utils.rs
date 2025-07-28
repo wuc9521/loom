@@ -81,17 +81,17 @@ pub fn eval_with_table<'a>(
     func_interps: &'a [crate::lang::model::FuncInterp],
     id2sym: &Vec<String>,
 ) -> Option<crate::parser::ast::LSTerm> {
-    // 1. 优先查小符号表
+    // 1. first check small symbol table
     if let Some(table) = interp_table {
         if let Some(crate::lang::runtime::SymbolInterp::InterpFun(_name, val)) = table.get(func_name) {
-            // 这里只处理 SimpleInterp 的情况
+            // TODO: only handle SimpleInterp for now
             if args.is_empty() {
                 return Some(val.clone());
             }
-            // MatchInterp 需要更复杂的处理，暂略
+            // TODO: implement MatchInterp for now
         }
     }
-    // 2. 回退查 func_interps
+    // 2. fallback to func_interps
     eval(func_name, args, func_interps, id2sym)
 }
 
@@ -263,7 +263,7 @@ pub fn get_interped_value<'a>(
             }
         }
         crate::lang::model::FuncInterp::MatchInterp(_, _, _, _, cases) => {
-            // 实现match的逻辑，直接匹配参数
+            // TODO: implement match logic, directly match arguments
             for case in cases { // precise match
                 if let Some(pat) = &case.pattern {
                     if pattern_match(&args.to_vec(), pat, &id2sym.to_vec()) {

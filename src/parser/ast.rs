@@ -1,4 +1,3 @@
-use crate::lang::runtime::Runtime;
 use crate::lang::{
     func::FuncDefRec,
     model::{MatchCase, Model, ThSpecCmd},
@@ -9,12 +8,13 @@ use derive_more::Display;
 use itertools::Itertools;
 use pest::{iterators::Pair, Parser};
 use sygus_parser::{Attribute, Identifier, Literal, Sort, SortedVar, SyGuSCmd, SyGuSTerm::*};
+use log::error;
 
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "({} {})", name, term)]
 pub struct LSVarBinding {
-    name: String,
-    term: LSTerm,
+    pub name: String,
+    pub term: LSTerm,
 }
 
 impl LSVarBinding {
@@ -151,8 +151,7 @@ impl LSTerm {
                 while let Some(arg) = inner.next() {
                     args.push(LSTerm::parse(arg)?);
                 }
-                let app_term = LSTerm::AppTerm(Identifier::Symbol(sym), args);
-                println!("@wuc9521 AppTerm: {}", app_term);
+                let app_term = LSTerm::AppTerm(Identifier::Symbol(sym), args);  
                 Ok(app_term)
             }
             Rule::AttrTerm => {
@@ -249,7 +248,7 @@ impl LSTerm {
             Rule::ForallTerm | Rule::ExistsTerm => {
                 // ForallTerm = { "(" ~ #LSTkForall="forall" ~ "(" ~ SortedVar+ ~ ")" ~ LSTerm ~ ")" }
                 // ExistsTerm = { "(" ~ #LSTkExists="exists" ~ "(" ~ SortedVar+ ~ ")" ~ LSTerm ~ ")" }
-                let mut inner = pair.clone().   into_inner();
+                let mut inner = pair.clone().into_inner();
                 let mut vars = vec![];
                 while let Some(var) = inner.peek() {
                     if var.as_rule() == Rule::SortedVar {
@@ -278,7 +277,6 @@ impl LSTerm {
                 while let Some(var) = inner.next() {
                     if var.as_rule() == Rule::LSVarBinding {
                         let var = LSVarBinding::parse(var)?;
-                        println!("@wuc9521 LSVarBinding: {}", var);
                         vars.push(var);
                     } else {
                         let body = LSTerm::parse(var)?;
@@ -336,7 +334,7 @@ impl LSFile {
     }
 }
 
-pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile, LSParseError> {
+pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
     let [file]: [_; 1] = LSParser::parse(Rule::LSProg, content)?
         .collect_vec()
         .try_into()
@@ -381,35 +379,17 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
             }
             Rule::FuncDecl => {
                 let sig = FuncSig::parse(cmd.clone()).unwrap();
-                if let Some(ref mut runtime) = runtime {
-                    runtime.insert(
-                        sig.name.clone(),
-                        crate::lang::runtime::Symbol::Func(sig.clone()),
-                    );
-                }
                 ls_file.push(LSCmd::DeclareFunc(sig));
             }
             Rule::ModelDef => {
                 let model = Model::parse(cmd.clone()).unwrap();
-                if let Some(ref mut runtime) = runtime {
-                    runtime.insert(
-                        model.name.clone(),
-                        crate::lang::runtime::Symbol::Model(model.clone()),
-                    );
-                    for univ in &model.univ_defs {
-                        runtime.insert(
-                            univ.sort.to_string(),
-                            crate::lang::runtime::Symbol::Univ(univ.clone()),
-                        );
-                    }
-                }
                 ls_file.push(LSCmd::DefineModel(model));
             }
             Rule::FuncDefRec => {
                 let res = FuncDefRec::parse(cmd.clone());
                 match res {
                     Ok(func) => ls_file.push(LSCmd::DefineFuncRec(func)),
-                    Err(e) => eprintln!("{}", e),
+                    Err(e) => error!("{}", e),
                 }
             }
             Rule::ThSpecCmd => {
@@ -437,9 +417,8 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
     Ok(ls_file)
 }
 
-pub fn parse_command(
+pub fn parse_cmds(
     input: &str,
-    mut runtime: Option<&mut Runtime>,
 ) -> Result<LSCmd, LSParseError> {
     let mut pairs = LSParser::parse(Rule::LSCmd, input)?;
     let cmd = pairs
@@ -475,28 +454,10 @@ pub fn parse_command(
         }
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd.clone()).unwrap();
-            if let Some(ref mut runtime) = runtime {
-                runtime.insert(
-                    sig.name.clone(),
-                    crate::lang::runtime::Symbol::Func(sig.clone()),
-                );
-            }
             Ok(LSCmd::DeclareFunc(sig))
         }
         Rule::ModelDef => {
             let model = Model::parse(cmd.clone()).unwrap();
-            if let Some(ref mut runtime) = runtime {
-                runtime.insert(
-                    model.name.clone(),
-                    crate::lang::runtime::Symbol::Model(model.clone()),
-                );
-                for univ in &model.univ_defs {
-                    runtime.insert(
-                        univ.sort.to_string(),
-                        crate::lang::runtime::Symbol::Univ(univ.clone()),
-                    );
-                }
-            }
             Ok(LSCmd::DefineModel(model))
         }
         Rule::ThSpecCmd => {
@@ -522,9 +483,8 @@ pub fn parse_command(
 
 pub fn parse_commands(
     input: &str,
-    runtime: Option<&mut Runtime>,
 ) -> Vec<Result<LSCmd, LSParseError>> {
-    match parse(input, runtime) {
+    match parse(input) {
         Ok(ls_file) => ls_file.cmds.into_iter().map(Ok).collect(),
         Err(e) => vec![Err(e)],
     }

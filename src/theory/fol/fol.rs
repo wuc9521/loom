@@ -7,7 +7,7 @@ use sygus_parser::Sort;
 #[derive(Debug, Default, Clone)]
 pub struct FOModelCtx {
     pub qvars: Vec<(String, sygus_parser::Sort)>, // (name, sort)
-    pub interp_table: crate::lang::runtime::ModelSymbolTable, // 新增：小符号表
+    pub interp_table: crate::lang::runtime::ModelSymbolTable, 
 }
 
 pub fn handle_model_extcmd(ctx: &mut FOModelCtx, extcmd: &crate::lang::model::ThSpecCmd) {

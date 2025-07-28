@@ -1,8 +1,9 @@
-use ls_parser::lang::runtime::Session;
+use ls_parser::lang::interpreter::Interpreter;
 use ls_parser::theory::ModelCtx;
 use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 use std::io;
+use log::error;
 
 fn paren_balance(s: &str) -> i32 {
     let mut count = 0;
@@ -16,7 +17,7 @@ fn paren_balance(s: &str) -> i32 {
     count
 }
 
-fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
+fn handle_repl_command(cmd: &str, interpreter: &mut Interpreter) -> bool {
     if cmd == ":help" {
         println!("Available commands:\n  :help          show help\n  :load <file>   load file\n  :ctx           print current context and symbol table\n  :save <file>   save last model as json\n  :quit/:exit    exit");
         true
@@ -25,11 +26,11 @@ fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
         match std::fs::read_to_string(filename) {
             Ok(content) => {
                 for res in
-                    ls_parser::parser::ast::parse_commands(&content, Some(&mut session.runtime))
+                    ls_parser::parser::ast::parse_commands(&content)
                 {
                     match res {
                         Ok(cmd) => {
-                            let _ = session.handle_command(&cmd);
+                            let _ = interpreter.handle_command(&cmd);
                         }
                         Err(e) => println!("{}", e),
                     }
@@ -39,15 +40,16 @@ fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
         }
         true
     } else if cmd == ":ctx" {
-        println!("current ctx: {:?}", session.ctx);
+        println!("current ctx: {:?}", interpreter.ctx);
         println!("symbol table:");
-        for (name, sym) in session.runtime.iter() {
-            println!("  {}: {:?}", name, sym);
+        // show global scope symbols
+        for (name, value) in interpreter.global_scope().bindings.iter() {
+            println!("  {}: {:?}", name, value);
         }
         true
     } else if cmd.starts_with(":save ") {
         let filename = cmd[6..].trim();
-        match &session.last_model {
+        match &interpreter.last_model {
             Some((model, ModelCtx::FOL(fol_ctx))) => {
                 let json = ls_parser::theory::fol::model_to_json_with_symbol_map(model, fol_ctx);
                 std::fs::write(filename, serde_json::to_string_pretty(&json).unwrap()).unwrap();
@@ -76,7 +78,7 @@ fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
 
 pub fn repl() -> io::Result<()> {
     let mut buffer = String::new();
-    let mut session = Session::new();
+    let mut interpreter = Interpreter::new();
     let mut rl =
         Editor::<(), DefaultHistory>::new().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     loop {
@@ -92,18 +94,18 @@ pub fn repl() -> io::Result<()> {
                 }
                 if buffer.trim_start().starts_with(':') {
                     let cmd = buffer.trim();
-                    if handle_repl_command(cmd, &mut session) {
+                    if handle_repl_command(cmd, &mut interpreter) {
                         buffer.clear();
                         continue;
                     }
                 }
                 let mut has_error = false;
                 let results =
-                    ls_parser::parser::ast::parse_commands(&buffer, Some(&mut session.runtime));
+                    ls_parser::parser::ast::parse_commands(&buffer);
                 for res in &results {
                     match res {
                         Ok(cmd) => {
-                            let _ = session.handle_command(&cmd);
+                            let _ = interpreter.handle_command(&cmd);
                         }
                         Err(e) => {
                             println!("{}", e);
@@ -125,7 +127,7 @@ pub fn repl() -> io::Result<()> {
                 break;
             }
             Err(e) => {
-                println!("readline error: {}", e);
+                error!("readline error: {}", e);
                 break;
             }
         }

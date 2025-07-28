@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub struct KripkeCtx {
     pub init_name: Option<String>,
     pub tran_name: Option<String>,
-    pub interp_table: crate::lang::runtime::ModelSymbolTable, // 新增：小符号表
+
 }
 
     pub fn handle_model_extcmd(ctx: &mut KripkeCtx, extcmd: &crate::lang::model::ThSpecCmd) {

@@ -17,3 +17,5 @@ lexpr = "0.2.7"
 sygus-parser = {path = "../sygus-parser-rs"}
 walkdir = "2"
 rustyline = "13"
+env_logger = "0.10"
+log = "0.4"

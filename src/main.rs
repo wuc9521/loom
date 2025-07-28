@@ -1,6 +1,7 @@
 use clap::Parser as ClapParser;
+use log::{error, warn};
 use ls_parser::{
-    lang::runtime::Session,
+    lang::interpreter::Interpreter,
     parser::ast::LSCmd,
     theory::{fol, pml, re, Logic, ModelCtx, SygusDesugar},
     utils::extract_logic_sygus,
@@ -49,11 +50,28 @@ pub struct CLI {
 /// Run the language parsing application
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
+
+    // initialize logger.
+    if args.verbose {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+            .format_timestamp(None)
+            .format_module_path(false)
+            .format_target(false)
+            .init();
+    } else {
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+            .format_timestamp(None)
+            .format_module_path(false)
+            .format_target(false)
+            .init();
+    }
+
     let file_path = args.file;
-    // let theory_file = args.theory_file.unwrap();
+
     if file_path == None {
         return repl::repl();
     }
+
     let input = fs::read_to_string(file_path.unwrap())?;
     if args.as_sygus {
         let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
@@ -61,36 +79,66 @@ fn main() -> Result<(), io::Error> {
         let logic = match logic_str {
             "SLIA" => Logic::RE,
             _ => {
-                eprintln!("Unsupported logic: {}", logic_str);
+                error!("Unsupported logic: {}", logic_str);
                 return Err(io::Error::new(io::ErrorKind::Other, "Unsupported logic"));
             }
         };
         println!("{}", logic.desugar(&sygus_file));
         return Ok(());
     }
-    let mut session = Session::new();
-    let results = ls_parser::parser::ast::parse_commands(&input, Some(&mut session.runtime));
-    let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
-    for res in results {
-        match res {
-            Ok(cmd) => {
-                let _ = session.handle_command(&cmd);
-                lscmd_vec.push(cmd);
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
-            }
+
+    let mut interpreter = Interpreter::new();
+    let results = interpreter.interp(&input);
+    match results {
+        Ok(_) => {
+        }
+        Err(e) => {
+            error!("Interpretation error: {}", e);
+            return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
         }
     }
-    let mut ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
+
     if args.dump_ls {
+        let mut interpreter = Interpreter::new();
+        let results = ls_parser::parser::ast::parse_commands(&input);
+        let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
+        for res in results {
+            match res {
+                Ok(cmd) => {
+                    let _ = interpreter.handle_command(&cmd);
+                    lscmd_vec.push(cmd);
+                }
+                Err(e) => {
+                    error!("Parse error: {}", e);
+                    return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
+                }
+            }
+        }
+        let ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
         for cmd in &ls_file.cmds {
             println!("{}", cmd);
         }
     }
+
     if args.dump_sygus {
-        match session.logic {
+        let mut interpreter = Interpreter::new();
+        let results = ls_parser::parser::ast::parse_commands(&input);
+        let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
+        for res in results {
+            match res {
+                Ok(cmd) => {
+                    let _ = interpreter.handle_command(&cmd);
+                    lscmd_vec.push(cmd);
+                }
+                Err(e) => {
+                    error!("Parse error: {}", e);
+                    return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
+                }
+            }
+        }
+        let mut ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
+
+        match interpreter.logic {
             Some(Logic::FOL) => {
                 for cmd in &mut ls_file.cmds {
                     if let LSCmd::DefineModel(model) = cmd {
@@ -133,8 +181,11 @@ fn main() -> Result<(), io::Error> {
                     println!("{}", cmd);
                 }
             }
-            _ => {}
+            _ => {
+                warn!("Unknown logic type: {:?}", interpreter.logic);
+            }
         }
     }
+
     Ok(())
 }

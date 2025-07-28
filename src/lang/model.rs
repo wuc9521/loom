@@ -7,6 +7,7 @@ use derive_more::Display;
 use pest::iterators::Pair;
 use sygus_parser::Sort;
 use sygus_parser::{Identifier, SortedVar};
+use log::error;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -72,8 +73,8 @@ impl Model {
                     model.ext_cmds.push(th_spec_cmd);
                 }
                 _ => {
-                    eprintln!(
-                        "[DEBUG] Unmatched rule: {:?}, content: {}",
+                    error!(
+                        "Unmatched rule: {:?}, content: {}",
                         item_pair.as_rule(),
                         item_pair.as_str()
                     );
@@ -109,7 +110,7 @@ impl Model {
                     );
                 }
                 FuncInterp::MatchInterp(name, _, _, _, _) => {
-                    // 对于match表达式，我们创建一个简单的函数应用
+                    // TODO:?
                     let func_app = LSTerm::AppTerm(Identifier::Symbol(name.clone()), vec![]);
                     table.insert(
                         name.clone(),
@@ -328,25 +329,44 @@ impl Pattern {
         Self { elements }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        // 检查是否是括号包围的pattern
+        // TODO: unimplemented!()
         if pair.as_str().starts_with('(') && pair.as_str().ends_with(')') {
             let content = &pair.as_str()[1..pair.as_str().len() - 1];
-            // 尝试解析为UnivElem
+            // try to parse as UnivElem
             if content.starts_with('$') {
                 let elem = UnivElem::from_str(content)?;
                 return Ok(Self::new(vec![PatternElem::UnivElem(elem)]));
             }
-            // 尝试解析为Symbol
+            // try to parse as Symbol
             if content.chars().all(|c| c.is_alphanumeric() || c == '_') {
                 return Ok(Self::new(vec![PatternElem::Var(content.to_string())]));
             }
-            // 尝试解析为wildcard
+            // try to parse as wildcard
             if content == "_" {
                 return Ok(Self::new(vec![PatternElem::Wildcard]));
             }
+            
+            // handle constructor pattern, e.g. (re.sym c)
+            // split content and parse each element
+            let parts: Vec<&str> = content.split_whitespace().collect();
+            if parts.len() > 1 {
+                let mut elements = Vec::new();
+                for part in parts {
+                    if part.starts_with('$') {
+                        // UnivElem
+                        let elem = UnivElem::from_str(part)?;
+                        elements.push(PatternElem::UnivElem(elem));
+                    } else if part == "_" {
+                        // Wildcard
+                        elements.push(PatternElem::Wildcard);
+                    } else {
+                        // Symbol (variable)
+                        elements.push(PatternElem::Var(part.to_string()));
+                    }
+                }
+                return Ok(Self::new(elements));
+            }
         }
-
-        // 原有的解析逻辑
         let elements = pair
             .into_inner()
             .map(|elem| match elem.as_rule() {
