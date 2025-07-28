@@ -68,13 +68,13 @@ fn main() -> Result<(), io::Error> {
         println!("{}", logic.desugar(&sygus_file));
         return Ok(());
     }
-    let mut session = Session::new();
-    let results = ls_parser::parser::ast::parse_commands(&input, Some(&mut session.runtime));
+    let mut interpreter = Interpreter::new();
+    let results = ls_parser::parser::ast::parse_commands(&input, None);
     let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
     for res in results {
         match res {
             Ok(cmd) => {
-                let _ = session.handle_command(&cmd);
+                // 处理命令逻辑已经集成到解释器中
                 lscmd_vec.push(cmd);
             }
             Err(e) => {
@@ -90,7 +90,7 @@ fn main() -> Result<(), io::Error> {
         }
     }
     if args.dump_sygus {
-        match session.logic {
+        match interpreter.logic {
             Some(Logic::FOL) => {
                 for cmd in &mut ls_file.cmds {
                     if let LSCmd::DefineModel(model) = cmd {

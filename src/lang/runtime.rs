@@ -3,6 +3,78 @@ use crate::lang::signature::FuncSig;
 use crate::parser::ast::{LSCmd, LSTerm};
 use crate::theory::{dispatch_extcmd, Logic, ModelCtx};
 use std::collections::HashMap;
+use derive_more::Display;
+
+// 值类型枚举
+#[derive(Debug, Clone, Display)]
+pub enum Value {
+    #[display(fmt = "{}", _0)]
+    Bool(bool),
+    #[display(fmt = "{}", _0)]
+    Int(i64),
+    #[display(fmt = "{}", _0)]
+    String(String),
+    #[display(fmt = "{}", _0)]
+    Function(Function),
+    #[display(fmt = "{}", _0)]
+    Model(crate::lang::model::Model),
+    #[display(fmt = "{}", _0)]
+    Term(LSTerm),
+    #[display(fmt = "{}", _0)]
+    Symbol(String),
+}
+
+// 函数类型
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body: LSTerm,
+    pub closure: Scope,
+}
+
+impl std::fmt::Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "λ({}) {}", self.params.join(", "), self.body)
+    }
+}
+
+// 作用域
+#[derive(Debug, Clone)]
+pub struct Scope {
+    pub bindings: HashMap<String, Value>,
+    pub parent: Option<Box<Scope>>,
+}
+
+impl Scope {
+    pub fn new() -> Self {
+        Self {
+            bindings: HashMap::new(),
+            parent: None,
+        }
+    }
+
+    pub fn with_parent(parent: Scope) -> Self {
+        Self {
+            bindings: HashMap::new(),
+            parent: Some(Box::new(parent)),
+        }
+    }
+
+    pub fn define(&mut self, name: String, value: Value) {
+        self.bindings.insert(name, value);
+    }
+
+    pub fn lookup(&self, name: &str) -> Option<Value> {
+        if let Some(value) = self.bindings.get(name) {
+            Some(value.clone())
+        } else if let Some(parent) = &self.parent {
+            parent.lookup(name)
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Symbol {

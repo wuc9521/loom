@@ -3,5 +3,7 @@ pub mod signature;
 pub mod model;
 pub mod theory;
 pub mod runtime;
+pub mod interpreter;
 pub use model::*;
 pub use func::*;
+pub use interpreter::*;
