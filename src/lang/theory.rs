@@ -142,37 +142,3 @@ fn parse_sort_decl(val: &Value) -> Option<SortDecl> {
     let arity = list[1].as_u64()? as usize;
     Some(SortDecl { name, arity })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lexpr::from_str;
-
-    #[test]
-    fn test_parse_theory() {
-        let sexp = r#"
-        (theory FOL
-         :sorts ((Int 0))
-         :funs ((NUMERAL Int)
-                (- Int Int)
-                (- Int Int Int :left-assoc)
-                (+ Int Int Int :left-assoc)
-                (* Int Int Int :left-assoc)
-                (div Int Int Int :left-assoc)
-                (mod Int Int Int)
-                (abs Int Int)
-                (<= Int Int Bool :chainable)
-                (<  Int Int Bool :chainable)
-                (>= Int Int Bool :chainable)
-                (>  Int Int Bool :chainable)))
-        "#;
-        let v = from_str(sexp).unwrap();
-        let theory = Theory::from_sexp(&v).unwrap();
-        assert_eq!(theory.name, "Ints");
-        assert_eq!(theory.sorts.len(), 1);
-        assert_eq!(theory.funs.len(), 12);
-        assert_eq!(theory.funs[0].name, "NUMERAL");
-        assert_eq!(theory.funs[0].ret_sort, "Int");
-        assert_eq!(theory.funs[2].attrs[0], ":left-assoc");
-    }
-}

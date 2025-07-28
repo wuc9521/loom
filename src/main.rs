@@ -1,26 +1,19 @@
-use clap::Parser as ClapParser;
+use clap::Parser;
 use log::{error, warn};
-use ls_parser::{
-    lang::interpreter::Interpreter,
-    parser::ast::LSCmd,
-    theory::{fol, pml, re, Logic, ModelCtx, SygusDesugar},
-    utils::extract_logic_sygus,
-};
-use std::{
-    fs,
-    io::{self},
-    path::PathBuf,
-};
+use ls_parser::lang::interpreter::Interpreter;
+use ls_parser::parser::ast::{parse, LSCmd};
+use ls_parser::theory::fol;
+use ls_parser::theory::pml;
+use ls_parser::theory::re;
+use ls_parser::theory::{Logic, ModelCtx, SygusDesugar};
+use std::fs;
+use std::io;
+use std::path::PathBuf;
 
 mod repl;
 
-/// CLI application for parsing your custom language
-#[derive(clap::Parser, Debug)]
-#[command(
-    author,
-    version,
-    about = "Parse and analyze your custom language files"
-)]
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 pub struct CLI {
     /// Path to the input file
     #[arg(short, long)]
@@ -47,36 +40,125 @@ pub struct CLI {
     guard: bool,
 }
 
-/// Run the language parsing application
+fn extract_logic_sygus(sygus_file: &sygus_parser::SyGuSFile) -> Option<String> {
+    for cmd in &sygus_file.cmds {
+        if let sygus_parser::SyGuSCmd::SetLogic(logic) = cmd {
+            return Some(logic.clone());
+        }
+    }
+    None
+}
+
+/// unified file processing function
+fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
+    // parse file
+    let ls_file = parse(input)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+
+    // create interpreter and execute commands
+    let mut interpreter = Interpreter::new();
+    
+    // if theory file is provided, load it first
+    if let Some(ref theory_file) = args.theory_file {
+        interpreter.load_theory_file(theory_file.to_str().unwrap())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+    }
+    
+    interpreter.interp(input)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+
+    // execute different outputs based on arguments
+    if args.dump_ls {
+        for cmd in &ls_file.cmds {
+            println!("{}", cmd);
+        }
+    }
+
+    if args.dump_sygus {
+        let mut ls_file_mut = ls_file;
+
+        // process models based on logic type
+        match interpreter.logic {
+            Some(Logic::FOL) => {
+                process_models_for_logic(&mut ls_file_mut, |model| {
+                    let mut ctx = fol::FOModelCtx::default();
+                    for thcmd in &model.ext_cmds {
+                        fol::handle_model_extcmd(&mut ctx, thcmd);
+                    }
+                    model.ext_ctx = Some(ModelCtx::FOL(ctx));
+                });
+                for cmd in fol::to_sygus(&ls_file_mut) {
+                    println!("{}", cmd);
+                }
+            }
+            Some(Logic::PML) => {
+                process_models_for_logic(&mut ls_file_mut, |model| {
+                    let mut ctx = pml::KripkeCtx::default();
+                    for thcmd in &model.ext_cmds {
+                        pml::handle_model_extcmd(&mut ctx, thcmd);
+                    }
+                    model.ext_ctx = Some(ModelCtx::PML(ctx));
+                });
+                for cmd in pml::to_sygus(&ls_file_mut) {
+                    println!("{}", cmd);
+                }
+            }
+            Some(Logic::RE) => {
+                process_models_for_logic(&mut ls_file_mut, |model| {
+                    let mut ctx = re::StringCtx::default();
+                    for thcmd in &model.ext_cmds {
+                        re::handle_model_extcmd(&mut ctx, thcmd);
+                    }
+                    model.ext_ctx = Some(ModelCtx::RE(ctx));
+                });
+                for cmd in re::to_sygus(&ls_file_mut) {
+                    println!("{}", cmd);
+                }
+            }
+            _ => {
+                warn!("Unknown logic type: {}", interpreter.logic.unwrap());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// generic function to process model definitions
+fn process_models_for_logic<F>(ls_file: &mut ls_parser::parser::ast::LSFile, processor: F)
+where
+    F: Fn(&mut ls_parser::lang::model::Model),
+{
+    for cmd in &mut ls_file.cmds {
+        if let LSCmd::ModelDef(model) = cmd {
+            processor(model);
+        }
+    }
+}
+
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
 
-    // initialize logger.
     if args.verbose {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
             .format_timestamp(None)
             .format_module_path(false)
             .format_target(false)
             .init();
-    } else {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-            .format_timestamp(None)
-            .format_module_path(false)
-            .format_target(false)
-            .init();
     }
 
-    let file_path = args.file;
+    let file_path = &args.file;
 
-    if file_path == None {
+    if file_path.is_none() {
         return repl::repl();
     }
 
-    let input = fs::read_to_string(file_path.unwrap())?;
+    let input = fs::read_to_string(file_path.as_ref().unwrap())?;
+
     if args.as_sygus {
         let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
         let logic_str = extract_logic_sygus(&sygus_file).unwrap();
-        let logic = match logic_str {
+        let logic = match logic_str.as_str() {
             "SLIA" => Logic::RE,
             _ => {
                 error!("Unsupported logic: {}", logic_str);
@@ -87,105 +169,5 @@ fn main() -> Result<(), io::Error> {
         return Ok(());
     }
 
-    let mut interpreter = Interpreter::new();
-    let results = interpreter.interp(&input);
-    match results {
-        Ok(_) => {
-        }
-        Err(e) => {
-            error!("Interpretation error: {}", e);
-            return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
-        }
-    }
-
-    if args.dump_ls {
-        let mut interpreter = Interpreter::new();
-        let results = ls_parser::parser::ast::parse_commands(&input);
-        let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
-        for res in results {
-            match res {
-                Ok(cmd) => {
-                    let _ = interpreter.handle_command(&cmd);
-                    lscmd_vec.push(cmd);
-                }
-                Err(e) => {
-                    error!("Parse error: {}", e);
-                    return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
-                }
-            }
-        }
-        let ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
-        for cmd in &ls_file.cmds {
-            println!("{}", cmd);
-        }
-    }
-
-    if args.dump_sygus {
-        let mut interpreter = Interpreter::new();
-        let results = ls_parser::parser::ast::parse_commands(&input);
-        let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
-        for res in results {
-            match res {
-                Ok(cmd) => {
-                    let _ = interpreter.handle_command(&cmd);
-                    lscmd_vec.push(cmd);
-                }
-                Err(e) => {
-                    error!("Parse error: {}", e);
-                    return Err(io::Error::new(io::ErrorKind::Other, format!("{}", e)));
-                }
-            }
-        }
-        let mut ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
-
-        match interpreter.logic {
-            Some(Logic::FOL) => {
-                for cmd in &mut ls_file.cmds {
-                    if let LSCmd::DefineModel(model) = cmd {
-                        let mut ctx = fol::FOModelCtx::default();
-                        for thcmd in &model.ext_cmds {
-                            fol::handle_model_extcmd(&mut ctx, thcmd);
-                        }
-                        model.ext_ctx = Some(ModelCtx::FOL(ctx));
-                    }
-                }
-                for cmd in fol::to_sygus(&ls_file) {
-                    println!("{}", cmd);
-                }
-            }
-            Some(Logic::PML) => {
-                for cmd in &mut ls_file.cmds {
-                    if let LSCmd::DefineModel(model) = cmd {
-                        let mut ctx = pml::KripkeCtx::default();
-                        for thcmd in &model.ext_cmds {
-                            pml::handle_model_extcmd(&mut ctx, thcmd);
-                        }
-                        model.ext_ctx = Some(ModelCtx::PML(ctx));
-                    }
-                }
-                for cmd in pml::to_sygus(&ls_file) {
-                    println!("{}", cmd);
-                }
-            }
-            Some(Logic::RE) => {
-                for cmd in &mut ls_file.cmds {
-                    if let LSCmd::DefineModel(model) = cmd {
-                        let mut ctx = re::StringCtx::default();
-                        for thcmd in &model.ext_cmds {
-                            re::handle_model_extcmd(&mut ctx, thcmd);
-                        }
-                        model.ext_ctx = Some(ModelCtx::RE(ctx));
-                    }
-                }
-                for cmd in re::to_sygus(&ls_file) {
-                    println!("{}", cmd);
-                }
-            }
-            _ => {
-                warn!("Unknown logic type: {:?}", interpreter.logic);
-            }
-        }
-    }
-
-    Ok(())
+    process_file(&input, &args)
 }

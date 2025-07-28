@@ -1,4 +1,4 @@
-use crate::lang::model::{FuncInterp, Model};
+use crate::lang::model::{InterpFun, Model};
 use crate::parser::ast::LSTerm;
 use crate::theory::utils::{eval, get_universe_domain_and_map};
 use serde_json::{json, Value};
@@ -90,7 +90,7 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     let mut prop_cases = HashMap::new();
     let mut labels: HashMap<usize, Vec<String>> = HashMap::new();
     for interp in &model.func_interps {
-        if let FuncInterp::MatchInterp(name, args, _, _, cases) = interp {
+        if let InterpFun::MatchInterp(name, args, _, _, cases) = interp {
             let arity = args.len();
             let is_bool = cases.iter().any(|c| {
                 matches!(&c.value, LSTerm::Literal(lit) 

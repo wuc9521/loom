@@ -40,7 +40,7 @@ impl PatternMatcher {
     /// match single pattern element
     fn matches_single_pattern(&self, value: &Value, pattern_elem: &PatternElem) -> Result<bool, String> {
         match pattern_elem {
-            PatternElem::UnivElem(univ_elem) => {
+            PatternElem::SortElem(univ_elem) => {
                 // match specific value
                 if let Value::Symbol(sym) = value {
                     Ok(sym == &univ_elem.name)
@@ -67,7 +67,7 @@ impl PatternMatcher {
         }
 
         let first_elem = &pattern.elements[0];
-        if let PatternElem::UnivElem(univ_elem) = first_elem {
+        if let PatternElem::SortElem(univ_elem) = first_elem {
             // check if it is a valid constructor
             let constructor_name = &univ_elem.name;
             let constructor = data_type.constructors.iter()
@@ -119,7 +119,7 @@ impl PatternMatcher {
                         bindings.push((var_name.clone(), value.clone()));
                     }
                 }
-                PatternElem::UnivElem(univ_elem) => {
+                PatternElem::SortElem(univ_elem) => {
                     // check if value matches
                     if let Value::Symbol(sym) = value {
                         if sym != &univ_elem.name {

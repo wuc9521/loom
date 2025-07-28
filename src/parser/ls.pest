@@ -30,30 +30,34 @@ LSCmd = {
   SyGuSCmd
 | FuncDecl
 | ModelDef
+| FuncDef
 | FuncDefRec
-| ModelDecl
+| EnumSortDef
+| ThDefCmd
 | ThSpecCmd
 }
 
+ThDefCmd = { "(" ~ #LSTkDefTh="define-theory" ~ Symbol ~ "(" ~ LSCmd* ~ ")" ~ ")" }
 FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
-ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
-ModelDecl = { "(" ~ #LSTkDeclModel="declare-model" ~ Symbol ~ ")" }
-FuncInterp = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
+ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
+// InterpFun = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
 MatchCase = { "(" ~ Pattern ~ LSTerm ~ ")" }
 
-UnivDef = { "(" ~ #LSTkDefUniv="define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
+SetUniv = { "(" ~ #LSTkSetUniv="set-univ" ~ Symbol ~ Sort ~ ")" }
+SortElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
+FuncDef = {"(" ~ #LSTkDefineFun="define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
 FuncDefRec = {"(" ~ #LSTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
+EnumSortDef = { "(" ~ #LSTkDefSortEnum="define-sort-enum" ~ Symbol ~ "(" ~ SortElem* ~ ")" ~ ")" }
 
 Pattern = { 
   "_" // wildcard
-| UnivElem 
+| SortElem 
 | Symbol 
-| "(" ~ (UnivElem | Symbol | "_")+ ~ ")" 
+| "(" ~ (SortElem | Symbol | "_")+ ~ ")" 
 }
 
 LSReservedCmd = { 
-  "define-univ" | "interp-fun" | "define-model" | "declare-fun"
+  "set-univ" | "interp-fun" | "define-model" | "declare-fun" | "define-sort-enum"
 }
 
 // Theory specification commands

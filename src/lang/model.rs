@@ -1,15 +1,15 @@
 // src/logic/model.rs
 
-use crate::parser::ast::LSTerm;
+use crate::parser::ast::{LSCmd, LSTerm};
 use crate::parser::{LSParseError, Rule};
 use core::str;
 use derive_more::Display;
+
 use pest::iterators::Pair;
 use sygus_parser::Sort;
 use sygus_parser::{Identifier, SortedVar};
-use log::error;
 
-// ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
+// ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ SetUniv* ~ InterpFun* ~ ")" }
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "({} {})", name, args)]
 pub struct ThSpecCmd {
@@ -30,16 +30,18 @@ impl ThSpecCmd {
 
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(define-model {} {} {} {})",
+    fmt = "(define-model {} ({}) {} {} {})",
     name,
+    "type_params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
     "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
     "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")",
     "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
 pub struct Model {
     pub name: String,
-    pub univ_defs: Vec<DefineUniv>,
-    pub func_interps: Vec<FuncInterp>,
+    pub type_params: Vec<String>, 
+    pub univ_defs: Vec<SetUniv>,
+    pub func_interps: Vec<InterpFun>,
     pub ext_cmds: Vec<ThSpecCmd>,
     pub ext_ctx: Option<crate::theory::ModelCtx>,
 }
@@ -48,55 +50,60 @@ impl Model {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            type_params: Vec::new(),
             univ_defs: Vec::new(),
             func_interps: Vec::new(),
             ext_cmds: Vec::new(),
             ext_ctx: None,
         }
     }
+    ///ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | InterpFun | LSCmd)* ~ ")" }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         let mut inner_pairs = pair.into_inner();
         let name = inner_pairs.next().unwrap().as_str();
         let mut model = Self::new(name);
+        // parse type parameters (list of symbols)
+        while let Some(symbol_pair) = inner_pairs.peek() {
+            if symbol_pair.as_rule() == Rule::Symbol {
+                model.type_params.push(symbol_pair.as_str().to_string());
+                inner_pairs.next();
+            } else {
+                break;
+            }
+        }
         for item_pair in inner_pairs {
             match item_pair.as_rule() {
-                Rule::UnivDef => {
-                    let univ_def = DefineUniv::parse(item_pair)?;
+                Rule::SetUniv => {
+                    let univ_def = SetUniv::parse(item_pair)?;
                     model.add_univ_def(univ_def);
                 }
-                Rule::FuncInterp => {
-                    let func_interp = FuncInterp::parse(item_pair)?;
-                    model.add_func_interp(func_interp);
-                }
-                Rule::ThSpecCmd => {
-                    let th_spec_cmd = ThSpecCmd::parse(item_pair)?;
-                    model.ext_cmds.push(th_spec_cmd);
+                // Rule::InterpFun => {
+                //     let func_interp = InterpFun::parse(item_pair)?;
+                //     model.add_func_interp(func_interp);
+                // }
+                Rule::LSCmd => {
+                    let cmd = crate::parser::ast::parse_cmd(item_pair)?;
+                    if let LSCmd::ThSpec(th_cmd) = cmd {
+                        model.ext_cmds.push(th_cmd);
+                    }
                 }
                 _ => {
-                    error!(
-                        "Unmatched rule: {:?}, content: {}",
-                        item_pair.as_rule(),
-                        item_pair.as_str()
-                    );
-                    Err(LSParseError::UnsupportedFeature(format!(
-                        "Unsupported feature in model definition: {}",
-                        item_pair.as_str()
-                    )))?;
+                    unreachable!()
                 }
             }
         }
         Ok(model)
     }
-    pub fn add_univ_def(&mut self, univ_def: DefineUniv) {
+    pub fn add_univ_def(&mut self, univ_def: SetUniv) {
         self.univ_defs.push(univ_def);
     }
-    pub fn add_func_interp(&mut self, func_interp: FuncInterp) {
+    pub fn add_func_interp(&mut self, func_interp: InterpFun) {
         self.func_interps.push(func_interp);
     }
     pub fn fill_interp_table(&self, table: &mut crate::lang::runtime::ModelSymbolTable) {
         for interp in &self.func_interps {
             match interp {
-                FuncInterp::SimpleInterp(name, _, _, term) => {
+                InterpFun::SimpleInterp(name, _, _, term) => {
                     table.insert(
                         name.clone(),
                         crate::lang::runtime::SymbolInterp::InterpFun(
@@ -109,7 +116,7 @@ impl Model {
                         ),
                     );
                 }
-                FuncInterp::MatchInterp(name, _, _, _, _) => {
+                InterpFun::MatchInterp(name, _, _, _, _) => {
                     // TODO:?
                     let func_app = LSTerm::AppTerm(Identifier::Symbol(name.clone()), vec![]);
                     table.insert(
@@ -129,53 +136,40 @@ impl Model {
 }
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
-#[display(
-    fmt = "(define-univ {} ({}))",
-    sort,
-    "elems.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
-)]
-pub struct DefineUniv {
+#[display(fmt = "(set-univ {} {})", name, sort)]
+pub struct SetUniv {
+    pub name: String,
     pub sort: Sort,
-    pub elems: Vec<UnivElem>,
 }
 
-// UnivDef = { "(" ~ "define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-impl DefineUniv {
-    pub fn new(sort: Sort, elems: Vec<UnivElem>) -> Self {
-        Self { sort, elems }
+// SetUniv = { "(" ~ "set-univ" ~ Sort ~ "(" ~ SortElem* ~ ")" ~ ")" }
+impl SetUniv {
+    pub fn new(name: String, sort: Sort) -> Self {
+        Self { name, sort }
     }
+    /// SetUniv = { "(" ~ #LSTkSetUniv="set-univ" ~ Symbol ~ Sort ~ ")" }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         let mut inner_pairs = pair.into_inner();
+        let name = inner_pairs.next().unwrap().as_str().to_string();
         let sort = Sort::from_str(inner_pairs.next().unwrap().as_str()).unwrap();
-        let mut elems = Vec::new();
-        while let Some(elem_pair) = inner_pairs.next() {
-            if elem_pair.as_rule() == Rule::UnivElem {
-                let elem = UnivElem::parse(elem_pair)?;
-                elems.push(elem);
-            } else {
-                Err(LSParseError::InvalidSyntax(format!(
-                    "Invalid element in universe definition: {}",
-                    elem_pair.as_str()
-                )))?;
-            }
-        }
-        Ok(Self::new(sort, elems))
+        Ok(Self::new(name, sort))
     }
-    pub fn define_univ(name: &str, elems: Vec<UnivElem>) -> Self {
+
+    pub fn define_univ(name: &str) -> Self {
         Self {
+            name: name.to_string(),
             sort: Sort::Simple(Identifier::Symbol(name.to_string())),
-            elems,
         }
     }
 }
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(fmt = "{}", name)]
-pub struct UnivElem {
+pub struct EnumSortElem {
     pub name: String,
 }
 
-impl UnivElem {
+impl EnumSortElem {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -189,9 +183,9 @@ impl UnivElem {
     }
 }
 
-// FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
+// InterpFun = { "(" ~ "interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
 #[derive(Clone, Debug, Display)]
-pub enum FuncInterp {
+pub enum InterpFun {
     #[display(
         fmt = "(interp-fun {} ({}) {} (match {} ({})))",
         _0,
@@ -211,18 +205,18 @@ pub enum FuncInterp {
     SimpleInterp(String, Vec<(String, Sort)>, Sort, LSTerm),
 }
 
-// FuncInterp = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
-impl FuncInterp {
+// InterpFun = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
+impl InterpFun {
     pub fn name(&self) -> &str {
         match self {
-            FuncInterp::MatchInterp(name, _, _, _, _) => name,
-            FuncInterp::SimpleInterp(name, _, _, _) => name,
+            InterpFun::MatchInterp(name, _, _, _, _) => name,
+            InterpFun::SimpleInterp(name, _, _, _) => name,
         }
     }
     pub fn arity(&self) -> usize {
         match self {
-            FuncInterp::MatchInterp(_, args, _, _, _) => args.len(),
-            FuncInterp::SimpleInterp(_, args, _, _) => args.len(),
+            InterpFun::MatchInterp(_, args, _, _, _) => args.len(),
+            InterpFun::SimpleInterp(_, args, _, _) => args.len(),
         }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
@@ -308,7 +302,7 @@ impl MatchCase {
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 pub enum PatternElem {
     #[display(fmt = "{}", _0)]
-    UnivElem(UnivElem),
+    SortElem(EnumSortElem),
     #[display(fmt = "{}", _0)]
     Var(String),
     #[display(fmt = "_")]
@@ -332,10 +326,10 @@ impl Pattern {
         // TODO: unimplemented!()
         if pair.as_str().starts_with('(') && pair.as_str().ends_with(')') {
             let content = &pair.as_str()[1..pair.as_str().len() - 1];
-            // try to parse as UnivElem
+            // try to parse as SortElem
             if content.starts_with('$') {
-                let elem = UnivElem::from_str(content)?;
-                return Ok(Self::new(vec![PatternElem::UnivElem(elem)]));
+                let elem = EnumSortElem::from_str(content)?;
+                return Ok(Self::new(vec![PatternElem::SortElem(elem)]));
             }
             // try to parse as Symbol
             if content.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -345,7 +339,7 @@ impl Pattern {
             if content == "_" {
                 return Ok(Self::new(vec![PatternElem::Wildcard]));
             }
-            
+
             // handle constructor pattern, e.g. (re.sym c)
             // split content and parse each element
             let parts: Vec<&str> = content.split_whitespace().collect();
@@ -353,9 +347,9 @@ impl Pattern {
                 let mut elements = Vec::new();
                 for part in parts {
                     if part.starts_with('$') {
-                        // UnivElem
-                        let elem = UnivElem::from_str(part)?;
-                        elements.push(PatternElem::UnivElem(elem));
+                        // SortElem
+                        let elem = EnumSortElem::from_str(part)?;
+                        elements.push(PatternElem::SortElem(elem));
                     } else if part == "_" {
                         // Wildcard
                         elements.push(PatternElem::Wildcard);
@@ -370,7 +364,7 @@ impl Pattern {
         let elements = pair
             .into_inner()
             .map(|elem| match elem.as_rule() {
-                Rule::UnivElem => PatternElem::UnivElem(UnivElem::parse(elem).unwrap()),
+                Rule::SortElem => PatternElem::SortElem(EnumSortElem::parse(elem).unwrap()),
                 Rule::Symbol => PatternElem::Var(elem.as_str().to_string()),
                 _ => PatternElem::Wildcard,
             })

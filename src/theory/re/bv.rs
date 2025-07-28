@@ -26,7 +26,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut models = HashMap::new();
     let mut domain_sort = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::DefineModel(model) = cmd {
+        if let crate::parser::LSCmd::ModelDef(model) = cmd {
             // dynamically get domain_sort
             if domain_sort.is_none() {
                 if let Some(univ) = model.univ_defs.get(0) {
@@ -53,7 +53,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut all_props = HashSet::new();
     for model in &loaded_models {
         for interp in &model.func_interps {
-            if let crate::lang::model::FuncInterp::MatchInterp(name, args, _, _, cases) = interp {
+            if let crate::lang::model::InterpFun::MatchInterp(name, args, _, _, cases) = interp {
                 let arity = args.len();
                 let is_bool = cases.iter().any(|c| {
                     matches!(&c.value, LSTerm::Literal(lit) 

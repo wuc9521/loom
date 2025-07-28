@@ -61,7 +61,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut models = HashMap::new();
     let mut domain_sort = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::DefineModel(model) = cmd {
+        if let crate::parser::LSCmd::ModelDef(model) = cmd {
             if domain_sort.is_none() {
                 if let Some(univ) = model.univ_defs.get(0) {
                     domain_sort = Some(univ.sort.to_string());

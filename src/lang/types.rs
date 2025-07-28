@@ -16,7 +16,7 @@ pub struct Field {
 #[derive(Debug, Clone)]
 pub struct Constructor {
     pub name: String,
-    pub fields: Vec<Field>, // list of fields   
+    pub fields: Vec<Field>, // list of fields
 }
 
 /// datatype definition
@@ -26,10 +26,18 @@ pub struct DataType {
     pub constructors: Vec<Constructor>,
 }
 
+/// enum type definition
+#[derive(Debug, Clone)]
+pub struct EnumType {
+    pub name: String,
+    pub elements: Vec<String>,
+}
+
 /// type environment
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
     pub datatypes: HashMap<String, DataType>,
+    pub enums: HashMap<String, EnumType>,
     pub variables: HashMap<String, Sort>,
     pub functions: HashMap<String, FuncType>,
 }
@@ -102,14 +110,60 @@ impl TypeEnv {
     pub fn new() -> Self {
         Self {
             datatypes: HashMap::new(),
+            enums: HashMap::new(),
             variables: HashMap::new(),
             functions: HashMap::new(),
         }
     }
 
+    /// check if the symbol already exists
+    pub fn has_symbol(&self, name: &str) -> bool {
+        self.datatypes.contains_key(name)
+            || self.enums.contains_key(name)
+            || self.variables.contains_key(name)
+            || self.functions.contains_key(name)
+    }
+
+    /// check if the datatype already exists
+    pub fn has_datatype(&self, name: &str) -> bool {
+        self.datatypes.contains_key(name)
+    }
+
+    /// check if the enum already exists
+    pub fn has_enum(&self, name: &str) -> bool {
+        self.enums.contains_key(name)
+    }
+
+    /// check if the variable already exists
+    pub fn has_variable(&self, name: &str) -> bool {
+        self.variables.contains_key(name)
+    }
+
+    /// check if the function already exists
+    pub fn has_function(&self, name: &str) -> bool {
+        self.functions.contains_key(name)
+    }
+
+    /// get the type of the symbol (if exists)
+    pub fn get_symbol_type(&self, name: &str) -> Option<&str> {
+        if self.has_datatype(name) {
+            Some("datatype")
+        } else if self.has_enum(name) {
+            Some("enum")
+        } else if self.has_variable(name) {
+            Some("variable")
+        } else if self.has_function(name) {
+            Some("function")
+        } else {
+            None
+        }
+    }
+
     /// register datatype
     pub fn register_datatype(&mut self, name: String, data_type: DataType) {
-        debug!("registering data type: {}", name);
+        self.datatypes.insert(name.clone(), data_type.clone());
+        
+        // register constructor and accessor functions
         for constructor in &data_type.constructors {
             // register function for constructor.
             let param_sorts: Vec<Sort> =
@@ -128,7 +182,6 @@ impl TypeEnv {
                 self.register_function(field.name.clone(), accessor_func);
             }
         }
-        self.datatypes.insert(name, data_type);
     }
 
     /// get data type by name
@@ -136,25 +189,38 @@ impl TypeEnv {
         self.datatypes.get(name)
     }
 
-    /// bind variable type
+    /// bind variable to sort
     pub fn bind_variable(&mut self, name: String, sort: Sort) {
         self.variables.insert(name, sort);
     }
 
-    /// get variable type
+    /// get variable type by name
     pub fn get_variable_type(&self, name: &str) -> Option<&Sort> {
         self.variables.get(name)
     }
 
-    /// register function type
+    /// register function
     pub fn register_function(&mut self, name: String, func_type: FuncType) {
-        debug!("{} :: {}", name, func_type);
         self.functions.insert(name, func_type);
     }
 
-    /// get function type
+    /// get function type by name
     pub fn get_functype(&self, name: &str) -> Option<&FuncType> {
         self.functions.get(name)
+    }
+
+    /// register enum
+    pub fn register_enum(&mut self, name: String, elements: Vec<String>) {
+        let name_clone = name.clone();
+        self.enums.insert(name.clone(), EnumType { name: name_clone, elements });
+        
+        // also bind the sort name to the enum type
+        self.bind_variable(name.clone(), Sort::from_name(name.as_str()));
+    }
+
+    /// get enum type by name
+    pub fn get_enum(&self, name: &str) -> Option<&EnumType> {
+        self.enums.get(name)
     }
 }
 
@@ -166,111 +232,155 @@ pub struct TypeInferer {
 
 impl TypeInferer {
     pub fn new() -> Self {
-        debug!("create new TypeInferer instance");
         let mut inferer = Self {
             stack: Vec::new(),
         };
-        // initialize global scope
         inferer.stack.push(TypeEnv::new());
         inferer.register_builtins();
-        debug!("TypeInferer initialized");
         inferer
+    }
+
+    /// check if there is a symbol conflict in the global scope
+    pub fn check_global_conflict(&self, name: &str, symbol_type: &str) -> Result<(), String> {
+        let global_scope = self.global_scope();
+        if global_scope.has_symbol(name) {
+            let existing_type = global_scope.get_symbol_type(name).unwrap_or("unknown");
+            Err(format!(
+                "Symbol '{}' is already defined as {} in global scope, cannot redefine as {}",
+                name, existing_type, symbol_type
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// check if there is a symbol conflict in the current scope
+    pub fn check_current_conflict(&self, name: &str, symbol_type: &str) -> Result<(), String> {
+        let current_scope = self._current_scope();
+        if current_scope.has_symbol(name) {
+            let existing_type = current_scope.get_symbol_type(name).unwrap_or("unknown");
+            Err(format!(
+                "Symbol '{}' is already defined as {} in current scope, cannot redefine as {}",
+                name, existing_type, symbol_type
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// check if there is a symbol conflict in all scopes
+    pub fn check_all_conflicts(&self, name: &str, symbol_type: &str) -> Result<(), String> {
+        // first check global conflict
+        self.check_global_conflict(name, symbol_type)?;
+        // then check current scope conflict
+        self.check_current_conflict(name, symbol_type)?;
+        Ok(())
     }
 
     fn register_builtins(&mut self) {
         debug!("register built-in types and functions");
-
         // register built-in constants
         self.global_scope_mut()
             .bind_variable("true".to_string(), Sort::bool());
         self.global_scope_mut()
             .bind_variable("false".to_string(), Sort::bool());
-        debug!("register boolean constants: true, false");
 
         // register built-in functions
-        let and_func = FuncType {
-            params: vec![Sort::bool(), Sort::bool()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("and".to_string(), and_func);
+        self.global_scope_mut().register_function(
+            "and".to_string(),
+            FuncType {
+                params: vec![Sort::bool(), Sort::bool()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let or_func = FuncType {
-            params: vec![Sort::bool(), Sort::bool()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("or".to_string(), or_func);
+        self.global_scope_mut().register_function(
+            "or".to_string(),
+            FuncType {
+                params: vec![Sort::bool(), Sort::bool()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let not_func = FuncType {
-            params: vec![Sort::bool()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("not".to_string(), not_func);
+        self.global_scope_mut().register_function(
+            "not".to_string(),
+            FuncType {
+                params: vec![Sort::bool()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let eq_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("=".to_string(), eq_func);
+        self.global_scope_mut().register_function(
+            "=".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let lt_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("<".to_string(), lt_func);
+        self.global_scope_mut().register_function(
+            "<".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let gt_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function(">".to_string(), gt_func);
+        self.global_scope_mut().register_function(
+            ">".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let le_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("<=".to_string(), le_func);
+        self.global_scope_mut().register_function(
+            "<=".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let ge_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function(">=".to_string(), ge_func);
+        self.global_scope_mut().register_function(
+            ">=".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::bool(),
+            },
+        );
 
-        let add_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::int(),
-        };
-        self.global_scope_mut()
-            .register_function("+".to_string(), add_func);
+        self.global_scope_mut().register_function(
+            "+".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::int(),
+            },
+        );
 
-        let sub_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::int(),
-        };
-        self.global_scope_mut()
-            .register_function("-".to_string(), sub_func);
+        self.global_scope_mut().register_function(
+            "-".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::int(),
+            },
+        );
 
-        let mul_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::int(),
-        };
-        self.global_scope_mut()
-            .register_function("*".to_string(), mul_func);
+        self.global_scope_mut().register_function(
+            "*".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::int(),
+            },
+        );
 
-        let div_func = FuncType {
-            params: vec![Sort::int(), Sort::int()],
-            ret: Sort::int(),
-        };
-        self.global_scope_mut()
-            .register_function("/".to_string(), div_func);
+        self.global_scope_mut().register_function(
+            "/".to_string(),
+            FuncType {
+                params: vec![Sort::int(), Sort::int()],
+                ret: Sort::int(),
+            },
+        );
 
         let ite_func = FuncType {
             params: vec![Sort::bool()], // simplified handling
@@ -278,14 +388,6 @@ impl TypeInferer {
         };
         self.global_scope_mut()
             .register_function("ite".to_string(), ite_func);
-
-        let distinct_func = FuncType {
-            params: vec![Sort::bool()], // simplified handling
-            ret: Sort::bool(),
-        };
-        self.global_scope_mut()
-            .register_function("distinct".to_string(), distinct_func);
-
         debug!(
             "built-in functions registered, total {} functions",
             self.global_scope().functions.len()
@@ -538,7 +640,7 @@ impl TypeInferer {
     }
 
     /// bind variables in pattern matching
-    fn bind_pattern_variables(
+    pub fn bind_pattern_variables(
         &mut self,
         pattern: &crate::lang::model::Pattern,
         term_type: &Sort,
@@ -648,7 +750,7 @@ impl TypeInferer {
         t1_resolved == t2_resolved
     }
 
-    fn find_variable_type(&self, name: &str) -> Option<&Sort> {
+    pub fn find_variable_type(&self, name: &str) -> Option<&Sort> {
         // lookup in scope stack (from top to bottom, i.e. from recent to distant)
         for scope in self.stack.iter().rev() {
             if let Some(sort) = scope.get_variable_type(name) {
@@ -663,6 +765,16 @@ impl TypeInferer {
         for scope in self.stack.iter().rev() {
             if let Some(func_type) = scope.get_functype(name) {
                 return Some(func_type);
+            }
+        }
+        None
+    }
+
+    pub fn find_enum_type(&self, name: &str) -> Option<&EnumType> {
+        // lookup in scope stack (from top to bottom, i.e. from recent to distant)
+        for scope in self.stack.iter().rev() {
+            if let Some(enum_type) = scope.get_enum(name) {
+                return Some(enum_type);
             }
         }
         None

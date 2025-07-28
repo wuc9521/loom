@@ -1,4 +1,4 @@
-use crate::lang::model::{DefineUniv, Model};
+use crate::lang::model::{SetUniv, Model};
 use crate::lang::signature::FuncSig;
 use crate::parser::ast::{LSCmd, LSTerm};
 use crate::theory::{dispatch_extcmd, Logic, ModelCtx};
@@ -11,7 +11,7 @@ pub enum Symbol {
     #[display(fmt = "func[{}]", _0.name)]
     Func(FuncSig),
     #[display(fmt = "univ[{}]", _0.sort)]
-    Univ(DefineUniv),
+    Univ(SetUniv),
     #[display(fmt = "model[{}]", _0.name)]
     Model(Model),
 }
@@ -52,7 +52,7 @@ pub struct ModelSymbolTable {
 #[derive(Debug, Clone)]
 pub enum SymbolInterp {
     InterpFun(String, LSTerm),
-    Univ(crate::lang::model::DefineUniv),
+    Univ(crate::lang::model::SetUniv),
 }
 
 impl ModelSymbolTable {
@@ -206,57 +206,44 @@ impl Session {
             LSTerm::Identifier(ident) => {
                 let sym = ident.to_string();
                 if let Some(value) = self.current_scope.lookup(&sym) {
-                    debug!("find symbol in current scope: {} = {}", sym, value);
                     Ok(value)
                 } else if let Some(symbol) = self.runtime.get(&sym) {
-                    debug!("find symbol in runtime: {} = {}", sym, symbol);
                     match symbol {
                         Symbol::Func(func_sig) => {
-                            debug!("find function definition: {}", func_sig.name);
                             Ok(Value::Symbol(func_sig.name.clone()))
                         }
                         Symbol::Model(model) => {
-                            debug!("find model definition: {}", model.name);
                             Ok(Value::Model(model.clone()))
                         }
                         Symbol::Univ(univ) => {
-                            debug!("find universum definition: {}", univ.sort);
                             Ok(Value::Symbol(univ.sort.to_string()))
                         }
                     }
                 } else {
-                    error!("undefined symbol: {}", sym);
-                    Err(format!("Undefined symbol: {}", sym))
+                    Err(format!("undefined symbol: {}", sym))
                 }
             }
             LSTerm::Literal(lit) => {
-                debug!("evaluate literal: {:?}", lit);
                 match lit {
                     sygus_parser::Literal::Numeral(n) => {
                         let value = Value::Int(*n as i64);
-                        debug!("numeric literal result: {:?}", value);
                         Ok(value)
                     }
                     sygus_parser::Literal::Decimal(d) => {
                         let value = Value::String(d.to_string());
-                        debug!("string literal result: {:?}", value);
                         Ok(value)
                     }
                     _ => {
-                        debug!("other literal type: {:?}", lit);
                         Ok(Value::Symbol(lit.to_string()))
                     }
                 }
             }
             LSTerm::AppTerm(func, args) => {
-                debug!("evaluate function call: {} (parameters number: {})", func.to_string(), args.len());
                 self.eval_function_call(&func.to_string(), args)
             }
             LSTerm::AttrTerm(term, _attrs) => self.eval(term),
             LSTerm::MatchTerm { term, cases } => {
-                debug!("evaluate match expression (cases number: {})", cases.len());
                 let value = self.eval(term)?;
-                debug!("match expression matched value: {:?}", value);
                 self.eval_match(&value, cases)
             }
             LSTerm::LambdaTerm { args, body } => {
@@ -292,27 +279,20 @@ impl Session {
                 Ok(Value::Symbol("nu_expr".to_string()))
             }
             LSTerm::ForallTerm { args: _, body } => {
-                debug!("evaluate forall expression");
                 self.enter_scope();
                 let result = self.eval(body)?;
                 self.exit_scope();
-                debug!("forall expression evaluation completed: {:?}", result);
                 Ok(result)
             }
             LSTerm::ExistsTerm { args: _, body } => {
-                debug!("evaluate exists expression");
                 self.enter_scope();
                 let result = self.eval(body)?;
                 self.exit_scope();
-                debug!("exists expression evaluation completed: {:?}", result);
                 Ok(result)
             }
             LSTerm::LetTerm { args, body } => {
-                debug!("evaluate let expression (bindings number: {})", args.len());
                 self.enter_scope();
-
                 for binding in args {
-                    debug!("bind variable: {} = {:?}", binding.name, binding.term);
                     let value = self.eval(&binding.term)?;
                     self.current_scope.define(binding.name.clone(), value);
                 }
@@ -320,7 +300,6 @@ impl Session {
                 // evaluate body
                 let result = self.eval(body)?;
                 self.exit_scope();
-                debug!("let expression evaluation completed: {:?}", result);
                 Ok(result)
             }
         }
@@ -328,17 +307,12 @@ impl Session {
 
     /// evaluate a function call.
     fn eval_function_call(&mut self, func_name: &str, args: &[LSTerm]) -> Result<Value, String> {
-        debug!("evaluate function call: {} (parameters number: {})", func_name, args.len());
-        
         // evaluate arguments
         let mut arg_values = Vec::new();
         for (i, arg) in args.iter().enumerate() {
-            debug!("evaluate parameter {}: {:?}", i + 1, arg);
             let value = self.eval(arg)?;
             arg_values.push(value);
         }
-        debug!("function parameters evaluation completed: {:?}", arg_values);
-        
         // find function
         if let Some(symbol) = self.runtime.get(func_name) {
             match symbol {
@@ -409,14 +383,8 @@ impl Session {
         value: &Value,
         cases: &[crate::lang::model::MatchCase],
     ) -> Result<Value, String> {
-        debug!("start pattern matching, value: {:?}", value);
-        debug!("matching branch number: {}", cases.len());
-        
         for (i, case) in cases.iter().enumerate() {
-            debug!("check matching branch {}: {:?}", i + 1, case);
-            
             if let Some(pattern) = &case.pattern {
-                debug!("branch has pattern: {:?}", pattern);
                 // TODO: implement pattern matching logic
                 // TODO: return the value of the first branch for now
                 let result = self.eval(&case.value)?;
@@ -498,7 +466,7 @@ impl Session {
                     .insert(sig.name.clone(), Symbol::Func(sig.clone()));
                 return Some(cmd.clone());
             }
-            LSCmd::DefineModel(model) => {
+            LSCmd::ModelDef(model) => {
                 debug!("define model: {}", model.name);
                 self.runtime
                     .insert(model.name.clone(), Symbol::Model(model.clone()));

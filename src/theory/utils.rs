@@ -20,7 +20,7 @@ pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) ->
     if pat.elements.len() != tuple.len() { return false; }
     for (i, elem) in pat.elements.iter().enumerate() {
         match elem {
-            PatternElem::UnivElem(e) => {
+            PatternElem::SortElem(e) => {
                 if let Some(sym) = id2sym.get(tuple[i]) {
                     if &e.name != sym { return false; }
                 } else {
@@ -37,13 +37,13 @@ pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) ->
 pub fn eval<'a>(
     func_name: &str,
     args: &[usize],
-    func_interps: &'a [crate::lang::model::FuncInterp],
+    func_interps: &'a [crate::lang::model::InterpFun],
     id2sym: &Vec<String>,
 ) -> Option<LSTerm> {
     // 0-arity: SimpleInterp
     if args.is_empty() {
         for interp in func_interps {
-            if let crate::lang::model::FuncInterp::SimpleInterp(name, _, _, term) = interp {
+            if let crate::lang::model::InterpFun::SimpleInterp(name, _, _, term) = interp {
                 if name == func_name {
                     return Some(term.clone());
                 }
@@ -52,7 +52,7 @@ pub fn eval<'a>(
     }
     // MatchInterp
     for interp in func_interps {
-        if let crate::lang::model::FuncInterp::MatchInterp(name, _, _, _, cases) = interp {
+        if let crate::lang::model::InterpFun::MatchInterp(name, _, _, _, cases) = interp {
             if name == func_name {
                 for case in cases { // precise match
                     if let Some(pat) = &case.pattern {
@@ -78,7 +78,7 @@ pub fn eval_with_table<'a>(
     func_name: &str,
     args: &[usize],
     interp_table: Option<&'a ModelSymbolTable>,
-    func_interps: &'a [crate::lang::model::FuncInterp],
+    func_interps: &'a [crate::lang::model::InterpFun],
     id2sym: &Vec<String>,
 ) -> Option<crate::parser::ast::LSTerm> {
     // 1. first check small symbol table
@@ -101,9 +101,7 @@ pub fn get_universe_domain_and_map(model: &crate::lang::model::Model) -> (Vec<St
     let mut domain_syms = vec![];
     for univ in &model.univ_defs {
         if univ.sort.to_string() == universe_sort {
-            for elem in &univ.elems {
-                domain_syms.push(elem.name.clone());
-            }
+            domain_syms.push(univ.name.clone());
         }
     }
     domain_syms.sort();
@@ -116,7 +114,7 @@ pub fn collect_bool_props(models: &[&Model], arity: usize) -> Vec<String> {
     let mut all_props = HashSet::new();
     for model in models {
         for interp in &model.func_interps {
-            if let crate::lang::model::FuncInterp::MatchInterp(name, args, _, _, cases) = interp {
+            if let crate::lang::model::InterpFun::MatchInterp(name, args, _, _, cases) = interp {
                 let this_arity = args.len();
                 let is_bool = cases.iter().any(|c| {
                     matches!(&c.value, LSTerm::Literal(lit) 
@@ -250,19 +248,19 @@ pub fn get_domain_sort_from_models(models: &HashMap<String, &Model>) -> Option<S
 }
 
 pub fn get_interped_value<'a>(
-    interp: &'a crate::lang::model::FuncInterp,
+    interp: &'a crate::lang::model::InterpFun,
     args: &[usize],
     id2sym: &[String],
 ) -> Option<&'a crate::parser::ast::LSTerm> {
     match interp {
-        crate::lang::model::FuncInterp::SimpleInterp(_, _, _, term) => {
+        crate::lang::model::InterpFun::SimpleInterp(_, _, _, term) => {
             if args.is_empty() {
                 Some(term)
             } else {
                 None
             }
         }
-        crate::lang::model::FuncInterp::MatchInterp(_, _, _, _, cases) => {
+        crate::lang::model::InterpFun::MatchInterp(_, _, _, _, cases) => {
             // TODO: implement match logic, directly match arguments
             for case in cases { // precise match
                 if let Some(pat) = &case.pattern {

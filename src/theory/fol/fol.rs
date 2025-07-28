@@ -1,4 +1,4 @@
-use crate::lang::model::{FuncInterp, Model};
+use crate::lang::model::{InterpFun, Model};
 use crate::parser::ast::LSTerm;
 use crate::theory::utils::{eval, get_universe_domain_and_map};
 use serde_json::{json, Value};
@@ -45,7 +45,7 @@ pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value 
 
     for interp in &model.func_interps {
         match interp {
-            FuncInterp::SimpleInterp(name, args, _, term) => {
+            InterpFun::SimpleInterp(name, args, _, term) => {
                 // 0-arity functions are constants
                 if args.is_empty() {
                     if let LSTerm::AppTerm(sym, _) = term {
@@ -57,7 +57,7 @@ pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value 
                     }
                 }
             }
-            FuncInterp::MatchInterp(name, args, _, _, cases) => {
+            InterpFun::MatchInterp(name, args, _, _, cases) => {
                 // check arity
                 let arity = args.len();
 

@@ -1,5 +1,5 @@
 use crate::lang::model::{
-    DefineUniv, FuncInterp, MatchCase, Model, Pattern, PatternElem, UnivElem,
+    SetUniv, InterpFun, MatchCase, Model, Pattern, PatternElem
 };
 use crate::parser::ast::LSTerm;
 use crate::parser::{LSCmd, LSFile};
@@ -26,12 +26,10 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                         char_set.insert(c);
                     }
                     // generate model
-                    let len = s.chars().count();
-                    let univ = DefineUniv {
+                    // let len = s.chars().count();
+                    let univ = SetUniv {
+                        name: "Pos".to_string(),
                         sort: Sort::from_name("Pos"),
-                        elems: (0..len)
-                            .map(|i| UnivElem::new(&format!("${}", i)))
-                            .collect(),
                     };
                     let mut func_interps = Vec::new();
                     for c in &char_set {
@@ -47,7 +45,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                                 value: val,
                             });
                         }
-                        func_interps.push(FuncInterp::MatchInterp(
+                        func_interps.push(InterpFun::MatchInterp(
                             fname,
                             vec![],
                             sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(
@@ -59,12 +57,13 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                     }
                     let model = Model {
                         name: name.clone(),
+                        type_params: vec![],
                         univ_defs: vec![univ],
                         func_interps,
                         ext_cmds: vec![],
                         ext_ctx: None,
                     };
-                    models.push(LSCmd::DefineModel(model));
+                    models.push(LSCmd::ModelDef(model));
                     skip_definefun.insert(idx);
                 }
             }
