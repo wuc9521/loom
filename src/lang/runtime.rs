@@ -35,7 +35,6 @@ impl ModelSymbolTable {
 #[derive(Debug, Clone)]
 pub struct Scope {
     pub bindings: HashMap<String, Value>,
-    pub parent: Option<Box<Scope>>,
 }
 
 #[derive(Debug, Clone, Display)]
@@ -86,7 +85,6 @@ impl Default for Scope {
     fn default() -> Self {
         Self {
             bindings: HashMap::new(),
-            parent: None,
         }
     }
 }
@@ -96,22 +94,12 @@ impl Scope {
         Self::default()
     }
 
-    pub fn with_parent(parent: Scope) -> Self {
-        Self {
-            bindings: HashMap::new(),
-            parent: Some(Box::new(parent)),
-        }
-    }
-
     pub fn define(&mut self, name: String, value: Value) {
         self.bindings.insert(name, value);
     }
 
     pub fn lookup(&self, name: &str) -> Option<Value> {
-        self.bindings
-            .get(name)
-            .cloned()
-            .or_else(|| self.parent.as_ref().and_then(|p| p.lookup(name)))
+        self.bindings.get(name).cloned()
     }
 
     pub fn set(&mut self, name: &str, value: Value) -> bool {
@@ -119,10 +107,7 @@ impl Scope {
             self.bindings.insert(name.to_string(), value);
             true
         } else {
-            self.parent
-                .as_mut()
-                .map(|p| p.set(name, value))
-                .unwrap_or(false)
+            false
         }
     }
 }

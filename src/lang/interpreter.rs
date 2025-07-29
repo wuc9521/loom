@@ -526,6 +526,30 @@ impl Interpreter {
                     .current_scope_mut()
                     .register_datatype(name.clone(), data_type);
             }
+            SyGuSCmd::DeclareDatatypes(sort_decls, dt_decls) => {
+                debug!("Declaring datatypes: {} sort declarations, {} datatype declarations", 
+                       sort_decls.len(), dt_decls.len());
+                
+                // Process each datatype declaration
+                for (i, (sort_decl, dt_decl)) in sort_decls.iter().zip(dt_decls.iter()).enumerate() {
+                    let name = &sort_decl.symbol;
+                    debug!("Processing datatype {}: {}", i, name);
+                    
+                    self.typing.check_all_conflicts(name, "datatype")?;
+
+                    let data_type = crate::lang::types::adapter::from_dtdecl(name, dt_decl);
+                    debug!(
+                        "Registering datatype: {} with {} constructors",
+                        name,
+                        data_type.constructors.len()
+                    );
+                    
+                    // register type information only, do not create runtime values
+                    self.typing
+                        .current_scope_mut()
+                        .register_datatype(name.clone(), data_type);
+                }
+            }
 
             SyGuSCmd::DeclareSort(name, arity) => {
                 debug!("declare sort: {}", name);
@@ -725,6 +749,8 @@ impl Interpreter {
 
     /// evaluate a constructor call.
     pub fn eval_constructor_call(&mut self, info: &ConstructorInfo, args: &[LSTerm]) -> Result<Value, String> {
+        debug!("eval_constructor_call: constructor={}, args={:?}", info.name, args);
+        
         if args.len() != info.field_types.len() {
             return Err(format!(
                 "Constructor {} expects {} arguments, got {}",
@@ -735,15 +761,20 @@ impl Interpreter {
         }
         
         let mut field_values = Vec::new();
-        for arg in args {
-            field_values.push(self.interp_expr(arg)?);
+        for (i, arg) in args.iter().enumerate() {
+            let field_value = self.interp_expr(arg)?;
+            debug!("Field {}: {:?}", i, field_value);
+            field_values.push(field_value);
         }
         
-        Ok(Value::DataValue {
+        let result = Value::DataValue {
             constructor: info.name.clone(),
             datatype: info.datatype.clone(),
             fields: field_values,
-        })
+        };
+        
+        debug!("Created DataValue: {:?}", result);
+        Ok(result)
     }
 
     /// interpret an expression, including type checking

@@ -501,6 +501,10 @@ impl TypeInferer {
         &self.stack[self.stack.len() - 1]
     }
 
+    pub fn current_scope(&self) -> &TypeEnv {
+        &self.stack[self.stack.len() - 1]
+    }
+
     /// get current scope mutable reference
     pub fn current_scope_mut(&mut self) -> &mut TypeEnv {
         let len = self.stack.len();
@@ -825,132 +829,9 @@ impl TypeInferer {
     ) -> Result<(), String> {
         debug!("Binding pattern variables: {}", pattern);
 
-        // Use the new generic pattern matcher for variable binding
+        // Use the unified pattern matcher for variable binding
         let matcher = crate::lang::pattern::PatternMatcher::new();
-
-        // check if it is a simple constructor pattern (only constructor name)
-        if pattern.elements.len() == 1 {
-            if let crate::lang::model::PatternElem::Var(constructor_name) = &pattern.elements[0] {
-                debug!("Simple constructor pattern: {}", constructor_name);
-                // for simple constructor pattern, no need to bind any variables
-                // only need to verify if the constructor exists in the corresponding datatype
-                if let Some(data_type) = self.find_datatype_by_sort(term_type) {
-                    debug!(
-                        "Found datatype: {} with constructors: {:?}",
-                        data_type.name,
-                        data_type
-                            .constructors
-                            .iter()
-                            .map(|c| &c.name)
-                            .collect::<Vec<_>>()
-                    );
-                    let constructor_exists = data_type
-                        .constructors
-                        .iter()
-                        .any(|c| c.name == *constructor_name);
-                    if !constructor_exists {
-                        return Err(format!(
-                            "Constructor '{}' not found in datatype '{}'",
-                            constructor_name, data_type.name
-                        ));
-                    }
-                    debug!(
-                        "Constructor '{}' found in datatype '{}'",
-                        constructor_name, data_type.name
-                    );
-                } else {
-                    debug!("No datatype found for sort: {}", term_type);
-                }
-                return Ok(());
-            }
-        }
-
-        // Extract constructor parameters (skip constructor name)
-        let params = matcher.extract_constructor_params(pattern);
-        debug!("Extracted constructor parameters: {:?}", params);
-
-        // find data type definition.
-        if let Some(data_type) = self.find_datatype_by_sort(term_type) {
-            debug!(
-                "Found data type: {} with {} constructors",
-                data_type.name,
-                data_type.constructors.len()
-            );
-
-            // collect variables and types to bind.
-            let mut bindings = Vec::new();
-
-            // handle variable binding in pattern.
-            if pattern.elements.len() >= 1 {
-                // first element should be constructor name.
-                if let crate::lang::model::PatternElem::Var(constructor_name) = &pattern.elements[0]
-                {
-                    debug!("Looking for constructor: {}", constructor_name);
-                    // find constructor definition.
-                    if let Some(constructor_def) = data_type
-                        .constructors
-                        .iter()
-                        .find(|c| c.name == *constructor_name)
-                    {
-                        debug!(
-                            "Found constructor: {} with {} fields",
-                            constructor_name,
-                            constructor_def.fields.len()
-                        );
-
-                        // check if the number of parameters matches
-                        if params.len() != constructor_def.fields.len() {
-                            return Err(format!(
-                                "Constructor '{}' expects {} parameters, but {} were provided in pattern",
-                                constructor_name,
-                                constructor_def.fields.len(),
-                                params.len()
-                            ));
-                        }
-
-                        // bind constructor parameters using extracted parameters
-                        for (i, param_name) in params.iter().enumerate() {
-                            if i < constructor_def.fields.len() {
-                                let field_type = constructor_def.fields[i].sort.clone();
-                                debug!("{} :: {}", param_name, field_type);
-                                bindings.push((param_name.clone(), field_type));
-                            }
-                        }
-                    } else {
-                        return Err(format!(
-                            "Constructor '{}' not found in datatype '{}'",
-                            constructor_name, data_type.name
-                        ));
-                    }
-                }
-            }
-
-            // bind all variables at once.
-            for (var_name, var_type) in bindings {
-                self.current_scope_mut().bind_variable(var_name, var_type);
-            }
-        } else {
-            debug!("No datatype found for sort: {}", term_type);
-        }
-
-        Ok(())
-    }
-
-    /// find data type by type
-    fn find_datatype_by_sort(&self, sort: &Sort) -> Option<&DataType> {
-        let sort_name = sort.to_string();
-        debug!("Looking for datatype with sort name: '{}'", sort_name);
-        let result = self.global_scope().get_datatype(&sort_name);
-        if result.is_some() {
-            debug!("Found datatype: {}", sort_name);
-        } else {
-            debug!("Datatype not found: {}", sort_name);
-            // debug: print all available datatypes
-            for (name, _) in &self.global_scope().datatypes {
-                debug!("Available datatype: {}", name);
-            }
-        }
-        result
+        matcher.bind_pattern_variables_for_type_inference(pattern, self, term_type)
     }
 
     fn infer_let_expr(

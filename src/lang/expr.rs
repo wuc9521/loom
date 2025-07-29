@@ -205,8 +205,14 @@ impl Interpreter {
                 // create pattern matcher
                 let matcher = crate::lang::pattern::PatternMatcher::new();
 
-                // perform pattern matching
-                match matcher.matches(&value, pattern) {
+                // Create pattern context with current type environment
+                // Get the current type environment from the interpreter's type inferer
+                // Since we can't access private methods, we'll create a context with the global scope
+                let type_env = self.typing.current_scope().clone();
+                let context = crate::lang::pattern::PatternContext::new(type_env);
+
+                // perform pattern matching with context
+                match matcher.matches_with_context(&value, pattern, context) {
                     Ok(result) => {
                         if result.matched {
                             debug!("Pattern matched!");
@@ -215,7 +221,7 @@ impl Interpreter {
                             self.enter_scope();
 
                             // bind matched variables to current scope
-                            for (name, val) in result.context.bindings.iter() {
+                            for (name, val) in result.context.get_runtime_scope().bindings.iter() {
                                 self.current_scope_mut().define(name.clone(), val.clone());
                             }
 

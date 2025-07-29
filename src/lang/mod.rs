@@ -4,11 +4,9 @@ pub mod interpreter;
 pub mod model;
 pub mod pattern;
 pub mod runtime;
-pub mod scope;
 pub mod theory;
 pub mod types;
 
 // Export specific items to avoid conflicts
 pub use builtin::BuiltinFunctions;
-pub use scope::ScopeManager;
 pub use interpreter::TheoryInterpreter;
