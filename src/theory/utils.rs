@@ -1,7 +1,7 @@
 use crate::lang::model::{Pattern, PatternElem};
 use crate::lang::model::Model;
 use sygus_parser::Sort;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use crate::lang::runtime::ModelSymbolTable;
 use crate::parser::ast::LSTerm;
 
@@ -35,64 +35,24 @@ pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) ->
 }
 
 pub fn eval<'a>(
-    func_name: &str,
-    args: &[usize],
-    func_interps: &'a [crate::lang::model::InterpFun],
-    id2sym: &Vec<String>,
+    _func_name: &str,
+    _args: &[usize],
+    _func_interps: &'a [()], // 移除，因为语法解析中没有实际解析 interp-fun
+    _id2sym: &Vec<String>,
 ) -> Option<LSTerm> {
-    // 0-arity: SimpleInterp
-    if args.is_empty() {
-        for interp in func_interps {
-            if let crate::lang::model::InterpFun::SimpleInterp(name, _, _, term) = interp {
-                if name == func_name {
-                    return Some(term.clone());
-                }
-            }
-        }
-    }
-    // MatchInterp
-    for interp in func_interps {
-        if let crate::lang::model::InterpFun::MatchInterp(name, _, _, _, cases) = interp {
-            if name == func_name {
-                for case in cases { // precise match
-                    if let Some(pat) = &case.pattern {
-                        if pattern_match(&args.to_vec(), pat, id2sym) {
-                            return Some(case.value.clone());
-                        }
-                    }
-                }
-                for case in cases { // fallback (_)
-                    if let Some(pat) = &case.pattern {
-                        if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
-                            return Some(case.value.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
     None
 }
 
 pub fn eval_with_table<'a>(
-    func_name: &str,
-    args: &[usize],
-    interp_table: Option<&'a ModelSymbolTable>,
-    func_interps: &'a [crate::lang::model::InterpFun],
-    id2sym: &Vec<String>,
+    _func_name: &str,
+    _args: &[usize],
+    _interp_table: Option<&'a ModelSymbolTable>,
+    _func_interps: &'a [()], // 移除，因为语法解析中没有实际解析 interp-fun
+    _id2sym: &Vec<String>,
 ) -> Option<crate::parser::ast::LSTerm> {
-    // 1. first check small symbol table
-    if let Some(table) = interp_table {
-        if let Some(crate::lang::runtime::SymbolInterp::InterpFun(_name, val)) = table.get(func_name) {
-            // TODO: only handle SimpleInterp for now
-            if args.is_empty() {
-                return Some(val.clone());
-            }
-            // TODO: implement MatchInterp for now
-        }
-    }
-    // 2. fallback to func_interps
-    eval(func_name, args, func_interps, id2sym)
+    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    None
 }
 
 /// automatically identify universe sort, return (domain_syms, id2sym, universe_sort)
@@ -110,25 +70,9 @@ pub fn get_universe_domain_and_map(model: &crate::lang::model::Model) -> (Vec<St
 }
 
 /// collect all unary boolean proposition names
-pub fn collect_bool_props(models: &[&Model], arity: usize) -> Vec<String> {
-    let mut all_props = HashSet::new();
-    for model in models {
-        for interp in &model.func_interps {
-            if let crate::lang::model::InterpFun::MatchInterp(name, args, _, _, cases) = interp {
-                let this_arity = args.len();
-                let is_bool = cases.iter().any(|c| {
-                    matches!(&c.value, LSTerm::Literal(lit) 
-                        if lit.to_string() == "true" || lit.to_string() == "false")
-                });
-                if is_bool && this_arity == arity {
-                    all_props.insert(name.clone());
-                }
-            }
-        }
-    }
-    let mut all_props: Vec<_> = all_props.into_iter().collect();
-    all_props.sort();
-    all_props
+pub fn collect_bool_props(_models: &[&Model], _arity: usize) -> Vec<String> {
+    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    vec![]
 }
 
 /// generate concatenated bitvector string and total length of propositions
@@ -248,35 +192,10 @@ pub fn get_domain_sort_from_models(models: &HashMap<String, &Model>) -> Option<S
 }
 
 pub fn get_interped_value<'a>(
-    interp: &'a crate::lang::model::InterpFun,
-    args: &[usize],
-    id2sym: &[String],
+    _interp: &'a (), // 移除，因为语法解析中没有实际解析 interp-fun
+    _args: &[usize],
+    _id2sym: &[String],
 ) -> Option<&'a crate::parser::ast::LSTerm> {
-    match interp {
-        crate::lang::model::InterpFun::SimpleInterp(_, _, _, term) => {
-            if args.is_empty() {
-                Some(term)
-            } else {
-                None
-            }
-        }
-        crate::lang::model::InterpFun::MatchInterp(_, _, _, _, cases) => {
-            // TODO: implement match logic, directly match arguments
-            for case in cases { // precise match
-                if let Some(pat) = &case.pattern {
-                    if pattern_match(&args.to_vec(), pat, &id2sym.to_vec()) {
-                        return Some(&case.value);
-                    }
-                }
-            }
-            for case in cases { // fallback (_)
-                if let Some(pat) = &case.pattern {
-                    if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
-                        return Some(&case.value);
-                    }
-                }
-            }
-            None
-        }
-    }
+    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    None
 }

@@ -7,9 +7,9 @@ use derive_more::Display;
 
 use pest::iterators::Pair;
 use sygus_parser::Sort;
-use sygus_parser::{Identifier, SortedVar};
+use sygus_parser::Identifier;
 
-// ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ SetUniv* ~ InterpFun* ~ ")" }
+// ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ SetUniv* ~ ")" }
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "({} {})", name, args)]
 pub struct ThSpecCmd {
@@ -29,19 +29,17 @@ impl ThSpecCmd {
 }
 
 #[derive(Clone, Debug, Display)]
-#[display(
-    fmt = "(define-model {} ({}) {} {} {})",
-    name,
-    "type_params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
-    "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
-    "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")",
-    "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
-)]
+    #[display(
+        fmt = "(model {} ({}) {} {})",
+        name,
+        "type_params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
+        "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
+        "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
+    )]
 pub struct Model {
     pub name: String,
-    pub type_params: Vec<String>, 
+    pub type_params: Vec<String>,
     pub univ_defs: Vec<SetUniv>,
-    pub func_interps: Vec<InterpFun>,
     pub ext_cmds: Vec<ThSpecCmd>,
     pub ext_ctx: Option<crate::theory::ModelCtx>,
 }
@@ -52,12 +50,11 @@ impl Model {
             name: name.to_string(),
             type_params: Vec::new(),
             univ_defs: Vec::new(),
-            func_interps: Vec::new(),
             ext_cmds: Vec::new(),
             ext_ctx: None,
         }
     }
-    ///ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | InterpFun | LSCmd)* ~ ")" }
+    ///ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         let mut inner_pairs = pair.into_inner();
         let name = inner_pairs.next().unwrap().as_str();
@@ -77,10 +74,6 @@ impl Model {
                     let univ_def = SetUniv::parse(item_pair)?;
                     model.add_univ_def(univ_def);
                 }
-                // Rule::InterpFun => {
-                //     let func_interp = InterpFun::parse(item_pair)?;
-                //     model.add_func_interp(func_interp);
-                // }
                 Rule::LSCmd => {
                     let cmd = crate::parser::ast::parse_cmd(item_pair)?;
                     if let LSCmd::ThSpec(th_cmd) = cmd {
@@ -96,42 +89,6 @@ impl Model {
     }
     pub fn add_univ_def(&mut self, univ_def: SetUniv) {
         self.univ_defs.push(univ_def);
-    }
-    pub fn add_func_interp(&mut self, func_interp: InterpFun) {
-        self.func_interps.push(func_interp);
-    }
-    pub fn fill_interp_table(&self, table: &mut crate::lang::runtime::ModelSymbolTable) {
-        for interp in &self.func_interps {
-            match interp {
-                InterpFun::SimpleInterp(name, _, _, term) => {
-                    table.insert(
-                        name.clone(),
-                        crate::lang::runtime::SymbolInterp::InterpFun(
-                            name.clone(),
-                            match &term {
-                                LSTerm::AppTerm(sym, _) => LSTerm::AppTerm(sym.clone(), vec![]),
-                                LSTerm::AttrTerm(term, _) => LSTerm::AttrTerm(term.clone(), vec![]),
-                                _ => unimplemented!(),
-                            },
-                        ),
-                    );
-                }
-                InterpFun::MatchInterp(name, _, _, _, _) => {
-                    // TODO:?
-                    let func_app = LSTerm::AppTerm(Identifier::Symbol(name.clone()), vec![]);
-                    table.insert(
-                        name.clone(),
-                        crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), func_app),
-                    );
-                }
-            }
-        }
-        for univ in &self.univ_defs {
-            table.insert(
-                univ.sort.to_string(),
-                crate::lang::runtime::SymbolInterp::Univ(univ.clone()),
-            );
-        }
     }
 }
 
@@ -180,89 +137,6 @@ impl EnumSortElem {
     }
     pub fn from_str(s: &str) -> Result<Self, LSParseError> {
         Ok(Self::new(s))
-    }
-}
-
-// InterpFun = { "(" ~ "interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
-#[derive(Clone, Debug, Display)]
-pub enum InterpFun {
-    #[display(
-        fmt = "(interp-fun {} ({}) {} (match {} ({})))",
-        _0,
-        "_1.iter().map(|v| format!(\"({} {})\", v.0, v.1)).collect::<Vec<_>>().join(\" \")",
-        _2,
-        _3,
-        "_4.iter().map(|c| format!(\"{}\", c)).collect::<Vec<_>>().join(\" \")"
-    )]
-    MatchInterp(String, Vec<(String, Sort)>, Sort, LSTerm, Vec<MatchCase>),
-    #[display(
-        fmt = "(interp-fun {} ({}) {} {})",
-        _0,
-        "_1.iter().map(|v| format!(\"({} {})\", v.0, v.1)).collect::<Vec<_>>().join(\" \")",
-        _2,
-        _3
-    )]
-    SimpleInterp(String, Vec<(String, Sort)>, Sort, LSTerm),
-}
-
-// InterpFun = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ InterpBody ~ ")" }
-impl InterpFun {
-    pub fn name(&self) -> &str {
-        match self {
-            InterpFun::MatchInterp(name, _, _, _, _) => name,
-            InterpFun::SimpleInterp(name, _, _, _) => name,
-        }
-    }
-    pub fn arity(&self) -> usize {
-        match self {
-            InterpFun::MatchInterp(_, args, _, _, _) => args.len(),
-            InterpFun::SimpleInterp(_, args, _, _) => args.len(),
-        }
-    }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        let mut inner_pairs = pair.clone().into_inner();
-        let name = inner_pairs.next().unwrap().as_str();
-
-        // Parse argument list
-        let mut args = Vec::new();
-        let args_pair = inner_pairs.next().unwrap();
-        for arg_pair in args_pair.into_inner() {
-            if arg_pair.as_rule() == Rule::SortedVar {
-                let sorted_var = SortedVar::from_str(arg_pair.as_str()).unwrap();
-                args.push((sorted_var.name.clone(), sorted_var.sort.clone()));
-            }
-        }
-
-        // Parse return sort
-        let ret_sort = Sort::from_str(inner_pairs.next().unwrap().as_str()).unwrap();
-
-        // Parse body
-        let body_pair = inner_pairs.next().unwrap().into_inner().next().unwrap();
-        match body_pair.as_rule() {
-            Rule::MatchTerm => {
-                let mut match_inner = body_pair.into_inner();
-                let match_term = LSTerm::parse(match_inner.next().unwrap())?;
-                let mut cases = Vec::new();
-
-                while let Some(case_pair) = match_inner.next() {
-                    if case_pair.as_rule() == Rule::MatchCase {
-                        let case = MatchCase::parse(case_pair)?;
-                        cases.push(case);
-                    }
-                }
-                Ok(Self::MatchInterp(
-                    name.to_string(),
-                    args,
-                    ret_sort,
-                    match_term,
-                    cases,
-                ))
-            }
-            _ => {
-                let term = LSTerm::parse(body_pair)?;
-                Ok(Self::SimpleInterp(name.to_string(), args, ret_sort, term))
-            }
-        }
     }
 }
 

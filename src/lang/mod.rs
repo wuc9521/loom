@@ -1,14 +1,11 @@
-pub mod func;
-pub mod signature;
-pub mod model;
 pub mod theory;
-pub mod runtime;
 pub mod types;
-pub mod pattern;
-// pub mod infer;
 pub mod interpreter;
-pub use model::*;
-pub use func::*;
+pub mod runtime;
+pub mod model;
+
+pub use theory::*;
 pub use types::*;
-pub use pattern::*;
 pub use interpreter::*;
+pub use runtime::*;
+pub use model::*;

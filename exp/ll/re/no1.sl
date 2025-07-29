@@ -1,6 +1,6 @@
 (set-logic RE)
 
-(declare-sort Pos 0)
+(declare-sort Pos_ 0)
 
 ; define signatures here.
 (declare-fun a (Pos) Bool)
@@ -9,13 +9,13 @@
 
 ; ab
 (define-model w1 (T) ; the syntax is similar to define-sort.
-  (define-sort-enum Pos ($0 $1))
-  (set-univ T Pos)
-  (define-fun a ((x Pos)) Bool (match x (
+  (define-sort-enum Pos_ ($0 $1))
+  (set-univ T Pos_) ; set-univ :: Symbol -> Sort -> ()
+  (define-fun a ((x Pos_)) Bool (match x (
       ($0 true)
       (_ false)
   )))
-  (define-fun b ((x Pos)) Bool (match x (
+  (define-fun b ((x Pos_)) Bool (match x (
       ($0 false)
       (_ true)
   )))
@@ -23,14 +23,14 @@
 
 ; abab
 (define-model w2 (T)
-  (define-sort-enum Pos ($0 $1 $2 $3))
-  (set-univ T Pos)
-  (define-fun a ((x Pos)) Bool (match x (
+  (define-sort-enum Pos_ ($0 $1 $2 $3))
+  (set-univ T Pos_)
+  (define-fun a ((x Pos_)) Bool (match x (
       ($0 true)
       ($2 true)
       (_ false)
   )))
-  (define-fun b ((x Pos)) Bool (match x (
+  (define-fun b ((x Pos_)) Bool (match x (
       ($1 true)
       ($3 true)
       (_ false)
@@ -39,15 +39,15 @@
 
 ; ababab
 (define-model w3 (T)
-  (define-sort-enum Pos ($0 $1 $2 $3 $4 $5))
-  (set-univ T Pos)
-  (define-fun a ((x Pos)) Bool (match x (
+  (define-sort-enum Pos_ ($0 $1 $2 $3 $4 $5))
+  (set-univ T Pos_)
+  (define-fun a ((x Pos_)) Bool (match x (
       ($0 true)
       ($2 true)
       ($4 true)
       (_ false)
   )))
-  (define-fun b ((x Pos)) Bool (match x (
+  (define-fun b ((x Pos_)) Bool (match x (
       ($1 true)
       ($3 true)
       ($5 true)
@@ -55,16 +55,17 @@
   )))
 )
 
+; (echo (+ 1 10))
 
 ; baa
 (define-model w4 (T)
-  (define-sort-enum Pos ($0 $1 $2))
-  (set-univ T Pos)
-  (define-fun a ((x Pos)) Bool (match x (
+  (define-sort-enum Pos_ ($0 $1 $2))
+  (set-univ T Pos_)
+  (define-fun a ((x Pos_)) Bool (match x (
       ($0 false)
       (_ true)
   )))
-  (define-fun b ((x Pos)) Bool (match x (
+  (define-fun b ((x Pos_)) Bool (match x (
       ($0 true)
       ($1 true)
       (_ false)
@@ -73,13 +74,13 @@
 
 ; aab
 (define-model w5 (T)
-  (define-sort-enum Pos ($0 $1 $2))
-  (set-univ T Pos)
-  (define-fun a ((x Pos)) Bool (match x (
+  (define-sort-enum Pos_ ($0 $1 $2))
+  (set-univ T Pos_)
+  (define-fun a ((x Pos_)) Bool (match x (
       ($0 true)
       (_ false)
   )))   
-  (define-fun b ((x Pos)) Bool (match x (
+  (define-fun b ((x Pos_)) Bool (match x (
       ($0 true)
       ($1 true)
       (_ false)

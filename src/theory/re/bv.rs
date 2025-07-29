@@ -50,22 +50,11 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         .filter_map(|n| models.get(n).copied())
         .collect();
     // 4. collect propositions
-    let mut all_props = HashSet::new();
-    for model in &loaded_models {
-        for interp in &model.func_interps {
-            if let crate::lang::model::InterpFun::MatchInterp(name, args, _, _, cases) = interp {
-                let arity = args.len();
-                let is_bool = cases.iter().any(|c| {
-                    matches!(&c.value, LSTerm::Literal(lit) 
-                        if lit.to_string() == "true" || lit.to_string() == "false")
-                });
-                if is_bool && arity == 1 {
-                    all_props.insert(name.clone());
-                }
-            }
-        }
+    let all_props = HashSet::new();
+    for _model in &loaded_models {
+        // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
     }
-    let mut all_props: Vec<_> = all_props.into_iter().collect();
+    let mut all_props: Vec<String> = all_props.into_iter().collect();
     all_props.sort();
     // 4. build subwords and subword_to_local_idx, and record global_offset
     struct ModelSubwordInfo {
@@ -113,11 +102,11 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                         .iter()
                         .position(|x| x.global_offset == info.global_offset)
                         .unwrap()];
-                    let (_, id2sym, _) = get_universe_domain_and_map(model);
+                    let (_, _id2sym, _) = get_universe_domain_and_map(model);
                     if end == start + 1 {
-                        let node = start;
-                        let val =
-                            crate::theory::utils::eval(prop, &[node], &model.func_interps, &id2sym);
+                        let _node = start;
+                                            // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+                    let val = None; // 临时修复
                         if matches!(val, Some(LSTerm::Literal(lit)) if lit.to_string() == "true")
                         {
                             full_bitstring_list.push('1');

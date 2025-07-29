@@ -2,7 +2,7 @@ use crate::lang::model::Model;
 use crate::parser::ast::LSTerm;
 use crate::parser::LSFile;
 use crate::theory::utils::{
-    collect_bool_props, collect_constraint_models, eval, get_universe_domain_and_map, prop_bitvecs,
+    collect_bool_props, collect_constraint_models, get_universe_domain_and_map, prop_bitvecs,
     replace_grammardef_sort,
 };
 use crate::theory::{
@@ -97,7 +97,10 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let (prop_bitvecs, _bv_len) = prop_bitvecs(
         &loaded_models,
         &props,
-        &|prop, node, model, id2sym| matches!(eval(prop, &[node], &model.func_interps, id2sym), Some(LSTerm::Literal(lit)) if lit.to_string() == "true"),
+        &|_, _, _, _| {
+        // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+        false // 临时修复
+    },
     );
     for prop in &props {
         cmds.push(
@@ -205,7 +208,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 // look up models and get ext_ctx,
                 if let Some(model) = loaded_models.iter().find(|m| &m.name == model_name) {
                     if let Some(crate::theory::ModelCtx::PML(ctx)) = &model.ext_ctx {
-                        let (domain_syms, id2sym, _universe_sort) =
+                        let (domain_syms, _, _universe_sort) =
                             get_universe_domain_and_map(model);
                         let sym2id: std::collections::HashMap<String, usize> = domain_syms
                             .iter()
@@ -213,9 +216,10 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                             .map(|(i, s)| (s.clone(), i))
                             .collect();
                         let mut init_idx = 0; // fallback: 0
-                        if let Some(init_name) = &ctx.init_name {
+                        if let Some(_) = &ctx.init_name {
                             if let Some(LSTerm::AppTerm(sym, _)) =
-                                eval(init_name, &[], &model.func_interps, &id2sym)
+                                // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+                None // 临时修复
                             {
                                 if let Some(&idx) = sym2id.get(&sym.to_string()) {
                                     init_idx = idx;

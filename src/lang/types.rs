@@ -39,19 +39,77 @@ pub struct TypeEnv {
     pub datatypes: HashMap<String, DataType>,
     pub enums: HashMap<String, EnumType>,
     pub variables: HashMap<String, Sort>,
-    pub functions: HashMap<String, FuncType>,
+    pub function_types: HashMap<String, FunctionType>,
 }
 
-/// function type
 #[derive(Debug, Clone, Display)]
 #[display(
-    fmt = "{} -> {}",
-    "params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" -> \")",
-    "ret.to_string()"
+    fmt = "{}: {} -> {}",
+    "self.get_name().unwrap_or(&\"<unknown>\".to_string())",
+    "self.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" -> \")",
+    "self.ret.to_string()"
 )]
-pub struct FuncType {
-    pub params: Vec<Sort>,
-    pub ret: Sort,
+pub struct FunctionType {
+    pub name: Option<String>,     
+    pub param_names: Vec<String>, 
+    pub params: Vec<Sort>,        
+    pub ret: Sort,                
+    pub body: Option<LSTerm>,     
+}
+
+impl FunctionType {
+    /// get function name
+    pub fn get_name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+
+    /// get parameter types
+    pub fn get_params(&self) -> &[Sort] {
+        &self.params
+    }
+
+    /// get parameter names
+    pub fn get_param_names(&self) -> &[String] {
+        &self.param_names
+    }
+
+    /// get return type
+    pub fn get_ret(&self) -> &Sort {
+        &self.ret
+    }
+
+    /// get function body
+    pub fn get_body(&self) -> Option<&LSTerm> {
+        self.body.as_ref()
+    }
+
+    /// create function signature (only type information, no function body)
+    pub fn new_signature(name: String, params: Vec<Sort>, ret: Sort) -> Self {
+        Self {
+            name: Some(name),
+            param_names: vec![],
+            params,
+            ret,
+            body: None,
+        }
+    }
+
+    /// create complete function definition (with function body)
+    pub fn new_definition(
+        name: String,
+        param_names: Vec<String>,
+        params: Vec<Sort>,
+        ret: Sort,
+        body: LSTerm,
+    ) -> Self {
+        Self {
+            name: Some(name),
+            param_names,
+            params,
+            ret,
+            body: Some(body),
+        }
+    }
 }
 
 /// adapter: convert sygus-parser's datatype to our type system
@@ -91,19 +149,6 @@ pub mod adapter {
             _ => None,
         }
     }
-
-    /// create TypeEnv from multiple sygus-parser commands
-    pub fn create_type_env_from_commands(cmds: &[SyGuSCmd]) -> TypeEnv {
-        let mut env = TypeEnv::new();
-
-        for cmd in cmds {
-            if let Some((name, data_type)) = from_sygus_cmd(cmd) {
-                env.register_datatype(name, data_type);
-            }
-        }
-
-        env
-    }
 }
 
 impl TypeEnv {
@@ -112,7 +157,7 @@ impl TypeEnv {
             datatypes: HashMap::new(),
             enums: HashMap::new(),
             variables: HashMap::new(),
-            functions: HashMap::new(),
+            function_types: HashMap::new(),
         }
     }
 
@@ -121,7 +166,7 @@ impl TypeEnv {
         self.datatypes.contains_key(name)
             || self.enums.contains_key(name)
             || self.variables.contains_key(name)
-            || self.functions.contains_key(name)
+            || self.function_types.contains_key(name)
     }
 
     /// check if the datatype already exists
@@ -141,7 +186,7 @@ impl TypeEnv {
 
     /// check if the function already exists
     pub fn has_function(&self, name: &str) -> bool {
-        self.functions.contains_key(name)
+        self.function_types.contains_key(name)
     }
 
     /// get the type of the symbol (if exists)
@@ -162,24 +207,26 @@ impl TypeEnv {
     /// register datatype
     pub fn register_datatype(&mut self, name: String, data_type: DataType) {
         self.datatypes.insert(name.clone(), data_type.clone());
-        
+
         // register constructor and accessor functions
         for constructor in &data_type.constructors {
             // register function for constructor.
             let param_sorts: Vec<Sort> =
                 constructor.fields.iter().map(|f| f.sort.clone()).collect();
-            let constructor_func = FuncType {
-                params: param_sorts,
-                ret: Sort::from_name(name.as_str()),
-            };
-            self.register_function(constructor.name.clone(), constructor_func);
+            let constructor_func = FunctionType::new_signature(
+                constructor.name.clone(),
+                param_sorts,
+                Sort::from_name(name.as_str()),
+            );
+            self.register_function_type(constructor.name.clone(), constructor_func);
             // register function for every constructor field.
             for field in &constructor.fields {
-                let accessor_func = FuncType {
-                    params: vec![Sort::Simple(Identifier::Symbol(name.clone()))],
-                    ret: field.sort.clone(),
-                };
-                self.register_function(field.name.clone(), accessor_func);
+                let accessor_func = FunctionType::new_signature(
+                    field.name.clone(),
+                    vec![Sort::Simple(Identifier::Symbol(name.clone()))],
+                    field.sort.clone(),
+                );
+                self.register_function_type(field.name.clone(), accessor_func);
             }
         }
     }
@@ -199,21 +246,27 @@ impl TypeEnv {
         self.variables.get(name)
     }
 
-    /// register function
-    pub fn register_function(&mut self, name: String, func_type: FuncType) {
-        self.functions.insert(name, func_type);
+    /// register a unified function type
+    pub fn register_function_type(&mut self, name: String, func_type: FunctionType) {
+        self.function_types.insert(name, func_type);
     }
 
-    /// get function type by name
-    pub fn get_functype(&self, name: &str) -> Option<&FuncType> {
-        self.functions.get(name)
+    /// get unified function type by name
+    pub fn get_function_type(&self, name: &str) -> Option<&FunctionType> {
+        self.function_types.get(name)
     }
 
     /// register enum
     pub fn register_enum(&mut self, name: String, elements: Vec<String>) {
         let name_clone = name.clone();
-        self.enums.insert(name.clone(), EnumType { name: name_clone, elements });
-        
+        self.enums.insert(
+            name.clone(),
+            EnumType {
+                name: name_clone,
+                elements,
+            },
+        );
+
         // also bind the sort name to the enum type
         self.bind_variable(name.clone(), Sort::from_name(name.as_str()));
     }
@@ -232,9 +285,7 @@ pub struct TypeInferer {
 
 impl TypeInferer {
     pub fn new() -> Self {
-        let mut inferer = Self {
-            stack: Vec::new(),
-        };
+        let mut inferer = Self { stack: Vec::new() };
         inferer.stack.push(TypeEnv::new());
         inferer.register_builtins();
         inferer
@@ -286,111 +337,120 @@ impl TypeInferer {
             .bind_variable("false".to_string(), Sort::bool());
 
         // register built-in functions
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "and".to_string(),
-            FuncType {
-                params: vec![Sort::bool(), Sort::bool()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                "and".to_string(),
+                vec![Sort::bool(), Sort::bool()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "or".to_string(),
-            FuncType {
-                params: vec![Sort::bool(), Sort::bool()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                "or".to_string(),
+                vec![Sort::bool(), Sort::bool()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "not".to_string(),
-            FuncType {
-                params: vec![Sort::bool()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature("not".to_string(), vec![Sort::bool()], Sort::bool()),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "=".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                "=".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "<".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                "<".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             ">".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                ">".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "<=".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                "<=".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             ">=".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::bool(),
-            },
+            FunctionType::new_signature(
+                ">=".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::bool(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "+".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::int(),
-            },
+            FunctionType::new_signature(
+                "+".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::int(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "-".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::int(),
-            },
+            FunctionType::new_signature(
+                "-".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::int(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "*".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::int(),
-            },
+            FunctionType::new_signature(
+                "*".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::int(),
+            ),
         );
 
-        self.global_scope_mut().register_function(
+        self.global_scope_mut().register_function_type(
             "/".to_string(),
-            FuncType {
-                params: vec![Sort::int(), Sort::int()],
-                ret: Sort::int(),
-            },
+            FunctionType::new_signature(
+                "/".to_string(),
+                vec![Sort::int(), Sort::int()],
+                Sort::int(),
+            ),
         );
 
-        let ite_func = FuncType {
-            params: vec![Sort::bool()], // simplified handling
-            ret: Sort::bool(),
-        };
+        let ite_func = FunctionType::new_signature(
+            "ite".to_string(),
+            vec![Sort::bool()], // simplified handling
+            Sort::bool(),
+        );
         self.global_scope_mut()
-            .register_function("ite".to_string(), ite_func);
+            .register_function_type("ite".to_string(), ite_func);
         debug!(
             "built-in functions registered, total {} functions",
-            self.global_scope().functions.len()
+            self.global_scope().function_types.len()
         );
     }
 
@@ -471,10 +531,8 @@ impl TypeInferer {
                 Ok(Sort::string()) // default type
             }
         };
-
-        // debug!("type inference result: {:?}", result);
         if let Ok(sort) = &result {
-            debug!("{} :: {}", expr, sort.to_string());
+            debug!("{} :: {}", expr, sort);
         } else {
             error!("type inference failed: {:?}", result.as_ref().unwrap_err());
         }
@@ -760,10 +818,10 @@ impl TypeInferer {
         None
     }
 
-    fn find_function_type(&self, name: &str) -> Option<&FuncType> {
+    fn find_function_type(&self, name: &str) -> Option<&FunctionType> {
         // lookup in scope stack (from top to bottom, i.e. from recent to distant)
         for scope in self.stack.iter().rev() {
-            if let Some(func_type) = scope.get_functype(name) {
+            if let Some(func_type) = scope.get_function_type(name) {
                 return Some(func_type);
             }
         }
@@ -814,12 +872,9 @@ impl TypeInferer {
 
         // register recursive function to current environment
         let param_types: Vec<Sort> = args.iter().map(|sv| sv.sort.clone()).collect();
-        self.current_scope_mut().register_function(
+        self.current_scope_mut().register_function_type(
             name.to_string(),
-            FuncType {
-                params: param_types,
-                ret: ret_sort.clone(),
-            },
+            FunctionType::new_signature(name.to_string(), param_types, ret_sort.clone()),
         );
 
         // infer body type

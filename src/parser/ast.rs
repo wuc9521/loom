@@ -1,7 +1,6 @@
 use crate::lang::{
-    func::{FuncDef, FuncDefRec},
     model::{MatchCase, Model, ThSpecCmd},
-    signature::FuncSig,
+    types::FunctionType,
 };
 use crate::parser::{LSParseError, LSParser, Rule};
 use derive_more::Display;
@@ -298,20 +297,28 @@ impl LSTerm {
 
 #[derive(Clone, Debug, Display)]
 pub enum LSCmd {
+    #[display(fmt = "(echo {})", _0)]
+    Echo(LSTerm),
+
     #[display(fmt = "{}", _0)]
     As(SyGuSCmd), // as a sygus command.
 
     #[display(fmt = "{}", _0)]
-    DeclareFunc(FuncSig),
+    DeclareFunc(FunctionType),
 
     #[display(fmt = "{}", _0)]
     ModelDef(Model),
 
     #[display(fmt = "{}", _0)]
-    DefineFunc(FuncDef),
+    DefineFunc(FunctionType),
 
-    #[display(fmt = "{}", _0)]
-    DefineFuncRec(FuncDefRec),
+    #[display(fmt = "(define-fun-rec {} ({}) {} {})", 
+        "_0.get_name().unwrap_or(&\"unknown\".to_string())",
+        "_0.get_params().iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
+        "_0.get_ret()",
+        "_0.get_body().map(|b| b.to_string()).unwrap_or(\"<body>\".to_string())"
+    )]
+    DefineFuncRec(FunctionType),
 
     #[display(fmt = "{}", _0)]
     ThSpec(ThSpecCmd),
@@ -376,6 +383,11 @@ pub fn parse(content: &str) -> Result<LSFile, LSParseError> {
 /// internal function: parse a single command and validate the constraint
 pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
     match cmd.as_rule() {
+        Rule::EchoCmd => {
+            let mut inner = cmd.clone().into_inner();
+            let term = LSTerm::parse(inner.next().unwrap())?;
+            Ok(LSCmd::Echo(term))
+        }
         Rule::SyGuSCmd => {
             let cmd_str = cmd.as_str();
             let sygus_cmd = SyGuSCmd::from_str(cmd_str).map_err(|e| {
@@ -396,10 +408,19 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
             Ok(LSCmd::DefineTheory { name, cmds })
         }
         Rule::FuncDecl => {
-            let sig = FuncSig::parse(cmd.clone()).map_err(|e| {
-                LSParseError::InvalidSyntax(format!("Failed to parse function declaration: {}", e))
-            })?;
-            Ok(LSCmd::DeclareFunc(sig))
+            let mut inner = cmd.clone().into_inner();
+            let func_name = inner.next().unwrap().as_str().to_string();
+            let mut sort_list: Vec<Sort> = Vec::new();
+            while let Some(sort) = inner.next() {
+                if sort.as_rule() == Rule::Sort {
+                    let sort = Sort::from_str(sort.as_str()).unwrap();
+                    sort_list.push(sort);
+                }
+            }
+            // the last one is the return type
+            let ret_sort = sort_list.pop().unwrap();
+            let func_type = FunctionType::new_signature(func_name, sort_list, ret_sort);
+            Ok(LSCmd::DeclareFunc(func_type))
         }
         Rule::ModelDef => {
             let model = Model::parse(cmd.clone()).map_err(|e| {
@@ -407,16 +428,44 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
             })?;
             Ok(LSCmd::ModelDef(model))
         }
-        Rule::FuncDef => {
-            let func = FuncDef::parse(cmd.clone()).map_err(|e| {
-                LSParseError::InvalidSyntax(format!("Failed to parse function definition: {}", e))
-            })?;
-            Ok(LSCmd::DefineFunc(func))
-        }
-        Rule::FuncDefRec => {
-            let func = FuncDefRec::parse(cmd.clone())
-                .map_err(|e| LSParseError::InvalidSyntax(format!("{}", e)))?;
-            Ok(LSCmd::DefineFuncRec(func))
+        Rule::FuncDef | Rule::FuncDefRec => {
+            // TODO: don't register non-recursve functions at declaration
+            let mut inner = cmd.clone().into_inner();
+            let name = inner.next().unwrap().as_str().to_string();
+            let mut args = vec![];
+            let mut ret_sort = None;
+            
+            // Parse sorted variables   
+            while let Some(var_pair) = inner.next() {
+                if var_pair.as_rule() == Rule::SortedVar {
+                    let sorted_var = sygus_parser::SortedVar::from_str(var_pair.as_str()).unwrap();
+                    args.push(sorted_var);
+                } else if var_pair.as_rule() == Rule::Sort {
+                    let sort_str = var_pair.as_str().to_string();
+                    ret_sort = Some(sygus_parser::Sort::from_str(&sort_str).unwrap());
+                    break;
+                } else {
+                    eprintln!("Unexpected token: {}", var_pair.as_str());
+                    break;
+                }
+            }
+            
+            let body_pair = inner.next().unwrap();  
+            let body = LSTerm::parse(body_pair)?;
+            
+            let func_type = FunctionType::new_definition(
+                name,
+                args.iter().map(|sv| sv.name.clone()).collect(),
+                args.iter().map(|sv| sv.sort.clone()).collect(),
+                ret_sort.unwrap(),
+                body,
+            );
+
+            match cmd.as_rule() {
+                Rule::FuncDef => Ok(LSCmd::DefineFunc(func_type)),
+                Rule::FuncDefRec => Ok(LSCmd::DefineFuncRec(func_type)),
+                _ => unreachable!(),
+            }
         }
         Rule::ThSpecCmd => {
             let mut inner = cmd.clone().into_inner();
@@ -483,10 +532,6 @@ fn validate_constraint(term: &sygus_parser::SyGuSTerm, cmd_str: &str) -> Result<
 
 impl LSCmd {
     pub fn declare_fun(name: &str, arg_sorts: Vec<Sort>, ret_sort: Sort) -> Self {
-        LSCmd::DeclareFunc(FuncSig {
-            name: name.to_string(),
-            arg_sorts,
-            ret_sort,
-        })
+        LSCmd::DeclareFunc(FunctionType::new_signature(name.to_string(), arg_sorts, ret_sort))
     }
 }

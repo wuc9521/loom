@@ -1,9 +1,9 @@
 use crate::lang::model::{
-    SetUniv, InterpFun, MatchCase, Model, Pattern, PatternElem
+    SetUniv, MatchCase, Model, Pattern, PatternElem
 };
+use crate::lang::types::FunctionType;
 use crate::parser::ast::LSTerm;
 use crate::parser::{LSCmd, LSFile};
-use crate::signature::FuncSig;
 use std::collections::HashSet;
 use sygus_parser::api::{Cmd, GTerm};
 use sygus_parser::ast::{SyGuSGTerm, SyGuSTerm};
@@ -31,9 +31,9 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                         name: "Pos".to_string(),
                         sort: Sort::from_name("Pos"),
                     };
-                    let mut func_interps = Vec::new();
+                    // let mut func_interps = Vec::new(); // 移除，因为语法解析中没有实际解析 interp-fun
                     for c in &char_set {
-                        let fname = c.to_string();
+                        let _fname = c.to_string();
                         let mut cases = Vec::new();
                         for (i, ch) in s.chars().enumerate() {
                             let pat = Pattern {
@@ -45,21 +45,13 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                                 value: val,
                             });
                         }
-                        func_interps.push(InterpFun::MatchInterp(
-                            fname,
-                            vec![],
-                            sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(
-                                "Bool".to_string(),
-                            )),
-                            LSTerm::Identifier(Identifier::Symbol("x".to_string())),
-                            cases,
-                        ));
+                        // 移除 InterpFun 处理，因为语法解析中没有实际解析 interp-fun
                     }
                     let model = Model {
                         name: name.clone(),
                         type_params: vec![],
                         univ_defs: vec![univ],
-                        func_interps,
+                        // func_interps, // 移除，因为语法解析中没有实际解析 interp-fun
                         ext_cmds: vec![],
                         ext_ctx: None,
                     };
@@ -157,17 +149,16 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     let mut inserted_sort = false;
     for cmd in output_cmds.iter() {
         if !inserted_sort {
-            if let LSCmd::DeclareFunc(FuncSig {
-                name,
-                arg_sorts,
-                ret_sort,
-            }) = cmd
+            if let LSCmd::DeclareFunc(func_type) = cmd
             {
-                if arg_sorts.len() == 1
-                    && arg_sorts[0].to_string() == "Pos"
-                    && ret_sort.to_string() == "Bool"
+                let params = func_type.get_params();
+                let ret = func_type.get_ret();
+                let name = func_type.get_name().unwrap_or(&"unknown".to_string()).clone();
+                if params.len() == 1
+                    && params[0].to_string() == "Pos"
+                    && ret.to_string() == "Bool"
                 {
-                    final_cmds.push(LSCmd::As(Cmd::declare_sort(name, 0).build()));
+                    final_cmds.push(LSCmd::As(Cmd::declare_sort(&name, 0).build()));
                     inserted_sort = true;
                 }
             }
@@ -189,11 +180,11 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     for fname in char_funs {
         final_cmds.insert(
             insert_idx,
-            LSCmd::DeclareFunc(FuncSig {
-                name: fname,
-                arg_sorts: vec![Sort::from_name("Pos")],
-                ret_sort: Sort::bool(),
-            }),
+            LSCmd::DeclareFunc(FunctionType::new_signature(
+                fname,
+                vec![Sort::from_name("Pos")],
+                Sort::bool(),
+            )),
         );
         insert_idx += 1;
     }

@@ -34,9 +34,11 @@ LSCmd = {
 | FuncDefRec
 | EnumSortDef
 | ThDefCmd
+| EchoCmd
 | ThSpecCmd
 }
 
+EchoCmd = { "(" ~ #LSTkEcho="echo" ~ LSTerm ~ ")" }
 ThDefCmd = { "(" ~ #LSTkDefTh="define-theory" ~ Symbol ~ "(" ~ LSCmd* ~ ")" ~ ")" }
 FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
 ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }

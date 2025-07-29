@@ -4,4 +4,3 @@ pub mod theory;
 
 pub use lang::*;
 pub use parser::*;
-pub mod utils;
