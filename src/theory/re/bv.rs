@@ -52,7 +52,6 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     // 4. collect propositions
     let all_props = HashSet::new();
     for _model in &loaded_models {
-        // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
     }
     let mut all_props: Vec<String> = all_props.into_iter().collect();
     all_props.sort();
@@ -105,8 +104,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                     let (_, _id2sym, _) = get_universe_domain_and_map(model);
                     if end == start + 1 {
                         let _node = start;
-                                            // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
-                    let val = None; // 临时修复
+                        let val = None; // temporary fix
                         if matches!(val, Some(LSTerm::Literal(lit)) if lit.to_string() == "true")
                         {
                             full_bitstring_list.push('1');

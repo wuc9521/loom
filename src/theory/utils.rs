@@ -37,10 +37,9 @@ pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) ->
 pub fn eval<'a>(
     _func_name: &str,
     _args: &[usize],
-    _func_interps: &'a [()], // 移除，因为语法解析中没有实际解析 interp-fun
     _id2sym: &Vec<String>,
 ) -> Option<LSTerm> {
-    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    // remove func_interps handling, because interp-fun is not actually parsed
     None
 }
 
@@ -48,10 +47,9 @@ pub fn eval_with_table<'a>(
     _func_name: &str,
     _args: &[usize],
     _interp_table: Option<&'a ModelSymbolTable>,
-    _func_interps: &'a [()], // 移除，因为语法解析中没有实际解析 interp-fun
     _id2sym: &Vec<String>,
 ) -> Option<crate::parser::ast::LSTerm> {
-    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    // remove func_interps handling, because interp-fun is not actually parsed
     None
 }
 
@@ -71,7 +69,7 @@ pub fn get_universe_domain_and_map(model: &crate::lang::model::Model) -> (Vec<St
 
 /// collect all unary boolean proposition names
 pub fn collect_bool_props(_models: &[&Model], _arity: usize) -> Vec<String> {
-    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    // remove func_interps handling, because interp-fun is not actually parsed
     vec![]
 }
 
@@ -192,10 +190,10 @@ pub fn get_domain_sort_from_models(models: &HashMap<String, &Model>) -> Option<S
 }
 
 pub fn get_interped_value<'a>(
-    _interp: &'a (), // 移除，因为语法解析中没有实际解析 interp-fun
+    _interp: &'a (), // remove, because interp-fun is not actually parsed
     _args: &[usize],
     _id2sym: &[String],
 ) -> Option<&'a crate::parser::ast::LSTerm> {
-    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
+    // remove func_interps handling, because interp-fun is not actually parsed
     None
 }

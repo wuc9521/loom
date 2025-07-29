@@ -1,7 +1,7 @@
 use crate::lang::model::MatchCase;
 use crate::parser::ast::{LSTerm, LSVarBinding};
 use derive_more::Display;
-use log::{debug, error, warn};
+use log::{debug, error};
 use std::collections::HashMap;
 use sygus_parser::{Identifier, Sort, SortedVar};
 
@@ -40,21 +40,32 @@ pub struct TypeEnv {
     pub enums: HashMap<String, EnumType>,
     pub variables: HashMap<String, Sort>,
     pub function_types: HashMap<String, FunctionType>,
+    pub constructors: HashMap<String, ConstructorInfo>,
 }
+
+
+#[derive(Debug, Clone)]
+pub struct ConstructorInfo {
+    pub name: String,
+    pub datatype: String,
+    pub field_types: Vec<Sort>,
+}
+
 
 #[derive(Debug, Clone, Display)]
 #[display(
-    fmt = "{}: {} -> {}",
-    "self.get_name().unwrap_or(&\"<unknown>\".to_string())",
+    fmt = "{} :: {} -> {}",
+    "self.get_name().unwrap_or(&\"<#unknown>\".to_string())",
     "self.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" -> \")",
     "self.ret.to_string()"
 )]
 pub struct FunctionType {
-    pub name: Option<String>,     
-    pub param_names: Vec<String>, 
-    pub params: Vec<Sort>,        
-    pub ret: Sort,                
-    pub body: Option<LSTerm>,     
+    pub name: Option<String>,
+    pub param_names: Vec<String>,
+    pub params: Vec<Sort>,
+    pub ret: Sort,
+    pub body: Option<LSTerm>,
+    pub is_constructor: bool,
 }
 
 impl FunctionType {
@@ -91,6 +102,18 @@ impl FunctionType {
             params,
             ret,
             body: None,
+            is_constructor: false,
+        }
+    }
+
+    pub fn new_constructor(name: String, params: Vec<Sort>, ret: Sort) -> Self {
+        Self {
+            name: Some(name),
+            param_names: vec![],
+            params,
+            ret,
+            body: None,
+            is_constructor: true, 
         }
     }
 
@@ -108,6 +131,7 @@ impl FunctionType {
             params,
             ret,
             body: Some(body),
+            is_constructor: false,
         }
     }
 }
@@ -158,6 +182,7 @@ impl TypeEnv {
             enums: HashMap::new(),
             variables: HashMap::new(),
             function_types: HashMap::new(),
+            constructors: HashMap::new(),
         }
     }
 
@@ -208,27 +233,44 @@ impl TypeEnv {
     pub fn register_datatype(&mut self, name: String, data_type: DataType) {
         self.datatypes.insert(name.clone(), data_type.clone());
 
-        // register constructor and accessor functions
+        // register constructor info
         for constructor in &data_type.constructors {
-            // register function for constructor.
-            let param_sorts: Vec<Sort> =
-                constructor.fields.iter().map(|f| f.sort.clone()).collect();
-            let constructor_func = FunctionType::new_signature(
+            let constructor_info = ConstructorInfo {
+                name: constructor.name.clone(),
+                datatype: name.clone(),
+                field_types: constructor.fields.iter().map(|f| f.sort.clone()).collect(),
+            };
+            self.constructors.insert(constructor.name.clone(), constructor_info);
+            
+            // register constructor type information, but mark as constructor
+            let param_sorts: Vec<Sort> = constructor.fields.iter().map(|f| f.sort.clone()).collect();
+            let constructor_func = FunctionType::new_constructor(
                 constructor.name.clone(),
                 param_sorts,
                 Sort::from_name(name.as_str()),
             );
             self.register_function_type(constructor.name.clone(), constructor_func);
-            // register function for every constructor field.
+            
+            // register field accessor functions
             for field in &constructor.fields {
-                let accessor_func = FunctionType::new_signature(
+                let field_accessor = FunctionType::new_signature(
                     field.name.clone(),
-                    vec![Sort::Simple(Identifier::Symbol(name.clone()))],
-                    field.sort.clone(),
+                    vec![Sort::from_name(name.as_str())], // parameter type is the datatype itself
+                    field.sort.clone(), // return type is the field type
                 );
-                self.register_function_type(field.name.clone(), accessor_func);
+                self.register_function_type(field.name.clone(), field_accessor);
             }
         }
+    }
+
+    /// get constructor info
+    pub fn get_constructor(&self, name: &str) -> Option<&ConstructorInfo> {
+        self.constructors.get(name)
+    }
+    
+    /// check if it is a constructor
+    pub fn is_constructor(&self, name: &str) -> bool {
+        self.constructors.contains_key(name)
     }
 
     /// get data type by name
@@ -443,8 +485,8 @@ impl TypeInferer {
 
         let ite_func = FunctionType::new_signature(
             "ite".to_string(),
-            vec![Sort::bool()], // simplified handling
-            Sort::bool(),
+            vec![Sort::bool(), Sort::int(), Sort::int()], // condition, then-branch, else-branch
+            Sort::int(),
         );
         self.global_scope_mut()
             .register_function_type("ite".to_string(), ite_func);
@@ -500,6 +542,28 @@ impl TypeInferer {
                 if let Some(sort) = self.find_variable_type(&sym) {
                     Ok(sort.clone())
                 } else {
+                    // check if it is a constructor (nullary constructor)
+                    for scope in &self.stack {
+                        for (_, datatype) in &scope.datatypes {
+                            for constructor in &datatype.constructors {
+                                if constructor.name == sym && constructor.fields.is_empty() {
+                                    debug!("Found constructor: {} for datatype {}", sym, datatype.name);
+                                    return Ok(Sort::Simple(Identifier::Symbol(datatype.name.clone())));
+                                }
+                            }
+                        }
+                    }
+                    
+                    // check if it is an enum value
+                    for scope in &self.stack {
+                        for (_, enum_type) in &scope.enums {
+                            if enum_type.elements.contains(&sym) {
+                                debug!("Found enum element: {} for enum {}", sym, enum_type.name);
+                                return Ok(Sort::Simple(Identifier::Symbol(enum_type.name.clone())));
+                            }
+                        }
+                    }
+                    
                     error!("symbol type not found: {}", sym);
                     Err(format!("Undefined variable: {}", sym))
                 }
@@ -540,14 +604,25 @@ impl TypeInferer {
     }
 
     fn infer_function_call(&mut self, func: &str, args: &[LSTerm]) -> Result<Sort, String> {
+        debug!(
+            "infer_function_call: func={}, args={}",
+            func,
+            args.iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
         // infer argument types
         let mut arg_types = Vec::new();
         for arg in args.iter() {
             let arg_type = self.infer(arg)?;
             arg_types.push(arg_type);
         }
+        
         // find function type
         if let Some(func_type) = self.find_function_type(func) {
+            debug!("Found function type: {:?}", func_type);
             // check argument number
             if func_type.params.len() != arg_types.len() {
                 return Err(format!(
@@ -574,6 +649,43 @@ impl TypeInferer {
 
             Ok(func_type.ret.clone())
         } else {
+            // check if it is a constructor
+            for scope in &self.stack {
+                for (_, datatype) in &scope.datatypes {
+                    for constructor in &datatype.constructors {
+                        if constructor.name == func {
+                            debug!("Found constructor: {} for datatype {}", func, datatype.name);
+                            
+                            // check if the number of parameters matches
+                            if args.len() != constructor.fields.len() {
+                                return Err(format!(
+                                    "Constructor {} expects {} arguments, got {}",
+                                    func,
+                                    constructor.fields.len(),
+                                    args.len()
+                                ));
+                            }
+                            
+                            // check if the parameter types match
+                            for (i, (field, arg_type)) in constructor.fields.iter().zip(arg_types.iter()).enumerate() {
+                                if !self.checked(&field.sort, arg_type) {
+                                    return Err(format!(
+                                        "Argument {} of constructor {} has type {}, expected {}",
+                                        i + 1,
+                                        func,
+                                        arg_type,
+                                        field.sort
+                                    ));
+                                }
+                            }
+                            
+                            // return the datatype
+                            return Ok(Sort::Simple(Identifier::Symbol(datatype.name.clone())));
+                        }
+                    }
+                }
+            }
+            
             // check if it is a builtin function
             self.infer_builtin_function(func, args)
         }
@@ -660,23 +772,31 @@ impl TypeInferer {
     ) -> Result<Sort, String> {
         // infer term type
         let term_type = self.infer(term)?;
+        debug!("Match term type: {}", term_type);
 
         // infer all case types
         let mut case_types = Vec::new();
-        for case in cases.iter() {
+        for (i, case) in cases.iter().enumerate() {
+            debug!("Processing case {}: {}", i, case);
+
             // enter new scope to handle each case
             self.enter_scope();
+
             // handle variable binding in pattern matching
             if let Some(pattern) = &case.pattern {
+                debug!("Binding pattern variables for: {}", pattern);
+                debug!("Pattern elements: {:?}", pattern.elements);
                 self.bind_pattern_variables(pattern, &term_type)?;
             }
+
+            // infer the type of the case value
+            debug!("Inferring type for case value: {}", case.value);
             let case_type = self.infer(&case.value)?;
             case_types.push(case_type);
 
             // exit scope
             self.exit_scope();
         }
-
         // check if all case types are the same
         if case_types.is_empty() {
             return Err("Match expression must have at least one case".to_string());
@@ -697,40 +817,110 @@ impl TypeInferer {
         Ok(first_type.clone())
     }
 
-    /// bind variables in pattern matching
+    /// bind variables in pattern matching - fixed version
     pub fn bind_pattern_variables(
         &mut self,
         pattern: &crate::lang::model::Pattern,
         term_type: &Sort,
     ) -> Result<(), String> {
+        debug!("Binding pattern variables: {}", pattern);
+
+        // Use the new generic pattern matcher for variable binding
+        let matcher = crate::lang::pattern::PatternMatcher::new();
+
+        // check if it is a simple constructor pattern (only constructor name)
+        if pattern.elements.len() == 1 {
+            if let crate::lang::model::PatternElem::Var(constructor_name) = &pattern.elements[0] {
+                debug!("Simple constructor pattern: {}", constructor_name);
+                // for simple constructor pattern, no need to bind any variables
+                // only need to verify if the constructor exists in the corresponding datatype
+                if let Some(data_type) = self.find_datatype_by_sort(term_type) {
+                    debug!(
+                        "Found datatype: {} with constructors: {:?}",
+                        data_type.name,
+                        data_type
+                            .constructors
+                            .iter()
+                            .map(|c| &c.name)
+                            .collect::<Vec<_>>()
+                    );
+                    let constructor_exists = data_type
+                        .constructors
+                        .iter()
+                        .any(|c| c.name == *constructor_name);
+                    if !constructor_exists {
+                        return Err(format!(
+                            "Constructor '{}' not found in datatype '{}'",
+                            constructor_name, data_type.name
+                        ));
+                    }
+                    debug!(
+                        "Constructor '{}' found in datatype '{}'",
+                        constructor_name, data_type.name
+                    );
+                } else {
+                    debug!("No datatype found for sort: {}", term_type);
+                }
+                return Ok(());
+            }
+        }
+
+        // Extract constructor parameters (skip constructor name)
+        let params = matcher.extract_constructor_params(pattern);
+        debug!("Extracted constructor parameters: {:?}", params);
+
         // find data type definition.
         if let Some(data_type) = self.find_datatype_by_sort(term_type) {
+            debug!(
+                "Found data type: {} with {} constructors",
+                data_type.name,
+                data_type.constructors.len()
+            );
+
             // collect variables and types to bind.
             let mut bindings = Vec::new();
 
             // handle variable binding in pattern.
-            if pattern.elements.len() >= 2 {
+            if pattern.elements.len() >= 1 {
                 // first element should be constructor name.
                 if let crate::lang::model::PatternElem::Var(constructor_name) = &pattern.elements[0]
                 {
+                    debug!("Looking for constructor: {}", constructor_name);
                     // find constructor definition.
                     if let Some(constructor_def) = data_type
                         .constructors
                         .iter()
                         .find(|c| c.name == *constructor_name)
                     {
-                        // bind constructor parameters.
-                        for (i, elem) in pattern.elements.iter().skip(1).enumerate() {
-                            if let crate::lang::model::PatternElem::Var(var_name) = elem {
-                                if i < constructor_def.fields.len() {
-                                    let field_type = constructor_def.fields[i].sort.clone();
-                                    debug!("{} :: {}", var_name, field_type);
-                                    bindings.push((var_name.clone(), field_type));
-                                }
+                        debug!(
+                            "Found constructor: {} with {} fields",
+                            constructor_name,
+                            constructor_def.fields.len()
+                        );
+
+                        // check if the number of parameters matches
+                        if params.len() != constructor_def.fields.len() {
+                            return Err(format!(
+                                "Constructor '{}' expects {} parameters, but {} were provided in pattern",
+                                constructor_name,
+                                constructor_def.fields.len(),
+                                params.len()
+                            ));
+                        }
+
+                        // bind constructor parameters using extracted parameters
+                        for (i, param_name) in params.iter().enumerate() {
+                            if i < constructor_def.fields.len() {
+                                let field_type = constructor_def.fields[i].sort.clone();
+                                debug!("{} :: {}", param_name, field_type);
+                                bindings.push((param_name.clone(), field_type));
                             }
                         }
                     } else {
-                        warn!("constructor not found: {}", constructor_name);
+                        return Err(format!(
+                            "Constructor '{}' not found in datatype '{}'",
+                            constructor_name, data_type.name
+                        ));
                     }
                 }
             }
@@ -740,10 +930,7 @@ impl TypeInferer {
                 self.current_scope_mut().bind_variable(var_name, var_type);
             }
         } else {
-            warn!(
-                "could not find data type for sort: {}",
-                term_type.to_string()
-            );
+            debug!("No datatype found for sort: {}", term_type);
         }
 
         Ok(())
@@ -752,7 +939,18 @@ impl TypeInferer {
     /// find data type by type
     fn find_datatype_by_sort(&self, sort: &Sort) -> Option<&DataType> {
         let sort_name = sort.to_string();
-        self.global_scope().get_datatype(&sort_name)
+        debug!("Looking for datatype with sort name: '{}'", sort_name);
+        let result = self.global_scope().get_datatype(&sort_name);
+        if result.is_some() {
+            debug!("Found datatype: {}", sort_name);
+        } else {
+            debug!("Datatype not found: {}", sort_name);
+            // debug: print all available datatypes
+            for (name, _) in &self.global_scope().datatypes {
+                debug!("Available datatype: {}", name);
+            }
+        }
+        result
     }
 
     fn infer_let_expr(
@@ -819,12 +1017,13 @@ impl TypeInferer {
     }
 
     fn find_function_type(&self, name: &str) -> Option<&FunctionType> {
-        // lookup in scope stack (from top to bottom, i.e. from recent to distant)
-        for scope in self.stack.iter().rev() {
-            if let Some(func_type) = scope.get_function_type(name) {
+        for scope in &self.stack {
+            if let Some(func_type) = scope.function_types.get(name) {
+                debug!("Found function type for '{}': {}", name, func_type);
                 return Some(func_type);
             }
         }
+        debug!("No function type found for '{}'", name);
         None
     }
 

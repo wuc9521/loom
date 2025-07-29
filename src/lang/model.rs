@@ -4,10 +4,11 @@ use crate::parser::ast::{LSCmd, LSTerm};
 use crate::parser::{LSParseError, Rule};
 use core::str;
 use derive_more::Display;
+use log::debug;
 
 use pest::iterators::Pair;
-use sygus_parser::Sort;
 use sygus_parser::Identifier;
+use sygus_parser::Sort;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ SetUniv* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -29,17 +30,17 @@ impl ThSpecCmd {
 }
 
 #[derive(Clone, Debug, Display)]
-    #[display(
-        fmt = "(model {} ({}) {} {})",
-        name,
-        "type_params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
-        "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
-        "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
-    )]
+#[display(
+    fmt = "(model {} ({}) {} {})",
+    name,
+    "type_params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
+    "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
+    "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
+)]
 pub struct Model {
     pub name: String,
     pub type_params: Vec<String>,
-    pub univ_defs: Vec<SetUniv>,
+    pub univ_defs: Vec<Univ>,
     pub ext_cmds: Vec<ThSpecCmd>,
     pub ext_ctx: Option<crate::theory::ModelCtx>,
 }
@@ -71,7 +72,7 @@ impl Model {
         for item_pair in inner_pairs {
             match item_pair.as_rule() {
                 Rule::SetUniv => {
-                    let univ_def = SetUniv::parse(item_pair)?;
+                    let univ_def = Univ::parse(item_pair)?;
                     model.add_univ_def(univ_def);
                 }
                 Rule::LSCmd => {
@@ -87,20 +88,20 @@ impl Model {
         }
         Ok(model)
     }
-    pub fn add_univ_def(&mut self, univ_def: SetUniv) {
+    pub fn add_univ_def(&mut self, univ_def: Univ) {
         self.univ_defs.push(univ_def);
     }
 }
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(fmt = "(set-univ {} {})", name, sort)]
-pub struct SetUniv {
+pub struct Univ {
     pub name: String,
     pub sort: Sort,
 }
 
 // SetUniv = { "(" ~ "set-univ" ~ Sort ~ "(" ~ SortElem* ~ ")" ~ ")" }
-impl SetUniv {
+impl Univ {
     pub fn new(name: String, sort: Sort) -> Self {
         Self { name, sort }
     }
@@ -165,11 +166,34 @@ impl MatchCase {
     }
 
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        let mut inner_pairs = pair.into_inner();
-        // inner_pairs.next(); // skip the opening parenthesis
-        let pattern = inner_pairs.next().map(|p| Pattern::parse(p).unwrap());
-        let value = LSTerm::parse(inner_pairs.next().unwrap())?;
-        Ok(Self { pattern, value })
+        debug!("Parsing MatchCase: {}", pair.as_str());
+
+        let mut inner = pair.into_inner();
+
+        // First element should be the pattern
+        let pattern_pair = inner.next().ok_or_else(|| {
+            LSParseError::InvalidSyntax("Expected pattern in match case".to_string())
+        })?;
+
+        debug!(
+            "Pattern pair rule: {:?}, content: {}",
+            pattern_pair.as_rule(),
+            pattern_pair.as_str()
+        );
+
+        let pattern = Pattern::parse(pattern_pair)?;
+
+        // Second element should be the value
+        let value_pair = inner.next().ok_or_else(|| {
+            LSParseError::InvalidSyntax("Expected value in match case".to_string())
+        })?;
+
+        let value = crate::parser::ast::LSTerm::parse(value_pair)?;
+
+        Ok(MatchCase {
+            pattern: Some(pattern),
+            value,
+        })
     }
 }
 
@@ -193,57 +217,59 @@ pub struct Pattern {
 }
 
 impl Pattern {
-    pub fn new(elements: Vec<PatternElem>) -> Self {
-        Self { elements }
-    }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        // TODO: unimplemented!()
-        if pair.as_str().starts_with('(') && pair.as_str().ends_with(')') {
-            let content = &pair.as_str()[1..pair.as_str().len() - 1];
-            // try to parse as SortElem
-            if content.starts_with('$') {
-                let elem = EnumSortElem::from_str(content)?;
-                return Ok(Self::new(vec![PatternElem::SortElem(elem)]));
-            }
-            // try to parse as Symbol
-            if content.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                return Ok(Self::new(vec![PatternElem::Var(content.to_string())]));
-            }
-            // try to parse as wildcard
-            if content == "_" {
-                return Ok(Self::new(vec![PatternElem::Wildcard]));
-            }
-
-            // handle constructor pattern, e.g. (re.sym c)
-            // split content and parse each element
-            let parts: Vec<&str> = content.split_whitespace().collect();
-            if parts.len() > 1 {
-                let mut elements = Vec::new();
-                for part in parts {
-                    if part.starts_with('$') {
-                        // SortElem
-                        let elem = EnumSortElem::from_str(part)?;
-                        elements.push(PatternElem::SortElem(elem));
-                    } else if part == "_" {
-                        // Wildcard
-                        elements.push(PatternElem::Wildcard);
-                    } else {
-                        // Symbol (variable)
-                        elements.push(PatternElem::Var(part.to_string()));
-                    }
-                }
-                return Ok(Self::new(elements));
-            }
+    pub fn new() -> Self {
+        Self {
+            elements: Vec::new(),
         }
-        let elements = pair
-            .into_inner()
-            .map(|elem| match elem.as_rule() {
-                Rule::SortElem => PatternElem::SortElem(EnumSortElem::parse(elem).unwrap()),
-                Rule::Symbol => PatternElem::Var(elem.as_str().to_string()),
-                _ => PatternElem::Wildcard,
-            })
-            .collect();
+    }
 
-        Ok(Self::new(elements))
+    pub fn push(&mut self, elem: PatternElem) {
+        self.elements.push(elem);
+    }
+
+    /// Parse pattern from pest pair
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        debug!(
+            "Parsing pattern: {} (rule: {:?})",
+            pair.as_str(),
+            pair.as_rule()
+        );
+
+        let mut pattern = Pattern::new();
+        let pattern_str = pair.as_str().trim();
+        if pattern_str == "_" {
+            pattern.push(PatternElem::Wildcard);
+            Ok(pattern)
+        } else if pattern_str.starts_with('(') && pattern_str.ends_with(')') {
+            debug!("Parsing constructor pattern: {}", pattern_str);
+
+            // remove outer parentheses and parse inner elements
+            let inner_str = &pattern_str[1..pattern_str.len() - 1];
+            let tokens: Vec<&str> = inner_str.split_whitespace().collect();
+
+            if tokens.is_empty() {
+                return Err(LSParseError::InvalidSyntax(
+                    "Empty constructor pattern".to_string(),
+                ));
+            }
+
+            // the first is the constructor name
+            pattern.push(PatternElem::Var(tokens[0].to_string()));
+
+            // the rest are parameters
+            for token in tokens.iter().skip(1) {
+                if *token == "_" {
+                    pattern.push(PatternElem::Wildcard);
+                } else {
+                    pattern.push(PatternElem::Var(token.to_string()));
+                }
+            }
+
+            Ok(pattern)
+        } else {
+            // case 3: simple variable or constructor (like nil, x, etc.)
+            pattern.push(PatternElem::Var(pattern_str.to_string()));
+            Ok(pattern)
+        }
     }
 }

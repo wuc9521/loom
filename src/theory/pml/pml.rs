@@ -61,9 +61,8 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     if let Some(_tran_name) = get_transition_pred(model) {
         for from in &domain {
             for to in &domain {
-                // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
                 if let Some(LSTerm::Literal(lit)) = None
-                // 临时修复
+                // temporary fix
                 {
                     if lit.to_string() == "true" {
                         transitions.entry(*from).or_default().push(*to);
@@ -76,9 +75,8 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
     // 3. init
     let mut init = vec![];
     if let Some(_init_name) = &ctx.init_name {
-        // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
         if let Some(LSTerm::AppTerm(sym, _)) = None
-        // 临时修复
+        // temporary fix
         {
             if let Some(&idx) = sym2id.get(&sym.to_string()) {
                 init.push(idx);
@@ -88,15 +86,12 @@ pub fn model_to_json_with_symbol_map(model: &Model, ctx: &KripkeCtx) -> Value {
 
     // 4. propositions & labels
     let propositions: Vec<String> = vec![];
-    // let mut prop_cases: HashMap<String, Vec<crate::lang::model::InterpFun>> = HashMap::new(); // 移除，因为语法解析中没有实际解析 interp-fun
     let mut labels: HashMap<usize, Vec<String>> = HashMap::new();
-    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
     for &state in &domain {
         let mut props = vec![];
         for prop in &propositions {
-            // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
             if let Some(LSTerm::Literal(lit)) = None
-            // 临时修复
+            // temporary fix
             {
                 if lit.to_string() == "true" {
                     props.push(prop.clone());
@@ -121,9 +116,8 @@ pub fn get_relation_adjacency(model: &Model, _relation: &str) -> Vec<Vec<usize>>
     let mut adjacency: Vec<Vec<usize>> = vec![vec![]; domain.len()];
     for from in &domain {
         for to in &domain {
-            // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
             if let Some(LSTerm::Literal(lit)) = None
-            // 临时修复
+            // temporary fix
             {
                 if lit.to_string() == "true" {
                     adjacency[*from].push(*to);

@@ -94,14 +94,9 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let final_bv_length = current_offset;
     // 4. collect propositions and concatenate with bitvector, 1-bit per proposition
     let props = collect_bool_props(&loaded_models, 1);
-    let (prop_bitvecs, _bv_len) = prop_bitvecs(
-        &loaded_models,
-        &props,
-        &|_, _, _, _| {
-        // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
-        false // 临时修复
-    },
-    );
+    let (prop_bitvecs, _bv_len) = prop_bitvecs(&loaded_models, &props, &|_, _, _, _| {
+        false // temporary fix
+    });
     for prop in &props {
         cmds.push(
             Cmd::define_fun(&prop)
@@ -208,8 +203,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                 // look up models and get ext_ctx,
                 if let Some(model) = loaded_models.iter().find(|m| &m.name == model_name) {
                     if let Some(crate::theory::ModelCtx::PML(ctx)) = &model.ext_ctx {
-                        let (domain_syms, _, _universe_sort) =
-                            get_universe_domain_and_map(model);
+                        let (domain_syms, _, _universe_sort) = get_universe_domain_and_map(model);
                         let sym2id: std::collections::HashMap<String, usize> = domain_syms
                             .iter()
                             .enumerate()
@@ -218,8 +212,9 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
                         let mut init_idx = 0; // fallback: 0
                         if let Some(_) = &ctx.init_name {
                             if let Some(LSTerm::AppTerm(sym, _)) =
-                                // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
-                None // 临时修复
+                                // remove func_interps handling, because interp-fun is not actually parsed
+                                None
+                            // temporary fix
                             {
                                 if let Some(&idx) = sym2id.get(&sym.to_string()) {
                                     init_idx = idx;

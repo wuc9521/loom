@@ -1,5 +1,5 @@
 use crate::lang::model::{
-    SetUniv, MatchCase, Model, Pattern, PatternElem
+    Univ, MatchCase, Model, Pattern, PatternElem
 };
 use crate::lang::types::FunctionType;
 use crate::parser::ast::LSTerm;
@@ -27,11 +27,10 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                     }
                     // generate model
                     // let len = s.chars().count();
-                    let univ = SetUniv {
+                    let univ = Univ {
                         name: "Pos".to_string(),
                         sort: Sort::from_name("Pos"),
                     };
-                    // let mut func_interps = Vec::new(); // 移除，因为语法解析中没有实际解析 interp-fun
                     for c in &char_set {
                         let _fname = c.to_string();
                         let mut cases = Vec::new();
@@ -45,13 +44,11 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                                 value: val,
                             });
                         }
-                        // 移除 InterpFun 处理，因为语法解析中没有实际解析 interp-fun
                     }
                     let model = Model {
                         name: name.clone(),
                         type_params: vec![],
                         univ_defs: vec![univ],
-                        // func_interps, // 移除，因为语法解析中没有实际解析 interp-fun
                         ext_cmds: vec![],
                         ext_ctx: None,
                     };

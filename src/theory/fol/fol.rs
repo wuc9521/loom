@@ -41,9 +41,6 @@ pub fn model_to_json_with_symbol_map(model: &Model, _ctx: &FOModelCtx) -> Value 
 
     // 3. predicates: extract predicates
     let predicates = serde_json::Map::new();
-
-    // 移除 func_interps 处理，因为语法解析中没有实际解析 interp-fun
-
     json!({
         "domain": domain,
         "constants": constants,

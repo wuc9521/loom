@@ -4,7 +4,6 @@ LSProg = { SOI ~ LSCmd* ~ EOI }
 LSTerm = {
   Identifier
 | Literal
-| AppTerm
 | AttrTerm
 | MatchTerm
 | LambdaTerm
@@ -13,6 +12,7 @@ LSTerm = {
 | ForallTerm
 | ExistsTerm
 | LetTerm
+| AppTerm
 }
 
 AppTerm = { "(" ~ Identifier ~ LSTerm+ ~ ")" } // apply on at least one argument
@@ -42,24 +42,21 @@ EchoCmd = { "(" ~ #LSTkEcho="echo" ~ LSTerm ~ ")" }
 ThDefCmd = { "(" ~ #LSTkDefTh="define-theory" ~ Symbol ~ "(" ~ LSCmd* ~ ")" ~ ")" }
 FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
 ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
-// InterpFun = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
 MatchCase = { "(" ~ Pattern ~ LSTerm ~ ")" }
 
 SetUniv = { "(" ~ #LSTkSetUniv="set-univ" ~ Symbol ~ Sort ~ ")" }
-SortElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
 FuncDef = {"(" ~ #LSTkDefineFun="define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
 FuncDefRec = {"(" ~ #LSTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
-EnumSortDef = { "(" ~ #LSTkDefSortEnum="define-sort-enum" ~ Symbol ~ "(" ~ SortElem* ~ ")" ~ ")" }
-
+EnumSortDef = { "(" ~ #LSTkDefSortEnum="define-sort-enum" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ ")" }
 Pattern = { 
-  "_" // wildcard
-| SortElem 
-| Symbol 
-| "(" ~ (SortElem | Symbol | "_")+ ~ ")" 
+  Wildcard // wildcard
+| Symbol // variable binding or simple constructor
+| "(" ~ Symbol ~ Symbol+ ~ ")" // constructor pattern like (cons head tail) or (nil)
 }
 
+Wildcard = { "_" }
 LSReservedCmd = { 
-  "set-univ" | "interp-fun" | "define-model" | "declare-fun" | "define-sort-enum"
+  "set-univ" | "interp-fun" | "define-model" | "declare-fun" | "define-sort-enum" | "match"
 }
 
 // Theory specification commands

@@ -1,7 +1,6 @@
-
 use crate::parser::ast::LSTerm;
-use std::collections::HashMap;
 use derive_more::Display;
+use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone)]
 pub struct ModelSymbolTable {
@@ -10,7 +9,7 @@ pub struct ModelSymbolTable {
 
 #[derive(Debug, Clone)]
 pub enum SymbolInterp {
-    Univ(crate::lang::model::SetUniv),
+    Univ(crate::lang::model::Univ),
 }
 
 impl ModelSymbolTable {
@@ -53,11 +52,25 @@ pub enum Value {
     Model(crate::lang::model::Model),
     #[display(fmt = "{}", _0)]
     Term(LSTerm),
-    #[display(fmt = "({})", 
-        "_0.iter().map(|v| format!(\"{}\", v)).collect::<Vec<_>>().join(\" \")")]
+    #[display(
+        fmt = "({})",
+        "_0.iter().map(|v| format!(\"{}\", v)).collect::<Vec<_>>().join(\" \")"
+    )]
     List(Vec<Value>),
     #[display(fmt = "{}", _0)]
     Symbol(String),
+    #[display(fmt = "<constructor:{}>", name)]
+    Constructor {
+        name: String,
+        datatype: String,
+        arity: usize,
+    },
+    #[display(fmt = "{}", constructor)]
+    DataValue {
+        constructor: String,
+        datatype: String,
+        fields: Vec<Value>,
+    },
 }
 
 #[derive(Debug, Clone, Display)]

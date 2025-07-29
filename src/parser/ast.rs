@@ -162,29 +162,34 @@ impl LSTerm {
                 }
                 Ok(LSTerm::AttrTerm(Box::new(term), attrs))
             }
-            Rule::LSTerm => {
-                // If we get an LSTerm rule, parse its inner content
-                let mut inner = pair.into_inner();
-                if let Some(inner_pair) = inner.next() {
-                    LSTerm::parse(inner_pair)
-                } else {
-                    Err(LSParseError::InvalidSyntax("Empty LSTerm".to_string()))
-                }
-            }
+
             Rule::MatchTerm => {
-                // MatchTerm = { "(" ~ #LSTkMatch="match" ~ LSTerm ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
+                // MatchTerm = { "(" ~ "match" ~ LSTerm ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
                 let mut inner = pair.into_inner();
+
+                // the first one should be the expression to be matched
                 let term = LSTerm::parse(inner.next().unwrap())?;
+
                 let mut cases = vec![];
-                while let Some(case) = inner.next() {
-                    let case = MatchCase::parse(case)?;
-                    cases.push(case);
+
+                // parse all cases
+                while let Some(case_pair) = inner.next() {
+                    // each case should be like (pattern value)
+                    if case_pair.as_rule() == Rule::MatchCase {
+                        let case = MatchCase::parse(case_pair)?;
+                        cases.push(case);
+                    } else {
+                        unreachable!()
+                    }
                 }
-                Ok(LSTerm::MatchTerm {
+
+                let match_term = LSTerm::MatchTerm {
                     term: Box::new(term),
                     cases,
-                })
+                };
+                Ok(match_term)
             }
+
             Rule::LambdaTerm => {
                 // LambdaTerm = { "(" ~ #LSTkLambda="lambda" ~ "(" ~ SortedVar+ ~ ")" ~ LSTerm ~ ")" }
                 let mut inner = pair.into_inner();
@@ -206,7 +211,7 @@ impl LSTerm {
                 let name = inner.next().unwrap().as_str().to_string();
                 let mut vars = vec![];
 
-                // Parse sorted variables
+                // parse sorted variables
                 while let Some(next) = inner.peek() {
                     if next.as_rule() == Rule::SortedVar {
                         vars.push(SortedVar::from_str(inner.next().unwrap().as_str()).unwrap());
@@ -215,14 +220,14 @@ impl LSTerm {
                     }
                 }
 
-                // Parse return sort
+                // parse return sort
                 let ret_sort_pair = inner.next().unwrap();
                 let ret_sort = Sort::from_str(ret_sort_pair.as_str()).unwrap();
 
-                // Parse body
+                // parse body
                 let body = LSTerm::parse(inner.next().unwrap())?;
 
-                // Parse parameter
+                // parse parameter
                 let param = LSTerm::parse(inner.next().unwrap())?;
 
                 match pair.as_rule() {
@@ -288,6 +293,15 @@ impl LSTerm {
                     "Expected LSVarBinding".to_string(),
                 ))
             }
+            Rule::LSTerm => {
+                // If we get an LSTerm rule, parse its inner content
+                let mut inner = pair.into_inner();
+                if let Some(inner_pair) = inner.next() {
+                    LSTerm::parse(inner_pair)
+                } else {
+                    Err(LSParseError::InvalidSyntax("Empty LSTerm".to_string()))
+                }
+            }
             _ => {
                 unreachable!()
             }
@@ -312,7 +326,8 @@ pub enum LSCmd {
     #[display(fmt = "{}", _0)]
     DefineFunc(FunctionType),
 
-    #[display(fmt = "(define-fun-rec {} ({}) {} {})", 
+    #[display(
+        fmt = "(define-fun-rec {} ({}) {} {})",
         "_0.get_name().unwrap_or(&\"unknown\".to_string())",
         "_0.get_params().iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" \")",
         "_0.get_ret()",
@@ -330,7 +345,11 @@ pub enum LSCmd {
     )]
     DefineEnumSort { name: String, elems: Vec<String> },
 
-    #[display(fmt = "(define-theory {} ({}))", name, "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\" \")")]
+    #[display(
+        fmt = "(define-theory {} ({}))",
+        name,
+        "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\" \")"
+    )]
     DefineTheory { name: String, cmds: Vec<LSCmd> },
 }
 
@@ -434,8 +453,8 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
             let name = inner.next().unwrap().as_str().to_string();
             let mut args = vec![];
             let mut ret_sort = None;
-            
-            // Parse sorted variables   
+
+            // parse sorted variables
             while let Some(var_pair) = inner.next() {
                 if var_pair.as_rule() == Rule::SortedVar {
                     let sorted_var = sygus_parser::SortedVar::from_str(var_pair.as_str()).unwrap();
@@ -449,10 +468,10 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
                     break;
                 }
             }
-            
-            let body_pair = inner.next().unwrap();  
+
+            let body_pair = inner.next().unwrap();
             let body = LSTerm::parse(body_pair)?;
-            
+
             let func_type = FunctionType::new_definition(
                 name,
                 args.iter().map(|sv| sv.name.clone()).collect(),
@@ -532,6 +551,10 @@ fn validate_constraint(term: &sygus_parser::SyGuSTerm, cmd_str: &str) -> Result<
 
 impl LSCmd {
     pub fn declare_fun(name: &str, arg_sorts: Vec<Sort>, ret_sort: Sort) -> Self {
-        LSCmd::DeclareFunc(FunctionType::new_signature(name.to_string(), arg_sorts, ret_sort))
+        LSCmd::DeclareFunc(FunctionType::new_signature(
+            name.to_string(),
+            arg_sorts,
+            ret_sort,
+        ))
     }
 }

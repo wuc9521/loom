@@ -1,10 +1,17 @@
 use crate::lang::runtime::{Function, Scope, Value};
-use crate::lang::types::{FunctionType, TypeInferer};
+use crate::lang::types::{FunctionType, TypeInferer, ConstructorInfo};
 use crate::parser::ast::{parse, LSCmd, LSTerm};
 use crate::theory::{Logic, ModelCtx};
-use log::{debug, error};
-use std::collections::HashMap;
+use log::debug;
 use sygus_parser::{Sort, SyGuSCmd};
+
+#[derive(Debug, Clone)]
+pub enum SymbolLookupResult {
+    Variable(Value),
+    Constructor(ConstructorInfo),
+    EnumElement { name: String, enum_type: String },
+    NotFound,
+}
 
 #[derive(Debug)]
 pub struct TheoryInterpreter {
@@ -19,7 +26,7 @@ pub struct Interpreter {
     pub last_model: Option<(crate::lang::model::Model, ModelCtx)>,
     pub stack: Vec<Scope>,
     pub typing: TypeInferer,
-    pub theories: HashMap<String, TheoryInterpreter>,
+    pub theories: std::collections::HashMap<String, TheoryInterpreter>,
 }
 
 impl Interpreter {
@@ -31,12 +38,24 @@ impl Interpreter {
             last_model: None,
             stack: Vec::new(),
             typing: TypeInferer::new(),
-            theories: HashMap::new(),
+            theories: std::collections::HashMap::new(),
         };
 
         interpreter.stack.push(Scope::new()); // initialize global scope
 
+        // Register builtin constants in runtime scope
+        interpreter.register_builtin_constants();
+
         interpreter
+    }
+
+    /// Register builtin constants in runtime scope
+    fn register_builtin_constants(&mut self) {
+        debug!("register built-in constants in runtime scope");
+        self.global_scope_mut()
+            .define("true".to_string(), Value::Bool(true));
+        self.global_scope_mut()
+            .define("false".to_string(), Value::Bool(false));
     }
 
     /// load theory file
@@ -76,7 +95,7 @@ impl Interpreter {
 
         // process theory commands, but don't activate them immediately
         for cmd in cmds.iter() {
-            debug!("Processing theory command: {}", cmd);
+            debug!("{}", cmd);
             theory_interpreter.interpreter.proc(cmd)?;
         }
 
@@ -281,119 +300,68 @@ impl Interpreter {
         func_name: &str,
         args: &[Value],
     ) -> Result<Value, String> {
-        debug!(
-            "executing constraint function: {} with {} args",
-            func_name,
-            args.len()
-        );
-
-        // first try to find the function in the current scope
-        if let Some(value) = self.lookup_symbol(func_name) {
-            debug!("found function {} in current scope", func_name);
-            match value {
-                Value::Function(func) => {
-                    // TODO: actually execute the function call
-                    debug!("found function definition: {}", func.name);
-                    // return true temporarily to avoid panic
-                    Ok(Value::Bool(true))
-                }
-                Value::Symbol(sym) => {
-                    debug!("found function symbol: {}", sym);
-                    // if it's just a symbol, try to find the actual function definition
-                    if let Some(func_value) = self.lookup_symbol(&sym) {
-                        match func_value {
-                            Value::Function(func) => {
-                                debug!("found actual function definition: {}", func.name);
-                                // TODO: actually execute function call
-                                Ok(Value::Bool(true))
-                            }
-                            _ => Ok(Value::Symbol(sym.clone())),
+        // first try to find builtin functions
+        match func_name {
+            "not" => {
+                if args.len() == 1 {
+                    match &args[0] {
+                        Value::Bool(b) => Ok(Value::Bool(!b)),
+                        Value::Symbol(sym) => {
+                            debug!("not function got symbol argument: {}", sym);
+                            // return true temporarily to avoid panic
+                            Ok(Value::Bool(true))
                         }
-                    } else {
-                        Ok(Value::Symbol(sym.clone()))
+                        _ => Err(format!(
+                            "not function expects boolean argument, got: {}",
+                            args[0]
+                        )),
                     }
+                } else {
+                    Err(format!(
+                        "not function expects 1 argument, got: {}",
+                        args.len()
+                    ))
                 }
-                _ => Err(format!("Symbol {} is not a function", func_name)),
             }
-        } else {
-            // try to find the function in all theories
-            debug!(
-                "function {} not found in current scope, checking theories",
-                func_name
-            );
-            for theory_name in self.theories.keys() {
-                debug!(
-                    "checking theory: {} for function: {}",
-                    theory_name, func_name
-                );
-                if let Some(theory) = self.theories.get(theory_name) {
-                    if let Some(value) = theory.interpreter.lookup_symbol(func_name) {
-                        debug!("found function {} in theory {}", func_name, theory_name);
-                        match value {
-                            Value::Function(func) => {
-                                // TODO: actually execute the theory function call
-                                debug!("found theory function definition: {}", func.name);
-                                // return true temporarily to avoid panic
-                                return Ok(Value::Bool(true));
-                            }
-                            Value::Symbol(sym) => {
-                                debug!("found theory function symbol: {}", sym);
-                                // try to find the actual function definition in the theory
-                                if let Some(func_value) = theory.interpreter.lookup_symbol(&sym) {
-                                    match func_value {
-                                        Value::Function(func) => {
-                                            debug!(
-                                                "found actual theory function definition: {}",
-                                                func.name
-                                            );
-                                            // TODO: actually execute function call
-                                            return Ok(Value::Bool(true));
-                                        }
-                                        _ => return Ok(Value::Symbol(sym.clone())),
-                                    }
-                                } else {
+            _ => {
+                // then try to find user-defined functions in current scope
+                if let Some(value) = self.lookup_symbol(func_name) {
+                    match value {
+                        Value::Function(func) => {
+                            debug!("found function: {}", func.name);
+                            // TODO: implement function call logic
+                            Ok(Value::Symbol(func.name.clone()))
+                        }
+                        Value::Symbol(sym) => {
+                            debug!("found function symbol: {}", sym);
+                            Ok(Value::Symbol(sym.clone()))
+                        }
+                        _ => Err(format!("Symbol {} is not a function", func_name)),
+                    }
+                } else {
+                    // try to find in theories and execute there
+                    for theory in self.theories.values() {
+                        if let Some(value) = theory.interpreter.lookup_symbol(func_name) {
+                            match value {
+                                Value::Function(func) => {
+                                    // TODO: implement cross-theory function call
+                                    return Ok(Value::Symbol(func.name.clone()));
+                                }
+                                Value::Symbol(sym) => {
                                     return Ok(Value::Symbol(sym.clone()));
                                 }
+                                _ => continue,
                             }
-                            _ => continue,
                         }
-                    } else {
-                        debug!("function {} not found in theory {}", func_name, theory_name);
                     }
+                    Err(format!("Undefined function in constraint: {}", func_name))
                 }
-            }
-
-            // if the function is a builtin function, try to execute it
-            match func_name {
-                "not" => {
-                    if args.len() == 1 {
-                        match &args[0] {
-                            Value::Bool(b) => Ok(Value::Bool(!b)),
-                            Value::Symbol(sym) => {
-                                // if the argument is a symbol, try to parse it as a boolean value
-                                debug!("not function got symbol argument: {}", sym);
-                                // return true temporarily to avoid panic
-                                Ok(Value::Bool(true))
-                            }
-                            _ => Err(format!(
-                                "not function expects boolean argument, got: {}",
-                                args[0]
-                            )),
-                        }
-                    } else {
-                        Err(format!(
-                            "not function expects 1 argument, got: {}",
-                            args.len()
-                        ))
-                    }
-                }
-                _ => Err(format!("Undefined function in constraint: {}", func_name)),
             }
         }
     }
 
     /// get current scope as immutable reference
-    fn current_scope(&self) -> &Scope {
+    pub fn current_scope(&self) -> &Scope {
         self.stack.last().expect("Stack should never be empty")
     }
 
@@ -403,7 +371,7 @@ impl Interpreter {
     }
 
     /// get current scope as mutable reference
-    fn current_scope_mut(&mut self) -> &mut Scope {
+    pub fn current_scope_mut(&mut self) -> &mut Scope {
         self.stack.last_mut().expect("Stack should never be empty")
     }
 
@@ -419,7 +387,7 @@ impl Interpreter {
 
     /// process a command, including type inference.
     pub fn proc(&mut self, cmd: &LSCmd) -> Result<(), String> {
-        debug!("processing command: {}", cmd);
+        debug!("{}", cmd);
         match cmd {
             LSCmd::Echo(term) => {
                 // evaluate the term
@@ -456,11 +424,7 @@ impl Interpreter {
                 if let Some(body) = func_type.get_body() {
                     self.define_function(
                         func_name.clone(),
-                        func_type
-                            .get_params()
-                            .iter()
-                            .map(|_| "param".to_string())
-                            .collect(),
+                        func_type.get_param_names().to_vec(), // use actual parameter names
                         body.clone(),
                     )?;
                 }
@@ -504,6 +468,13 @@ impl Interpreter {
                 self.typing
                     .current_scope_mut()
                     .register_enum(name.clone(), elems.clone());
+
+                // register enum values to runtime environment
+                for elem in elems {
+                    debug!("Registering enum element: {}", elem);
+                    self.current_scope_mut()
+                        .define(elem.clone(), Value::Symbol(elem.clone()));
+                }
             }
         }
         Ok(())
@@ -540,15 +511,22 @@ impl Interpreter {
                 };
             }
             SyGuSCmd::DeclareDatatype(name, dtdecl) => {
-                debug!("declare data type: {}", name);
-                // check conflicts
+                debug!("Declaring datatype: {}", name);
                 self.typing.check_all_conflicts(name, "datatype")?;
 
                 let data_type = crate::lang::types::adapter::from_dtdecl(name, dtdecl);
+                debug!(
+                    "Registering datatype: {} with {} constructors",
+                    name,
+                    data_type.constructors.len()
+                );
+                
+                // register type information only, do not create runtime values
                 self.typing
                     .current_scope_mut()
                     .register_datatype(name.clone(), data_type);
             }
+
             SyGuSCmd::DeclareSort(name, arity) => {
                 debug!("declare sort: {}", name);
                 // check conflicts
@@ -593,22 +571,45 @@ impl Interpreter {
                 self.current_scope_mut()
                     .define(name.clone(), Value::Symbol(name.clone()));
             }
-            SyGuSCmd::DefineFun(name, args, ret_sort, _body) => {
+            SyGuSCmd::DefineFun(name, args, ret_sort, body) => {
                 debug!("define-fun: {} with {} args", name, args.len());
                 // check conflicts
                 self.typing.check_all_conflicts(name, "function")?;
 
-                // register function type using FunctionType
+                // convert SyGuSTerm to LSTerm
+                let body_str = body.to_string();
+                let body_term = {
+                    use crate::parser::{LSParser, Rule};
+                    use pest::Parser;
+
+                    let mut pairs = LSParser::parse(Rule::LSTerm, &body_str)
+                        .map_err(|e| format!("Failed to parse function body as LSTerm: {}", e))?;
+
+                    if let Some(pair) = pairs.next() {
+                        crate::parser::ast::LSTerm::parse(pair)
+                            .map_err(|e| format!("Failed to parse LSTerm: {}", e))?
+                    } else {
+                        return Err("No LSTerm found".to_string());
+                    }
+                };
+
+                // create FunctionType
+                let param_names: Vec<String> = args.iter().map(|sv| sv.name.clone()).collect();
                 let param_sorts: Vec<sygus_parser::Sort> =
                     args.iter().map(|sv| sv.sort.clone()).collect();
-                let func_type =
-                    FunctionType::new_signature(name.clone(), param_sorts, ret_sort.clone());
-                self.typing
-                    .current_scope_mut()
-                    .register_function_type(name.clone(), func_type);
-                // store the function into the scope
-                self.current_scope_mut()
-                    .define(name.clone(), Value::Symbol(name.clone()));
+                let func_type = FunctionType::new_definition(
+                    name.clone(),
+                    param_names.clone(),
+                    param_sorts,
+                    ret_sort.clone(),
+                    body_term.clone(),
+                );
+
+                // type check
+                self.type_check_function_definition_unified(&func_type)?;
+
+                // define function
+                self.define_function(name.clone(), param_names, body_term)?;
             }
             SyGuSCmd::CheckSynth => {}
             _ => unimplemented!("unsupported sygus command: {:?}", cmd),
@@ -660,11 +661,7 @@ impl Interpreter {
 
             self.define_function(
                 func_name.clone(),
-                func_type
-                    .get_params()
-                    .iter()
-                    .map(|_| "param".to_string())
-                    .collect(),
+                func_type.get_param_names().to_vec(), // convert to Vec<String>
                 body.clone(),
             )?;
         }
@@ -673,102 +670,11 @@ impl Interpreter {
         Ok(())
     }
 
-    /// evaluate an expression
-    pub fn eval(&mut self, term: &LSTerm) -> Result<Value, String> {
-        match term {
-            LSTerm::Identifier(ident) => {
-                let sym = ident.to_string();
-                // use unified scope lookup
-                if let Some(value) = self.lookup_symbol(&sym) {
-                    Ok(value)
-                } else {
-                    error!("undefined symbol: {}", sym);
-                    Err(format!("Undefined symbol: {}", sym))
-                }
-            }
-            LSTerm::Literal(lit) => match lit {
-                sygus_parser::Literal::Numeral(n) => {
-                    let value = Value::Int(*n as i64);
-                    Ok(value)
-                }
-                sygus_parser::Literal::Decimal(d) => {
-                    let value = Value::String(d.to_string());
-                    Ok(value)
-                }
-                _ => Ok(Value::Symbol(lit.to_string())),
-            },
-            LSTerm::AppTerm(func, args) => {
-                debug!(
-                    "evaluate function call: {} (parameters number: {})",
-                    func.to_string(),
-                    args.len()
-                );
-                self.eval_func_app(&func.to_string(), args)
-            }
-            LSTerm::AttrTerm(term, _attrs) => self.eval(term),
-            LSTerm::MatchTerm { term, cases } => {
-                let value = self.eval(term)?;
-                self.eval_match(&value, cases)
-            }
-            LSTerm::LambdaTerm { args, body } => {
-                let param_names: Vec<String> = args.iter().map(|sv| sv.name.clone()).collect();
-                let function = Function {
-                    name: "lambda".to_string(),
-                    params: param_names,
-                    body: *body.clone(),
-                    closure: self.current_scope().clone(),
-                };
-                Ok(Value::Function(function))
-            }
-            LSTerm::MuTerm {
-                name,
-                args: _args,
-                body,
-                param: _,
-                ret_sort: _,
-            } => self.eval_mu(name, body),
-            LSTerm::NuTerm {
-                name: _name,
-                args: _args,
-                body: _body,
-                param: _,
-                ret_sort: _,
-            } => {
-                // TODO: implement nu expression
-                unimplemented!()
-            }
-            LSTerm::ForallTerm { args: _, body } => {
-                self.enter_scope();
-                let result = self.eval(body)?;
-                self.exit_scope();
-                Ok(result)
-            }
-            LSTerm::ExistsTerm { args: _, body } => {
-                self.enter_scope();
-                let result = self.eval(body)?;
-                self.exit_scope();
-                Ok(result)
-            }
-            LSTerm::LetTerm { args, body } => {
-                debug!("evaluate let expression (bindings number: {})", args.len());
-                self.enter_scope();
-                for binding in args {
-                    let value = self.eval(&binding.term)?;
-                    self.current_scope_mut().define(binding.name.clone(), value);
-                }
-                let result = self.eval(body)?;
-                self.exit_scope();
-                Ok(result)
-            }
-        }
-    }
-
     /// lookup a symbol in the scope stack
-    fn lookup_symbol(&self, name: &str) -> Option<Value> {
+    pub fn lookup_symbol(&self, name: &str) -> Option<Value> {
         // lookup in the scope stack (from top to bottom, i.e. from recent to distant)
         for scope in self.stack.iter().rev() {
             if let Some(value) = scope.lookup(name) {
-                debug!("find symbol: {} = {}", name, value);
                 return Some(value);
             }
         }
@@ -776,10 +682,6 @@ impl Interpreter {
         // if not found in current scopes, try to find in theories
         for theory in self.theories.values() {
             if let Some(value) = theory.interpreter.lookup_symbol(name) {
-                debug!(
-                    "find symbol in theory {}: {} = {}",
-                    theory.name, name, value
-                );
                 return Some(value);
             }
         }
@@ -787,9 +689,61 @@ impl Interpreter {
         None
     }
 
+    /// lookup a symbol in the scope stack, returning a more detailed result.
+    pub fn lookup_symbol_enhanced(&self, name: &str) -> SymbolLookupResult {
+        // first check if it is a constructor
+        for scope in self.typing.stack.iter().rev() {
+            if let Some(constructor_info) = scope.get_constructor(name) {
+                return SymbolLookupResult::Constructor(constructor_info.clone());
+            }
+        }
+        
+        // then check normal variables
+        if let Some(value) = self.lookup_symbol(name) {
+            return SymbolLookupResult::Variable(value);
+        }
+        
+        // finally check enum elements
+        for scope in self.typing.stack.iter().rev() {
+            for (_, enum_type) in &scope.enums {
+                if enum_type.elements.contains(&name.to_string()) {
+                    return SymbolLookupResult::EnumElement {
+                        name: name.to_string(),
+                        enum_type: enum_type.name.clone(),
+                    };
+                }
+            }
+        }
+        
+        SymbolLookupResult::NotFound
+    }
+
     /// define a symbol in the current scope
-    fn define_symbol(&mut self, name: String, value: Value) {
+    pub fn define_symbol(&mut self, name: String, value: Value) {
         self.current_scope_mut().define(name, value);
+    }
+
+    /// evaluate a constructor call.
+    pub fn eval_constructor_call(&mut self, info: &ConstructorInfo, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != info.field_types.len() {
+            return Err(format!(
+                "Constructor {} expects {} arguments, got {}",
+                info.name,
+                info.field_types.len(),
+                args.len()
+            ));
+        }
+        
+        let mut field_values = Vec::new();
+        for arg in args {
+            field_values.push(self.interp_expr(arg)?);
+        }
+        
+        Ok(Value::DataValue {
+            constructor: info.name.clone(),
+            datatype: info.datatype.clone(),
+            fields: field_values,
+        })
     }
 
     /// interpret an expression, including type checking
@@ -816,205 +770,6 @@ impl Interpreter {
         }
     }
 
-    /// evaluate a function call
-    fn eval_func_app(&mut self, func_name: &str, args: &[LSTerm]) -> Result<Value, String> {
-        debug!(
-            "evaluating function call: {} with {} arguments",
-            func_name,
-            args.len()
-        );
-
-        // first try to find builtin functions
-        if let Some(builtin_result) = self.eval_builtin_function(func_name, args) {
-            return builtin_result;
-        }
-
-        // then try to find user-defined functions in current scope
-        if let Some(value) = self.lookup_symbol(func_name) {
-            match value {
-                Value::Function(func) => {
-                    debug!("found function: {}", func.name);
-                    // TODO: implement function call logic
-                    Ok(Value::Symbol(func.name.clone()))
-                }
-                Value::Symbol(sym) => {
-                    debug!("found function symbol: {}", sym);
-                    Ok(Value::Symbol(sym.clone()))
-                }
-                _ => Err(format!("Symbol {} is not a function", func_name)),
-            }
-        } else {
-            // try to find in theories and execute there
-            for theory in self.theories.values() {
-                if let Some(value) = theory.interpreter.lookup_symbol(func_name) {
-                    debug!("found function in theory {}: {}", theory.name, func_name);
-                    match value {
-                        Value::Function(func) => {
-                            // TODO: implement cross-theory function call
-                            return Ok(Value::Symbol(func.name.clone()));
-                        }
-                        Value::Symbol(sym) => {
-                            return Ok(Value::Symbol(sym.clone()));
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-            Err(format!("Undefined function: {}", func_name))
-        }
-    }
-
-    /// evaluate a builtin function
-    fn eval_builtin_function(
-        &mut self,
-        func_name: &str,
-        args: &[LSTerm],
-    ) -> Option<Result<Value, String>> {
-        match func_name {
-            "+" => Some(self.add(args)),
-            "-" => Some(self.subtract(args)),
-            "*" => Some(self.multiply(args)),
-            "/" => Some(self.divide(args)),
-            "if" => Some(self.if_expr(args)),
-            "cond" => Some(self.cond(args)),
-            _ => {
-                // try to find function in theories
-                for theory in self.theories.values() {
-                    if let Some(value) = theory.interpreter.lookup_symbol(func_name) {
-                        debug!("Found function {} in theory {}", func_name, theory.name);
-                        match value {
-                            Value::Function(func) => {
-                                // TODO: actually execute function call
-                                return Some(Ok(Value::Symbol(func.name.clone())));
-                            }
-                            Value::Symbol(sym) => {
-                                return Some(Ok(Value::Symbol(sym.clone())));
-                            }
-                            _ => continue,
-                        }
-                    }
-                }
-                None
-            }
-        }
-    }
-
-    /// builtin function implementation
-    fn add(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        if args.len() != 2 {
-            return Err("add requires exactly 2 arguments".to_string());
-        }
-        let a = self.eval(&args[0])?;
-        let b = self.eval(&args[1])?;
-        match (a, b) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
-            _ => Err("add requires integer arguments".to_string()),
-        }
-    }
-
-    fn subtract(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        if args.len() != 2 {
-            return Err("subtract requires exactly 2 arguments".to_string());
-        }
-        let a = self.eval(&args[0])?;
-        let b = self.eval(&args[1])?;
-        match (a, b) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x - y)),
-            _ => Err("subtract requires integer arguments".to_string()),
-        }
-    }
-
-    fn multiply(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        if args.len() != 2 {
-            return Err("multiply requires exactly 2 arguments".to_string());
-        }
-        let a = self.eval(&args[0])?;
-        let b = self.eval(&args[1])?;
-        match (a, b) {
-            (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
-            _ => Err("multiply requires integer arguments".to_string()),
-        }
-    }
-
-    fn divide(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        if args.len() != 2 {
-            return Err("divide requires exactly 2 arguments".to_string());
-        }
-        let a = self.eval(&args[0])?;
-        let b = self.eval(&args[1])?;
-        match (a, b) {
-            (Value::Int(x), Value::Int(y)) => {
-                if y == 0 {
-                    Err("division by zero".to_string())
-                } else {
-                    Ok(Value::Int(x / y))
-                }
-            }
-            _ => Err("divide requires integer arguments".to_string()),
-        }
-    }
-
-    fn if_expr(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        if args.len() != 3 {
-            return Err("if requires exactly 3 arguments".to_string());
-        }
-        let condition = self.eval(&args[0])?;
-        match condition {
-            Value::Bool(true) => self.eval(&args[1]),
-            Value::Bool(false) => self.eval(&args[2]),
-            _ => Err("if condition must be boolean".to_string()),
-        }
-    }
-
-    fn cond(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        for arg in args {
-            if let LSTerm::AppTerm(func, cond_args) = arg {
-                if func.to_string() == "cond" && cond_args.len() == 2 {
-                    let condition = self.eval(&cond_args[0])?;
-                    match condition {
-                        Value::Bool(true) => return self.eval(&cond_args[1]),
-                        Value::Bool(false) => continue,
-                        _ => return Err("cond condition must be boolean".to_string()),
-                    }
-                }
-            }
-        }
-        Err("no matching condition found in cond".to_string())
-    }
-
-    /// evaluate a match expression
-    fn eval_match(
-        &mut self,
-        value: &Value,
-        cases: &[crate::lang::model::MatchCase],
-    ) -> Result<Value, String> {
-        for case in cases {
-            if let Some(pattern) = &case.pattern {
-                if self.pattern_matches(value, pattern)? {
-                    return self.eval(&case.value);
-                }
-            } else {
-                // default case
-                return self.eval(&case.value);
-            }
-        }
-        Err("no matching pattern found".to_string())
-    }
-
-    fn pattern_matches(
-        &self,
-        _value: &Value,
-        _pattern: &crate::lang::model::Pattern,
-    ) -> Result<bool, String> {
-        // TODO: implement pattern matching
-        unimplemented!()
-    }
-
-    fn eval_mu(&mut self, _binder: &str, _body: &Box<LSTerm>) -> Result<Value, String> {
-        // TODO: implement mu expression
-        unimplemented!()
-    }
-
     /// define a function.
     pub fn define_function(
         &mut self,
@@ -1022,6 +777,12 @@ impl Interpreter {
         params: Vec<String>,
         body: LSTerm,
     ) -> Result<(), String> {
+        debug!(
+            "Defining function '{}' with {} parameters",
+            name,
+            params.len()
+        );
+
         // create function closure
         let function = Function {
             name: name.clone(),
@@ -1032,6 +793,7 @@ impl Interpreter {
 
         // register to current scope
         self.define_symbol(name.clone(), Value::Function(function));
+        debug!("Function '{}' defined successfully", name);
         Ok(())
     }
 
@@ -1054,11 +816,18 @@ impl Interpreter {
         // Enter function scope for type checking
         self.typing.enter_scope();
 
-        // Bind parameter types (simplified - we don't have parameter names)
+        // Bind parameter types using actual parameter names
+        let param_names = func_type.get_param_names();
         for (i, param_type) in func_type.get_params().iter().enumerate() {
+            let param_name = if i < param_names.len() {
+                param_names[i].clone()
+            } else {
+                format!("param{}", i)
+            };
+            debug!("Binding parameter: {} :: {}", param_name, param_type);
             self.typing
                 .current_scope_mut()
-                .bind_variable(format!("param{}", i), param_type.clone());
+                .bind_variable(param_name, param_type.clone());
         }
 
         // Type check function body
