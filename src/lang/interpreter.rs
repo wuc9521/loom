@@ -1,5 +1,5 @@
 use crate::lang::runtime::{Function, Scope, Value};
-use crate::lang::types::{FunctionType, TypeInferer, ConstructorInfo};
+use crate::lang::types::{ConstructorInfo, FunctionType, TypeInferer};
 use crate::parser::ast::{parse, LSCmd, LSTerm};
 use crate::theory::{Logic, ModelCtx};
 use log::debug;
@@ -274,7 +274,7 @@ impl Interpreter {
             sygus_parser::SyGuSTerm::Identifier(ident) => {
                 debug!("evaluating constraint identifier: {}", ident);
                 // find the value of the identifier
-                if let Some(value) = self.lookup_symbol(&ident.to_string()) {
+                if let Some(value) = self.lookup_symbol_value(&ident.to_string()) {
                     Ok(value)
                 } else {
                     Err(format!("Undefined identifier in constraint: {}", ident))
@@ -323,39 +323,55 @@ impl Interpreter {
                     ))
                 }
             }
-            _ => {
-                // then try to find user-defined functions in current scope
-                if let Some(value) = self.lookup_symbol(func_name) {
-                    match value {
-                        Value::Function(func) => {
-                            debug!("found function: {}", func.name);
-                            // TODO: implement function call logic
-                            Ok(Value::Symbol(func.name.clone()))
-                        }
-                        Value::Symbol(sym) => {
-                            debug!("found function symbol: {}", sym);
-                            Ok(Value::Symbol(sym.clone()))
-                        }
-                        _ => Err(format!("Symbol {} is not a function", func_name)),
-                    }
-                } else {
-                    // try to find in theories and execute there
-                    for theory in self.theories.values() {
-                        if let Some(value) = theory.interpreter.lookup_symbol(func_name) {
-                            match value {
-                                Value::Function(func) => {
-                                    // TODO: implement cross-theory function call
-                                    return Ok(Value::Symbol(func.name.clone()));
-                                }
-                                Value::Symbol(sym) => {
-                                    return Ok(Value::Symbol(sym.clone()));
-                                }
-                                _ => continue,
-                            }
-                        }
-                    }
-                    Err(format!("Undefined function in constraint: {}", func_name))
+            "ite" => {
+                if args.len() != 3 {
+                    return Err("ite: expected exactly 3 arguments".to_string());
                 }
+                let condition = &args[0];
+                let then_branch = &args[1];
+                let else_branch = &args[2];
+
+                match condition {
+                    Value::Bool(true) => Ok(then_branch.clone()),
+                    Value::Bool(false) => Ok(else_branch.clone()),
+                    _ => Err("ite: condition must be boolean".to_string()),
+                }
+            }
+            "finite" => {
+                if args.len() != 1 {
+                    return Err("finite: expected exactly 1 argument".to_string());
+                }
+                match &args[0] {
+                    Value::Symbol(type_name) => {
+                        // check if the type is finite
+                        let is_finite = self.typing.global_scope().is_finite_by_name(type_name);
+                        match is_finite {
+                            Some(finite) => Ok(Value::Bool(finite)),
+                            None => Ok(Value::Bool(false)), // unknown type is infinite
+                        }
+                    }
+                    _ => Err("finite: argument must be a type identifier".to_string()),
+                }
+            }
+            "card" => {
+                if args.len() != 1 {
+                    return Err("cardinality: expected exactly 1 argument".to_string());
+                }
+                match &args[0] {
+                    Value::Symbol(type_name) => {
+                        // query the cardinality of the type
+                        let cardinality = self.typing.global_scope().get_cardinality(type_name);
+                        match cardinality {
+                            Some(card) => Ok(Value::Int(card as i64)),
+                            None => Err(format!("Type {} is infinite or unknown", type_name)),
+                        }
+                    }
+                    _ => Err("cardinality: argument must be a type identifier".to_string()),
+                }
+            }
+            _ => {
+                debug!("unknown constraint function: {}", func_name);
+                Err(format!("Unknown constraint function: {}", func_name))
             }
         }
     }
@@ -520,21 +536,25 @@ impl Interpreter {
                     name,
                     data_type.constructors.len()
                 );
-                
+
                 // register type information only, do not create runtime values
                 self.typing
                     .current_scope_mut()
                     .register_datatype(name.clone(), data_type);
             }
             SyGuSCmd::DeclareDatatypes(sort_decls, dt_decls) => {
-                debug!("Declaring datatypes: {} sort declarations, {} datatype declarations", 
-                       sort_decls.len(), dt_decls.len());
-                
+                debug!(
+                    "Declaring datatypes: {} sort declarations, {} datatype declarations",
+                    sort_decls.len(),
+                    dt_decls.len()
+                );
+
                 // Process each datatype declaration
-                for (i, (sort_decl, dt_decl)) in sort_decls.iter().zip(dt_decls.iter()).enumerate() {
+                for (i, (sort_decl, dt_decl)) in sort_decls.iter().zip(dt_decls.iter()).enumerate()
+                {
                     let name = &sort_decl.symbol;
                     debug!("Processing datatype {}: {}", i, name);
-                    
+
                     self.typing.check_all_conflicts(name, "datatype")?;
 
                     let data_type = crate::lang::types::adapter::from_dtdecl(name, dt_decl);
@@ -543,7 +563,7 @@ impl Interpreter {
                         name,
                         data_type.constructors.len()
                     );
-                    
+
                     // register type information only, do not create runtime values
                     self.typing
                         .current_scope_mut()
@@ -694,39 +714,31 @@ impl Interpreter {
         Ok(())
     }
 
-    /// lookup a symbol in the scope stack
-    pub fn lookup_symbol(&self, name: &str) -> Option<Value> {
-        // lookup in the scope stack (from top to bottom, i.e. from recent to distant)
-        for scope in self.stack.iter().rev() {
-            if let Some(value) = scope.lookup(name) {
-                return Some(value);
-            }
-        }
-
-        // if not found in current scopes, try to find in theories
-        for theory in self.theories.values() {
-            if let Some(value) = theory.interpreter.lookup_symbol(name) {
-                return Some(value);
-            }
-        }
-
-        None
-    }
-
-    /// lookup a symbol in the scope stack, returning a more detailed result.
-    pub fn lookup_symbol_enhanced(&self, name: &str) -> SymbolLookupResult {
+    /// lookup a symbol in the scope stack, returning detailed information about what was found
+    pub fn lookup_symbol(&self, name: &str) -> SymbolLookupResult {
         // first check if it is a constructor
         for scope in self.typing.stack.iter().rev() {
             if let Some(constructor_info) = scope.get_constructor(name) {
                 return SymbolLookupResult::Constructor(constructor_info.clone());
             }
         }
-        
-        // then check normal variables
-        if let Some(value) = self.lookup_symbol(name) {
-            return SymbolLookupResult::Variable(value);
+
+        // then check normal variables in runtime scopes
+        for scope in self.stack.iter().rev() {
+            if let Some(value) = scope.lookup(name) {
+                return SymbolLookupResult::Variable(value);
+            }
         }
-        
+
+        // check in theories
+        for theory in self.theories.values() {
+            for scope in theory.interpreter.stack.iter().rev() {
+                if let Some(value) = scope.lookup(name) {
+                    return SymbolLookupResult::Variable(value);
+                }
+            }
+        }
+
         // finally check enum elements
         for scope in self.typing.stack.iter().rev() {
             for (_, enum_type) in &scope.enums {
@@ -738,8 +750,19 @@ impl Interpreter {
                 }
             }
         }
-        
+
         SymbolLookupResult::NotFound
+    }
+
+    /// lookup a symbol and return only the value (for backward compatibility)
+    pub fn lookup_symbol_value(&self, name: &str) -> Option<Value> {
+        // directly lookup runtime variables, avoid recursive call of lookup_symbol
+        for scope in self.stack.iter().rev() {
+            if let Some(value) = scope.lookup(name) {
+                return Some(value);
+            }
+        }
+        None
     }
 
     /// define a symbol in the current scope
@@ -748,9 +771,16 @@ impl Interpreter {
     }
 
     /// evaluate a constructor call.
-    pub fn eval_constructor_call(&mut self, info: &ConstructorInfo, args: &[LSTerm]) -> Result<Value, String> {
-        debug!("eval_constructor_call: constructor={}, args={:?}", info.name, args);
-        
+    pub fn eval_constructor_call(
+        &mut self,
+        info: &ConstructorInfo,
+        args: &[LSTerm],
+    ) -> Result<Value, String> {
+        debug!(
+            "eval_constructor_call: constructor={}, args={:?}",
+            info.name, args
+        );
+
         if args.len() != info.field_types.len() {
             return Err(format!(
                 "Constructor {} expects {} arguments, got {}",
@@ -759,20 +789,20 @@ impl Interpreter {
                 args.len()
             ));
         }
-        
+
         let mut field_values = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             let field_value = self.interp_expr(arg)?;
             debug!("Field {}: {:?}", i, field_value);
             field_values.push(field_value);
         }
-        
+
         let result = Value::DataValue {
             constructor: info.name.clone(),
             datatype: info.datatype.clone(),
             fields: field_values,
         };
-        
+
         debug!("Created DataValue: {:?}", result);
         Ok(result)
     }

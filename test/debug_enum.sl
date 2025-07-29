@@ -4,14 +4,20 @@
 ; 测试枚举值
 (echo $red)
 
+; 测试函数调用
+(define-fun test-fun ((c Color)) String
+  "test"
+)
+
+(echo (test-fun $red))
+
 ; 测试match表达式
 (define-fun match-test ((c Color)) String
-  (match c
+  (match c (
     ($red "red")
     ($green "green")
     ($blue "blue")
-  )
+  ))
 )
 
-; 测试函数调用
 (echo (match-test $red))

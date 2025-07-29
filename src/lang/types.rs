@@ -1,9 +1,17 @@
 use crate::lang::model::MatchCase;
 use crate::parser::ast::{LSTerm, LSVarBinding};
+use crate::ANY_TYPE;
 use derive_more::Display;
 use log::{debug, error};
 use std::collections::HashMap;
 use sygus_parser::{Identifier, Sort, SortedVar};
+
+/// finiteness
+#[derive(Debug, Clone, PartialEq)]
+pub enum Finiteness {
+    Finite(usize), // finite, and give the cardinality
+    Infinite,      // infinite
+}
 
 /// datatype field
 #[derive(Debug, Clone)]
@@ -43,14 +51,12 @@ pub struct TypeEnv {
     pub constructors: HashMap<String, ConstructorInfo>,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ConstructorInfo {
     pub name: String,
     pub datatype: String,
     pub field_types: Vec<Sort>,
 }
-
 
 #[derive(Debug, Clone, Display)]
 #[display(
@@ -113,7 +119,7 @@ impl FunctionType {
             params,
             ret,
             body: None,
-            is_constructor: true, 
+            is_constructor: true,
         }
     }
 
@@ -240,23 +246,25 @@ impl TypeEnv {
                 datatype: name.clone(),
                 field_types: constructor.fields.iter().map(|f| f.sort.clone()).collect(),
             };
-            self.constructors.insert(constructor.name.clone(), constructor_info);
-            
+            self.constructors
+                .insert(constructor.name.clone(), constructor_info);
+
             // register constructor type information, but mark as constructor
-            let param_sorts: Vec<Sort> = constructor.fields.iter().map(|f| f.sort.clone()).collect();
+            let param_sorts: Vec<Sort> =
+                constructor.fields.iter().map(|f| f.sort.clone()).collect();
             let constructor_func = FunctionType::new_constructor(
                 constructor.name.clone(),
                 param_sorts,
                 Sort::from_name(name.as_str()),
             );
             self.register_function_type(constructor.name.clone(), constructor_func);
-            
+
             // register field accessor functions
             for field in &constructor.fields {
                 let field_accessor = FunctionType::new_signature(
                     field.name.clone(),
                     vec![Sort::from_name(name.as_str())], // parameter type is the datatype itself
-                    field.sort.clone(), // return type is the field type
+                    field.sort.clone(),                   // return type is the field type
                 );
                 self.register_function_type(field.name.clone(), field_accessor);
             }
@@ -267,7 +275,7 @@ impl TypeEnv {
     pub fn get_constructor(&self, name: &str) -> Option<&ConstructorInfo> {
         self.constructors.get(name)
     }
-    
+
     /// check if it is a constructor
     pub fn is_constructor(&self, name: &str) -> bool {
         self.constructors.contains_key(name)
@@ -316,6 +324,102 @@ impl TypeEnv {
     /// get enum type by name
     pub fn get_enum(&self, name: &str) -> Option<&EnumType> {
         self.enums.get(name)
+    }
+
+    /// check if the type is finite
+    pub fn is_finite(&self, sort: &Sort) -> Option<Finiteness> {
+        match sort {
+            // Bool is finite
+            sort if sort == &Sort::bool() => Some(Finiteness::Finite(2)),
+
+            // enum type is finite
+            Sort::Simple(Identifier::Symbol(name)) => {
+                if let Some(enum_type) = self.get_enum(name) {
+                    Some(Finiteness::Finite(enum_type.elements.len()))
+                } else {
+                    None // other types are unknown
+                }
+            }
+
+            _ => None,
+        }
+    }
+
+    /// check if the type is finite by name
+    pub fn is_finite_by_name(&self, name: &str) -> Option<bool> {
+        // check if it is an enum type
+        if let Some(_) = self.get_enum(name) {
+            return Some(true); // enum type is always finite
+        }
+
+        // check if it is a datatype
+        if let Some(datatype) = self.get_datatype(name) {
+            return Some(!self.is_datatype_recursive(datatype)); // non-recursive datatype is finite
+        }
+
+        // check if it is a known finite type
+        if name == "Bool" {
+            return Some(true);
+        }
+
+        // check if it is a known infinite type
+        if name == "Int" || name == "Real" || name == "String" {
+            return Some(false);
+        }
+
+        // other types are infinite by default
+        Some(false)
+    }
+
+    /// get the cardinality of the type (if finite)
+    pub fn get_cardinality(&self, name: &str) -> Option<usize> {
+        // check if it is an enum type
+        if let Some(enum_type) = self.get_enum(name) {
+            return Some(enum_type.elements.len());
+        }
+
+        // check if it is a known finite type
+        if name == "Bool" {
+            return Some(2);
+        }
+
+        // check if it is a datatype
+        if let Some(datatype) = self.get_datatype(name) {
+            if !self.is_datatype_recursive(datatype) {
+                return self.calculate_datatype_cardinality(datatype);
+            }
+        }
+
+        None // infinite or unknown type
+    }
+
+    /// calculate the cardinality of a non-recursive datatype
+    fn calculate_datatype_cardinality(&self, datatype: &DataType) -> Option<usize> {
+        let mut total = 0;
+        for constructor in &datatype.constructors {
+            let mut constructor_cardinality = 1;
+            for field in &constructor.fields {
+                if let Some(card) = self.get_cardinality(&field.sort.to_string()) {
+                    constructor_cardinality *= card;
+                } else {
+                    return None; // field type is infinite
+                }
+            }
+            total += constructor_cardinality;
+        }
+        Some(total)
+    }
+
+    /// check if the datatype is recursive
+    fn is_datatype_recursive(&self, datatype: &DataType) -> bool {
+        for constructor in &datatype.constructors {
+            for field in &constructor.fields {
+                if field.sort == Sort::Simple(Identifier::Symbol(datatype.name.clone())) {
+                    return true; // found recursive reference
+                }
+            }
+        }
+        false
     }
 }
 
@@ -490,6 +594,25 @@ impl TypeInferer {
         );
         self.global_scope_mut()
             .register_function_type("ite".to_string(), ite_func);
+
+        // register finiteness function
+        let finite_func = FunctionType::new_signature(
+            "finite".to_string(),
+            vec![Sort::Simple(Identifier::Symbol(ANY_TYPE.to_string()))], // parameter can be any type
+            Sort::bool(),
+        );
+        self.global_scope_mut()
+            .register_function_type("finite".to_string(), finite_func);
+
+        // register cardinality function
+        let cardinality_func = FunctionType::new_signature(
+            "card".to_string(),
+            vec![Sort::Simple(Identifier::Symbol(ANY_TYPE.to_string()))], // parameter can be any type
+            Sort::int(),
+        );
+        self.global_scope_mut()
+            .register_function_type("card".to_string(), cardinality_func);
+
         debug!(
             "built-in functions registered, total {} functions",
             self.global_scope().function_types.len()
@@ -551,23 +674,30 @@ impl TypeInferer {
                         for (_, datatype) in &scope.datatypes {
                             for constructor in &datatype.constructors {
                                 if constructor.name == sym && constructor.fields.is_empty() {
-                                    debug!("Found constructor: {} for datatype {}", sym, datatype.name);
-                                    return Ok(Sort::Simple(Identifier::Symbol(datatype.name.clone())));
+                                    debug!(
+                                        "Found constructor: {} for datatype {}",
+                                        sym, datatype.name
+                                    );
+                                    return Ok(Sort::Simple(Identifier::Symbol(
+                                        datatype.name.clone(),
+                                    )));
                                 }
                             }
                         }
                     }
-                    
+
                     // check if it is an enum value
                     for scope in &self.stack {
                         for (_, enum_type) in &scope.enums {
                             if enum_type.elements.contains(&sym) {
                                 debug!("Found enum element: {} for enum {}", sym, enum_type.name);
-                                return Ok(Sort::Simple(Identifier::Symbol(enum_type.name.clone())));
+                                return Ok(Sort::Simple(Identifier::Symbol(
+                                    enum_type.name.clone(),
+                                )));
                             }
                         }
                     }
-                    
+
                     error!("symbol type not found: {}", sym);
                     Err(format!("Undefined variable: {}", sym))
                 }
@@ -608,22 +738,13 @@ impl TypeInferer {
     }
 
     fn infer_function_call(&mut self, func: &str, args: &[LSTerm]) -> Result<Sort, String> {
-        debug!(
-            "infer_function_call: func={}, args={}",
-            func,
-            args.iter()
-                .map(|a| a.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-
         // infer argument types
         let mut arg_types = Vec::new();
         for arg in args.iter() {
             let arg_type = self.infer(arg)?;
             arg_types.push(arg_type);
         }
-        
+
         // find function type
         if let Some(func_type) = self.find_function_type(func) {
             debug!("Found function type: {:?}", func_type);
@@ -659,7 +780,7 @@ impl TypeInferer {
                     for constructor in &datatype.constructors {
                         if constructor.name == func {
                             debug!("Found constructor: {} for datatype {}", func, datatype.name);
-                            
+
                             // check if the number of parameters matches
                             if args.len() != constructor.fields.len() {
                                 return Err(format!(
@@ -669,9 +790,11 @@ impl TypeInferer {
                                     args.len()
                                 ));
                             }
-                            
+
                             // check if the parameter types match
-                            for (i, (field, arg_type)) in constructor.fields.iter().zip(arg_types.iter()).enumerate() {
+                            for (i, (field, arg_type)) in
+                                constructor.fields.iter().zip(arg_types.iter()).enumerate()
+                            {
                                 if !self.checked(&field.sort, arg_type) {
                                     return Err(format!(
                                         "Argument {} of constructor {} has type {}, expected {}",
@@ -682,14 +805,29 @@ impl TypeInferer {
                                     ));
                                 }
                             }
-                            
+
                             // return the datatype
                             return Ok(Sort::Simple(Identifier::Symbol(datatype.name.clone())));
                         }
                     }
                 }
             }
-            
+
+            // check if it is an enum element
+            for scope in &self.stack {
+                for (_, enum_type) in &scope.enums {
+                    if enum_type.elements.contains(&func.to_string()) {
+                        debug!("Found enum element: {} for enum {}", func, enum_type.name);
+                        // Enum elements are constants, not functions
+                        if args.is_empty() {
+                            return Ok(Sort::Simple(Identifier::Symbol(enum_type.name.clone())));
+                        } else {
+                            return Err(format!("Enum element '{}' is not a function and cannot be called with arguments", func));
+                        }
+                    }
+                }
+            }
+
             // check if it is a builtin function
             self.infer_builtin_function(func, args)
         }
@@ -760,7 +898,31 @@ impl TypeInferer {
                 if then_type != else_type {
                     return Err("ite: then and else branches must have the same type".to_string());
                 }
-                Ok(then_type)
+                Ok(then_type) // return the type of the then branch
+            }
+            "finite" => {
+                if args.len() != 1 {
+                    return Err("finite: expected exactly 1 argument".to_string());
+                }
+                let arg_type = self.infer(&args[0])?;
+                // accept any type identifier
+                if let Sort::Simple(Identifier::Symbol(_)) = arg_type {
+                    Ok(Sort::bool())
+                } else {
+                    Err("finite: expected type identifier".to_string())
+                }
+            }
+            "card" => {
+                if args.len() != 1 {
+                    return Err("cardinality: expected exactly 1 argument".to_string());
+                }
+                let arg_type = self.infer(&args[0])?;
+                // accept any type identifier
+                if let Sort::Simple(Identifier::Symbol(_)) = arg_type {
+                    Ok(Sort::int())
+                } else {
+                    Err("cardinality: expected type identifier".to_string())
+                }
             }
             _ => {
                 error!("builtin function not found: {}", func_name);
@@ -881,6 +1043,23 @@ impl TypeInferer {
         if t1 == t2 {
             return true;
         }
+        if let Sort::Simple(Identifier::Symbol(name)) = t1 {
+            if name == ANY_TYPE {
+                return true;
+            }
+        }
+        if let Sort::Simple(Identifier::Symbol(name)) = t2 {
+            if name == ANY_TYPE {
+                return true;
+            }
+        }
+
+        // if two are type identifiers, they are compatible
+        if let (Sort::Simple(Identifier::Symbol(_)), Sort::Simple(Identifier::Symbol(_))) = (t1, t2)
+        {
+            return true;
+        }
+
         // otherwise, check type alias
         let t1_resolved = self.resolve_type_alias(t1);
         let t2_resolved = self.resolve_type_alias(t2);
@@ -919,12 +1098,29 @@ impl TypeInferer {
     }
 
     fn resolve_type_alias(&self, sort: &Sort) -> Sort {
+        self.resolve_type_alias_with_visited(sort, &mut std::collections::HashSet::new())
+    }
+
+    fn resolve_type_alias_with_visited(
+        &self,
+        sort: &Sort,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Sort {
         match sort {
             Sort::Simple(Identifier::Symbol(name)) => {
+                // check if the type has been visited, avoid circular reference
+                if visited.contains(name) {
+                    debug!("Circular type alias detected for: {}", name);
+                    return sort.clone();
+                }
+
                 // check type alias
                 if let Some(aliased_sort) = self.find_variable_type(name) {
                     debug!("{} := {}", name, aliased_sort);
-                    self.resolve_type_alias(aliased_sort)
+                    visited.insert(name.clone());
+                    let result = self.resolve_type_alias_with_visited(aliased_sort, visited);
+                    visited.remove(name);
+                    result
                 } else {
                     sort.clone()
                 }

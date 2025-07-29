@@ -1,76 +1,71 @@
+use crate::lang::interpreter::Interpreter;
 use crate::lang::runtime::Value;
 use crate::parser::ast::LSTerm;
 
-#[derive(Debug)]
-pub struct BuiltinFunctions;
-
-impl BuiltinFunctions {
-    /// evaluate a builtin function
+impl Interpreter {
     pub fn eval_builtin_function(
+        &mut self,
         func_name: &str,
         args: &[LSTerm],
-        eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>,
-    ) -> Option<Result<Value, String>> {
+    ) -> Result<Value, String> {
         match func_name {
-            "+" => Some(Self::add(args, eval_fn)),
-            "-" => Some(Self::subtract(args, eval_fn)),
-            "*" => Some(Self::multiply(args, eval_fn)),
-            "/" => Some(Self::divide(args, eval_fn)),
-            "=" => Some(Self::equal(args, eval_fn)),
-            "and" => Some(Self::and(args, eval_fn)),
-            "or" => Some(Self::or(args, eval_fn)),
-            "not" => Some(Self::not(args, eval_fn)),
-            "ite" => Some(Self::ite(args, eval_fn)),
-            "cond" => Some(Self::cond(args, eval_fn)),
-            "true" => Some(Ok(Value::Bool(true))),
-            "false" => Some(Ok(Value::Bool(false))),
-            _ => None,
+            "+" => self.eval_add(args),
+            "-" => self.eval_subtract(args),
+            "*" => self.eval_multiply(args),
+            "/" => self.eval_divide(args),
+            "=" => self.eval_equal(args),
+            "and" => self.eval_and(args),
+            "or" => self.eval_or(args),
+            "not" => self.eval_not(args),
+            "ite" => self.eval_ite(args),
+            "finite" => self.eval_finite(args),
+            "card" => self.eval_card(args),
+            _ => Err(format!("'{}' is not a function", func_name)),
         }
     }
 
-    /// builtin function implementation
-    fn add(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_add(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("add requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
             _ => Err("add requires integer arguments".to_string()),
         }
     }
 
-    fn subtract(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_subtract(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("subtract requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x - y)),
             _ => Err("subtract requires integer arguments".to_string()),
         }
     }
 
-    fn multiply(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_multiply(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("multiply requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
             _ => Err("multiply requires integer arguments".to_string()),
         }
     }
 
-    fn divide(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_divide(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("divide requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Int(x), Value::Int(y)) => {
                 if y == 0 {
@@ -83,12 +78,12 @@ impl BuiltinFunctions {
         }
     }
 
-    fn equal(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_equal(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("equal requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Int(x), Value::Int(y)) => Ok(Value::Bool(x == y)),
             (Value::String(x), Value::String(y)) => Ok(Value::Bool(x == y)),
@@ -97,66 +92,82 @@ impl BuiltinFunctions {
         }
     }
 
-    fn not(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_not(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 1 {
             return Err("not requires exactly 1 argument".to_string());
         }
-        let a = eval_fn(&args[0])?;
+        let a = self.eval(&args[0])?;
         match a {
             Value::Bool(b) => Ok(Value::Bool(!b)),
             _ => Err("not requires boolean argument".to_string()),
         }
     }
 
-    fn and(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_and(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("and requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Bool(x), Value::Bool(y)) => Ok(Value::Bool(x && y)),
             _ => Err("and requires boolean arguments".to_string()),
         }
     }
 
-    fn or(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_or(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("or requires exactly 2 arguments".to_string());
         }
-        let a = eval_fn(&args[0])?;
-        let b = eval_fn(&args[1])?;
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
         match (a, b) {
             (Value::Bool(x), Value::Bool(y)) => Ok(Value::Bool(x || y)),
             _ => Err("or requires boolean arguments".to_string()),
         }
     }
 
-    fn ite(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
+    fn eval_ite(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 3 {
             return Err("ite requires exactly 3 arguments".to_string());
         }
-        let condition = eval_fn(&args[0])?;
+        let condition = self.eval(&args[0])?;
         match condition {
-            Value::Bool(true) => eval_fn(&args[1]),
-            Value::Bool(false) => eval_fn(&args[2]),
+            Value::Bool(true) => self.eval(&args[1]),
+            Value::Bool(false) => self.eval(&args[2]),
             _ => Err("ite condition must be boolean".to_string()),
         }
     }
 
-    fn cond(args: &[LSTerm], eval_fn: &mut dyn FnMut(&LSTerm) -> Result<Value, String>) -> Result<Value, String> {
-        for arg in args {
-            if let LSTerm::AppTerm(func, cond_args) = arg {
-                if func.to_string() == "cond" && cond_args.len() == 2 {
-                    let condition = eval_fn(&cond_args[0])?;
-                    match condition {
-                        Value::Bool(true) => return eval_fn(&cond_args[1]),
-                        Value::Bool(false) => continue,
-                        _ => return Err("cond condition must be boolean".to_string()),
-                    }
-                }
-            }
+    fn eval_finite(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != 1 {
+            return Err("finite requires exactly 1 argument".to_string());
         }
-        Err("no matching condition found in cond".to_string())
+        let type_name = if let LSTerm::Identifier(ident) = &args[0] {
+            ident.to_string()
+        } else {
+            return Err("finite requires a type identifier as argument".to_string());
+        };
+        if let Some(is_finite) = self.typing.global_scope().is_finite_by_name(&type_name) {
+            Ok(Value::Bool(is_finite))
+        } else {
+            Err(format!("Type {} is unknown", type_name))
+        }
+    }
+
+    fn eval_card(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != 1 {
+            return Err("card requires exactly 1 argument".to_string());
+        }
+        let type_name = if let LSTerm::Identifier(ident) = &args[0] {
+            ident.to_string()
+        } else {
+            return Err("card requires a type identifier as argument".to_string());
+        };
+        if let Some(cardinality) = self.typing.global_scope().get_cardinality(&type_name) {
+            Ok(Value::Int(cardinality as i64))
+        } else {
+            Err(format!("Type {} is infinite or unknown", type_name))
+        }
     }
 }

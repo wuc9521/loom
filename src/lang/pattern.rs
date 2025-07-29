@@ -325,6 +325,13 @@ impl PatternMatcher {
                 if context.is_constructor(var_name) {
                     // This is a constructor pattern, not a variable binding
                     self.match_constructor_name(value, var_name)
+                } else if context.is_enum_element(var_name).is_some() {
+                    // This is an enum element pattern, not a variable binding
+                    // Compare the value directly with the enum element name
+                    match value {
+                        Value::Symbol(sym) => Ok(sym == var_name),
+                        _ => Ok(false)
+                    }
                 } else {
                     // This is a variable binding
                     context.bind_variable(var_name.clone(), value.clone());

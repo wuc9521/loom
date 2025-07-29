@@ -64,8 +64,11 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
     }
     
-    interpreter.interp(input)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+    // execute commands directly from parsed file
+    for cmd in &ls_file.cmds {
+        interpreter.proc(cmd)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+    }
 
     // execute different outputs based on arguments
     if args.dump_ls {

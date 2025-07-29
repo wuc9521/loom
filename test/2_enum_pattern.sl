@@ -11,32 +11,32 @@
 
 ; 测试颜色相关的函数
 (define-fun color-to-string ((c Color)) String
-  (match c
-    ($red "red")
-    ($green "green")
-    ($blue "blue")
-    ($yellow "yellow")
-  )
+(match c (
+  ($red "red")
+  ($green "green")
+  ($blue "blue")
+  ($yellow "yellow")
+))
 )
 
 ; 测试方向相关的函数
 (define-fun opposite-direction ((d Direction)) Direction
-  (match d
-    ($north $south)
-    ($south $north)
-    ($east $west)
-    ($west $east)
-  )
+(match d (
+  ($north $south)
+  ($south $north)
+  ($east $west)
+  ($west $east)
+))
 )
 
 ; 测试状态相关的函数
 (define-fun is-final-status ((s Status)) Bool
-  (match s
-    ($pending false)
-    ($running false)
-    ($completed true)
-    ($failed true)
-  )
+(match s (
+  ($pending false)
+  ($running false)
+  ($completed true)
+  ($failed true)
+))
 )
 
 ; 测试输出
