@@ -1,8 +1,10 @@
 use crate::lang::model::MatchCase;
 use crate::parser::ast::{LSTerm, LSVarBinding};
+use crate::parser::{LSParseError, Rule};
 use crate::ANY_TYPE;
 use derive_more::Display;
 use log::{debug, error};
+use pest::iterators::Pair;
 use std::collections::HashMap;
 use sygus_parser::{Identifier, Sort, SortedVar};
 
@@ -41,6 +43,15 @@ pub struct EnumType {
     pub elements: Vec<String>,
 }
 
+/// Class type definition
+#[derive(Debug, Clone)]
+pub struct ClassType {
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub fields: Vec<(String, Sort)>,
+    pub methods: HashMap<String, FunctionType>,
+}
+
 /// type environment
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
@@ -49,6 +60,8 @@ pub struct TypeEnv {
     pub variables: HashMap<String, Sort>,
     pub function_types: HashMap<String, FunctionType>,
     pub constructors: HashMap<String, ConstructorInfo>,
+    pub classes: HashMap<String, ClassType>,
+    pub objects: HashMap<String, (String, Vec<String>)>, // object name -> (class name, type args)
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +111,46 @@ impl FunctionType {
     /// get function body
     pub fn get_body(&self) -> Option<&LSTerm> {
         self.body.as_ref()
+    }
+
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        // println!("pair: {:?}", pair.as_rule());
+        let mut inner = pair.clone().into_inner();
+        let name = inner.next().unwrap().as_str().to_string();
+        let mut args = vec![];
+        let mut ret_sort = None;
+
+        // parse sorted variables
+        while let Some(var_pair) = inner.next() {
+            if var_pair.as_rule() == Rule::SortedVar {
+                let sorted_var = sygus_parser::SortedVar::from_str(var_pair.as_str()).unwrap();
+                args.push(sorted_var);
+            } else if var_pair.as_rule() == Rule::Sort {
+                let sort_str = var_pair.as_str().to_string();
+                ret_sort = Some(sygus_parser::Sort::from_str(&sort_str).unwrap());
+                break;
+            } else {
+                eprintln!("Unexpected token: {}", var_pair.as_str());
+                break;
+            }
+        }
+        debug!("inner: {:?}", inner.as_str());
+        let body_pair = inner.peek().ok_or_else(|| {
+            LSParseError::InvalidSyntax(format!(
+                "Expected function body, got {} at {}",
+                inner.as_str(),
+                name
+            ))
+        })?;
+        let body = LSTerm::parse(body_pair)?;
+
+        Ok(FunctionType::new_definition(
+            name,
+            args.iter().map(|sv| sv.name.clone()).collect(),
+            args.iter().map(|sv| sv.sort.clone()).collect(),
+            ret_sort.unwrap(),
+            body,
+        ))
     }
 
     /// create function signature (only type information, no function body)
@@ -189,6 +242,8 @@ impl TypeEnv {
             variables: HashMap::new(),
             function_types: HashMap::new(),
             constructors: HashMap::new(),
+            classes: HashMap::new(),
+            objects: HashMap::new(),
         }
     }
 
@@ -198,6 +253,8 @@ impl TypeEnv {
             || self.enums.contains_key(name)
             || self.variables.contains_key(name)
             || self.function_types.contains_key(name)
+            || self.classes.contains_key(name)
+            || self.objects.contains_key(name)
     }
 
     /// check if the datatype already exists
@@ -230,6 +287,10 @@ impl TypeEnv {
             Some("variable")
         } else if self.has_function(name) {
             Some("function")
+        } else if self.is_class(name) {
+            Some("class")
+        } else if self.objects.contains_key(name) {
+            Some("object")
         } else {
             None
         }
@@ -324,6 +385,57 @@ impl TypeEnv {
     /// get enum type by name
     pub fn get_enum(&self, name: &str) -> Option<&EnumType> {
         self.enums.get(name)
+    }
+
+    /// Register a class type
+    pub fn register_class_type(
+        &mut self,
+        name: String,
+        type_params: Vec<String>,
+        fields: Vec<(String, Sort)>,
+    ) {
+        let class_type = ClassType {
+            name: name.clone(),
+            type_params,
+            fields,
+            methods: HashMap::new(),
+        };
+        self.classes.insert(name, class_type);
+    }
+
+    /// Add method to class
+    pub fn add_method_to_class(
+        &mut self,
+        class_name: &str,
+        method_name: String,
+        method_type: FunctionType,
+    ) -> Result<(), String> {
+        if let Some(class) = self.classes.get_mut(class_name) {
+            class.methods.insert(method_name, method_type);
+            Ok(())
+        } else {
+            Err(format!("Class '{}' not found", class_name))
+        }
+    }
+
+    /// Register an object instance
+    pub fn register_object(&mut self, name: String, class_name: String, type_args: Vec<String>) {
+        self.objects.insert(name, (class_name, type_args));
+    }
+
+    /// Get class type
+    pub fn get_class(&self, name: &str) -> Option<&ClassType> {
+        self.classes.get(name)
+    }
+
+    /// Check if a name is a class
+    pub fn is_class(&self, name: &str) -> bool {
+        self.classes.contains_key(name)
+    }
+
+    /// Get object info
+    pub fn get_object_info(&self, name: &str) -> Option<&(String, Vec<String>)> {
+        self.objects.get(name)
     }
 
     /// check if the type is finite
@@ -1194,5 +1306,224 @@ impl TypeInferer {
 
         // quantifier expression returns Bool type
         Ok(Sort::bool())
+    }
+
+    /// Infer type of method call
+    pub fn infer_method_call(
+        &mut self,
+        receiver: &str,
+        method: &str,
+        args: &[LSTerm],
+    ) -> Result<Sort, String> {
+        debug!("Inferring method call: {}.{}", receiver, method);
+
+        // Handle "self" specially
+        if receiver == "self" {
+            // Look for self binding in current scope
+            let self_type = self.find_variable_type("self").cloned();
+            if let Some(self_type) = self_type {
+                return self.infer_method_on_type(&self_type, method, args);
+            }
+            return Err("'self' used outside of class/object context".to_string());
+        }
+
+        // Look up receiver type
+        let receiver_type = self.find_variable_type(receiver).cloned();
+        if let Some(receiver_type) = receiver_type {
+            return self.infer_method_on_type(&receiver_type, method, args);
+        }
+
+        // Check if receiver is an object
+        let object_info = self
+            .stack
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get_object_info(receiver))
+            .cloned();
+
+        if let Some((class_name, type_args)) = object_info {
+            // Get class type
+            let class = self
+                .stack
+                .iter()
+                .rev()
+                .find_map(|scope| scope.get_class(&class_name))
+                .cloned();
+
+            if let Some(class) = class {
+                if let Some(method_type) = class.methods.get(method) {
+                    // Type check arguments
+                    let mut arg_types = Vec::new();
+                    for arg in args {
+                        arg_types.push(self.infer(arg)?);
+                    }
+
+                    // Check argument count and types
+                    if method_type.params.len() != arg_types.len() {
+                        return Err(format!(
+                            "Method {} expects {} arguments, but {} were provided",
+                            method,
+                            method_type.params.len(),
+                            arg_types.len()
+                        ));
+                    }
+
+                    // Instantiate type parameters in method signature
+                    let instantiated_ret =
+                        self.instantiate_type(&method_type.ret, &class.type_params, &type_args);
+                    return Ok(instantiated_ret);
+                }
+            }
+        }
+
+        Err(format!("Cannot find type for receiver '{}'", receiver))
+    }
+
+    /// Infer method call on a known type
+    fn infer_method_on_type(
+        &mut self,
+        receiver_type: &Sort,
+        method: &str,
+        args: &[LSTerm],
+    ) -> Result<Sort, String> {
+        // Extract class name from receiver type
+        let class_name = match receiver_type {
+            Sort::Simple(Identifier::Symbol(name)) => name,
+            _ => {
+                return Err(format!(
+                    "Cannot call method on non-class type: {}",
+                    receiver_type
+                ))
+            }
+        };
+
+        // Find class definition
+        let class = self
+            .stack
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get_class(class_name))
+            .cloned();
+
+        if let Some(class) = class {
+            if let Some(method_type) = class.methods.get(method) {
+                // Type check arguments
+                let mut arg_types = Vec::new();
+                for arg in args {
+                    arg_types.push(self.infer(arg)?);
+                }
+
+                // Check argument count
+                if method_type.params.len() != arg_types.len() {
+                    return Err(format!(
+                        "Method {} expects {} arguments, but {} were provided",
+                        method,
+                        method_type.params.len(),
+                        arg_types.len()
+                    ));
+                }
+
+                // Check argument types
+                for (i, (expected, actual)) in
+                    method_type.params.iter().zip(arg_types.iter()).enumerate()
+                {
+                    if !self.checked(expected, actual) {
+                        return Err(format!(
+                            "Argument {} of method {} has type {}, expected {}",
+                            i + 1,
+                            method,
+                            actual,
+                            expected
+                        ));
+                    }
+                }
+
+                return Ok(method_type.ret.clone());
+            }
+
+            // Check if it's a field accessor
+            for (field_name, field_type) in &class.fields {
+                if field_name == method {
+                    // Field access is like a zero-argument method
+                    if !args.is_empty() {
+                        return Err(format!("Field {} access takes no arguments", field_name));
+                    }
+                    return Ok(field_type.clone());
+                }
+            }
+        }
+
+        Err(format!(
+            "Method '{}' not found in type '{}'",
+            method, class_name
+        ))
+    }
+
+    /// Instantiate type parameters in a sort
+    fn instantiate_type(&self, sort: &Sort, type_params: &[String], type_args: &[String]) -> Sort {
+        match sort {
+            Sort::Simple(Identifier::Symbol(name)) => {
+                // Check if it's a type parameter
+                if let Some(index) = type_params.iter().position(|p| p == name) {
+                    if index < type_args.len() {
+                        return Sort::Simple(Identifier::Symbol(type_args[index].clone()));
+                    }
+                }
+                sort.clone()
+            }
+            Sort::Parameterized(func, args) => {
+                let instantiated_args: Vec<Sort> = args
+                    .iter()
+                    .map(|arg| self.instantiate_type(arg, type_params, type_args))
+                    .collect();
+                Sort::Parameterized(func.clone(), instantiated_args)
+            }
+            _ => sort.clone(),
+        }
+    }
+
+    /// Handle arrow sorts in type checking
+    pub fn parse_arrow_sort(&self, sorts: Vec<Sort>) -> Sort {
+        if sorts.len() < 2 {
+            panic!("Arrow sort must have at least 2 sorts");
+        }
+
+        let mut result = sorts.last().unwrap().clone();
+        for i in (0..sorts.len() - 1).rev() {
+            result = Sort::Parameterized(
+                Identifier::Symbol("->".to_string()),
+                vec![sorts[i].clone(), result],
+            );
+        }
+        result
+    }
+
+    /// Check if a sort is an arrow type
+    pub fn is_arrow_sort(&self, sort: &Sort) -> bool {
+        match sort {
+            Sort::Parameterized(Identifier::Symbol(name), _) => name == "->",
+            _ => false,
+        }
+    }
+
+    /// Decompose arrow sort into components
+    pub fn decompose_arrow_sort(&self, sort: &Sort) -> Option<(Vec<Sort>, Sort)> {
+        match sort {
+            Sort::Parameterized(Identifier::Symbol(name), args)
+                if name == "->" && args.len() == 2 =>
+            {
+                let arg_sort = args[0].clone();
+                let ret_sort = args[1].clone();
+
+                // Recursively decompose if return type is also an arrow
+                if let Some((mut more_args, final_ret)) = self.decompose_arrow_sort(&ret_sort) {
+                    more_args.insert(0, arg_sort);
+                    Some((more_args, final_ret))
+                } else {
+                    Some((vec![arg_sort], ret_sort))
+                }
+            }
+            _ => None,
+        }
     }
 }

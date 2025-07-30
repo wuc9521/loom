@@ -5,8 +5,113 @@ use crate::lang::{
 use crate::parser::{LSParseError, LSParser, Rule};
 use derive_more::Display;
 use itertools::Itertools;
+use log::debug;
 use pest::{iterators::Pair, Parser};
 use sygus_parser::{Attribute, Identifier, Literal, Sort, SortedVar, SyGuSCmd};
+
+/// Helper function to parse arrow sorts: (-> T1 T2 ... Tn)
+pub fn parse_arrow_sort(pair: Pair<'_, Rule>) -> Result<Sort, LSParseError> {
+    let mut inner = pair.into_inner();
+    let mut sorts = Vec::new();
+
+    while let Some(sort_pair) = inner.next() {
+        sorts.push(parse_sort(sort_pair)?);
+    }
+
+    if sorts.len() < 2 {
+        return Err(LSParseError::InvalidSyntax(
+            "Arrow sort must have at least 2 sorts".to_string(),
+        ));
+    }
+
+    // Build nested arrow sort from right to left
+    let mut result = sorts.pop().unwrap();
+    while let Some(arg_sort) = sorts.pop() {
+        result = Sort::Parameterized(Identifier::Symbol("->".to_string()), vec![arg_sort, result]);
+    }
+
+    Ok(result)
+}
+
+/// Helper function to parse a sort, handling arrow types
+pub fn parse_sort(pair: Pair<'_, Rule>) -> Result<Sort, LSParseError> {
+    // Check if this is an arrow sort
+    if pair.as_str().starts_with("(->") {
+        parse_arrow_sort(pair)
+    } else {
+        Sort::from_str(pair.as_str())
+            .map_err(|e| LSParseError::InvalidSyntax(format!("Failed to parse Sort: {}", e)))
+    }
+}
+
+/// Helper function to parse a sorted variable
+pub fn parse_sorted_var(pair: Pair<'_, Rule>) -> Result<SortedVar, LSParseError> {
+    Ok(SortedVar::from_str(pair.as_str()).unwrap())
+}
+
+/// Class field definition
+#[derive(Clone, Debug, Display)]
+#[display(fmt = "[{} {}]", name, sort)]
+pub struct ClassField {
+    pub name: String,
+    pub sort: Sort,
+}
+
+/// Class method definition
+#[derive(Clone, Debug, Display)]
+#[display(
+    fmt = "(define-fun {} ({}) {} ...)",
+    name,
+    "params.iter().map(|p| format!(\"({} {})\", p.name, p.sort)).collect::<Vec<_>>().join(\" \")",
+    ret_sort
+)]
+pub struct ClassMethod {
+    pub name: String,
+    pub params: Vec<SortedVar>,
+    pub ret_sort: Sort,
+    pub body: Option<LSTerm>,
+    pub is_recursive: bool,
+}
+
+/// Class definition
+#[derive(Clone, Debug, Display)]
+#[display(fmt = "(define-class ({} [{}]) ...)", name, "type_params.join(\" \")")]
+pub struct ClassDef {
+    pub name: String,
+    pub type_params: Vec<String>,
+    pub fields: Vec<ClassField>,
+    pub methods: Vec<FunctionType>,
+}
+
+/// Object method definition
+#[derive(Clone, Debug, Display)]
+#[display(
+    fmt = "(define-fun {} ({}) {} ...)",
+    name,
+    "params.iter().map(|p| format!(\"({} {})\", p.name, p.sort)).collect::<Vec<_>>().join(\" \")",
+    ret_sort
+)]
+pub struct ObjectMethod {
+    pub name: String,
+    pub params: Vec<SortedVar>,
+    pub ret_sort: Sort,
+    pub body: LSTerm,
+}
+
+/// Object definition
+#[derive(Clone, Debug, Display)]
+#[display(
+    fmt = "(define-object {} ({} {}) ...)",
+    name,
+    class_name,
+    "type_args.join(\" \")"
+)]
+pub struct ObjectDef {
+    pub name: String,
+    pub class_name: String,
+    pub type_args: Vec<String>,
+    pub methods: Vec<ObjectMethod>,
+}
 
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "({} {})", name, term)]
@@ -31,6 +136,9 @@ pub enum LSTerm {
 
     #[display(fmt = "{}", _0)]
     Literal(Literal),
+
+    #[display(fmt = "{}.{}", object, method)]
+    MethodCallTerm { object: String, method: String },
 
     #[display(
         fmt = "({} {})",
@@ -141,16 +249,49 @@ impl LSTerm {
                 // Literal = { SpecConstant | Decimal | HexConst | BinConst | StringConst }
                 Ok(LSTerm::Literal(Literal::from_str(pair.as_str())))
             }
+            Rule::MethodCallTerm => {
+                // MethodCallTerm = { Symbol ~ "." ~ Symbol }
+                let mut parts = pair.as_str().split('.');
+                let object = parts.next().unwrap().to_string();
+                let method = parts.next().unwrap().to_string();
+                Ok(LSTerm::MethodCallTerm { object, method })
+            }
             Rule::AppTerm => {
-                // AppTerm = { "(" ~ Identifier ~ LSTerm+ ~ ")" }
+                // AppTerm = { "(" ~ MethodCall ~ LSTerm* ~ ")" | "(" ~ Identifier ~ LSTerm+ ~ ")" }
                 let mut inner = pair.into_inner();
-                let sym = inner.next().unwrap().as_str().to_string();
-                let mut args = vec![];
-                while let Some(arg) = inner.next() {
-                    args.push(LSTerm::parse(arg)?);
+                let first = inner.next().unwrap();
+
+                match first.as_rule() {
+                    Rule::MethodCall => {
+                        // Method call: (object.method args...)
+                        let method_call = first.as_str();
+                        let mut parts = method_call.split('.');
+                        let object = parts.next().unwrap().to_string();
+                        let method = parts.next().unwrap().to_string();
+
+                        let mut args = vec![];
+                        while let Some(arg) = inner.next() {
+                            args.push(LSTerm::parse(arg)?);
+                        }
+
+                        // For method calls, we'll use AppTerm with a special identifier format
+                        let method_id = Identifier::Symbol(format!("{}.{}", object, method));
+                        Ok(LSTerm::AppTerm(method_id, args))
+                    }
+                    Rule::Identifier => {
+                        // Regular function call: (func args...)
+                        let sym = first.as_str().to_string();
+                        let mut args = vec![];
+                        while let Some(arg) = inner.next() {
+                            args.push(LSTerm::parse(arg)?);
+                        }
+                        Ok(LSTerm::AppTerm(Identifier::Symbol(sym), args))
+                    }
+                    _ => Err(LSParseError::InvalidSyntax(format!(
+                        "Expected Identifier or MethodCall, found {:?}",
+                        first.as_rule()
+                    ))),
                 }
-                let app_term = LSTerm::AppTerm(Identifier::Symbol(sym), args);
-                Ok(app_term)
             }
             Rule::AttrTerm => {
                 // AttrTerm = { "(" ~ "!" ~ LSTerm ~ Attribute+ ~ ")" }
@@ -303,6 +444,11 @@ impl LSTerm {
                 }
             }
             _ => {
+                debug!(
+                    "LSTerm::parse encountered unknown rule: {:?} with content: '{}'",
+                    pair.as_rule(),
+                    pair.as_str()
+                );
                 unreachable!()
             }
         }
@@ -340,7 +486,7 @@ pub enum LSCmd {
 
     #[display(
         fmt = "define-sort-enum {} ({})",
-        name,
+        "name",
         "elems.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"
     )]
     DefineEnumSort { name: String, elems: Vec<String> },
@@ -351,6 +497,12 @@ pub enum LSCmd {
         "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\" \")"
     )]
     DefineTheory { name: String, cmds: Vec<LSCmd> },
+
+    #[display(fmt = "ClassDef({:?})", "_0")]
+    ClassDef(ClassDef),
+
+    #[display(fmt = "ObjectDef({:?})", "_0")]
+    ObjectDef(ObjectDef),
 }
 
 #[derive(Debug, Display, Clone)]
@@ -449,37 +601,9 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
         }
         Rule::FuncDef | Rule::FuncDefRec => {
             // TODO: don't register non-recursve functions at declaration
-            let mut inner = cmd.clone().into_inner();
-            let name = inner.next().unwrap().as_str().to_string();
-            let mut args = vec![];
-            let mut ret_sort = None;
-
-            // parse sorted variables
-            while let Some(var_pair) = inner.next() {
-                if var_pair.as_rule() == Rule::SortedVar {
-                    let sorted_var = sygus_parser::SortedVar::from_str(var_pair.as_str()).unwrap();
-                    args.push(sorted_var);
-                } else if var_pair.as_rule() == Rule::Sort {
-                    let sort_str = var_pair.as_str().to_string();
-                    ret_sort = Some(sygus_parser::Sort::from_str(&sort_str).unwrap());
-                    break;
-                } else {
-                    eprintln!("Unexpected token: {}", var_pair.as_str());
-                    break;
-                }
-            }
-
-            let body_pair = inner.next().unwrap();
-            let body = LSTerm::parse(body_pair)?;
-
-            let func_type = FunctionType::new_definition(
-                name,
-                args.iter().map(|sv| sv.name.clone()).collect(),
-                args.iter().map(|sv| sv.sort.clone()).collect(),
-                ret_sort.unwrap(),
-                body,
-            );
-
+            let func_type = FunctionType::parse(cmd.clone()).map_err(|e| {
+                LSParseError::InvalidSyntax(format!("Failed to parse function definition: {}", e))
+            })?;
             match cmd.as_rule() {
                 Rule::FuncDef => Ok(LSCmd::DefineFunc(func_type)),
                 Rule::FuncDefRec => Ok(LSCmd::DefineFuncRec(func_type)),
@@ -500,6 +624,14 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
                 sexpr,
             }))
         }
+        Rule::ClassDef => {
+            let class_def = ClassDef::parse(cmd)?;
+            Ok(LSCmd::ClassDef(class_def))
+        }
+        Rule::ObjectDef => {
+            let object_def = ObjectDef::parse(cmd)?;
+            Ok(LSCmd::ObjectDef(object_def))
+        }
         // EnumSortDef = { "(" ~ #LSTkDefSortEnum="define-sort-enum" ~ Symbol ~ "(" ~ SortElem* ~ ")" ~ ")" }
         Rule::EnumSortDef => {
             let mut inner_pairs = cmd.clone().into_inner();
@@ -512,6 +644,7 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
                 elems: elements,
             })
         }
+
         Rule::LSCmd => {
             let mut inner_pairs = cmd.clone().into_inner();
             if let Some(inner_cmd) = inner_pairs.next() {
@@ -556,5 +689,160 @@ impl LSCmd {
             arg_sorts,
             ret_sort,
         ))
+    }
+}
+
+// Parse class definition - FIXED VERSION
+impl ClassDef {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        let inner = pair.into_inner();
+        // First element after the tagged keyword should be the class signature
+        let mut name = String::new();
+        let mut type_params = Vec::new();
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+
+        // We need to handle the class signature specially
+        let mut found_signature = false;
+
+        for item in inner {
+            match item.as_rule() {
+                Rule::Symbol => {
+                    if !found_signature {
+                        // This is the class name
+                        name = item.as_str().to_string();
+                    } else {
+                        // These are type parameters
+                        type_params.push(item.as_str().to_string());
+                    }
+                }
+                Rule::FieldDecl => {
+                    found_signature = true;
+                    fields.push(ClassField::parse(item)?);
+                }
+                Rule::MethodDef => {
+                    found_signature = true;
+                    let mut inner = item.into_inner();
+                    let func_type = FunctionType::parse(inner.next().unwrap())?;
+                    methods.push(func_type);
+                }
+                _ => {
+                    // Handle the signature as a whole if it comes as a single token
+                    if item.as_str().contains('[') && item.as_str().contains(']') {
+                        // Parse the class signature manually
+                        let sig_str = item.as_str();
+                        let parts: Vec<&str> = sig_str.split(&['[', ']'][..]).collect();
+                        if parts.len() >= 2 {
+                            name = parts[0].trim().to_string();
+                            if !parts[1].trim().is_empty() {
+                                type_params =
+                                    parts[1].split_whitespace().map(|s| s.to_string()).collect();
+                            }
+                        }
+                        found_signature = true;
+                    }
+                }
+            }
+        }
+
+        if name.is_empty() {
+            return Err(LSParseError::InvalidSyntax(
+                "Missing class name".to_string(),
+            ));
+        }
+
+        Ok(ClassDef {
+            name,
+            type_params,
+            fields,
+            methods,
+        })
+    }
+}
+
+// Parse class field
+impl ClassField {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        // FieldDecl = { "[" ~ Symbol ~ Sort ~ "]" }
+        let mut inner = pair.into_inner();
+
+        let name = inner
+            .next()
+            .ok_or_else(|| {
+                LSParseError::InvalidSyntax("Expected field name in FieldDecl".to_string())
+            })?
+            .as_str()
+            .to_string();
+
+        let sort = parse_sort(inner.next().ok_or_else(|| {
+            LSParseError::InvalidSyntax("Expected field sort in FieldDecl".to_string())
+        })?)?;
+
+        Ok(ClassField { name, sort })
+    }
+}
+
+// Parse object definition
+impl ObjectDef {
+    // ObjectDef = {  "(" ~ #LSTkDefObject="define-object" ~ Symbol ~ "(" ~ Symbol ~ Sort* ~ ")" ~ MethodDef* ~ ")"  }
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+        debug!("{:?}: {:?}", pair.as_rule(), pair.as_str());
+        let mut inner = pair.into_inner();
+        debug!("inner: {:?}", inner.as_str());
+        let name = inner
+            .next()
+            .ok_or_else(|| LSParseError::InvalidSyntax("Expected object name".to_string()))?
+            .as_str()
+            .to_string();
+        debug!("name: {:?}", name);
+        // Parse class instantiation: (ClassName TypeArg1 TypeArg2 ...)
+        let class_inner = inner.next().ok_or_else(|| {
+            LSParseError::InvalidSyntax("Expected class instantiation".to_string())
+        })?;
+        debug!("class_inner: {:?}", class_inner.as_str());
+        let class_name = class_inner.as_str().to_string();
+        let mut type_args = Vec::new();
+        while let Some(sort_pair) = inner.peek() {
+            if sort_pair.as_rule() == Rule::Sort {
+                let sort = parse_sort(sort_pair.clone())?;
+                type_args.push(sort.to_string());
+                debug!("type_args: {:?}", type_args);
+                inner.next();
+            } else {
+                debug!("break at {:?}", sort_pair.as_rule());
+                break;
+            }
+        }
+        debug!("inner: {:?}", inner.as_str());
+        let mut methods = Vec::new();
+        while let Some(method_pair) = inner.peek() {
+            if method_pair.as_rule() == Rule::MethodDef {
+                let method_impl = FunctionType::parse(method_pair.into_inner().next().unwrap())?;
+                methods.push(ObjectMethod {
+                    name: method_impl.get_name().unwrap().clone(),
+                    params: method_impl
+                        .get_params()
+                        .iter()
+                        .map(|p| SortedVar {
+                            name: p.to_string(),
+                            sort: p.clone(),
+                        })
+                        .collect(),
+                    ret_sort: method_impl.get_ret().clone(),
+                    body: method_impl.get_body().unwrap().clone(),
+                });
+                inner.next();
+            } else {
+                debug!("break at {:?}", method_pair.as_rule());
+                break;
+            }
+        }
+
+        Ok(ObjectDef {
+            name,
+            class_name,
+            type_args,
+            methods,
+        })
     }
 }

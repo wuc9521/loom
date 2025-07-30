@@ -27,6 +27,7 @@ pub struct Interpreter {
     pub stack: Vec<Scope>,
     pub typing: TypeInferer,
     pub theories: std::collections::HashMap<String, TheoryInterpreter>,
+    pub current_object: Option<String>, // Track current object for "self" resolution
 }
 
 impl Interpreter {
@@ -39,6 +40,7 @@ impl Interpreter {
             stack: Vec::new(),
             typing: TypeInferer::new(),
             theories: std::collections::HashMap::new(),
+            current_object: None,
         };
 
         interpreter.stack.push(Scope::new()); // initialize global scope
@@ -491,6 +493,12 @@ impl Interpreter {
                     self.current_scope_mut()
                         .define(elem.clone(), Value::Symbol(elem.clone()));
                 }
+            }
+            LSCmd::ClassDef(class_def) => {
+                self.define_class(class_def.clone())?;
+            }
+            LSCmd::ObjectDef(object_def) => {
+                self.define_object(object_def.clone())?;
             }
         }
         Ok(())
@@ -991,5 +999,202 @@ impl Interpreter {
         debug!("handle theory command: {}", cmd);
         // here we can add theory specific handling logic
         Ok(Value::Symbol("theory_command".to_string()))
+    }
+
+    /// Define a class
+    pub fn define_class(
+        &mut self,
+        class_def: crate::parser::ast::ClassDef,
+    ) -> Result<(), String> {
+        debug!("Defining class: {}", class_def.name);
+
+        // Check for conflicts
+        self.typing.check_all_conflicts(&class_def.name, "class")?;
+
+        // Type check the class definition
+        self.type_check_class(&class_def)?;
+
+        // Store class in runtime
+        self.current_scope_mut().define_class(&class_def);
+
+        // TODO: Register class type in type environment
+        // This would require extending the type system to support class types
+
+        Ok(())
+    }
+
+    /// Define an object (instance of a class)
+    pub fn define_object(
+        &mut self,
+        object_def: crate::parser::ast::ObjectDef,
+    ) -> Result<(), String> {
+        debug!(
+            "Defining object: {} of class {}",
+            object_def.name, object_def.class_name
+        );
+
+        // Check for conflicts
+        self.typing
+            .check_all_conflicts(&object_def.name, "object")?;
+
+        // Look up the class
+        let class_value = match self.lookup_symbol_value(&object_def.class_name) {
+            Some(Value::Class(class)) => class,
+            _ => return Err(format!("Class '{}' not found", object_def.class_name)),
+        };
+
+        // Type check the object definition
+        self.type_check_object(&object_def, &class_value)?;
+
+        // Store object in runtime
+        self.current_scope_mut()
+            .define_object(&object_def, &class_value);
+
+        Ok(())
+    }
+
+    /// Type check a class definition
+    fn type_check_class(
+        &mut self,
+        class_def: &crate::parser::ast::ClassDef,
+    ) -> Result<(), String> {
+        debug!("Type checking class: {}", class_def.name);
+
+        // Enter class scope
+        self.typing.enter_scope();
+
+        // Bind type parameters
+        for type_param in &class_def.type_params {
+            self.typing.current_scope_mut().bind_variable(
+                type_param.clone(),
+                sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(type_param.clone())),
+            );
+        }
+
+        // Bind "self" to class type in method signatures
+        let class_sort =
+            sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(class_def.name.clone()));
+
+        // Type check methods
+        for method in &class_def.methods {
+            self.typing.enter_scope();
+
+            // Bind self
+            self.typing
+                .current_scope_mut()
+                .bind_variable("self".to_string(), class_sort.clone());
+
+            // Bind method parameters
+            for (i, param) in method.params.iter().enumerate() {
+                self.typing
+                    .current_scope_mut()
+                    .bind_variable(method.param_names[i].clone(), param.clone());
+            }
+
+            // Type check method body if present
+            if let Some(body) = &method.body {
+                let body_type = self.typing.infer(body)?;
+                if body_type != method.ret {
+                    return Err(format!(
+                        "Method {} body type {} does not match declared return type {}",
+                        method.name.clone().unwrap(),
+                        body_type,
+                        method.ret
+                    ));
+                }
+            }
+
+            self.typing.exit_scope();
+        }
+
+        self.typing.exit_scope();
+        Ok(())
+    }
+
+    /// Type check an object definition
+    fn type_check_object(
+        &mut self,
+        object_def: &crate::parser::ast::ObjectDef,
+        class: &crate::lang::runtime::ClassValue,
+    ) -> Result<(), String> {
+        debug!("Type checking object: {}", object_def.name);
+
+        // Check type arguments match class parameters
+        if object_def.type_args.len() != class.type_params.len() {
+            return Err(format!(
+                "Object {} has {} type arguments but class {} expects {}",
+                object_def.name,
+                object_def.type_args.len(),
+                class.name,
+                class.type_params.len()
+            ));
+        }
+
+        // Type check each method implementation or field initialization
+        for method_impl in &object_def.methods {
+            // First check if it's a method in the class
+            if let Some(_class_method) = class.methods.get(&method_impl.name) {
+                // It's a method implementation
+                // Enter object method scope
+                self.typing.enter_scope();
+
+                // Bind type parameters to concrete types
+                for (param, arg) in class.type_params.iter().zip(object_def.type_args.iter()) {
+                    self.typing.current_scope_mut().bind_variable(
+                        param.clone(),
+                        sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(arg.clone())),
+                    );
+                }
+
+                // Bind self to object type
+                let object_sort = sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(
+                    object_def.name.clone(),
+                ));
+                self.typing
+                    .current_scope_mut()
+                    .bind_variable("self".to_string(), object_sort);
+
+                // Bind method parameters
+                for param in &method_impl.params {
+                    self.typing
+                        .current_scope_mut()
+                        .bind_variable(param.name.clone(), param.sort.clone());
+                }
+
+                // Type check method body
+                let body_type = self.typing.infer(&method_impl.body)?;
+                if body_type != method_impl.ret_sort {
+                    return Err(format!(
+                        "Method {} implementation body type {} does not match declared return type {}",
+                        method_impl.name, body_type, method_impl.ret_sort
+                    ));
+                }
+
+                self.typing.exit_scope();
+            } else {
+                // Check if it's a field initialization
+                let field_found = class.fields.iter().any(|(field_name, field_type)| {
+                    field_name == &method_impl.name && field_type == &method_impl.ret_sort
+                });
+
+                if !field_found {
+                    return Err(format!(
+                        "Field {} not found in class {} or type mismatch",
+                        method_impl.name, class.name
+                    ));
+                }
+
+                // Type check field initialization
+                let body_type = self.typing.infer(&method_impl.body)?;
+                if body_type != method_impl.ret_sort {
+                    return Err(format!(
+                        "Field {} initialization type {} does not match declared type {}",
+                        method_impl.name, body_type, method_impl.ret_sort
+                    ));
+                }
+            }
+        }
+
+        Ok(())
     }
 }

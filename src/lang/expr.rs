@@ -59,6 +59,10 @@ impl Interpreter {
                 }
                 _ => Ok(Value::Symbol(lit.to_string())),
             },
+            LSTerm::MethodCallTerm { object, method } => {
+                // Handle direct method call without arguments
+                self.eval_method_call(object, method, &[])
+            }
             LSTerm::AppTerm(func, args) => {
                 debug!(
                     "evaluate function call: {} (parameters number: {})",
@@ -130,6 +134,15 @@ impl Interpreter {
             args.len()
         );
 
+        // Check if this is a method call (object.method)
+        if func_name.contains('.') {
+            let parts: Vec<&str> = func_name.split('.').collect();
+            if parts.len() == 2 {
+                let (receiver, method) = (parts[0], parts[1]);
+                return self.eval_method_call(receiver, method, args);
+            }
+        }
+
         // check if it is a constructor
         match self.lookup_symbol(func_name) {
             SymbolLookupResult::Constructor(info) => self.eval_constructor_call(&info, args),
@@ -146,6 +159,51 @@ impl Interpreter {
                 }
             }
             _ => self.eval_builtin_function(func_name, args),
+        }
+    }
+
+    /// Evaluate a method call (object.method)
+    fn eval_method_call(&mut self, receiver: &str, method: &str, args: &[LSTerm]) -> Result<Value, String> {
+        debug!(
+            "evaluating method call: {}.{} with {} arguments",
+            receiver, method, args.len()
+        );
+
+        // Handle "self" specially
+        if receiver == "self" {
+            if let Some(current_obj_name) = &self.current_object {
+                if let Some(Value::Object(obj)) = self.lookup_symbol_value(current_obj_name) {
+                    if let Some(func) = obj.methods.get(method) {
+                        return self.call_function(func, args);
+                    }
+                }
+            }
+            return Err("'self' used outside of object context".to_string());
+        }
+
+        // Look up the receiver object
+        let receiver_value = self.lookup_symbol_value(receiver)
+            .ok_or_else(|| format!("Receiver '{}' not found", receiver))?;
+
+        match receiver_value {
+            Value::Object(obj) => {
+                // Look up the method in the object
+                if let Some(func) = obj.methods.get(method) {
+                    // Set current object context
+                    let prev_object = self.current_object.clone();
+                    self.current_object = Some(receiver.to_string());
+                    
+                    let result = self.call_function(func, args);
+                    
+                    // Restore previous context
+                    self.current_object = prev_object;
+                    
+                    result
+                } else {
+                    Err(format!("Method '{}' not found in object '{}'", method, receiver))
+                }
+            }
+            _ => Err(format!("'{}' is not an object and cannot have methods", receiver)),
         }
     }
 

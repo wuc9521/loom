@@ -2,7 +2,8 @@ LSProg = { SOI ~ LSCmd* ~ EOI }
 
 
 LSTerm = {
-  Identifier
+  MethodCallTerm
+| Identifier
 | Literal
 | AttrTerm
 | MatchTerm
@@ -15,7 +16,17 @@ LSTerm = {
 | AppTerm
 }
 
-AppTerm = { "(" ~ Identifier ~ LSTerm+ ~ ")" } // apply on at least one argument
+// Method call term: object.method or self.method
+MethodCallTerm = { Symbol ~ "." ~ Symbol }
+
+AppTerm = { 
+  "(" ~ MethodCall ~ LSTerm* ~ ")" |  // method call with arguments
+  "(" ~ Identifier ~ LSTerm+ ~ ")"    // regular function call
+} 
+
+// Method call: object.method or self.method
+MethodCall = { Symbol ~ "." ~ Symbol }
+
 AttrTerm = { "(" ~ "!" ~ LSTerm ~ Attribute+ ~ ")" }
 MatchTerm = { "(" ~ #LSTkMatch="match" ~ LSTerm ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
 LambdaTerm = { "(" ~ #LSTkLambda="lambda" ~ "(" ~ SortedVar+ ~ ")" ~ LSTerm ~ ")" }
@@ -36,12 +47,29 @@ LSCmd = {
 | ThDefCmd
 | EchoCmd
 | ThSpecCmd
+| ClassDef
+| ObjectDef
 }
 
 EchoCmd = { "(" ~ #LSTkEcho="echo" ~ LSTerm ~ ")" }
 ThDefCmd = { "(" ~ #LSTkDefTh="define-theory" ~ Symbol ~ "(" ~ LSCmd* ~ ")" ~ ")" }
 FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
 ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
+
+// Class definition: (define-class (ClassName [TypeParams]) FieldDecl* MethodDef*) 
+ClassDef = { 
+  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~ 
+  "(" ~FieldDecl*  ~ ")" ~ MethodDef* ~ ")" 
+}
+
+// Field declaration: [fieldName Type]
+FieldDecl = {  "[" ~ Symbol ~ Sort ~ "]"  }
+
+// Method definition inside class
+MethodDef = { FuncDef | FuncDefRec }
+
+// Object definition: (define-object ObjectName (ClassName TypeArgs) ObjectMember*)
+ObjectDef = {  "(" ~ #LSTkDefObject="define-object" ~ Symbol ~ "(" ~ Symbol ~ Sort* ~ ")" ~ MethodDef* ~ ")"  }
 MatchCase = { "(" ~ Pattern ~ LSTerm ~ ")" }
 
 SetUniv = { "(" ~ #LSTkSetUniv="set-univ" ~ Symbol ~ Sort ~ ")" }
@@ -56,7 +84,7 @@ Pattern = {
 
 Wildcard = { "_" }
 LSReservedCmd = { 
-  "set-univ" | "interp-fun" | "define-model" | "declare-fun" | "define-sort-enum" | "match"
+  "set-univ" | "interp-fun" | "define-model" | "declare-fun" | "define-sort-enum" | "match" | "define-class" | "define-object"
 }
 
 // Theory specification commands

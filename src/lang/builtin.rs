@@ -10,10 +10,14 @@ impl Interpreter {
     ) -> Result<Value, String> {
         match func_name {
             "+" => self.eval_add(args),
-            "-" => self.eval_subtract(args),
-            "*" => self.eval_multiply(args),
-            "/" => self.eval_divide(args),
-            "=" => self.eval_equal(args),
+            "-" => self.eval_sub(args),
+            "*" => self.eval_mul(args),
+            // "/" => self.eval_div(args),
+            "=" => self.eval_eq(args),
+            "<" => self.eval_lt(args),
+            ">" => self.eval_gt(args),
+            "<=" => self.eval_le(args),
+            ">=" => self.eval_ge(args),      
             "and" => self.eval_and(args),
             "or" => self.eval_or(args),
             "not" => self.eval_not(args),
@@ -21,6 +25,54 @@ impl Interpreter {
             "finite" => self.eval_finite(args),
             "card" => self.eval_card(args),
             _ => Err(format!("'{}' is not a function", func_name)),
+        }
+    }
+
+    fn eval_lt(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("less requires exactly 2 arguments".to_string());
+        }
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => Ok(Value::Bool(x < y)),
+            _ => Err("less requires integer arguments".to_string()),
+        }
+    }
+
+    fn eval_le(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("less_equal requires exactly 2 arguments".to_string());
+        }
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => Ok(Value::Bool(x <= y)),
+            _ => Err("less_equal requires integer arguments".to_string()),
+        }
+    }
+
+    fn eval_gt(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("greater requires exactly 2 arguments".to_string());
+        }
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => Ok(Value::Bool(x > y)),
+            _ => Err("greater requires integer arguments".to_string()),
+        }
+    }
+
+    fn eval_ge(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+        if args.len() != 2 {
+            return Err("greater_equal requires exactly 2 arguments".to_string());
+        }
+        let a = self.eval(&args[0])?;
+        let b = self.eval(&args[1])?;
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => Ok(Value::Bool(x >= y)),
+            _ => Err("greater_equal requires integer arguments".to_string()),
         }
     }
 
@@ -36,7 +88,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_subtract(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+    fn eval_sub(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("subtract requires exactly 2 arguments".to_string());
         }
@@ -48,7 +100,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_multiply(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+    fn eval_mul(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("multiply requires exactly 2 arguments".to_string());
         }
@@ -60,25 +112,25 @@ impl Interpreter {
         }
     }
 
-    fn eval_divide(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-        if args.len() != 2 {
-            return Err("divide requires exactly 2 arguments".to_string());
-        }
-        let a = self.eval(&args[0])?;
-        let b = self.eval(&args[1])?;
-        match (a, b) {
-            (Value::Int(x), Value::Int(y)) => {
-                if y == 0 {
-                    Err("division by zero".to_string())
-                } else {
-                    Ok(Value::Int(x / y))
-                }
-            }
-            _ => Err("divide requires integer arguments".to_string()),
-        }
-    }
+    // fn eval_div(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+    //     if args.len() != 2 {
+    //         return Err("divide requires exactly 2 arguments".to_string());
+    //     }
+    //     let a = self.eval(&args[0])?;
+    //     let b = self.eval(&args[1])?;
+    //     match (a, b) {
+    //         (Value::Int(x), Value::Int(y)) => {
+    //             if y == 0 {
+    //                 Err("division by zero".to_string())
+    //             } else {
+    //                 Ok(Value::Int(x / y))
+    //             }
+    //         }
+    //         _ => Err("divide requires integer arguments".to_string()),
+    //     }
+    // }
 
-    fn eval_equal(&mut self, args: &[LSTerm]) -> Result<Value, String> {
+    fn eval_eq(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
             return Err("equal requires exactly 2 arguments".to_string());
         }
