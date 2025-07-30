@@ -97,17 +97,11 @@ impl PatternMatcher {
         pattern: &Pattern,
         context: PatternContext,
     ) -> Result<PatternMatchResult, String> {
-        debug!(
-            "PatternMatcher::matches_with_context: value={:?}, pattern={:?}",
-            value, pattern
-        );
         let mut context = context;
 
         if self.match_pattern(value, pattern, &mut context)? {
-            debug!("Pattern matched successfully, context: {:?}", context);
             Ok(PatternMatchResult::success(context))
         } else {
-            debug!("Pattern did not match");
             Ok(PatternMatchResult::failure(context))
         }
     }
@@ -121,8 +115,6 @@ impl PatternMatcher {
         type_inferer: &crate::lang::types::TypeInferer,
         term_type: &sygus_parser::Sort,
     ) -> Result<PatternMatchResult, String> {
-        debug!("Pattern matching with type validation: value={:?}, pattern={:?}", value, pattern);
-
         // Create pattern context with current type environment
         let type_env = type_inferer.global_scope().clone();
         let context = PatternContext::new(type_env);

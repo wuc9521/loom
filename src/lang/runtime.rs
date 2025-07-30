@@ -105,6 +105,11 @@ pub enum Value {
     Class(ClassValue),
     #[display(fmt = "{}", _0)]
     Object(ObjectValue),
+    #[display(fmt = "<synthesis_placeholder:{}>", name)]
+    SynthesisPlaceholder {
+        name: String,
+        return_type: sygus_parser::Sort,
+    },
 }
 
 #[derive(Debug, Clone, Display)]
@@ -156,7 +161,8 @@ impl Scope {
         let mut methods = HashMap::new();
         for method in &class_def.methods {
             let mut params = Vec::new();
-            for (i, param) in method.params.iter().enumerate() {
+            let method_params = method.get_params();
+            for (i, param) in method_params.iter().enumerate() {
                 params.push(SortedVar {
                     name: method.param_names[i].clone(),
                     sort: param.clone(),
@@ -164,7 +170,7 @@ impl Scope {
             }
             methods.insert(method.name.clone().unwrap(), MethodSignature {
                 params,
-                ret_sort: method.ret.clone(),
+                ret_sort: method.get_ret(),
                 body: method.body.clone(),
                 is_recursive: method.is_constructor,
             });
@@ -186,51 +192,25 @@ impl Scope {
         
         // Convert method implementations to functions
         for method_impl in &object_def.methods {
-            let function = Function {
-                name: format!("{}.{}", object_def.name, method_impl.name),
-                params: method_impl.params.iter().map(|p| p.name.clone()).collect(),
-                body: method_impl.body.clone(),
-                closure: self.clone(), // Capture current scope
-            };
-            methods.insert(method_impl.name.clone(), function);
+            if let Some(body) = &method_impl.body {
+                let function = Function {
+                    name: format!("{}.{}", object_def.name, method_impl.name.as_ref().unwrap()),
+                    params: method_impl.param_names.clone(),
+                    body: body.clone(),
+                    closure: Scope::new(), // Object methods don't need closure as they access state via 'self'
+                };
+                methods.insert(method_impl.name.as_ref().unwrap().clone(), function);
+            }
         }
         
         let object_value = ObjectValue {
             name: object_def.name.clone(),
             class_name: object_def.class_name.clone(),
-            type_args: object_def.type_args.clone(),
+            type_args: object_def.type_args.iter().map(|s| s.to_string()).collect(),    
             fields: HashMap::new(), // Fields can be initialized later
             methods,
         };
         
         self.define(object_def.name.clone(), Value::Object(object_value));
-    }
-}
-
-/// Helper for method resolution
-pub struct MethodResolver {
-    pub receiver: String,
-    pub method: String,
-}
-
-impl MethodResolver {
-    pub fn new(receiver: String, method: String) -> Self {
-        Self { receiver, method }
-    }
-    
-    pub fn resolve(&self, scope: &Scope) -> Option<Function> {
-        // Check if receiver is an object
-        if let Some(Value::Object(obj)) = scope.lookup(&self.receiver) {
-            return obj.methods.get(&self.method).cloned();
-        }
-        
-        // Check if it's "self" in an object context
-        if self.receiver == "self" {
-            // This would need context from the interpreter to know current object
-            // For now, return None
-            return None;
-        }
-        
-        None
     }
 }

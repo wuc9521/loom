@@ -11,6 +11,21 @@ impl Interpreter {
             LSTerm::Identifier(ident) => {
                 let sym = ident.to_string();
 
+                // Check if this is 'self' - handle specially in class context
+                if sym == "self" {
+                    // Try to find self in current scope first
+                    if let Some(value) = self.lookup_symbol_value("self") {
+                        return Ok(value);
+                    }
+                    // If not found in scope, check if we're in object context
+                    if let Some(current_obj_name) = &self.current_object {
+                        if let Some(obj_value) = self.lookup_symbol_value(current_obj_name) {
+                            return Ok(obj_value);
+                        }
+                    }
+                    return Err("'self' not available in current context".to_string());
+                }
+
                 match self.lookup_symbol(&sym) {
                     SymbolLookupResult::Variable(value) => {
                         // if the value is a function, call it (no argument function call)
@@ -41,6 +56,13 @@ impl Interpreter {
                     }
                     SymbolLookupResult::EnumElement { name, enum_type: _ } => {
                         Ok(Value::Symbol(name))
+                    }
+                    SymbolLookupResult::ToBeSynthed { name, return_type } => {
+                        debug!("Encountered synthesis function placeholder: {}", name);
+                        Ok(Value::SynthesisPlaceholder {
+                            name: name.clone(),
+                            return_type: return_type.clone(),
+                        })
                     }
                     SymbolLookupResult::NotFound => {
                         error!("undefined symbol: {}", sym);
@@ -79,7 +101,7 @@ impl Interpreter {
                     name: "lambda".to_string(),
                     params: param_names,
                     body: *body.clone(),
-                    closure: self.current_scope().clone(),
+                    closure: self.current_scope().clone(), // Capture current scope for closure
                 };
                 Ok(Value::Function(function))
             }
@@ -158,15 +180,30 @@ impl Interpreter {
                     ))
                 }
             }
+            SymbolLookupResult::ToBeSynthed { name, return_type } => {
+                debug!("Encountered synthesis function call: {}", name);
+                // For synthesis functions, return a placeholder value with the actual return type
+                Ok(Value::SynthesisPlaceholder {
+                    name: name.clone(),
+                    return_type: return_type.clone(),
+                })
+            }
             _ => self.eval_builtin_function(func_name, args),
         }
     }
 
     /// Evaluate a method call (object.method)
-    fn eval_method_call(&mut self, receiver: &str, method: &str, args: &[LSTerm]) -> Result<Value, String> {
+    fn eval_method_call(
+        &mut self,
+        receiver: &str,
+        method: &str,
+        args: &[LSTerm],
+    ) -> Result<Value, String> {
         debug!(
             "evaluating method call: {}.{} with {} arguments",
-            receiver, method, args.len()
+            receiver,
+            method,
+            args.len()
         );
 
         // Handle "self" specially
@@ -182,7 +219,8 @@ impl Interpreter {
         }
 
         // Look up the receiver object
-        let receiver_value = self.lookup_symbol_value(receiver)
+        let receiver_value = self
+            .lookup_symbol_value(receiver)
             .ok_or_else(|| format!("Receiver '{}' not found", receiver))?;
 
         match receiver_value {
@@ -192,18 +230,24 @@ impl Interpreter {
                     // Set current object context
                     let prev_object = self.current_object.clone();
                     self.current_object = Some(receiver.to_string());
-                    
+
                     let result = self.call_function(func, args);
-                    
+
                     // Restore previous context
                     self.current_object = prev_object;
-                    
+
                     result
                 } else {
-                    Err(format!("Method '{}' not found in object '{}'", method, receiver))
+                    Err(format!(
+                        "Method '{}' not found in object '{}'",
+                        method, receiver
+                    ))
                 }
             }
-            _ => Err(format!("'{}' is not an object and cannot have methods", receiver)),
+            _ => Err(format!(
+                "'{}' is not an object and cannot have methods",
+                receiver
+            )),
         }
     }
 
@@ -228,14 +272,30 @@ impl Interpreter {
         // enter function scope
         self.enter_scope();
 
+        // Restore closure environment (captured variables from function definition)
+        for (name, value) in &func.closure.bindings {
+            self.current_scope_mut().define(name.clone(), value.clone());
+        }
+
         // evaluate arguments and bind to parameters
         for (param_name, arg) in func.params.iter().zip(args.iter()) {
             let arg_value = self.eval(arg)?;
-            debug!(
-                "Binding parameter '{}' to value: {:?}",
-                param_name, arg_value
-            );
             self.define_symbol(param_name.clone(), arg_value);
+        }
+
+        // Check if the first parameter is an object and bind it as 'self'
+        if !func.params.is_empty() {
+            let first_param_name = &func.params[0];
+            if let Some(first_arg_value) = self.lookup_symbol_value(first_param_name) {
+                match &first_arg_value {
+                    Value::Object(_) => {
+                        // Bind the first parameter as 'self' for class methods
+                        self.current_scope_mut()
+                            .define("self".to_string(), first_arg_value);
+                    }
+                    _ => {}
+                }
+            }
         }
 
         // evaluate function body
@@ -252,6 +312,21 @@ impl Interpreter {
         // evaluate the expression to be matched
         let value = self.eval(term)?;
         debug!("Matching value: {}", value);
+
+        // Check if the value is a synthesis placeholder
+        if let Value::SynthesisPlaceholder {
+            name,
+            return_type: _,
+        } = &value
+        {
+            debug!(
+                "Synthesis placeholder '{}' encountered in pattern matching, returning placeholder",
+                name
+            );
+            // For synthesis placeholders, return the placeholder itself
+            // This allows the constraint solver to handle the pattern matching
+            return Ok(value);
+        }
 
         // try each case
         for case in cases {
@@ -271,33 +346,29 @@ impl Interpreter {
                 match matcher.matches_with_context(&value, pattern, context) {
                     Ok(result) => {
                         if result.matched {
-                            debug!("Pattern matched!");
-
-                            // enter new scope, bind variables in pattern
-                            self.enter_scope();
-
-                            // bind matched variables to current scope
-                            for (name, val) in result.context.get_runtime_scope().bindings.iter() {
-                                self.current_scope_mut().define(name.clone(), val.clone());
-                            }
-
-                            // evaluate the value expression of the case
-                            let result_value = self.eval(&case.value)?;
-
-                            // exit scope
-                            self.exit_scope();
-
-                            return Ok(result_value);
+                            debug!("Pattern matched, evaluating body");
+                            // pattern matched, evaluate the body
+                            return self.eval(&case.value);
+                        } else {
+                            debug!("Pattern did not match, trying next case");
+                            // pattern did not match, try next case
+                            continue;
                         }
                     }
                     Err(e) => {
                         debug!("Pattern matching error: {}", e);
-                        // continue to try the next case
+                        // pattern matching error, try next case
+                        continue;
                     }
                 }
+            } else {
+                // no pattern (default case), evaluate the body
+                debug!("No pattern (default case), evaluating body");
+                return self.eval(&case.value);
             }
         }
 
+        // no pattern matched
         Err(format!("No pattern matched for value: {}", value))
     }
 

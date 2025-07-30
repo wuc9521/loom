@@ -9,7 +9,14 @@ use sygus_parser::{Sort, SyGuSCmd};
 pub enum SymbolLookupResult {
     Variable(Value),
     Constructor(ConstructorInfo),
-    EnumElement { name: String, enum_type: String },
+    EnumElement {
+        name: String,
+        enum_type: String,
+    },
+    ToBeSynthed {
+        name: String,
+        return_type: sygus_parser::Sort,
+    },
     NotFound,
 }
 
@@ -279,7 +286,32 @@ impl Interpreter {
                 if let Some(value) = self.lookup_symbol_value(&ident.to_string()) {
                     Ok(value)
                 } else {
-                    Err(format!("Undefined identifier in constraint: {}", ident))
+                    // Check if it's a function (including synthesis functions)
+                    let lookup_result = self.lookup_symbol(&ident.to_string());
+                    match lookup_result {
+                        SymbolLookupResult::Variable(value) => Ok(value),
+                        SymbolLookupResult::Constructor(_) => {
+                            // For constructors, return a symbol value
+                            Ok(Value::Symbol(ident.to_string()))
+                        }
+                        SymbolLookupResult::EnumElement { name, enum_type: _ } => {
+                            // For enum elements, return a symbol value
+                            Ok(Value::Symbol(name))
+                        }
+                        SymbolLookupResult::ToBeSynthed { name, return_type } => {
+                            debug!("Encountered synthesis function placeholder: {}", name);
+                            // For synthesis functions, we should not evaluate them during constraint checking
+                            // Instead, we should collect them for later synthesis
+                            // Return a synthesis placeholder value with the actual return type
+                            Ok(Value::SynthesisPlaceholder {
+                                name: name.clone(),
+                                return_type: return_type.clone(),
+                            })
+                        }
+                        SymbolLookupResult::NotFound => {
+                            Err(format!("Undefined identifier in constraint: {}", ident))
+                        }
+                    }
                 }
             }
             sygus_parser::SyGuSTerm::Literal(lit) => {
@@ -372,8 +404,79 @@ impl Interpreter {
                 }
             }
             _ => {
-                debug!("unknown constraint function: {}", func_name);
-                Err(format!("Unknown constraint function: {}", func_name))
+                // Try to find user-defined function
+                debug!("Looking for user-defined function: {}", func_name);
+                let lookup_result = self.lookup_symbol(func_name);
+                match lookup_result {
+                    SymbolLookupResult::Variable(Value::Function(_)) => {
+                        debug!("Found function: {}", func_name);
+                        // Convert args to LSTerm for function call
+                        let mut arg_terms = Vec::new();
+                        for arg in args {
+                            // Convert Value back to LSTerm
+                            let arg_term = match arg {
+                                Value::Bool(b) => crate::parser::ast::LSTerm::Literal(
+                                    sygus_parser::Literal::Bool(*b),
+                                ),
+                                Value::Int(i) => crate::parser::ast::LSTerm::Literal(
+                                    sygus_parser::Literal::Numeral(*i as usize),
+                                ),
+                                Value::String(s) => crate::parser::ast::LSTerm::Literal(
+                                    sygus_parser::Literal::Decimal(s.parse().unwrap_or(0.0)),
+                                ),
+                                Value::Symbol(s) => crate::parser::ast::LSTerm::Identifier(
+                                    sygus_parser::Identifier::Symbol(s.clone()),
+                                ),
+                                Value::Object(obj) => {
+                                    let obj_name = obj.name.clone();
+                                    crate::parser::ast::LSTerm::Identifier(
+                                        sygus_parser::Identifier::Symbol(obj_name),
+                                    )
+                                }
+                                Value::Function(func) => crate::parser::ast::LSTerm::Identifier(
+                                    sygus_parser::Identifier::Symbol(func.name.clone()),
+                                ),
+                                Value::Model(model) => crate::parser::ast::LSTerm::Identifier(
+                                    sygus_parser::Identifier::Symbol(model.name.clone()),
+                                ),
+                                Value::Class(class) => crate::parser::ast::LSTerm::Identifier(
+                                    sygus_parser::Identifier::Symbol(class.name.clone()),
+                                ),
+                                Value::Constructor { name, .. } => {
+                                    crate::parser::ast::LSTerm::Identifier(
+                                        sygus_parser::Identifier::Symbol(name.clone()),
+                                    )
+                                }
+                                Value::DataValue { constructor, .. } => {
+                                    crate::parser::ast::LSTerm::Identifier(
+                                        sygus_parser::Identifier::Symbol(constructor.clone()),
+                                    )
+                                }
+                                Value::Term(term) => term.clone(),
+                                Value::List(_) => {
+                                    unimplemented!("list is not supported yet")
+                                }
+                                Value::SynthesisPlaceholder {
+                                    name,
+                                    return_type: _,
+                                } => {
+                                    // For synthesis placeholders, use the original function name
+                                    crate::parser::ast::LSTerm::Identifier(
+                                        sygus_parser::Identifier::Symbol(name.clone()),
+                                    )
+                                }
+                            };
+                            arg_terms.push(arg_term);
+                        }
+
+                        // Call the function using eval_func_app
+                        self.eval_func_app(func_name, &arg_terms)
+                    }
+                    _ => {
+                        debug!("unknown constraint function: {}", func_name);
+                        Err(format!("Unknown constraint function: {}", func_name))
+                    }
+                }
             }
         }
     }
@@ -500,6 +603,16 @@ impl Interpreter {
             LSCmd::ObjectDef(object_def) => {
                 self.define_object(object_def.clone())?;
             }
+            LSCmd::SynthFunExt(func_type) => {
+                debug!(
+                    "defining synthesis function: {}",
+                    func_type.get_name().unwrap()
+                );
+                self.synth_function(
+                    func_type.get_name().unwrap().clone(),
+                    func_type.get_param_names().to_vec(),
+                )?;
+            }
         }
         Ok(())
     }
@@ -619,9 +732,10 @@ impl Interpreter {
                 self.typing
                     .current_scope_mut()
                     .register_function_type(name.clone(), func_type);
-                // store the function into the scope
-                self.current_scope_mut()
-                    .define(name.clone(), Value::Symbol(name.clone()));
+
+                // Define the synthesis function (without body)
+                let param_names: Vec<String> = args.iter().map(|sv| sv.name.clone()).collect();
+                self.synth_function(name.clone(), param_names)?;
             }
             SyGuSCmd::DefineFun(name, args, ret_sort, body) => {
                 debug!("define-fun: {} with {} args", name, args.len());
@@ -663,7 +777,10 @@ impl Interpreter {
                 // define function
                 self.define_function(name.clone(), param_names, body_term)?;
             }
-            SyGuSCmd::CheckSynth => {}
+            SyGuSCmd::CheckSynth => {
+                debug!("Starting synthesis process...");
+                self.start_synthesis()?;
+            }
             _ => unimplemented!("unsupported sygus command: {:?}", cmd),
         }
         Ok(())
@@ -703,7 +820,7 @@ impl Interpreter {
             let body_type = self.typing.infer(body)?;
 
             // check return type
-            if body_type != *func_type.get_ret() {
+            if body_type != func_type.get_ret() {
                 return Err(format!(
                     "Function body type {} does not match declared return type {}",
                     body_type,
@@ -724,33 +841,59 @@ impl Interpreter {
 
     /// lookup a symbol in the scope stack, returning detailed information about what was found
     pub fn lookup_symbol(&self, name: &str) -> SymbolLookupResult {
+        debug!("Looking up symbol: '{}'", name);
+        debug!("Runtime scope stack size: {}", self.stack.len());
+        debug!("Type scope stack size: {}", self.typing.stack.len());
+
         // first check if it is a constructor
-        for scope in self.typing.stack.iter().rev() {
+        for (i, scope) in self.typing.stack.iter().rev().enumerate() {
             if let Some(constructor_info) = scope.get_constructor(name) {
+                debug!("Found constructor '{}' in type scope {}", name, i);
                 return SymbolLookupResult::Constructor(constructor_info.clone());
             }
         }
 
         // then check normal variables in runtime scopes
-        for scope in self.stack.iter().rev() {
+        for (i, scope) in self.stack.iter().rev().enumerate() {
             if let Some(value) = scope.lookup(name) {
+                debug!("Found variable '{}' in runtime scope {}", name, i);
                 return SymbolLookupResult::Variable(value);
+            }
+        }
+
+        // Check if it's a synthesis function (function with placeholder body)
+        for scope in &self.stack {
+            if let Some(value) = scope.lookup(name) {
+                // Use pattern matching to identify synthesis placeholders
+                if let Value::SynthesisPlaceholder {
+                    name: synth_name,
+                    return_type,
+                } = &value
+                {
+                    debug!("Found synthesis function: {}", synth_name);
+                    return SymbolLookupResult::ToBeSynthed {
+                        name: synth_name.clone(),
+                        return_type: return_type.clone(),
+                    };
+                }
             }
         }
 
         // check in theories
         for theory in self.theories.values() {
-            for scope in theory.interpreter.stack.iter().rev() {
+            for (i, scope) in theory.interpreter.stack.iter().rev().enumerate() {
                 if let Some(value) = scope.lookup(name) {
+                    debug!("Found variable '{}' in theory scope {}", name, i);
                     return SymbolLookupResult::Variable(value);
                 }
             }
         }
 
         // finally check enum elements
-        for scope in self.typing.stack.iter().rev() {
+        for (i, scope) in self.typing.stack.iter().rev().enumerate() {
             for (_, enum_type) in &scope.enums {
                 if enum_type.elements.contains(&name.to_string()) {
+                    debug!("Found enum element '{}' in type scope {}", name, i);
                     return SymbolLookupResult::EnumElement {
                         name: name.to_string(),
                         enum_type: enum_type.name.clone(),
@@ -759,7 +902,20 @@ impl Interpreter {
             }
         }
 
+        debug!("Symbol '{}' not found in any scope", name);
         SymbolLookupResult::NotFound
+    }
+
+    /// Get the return type of a function from the type environment
+    fn get_function_return_type(&self, func_name: &str) -> sygus_parser::Sort {
+        // Look up the function type in the type environment
+        for scope in &self.typing.stack {
+            if let Some(func_type) = scope.get_function_type(func_name) {
+                return func_type.get_ret();
+            }
+        }
+        // Default to a generic type if not found
+        sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol("Any".to_string()))
     }
 
     /// lookup a symbol and return only the value (for backward compatibility)
@@ -775,7 +931,14 @@ impl Interpreter {
 
     /// define a symbol in the current scope
     pub fn define_symbol(&mut self, name: String, value: Value) {
+        debug!(
+            "Defining symbol: {} with value type: {:?}",
+            name,
+            std::mem::discriminant(&value)
+        );
+        let name_clone = name.clone();
         self.current_scope_mut().define(name, value);
+        debug!("Successfully defined symbol: {}", name_clone);
     }
 
     /// evaluate a constructor call.
@@ -784,11 +947,6 @@ impl Interpreter {
         info: &ConstructorInfo,
         args: &[LSTerm],
     ) -> Result<Value, String> {
-        debug!(
-            "eval_constructor_call: constructor={}, args={:?}",
-            info.name, args
-        );
-
         if args.len() != info.field_types.len() {
             return Err(format!(
                 "Constructor {} expects {} arguments, got {}",
@@ -799,9 +957,8 @@ impl Interpreter {
         }
 
         let mut field_values = Vec::new();
-        for (i, arg) in args.iter().enumerate() {
+        for arg in args {
             let field_value = self.interp_expr(arg)?;
-            debug!("Field {}: {:?}", i, field_value);
             field_values.push(field_value);
         }
 
@@ -811,7 +968,6 @@ impl Interpreter {
             fields: field_values,
         };
 
-        debug!("Created DataValue: {:?}", result);
         Ok(result)
     }
 
@@ -846,12 +1002,6 @@ impl Interpreter {
         params: Vec<String>,
         body: LSTerm,
     ) -> Result<(), String> {
-        debug!(
-            "Defining function '{}' with {} parameters",
-            name,
-            params.len()
-        );
-
         // create function closure
         let function = Function {
             name: name.clone(),
@@ -862,7 +1012,225 @@ impl Interpreter {
 
         // register to current scope
         self.define_symbol(name.clone(), Value::Function(function));
-        debug!("Function '{}' defined successfully", name);
+        Ok(())
+    }
+
+    /// define a synthesis function (function without body)
+    pub fn synth_function(&mut self, name: String, params: Vec<String>) -> Result<(), String> {
+        debug!(
+            "Creating synthesis function: {} with {} parameters",
+            name,
+            params.len()
+        );
+
+        // Get the return type from the type environment
+        let return_type = self.get_function_return_type(&name);
+
+        // Create synthesis placeholder value instead of using string placeholder
+        let placeholder_value = Value::SynthesisPlaceholder {
+            name: name.clone(),
+            return_type,
+        };
+
+        debug!(
+            "About to register synthesis function: {} to current scope",
+            name
+        );
+        // register to current scope as a synthesis placeholder
+        self.define_symbol(name.clone(), placeholder_value);
+        debug!("Successfully registered synthesis function: {}", name);
+        Ok(())
+    }
+
+    /// Start the synthesis process
+    fn start_synthesis(&mut self) -> Result<(), String> {
+        debug!("Starting synthesis process...");
+
+        // Collect all synthesis functions and constraints
+        let synthesis_functions = self.collect_synthesis_functions();
+        let constraints = self.collect_constraints();
+
+        debug!(
+            "Found {} synthesis functions and {} constraints",
+            synthesis_functions.len(),
+            constraints.len()
+        );
+
+        // Call the appropriate solver based on the logic
+        match &self.logic {
+            Some(Logic::RE) => {
+                debug!("Using RE solver for synthesis");
+                self.solve_with_re_solver(synthesis_functions, constraints)?;
+            }
+            Some(Logic::PML) => {
+                debug!("Using PML solver for synthesis");
+                self.solve_with_pml_solver(synthesis_functions, constraints)?;
+            }
+            Some(Logic::FOL) => {
+                debug!("Using FOL solver for synthesis");
+                self.solve_with_fol_solver(synthesis_functions, constraints)?;
+            }
+            _ => {
+                debug!("Using default BV solver for synthesis");
+                self.solve_with_bv_solver(synthesis_functions, constraints)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Collect all synthesis functions from the current environment
+    fn collect_synthesis_functions(&self) -> Vec<String> {
+        let mut synthesis_functions = Vec::new();
+
+        // Check all scopes for synthesis functions
+        for scope in &self.stack {
+            for (_, value) in &scope.bindings {
+                // Use pattern matching to identify synthesis placeholders
+                if let Value::SynthesisPlaceholder {
+                    name: synth_name, ..
+                } = value
+                {
+                    synthesis_functions.push(synth_name.clone());
+                }
+            }
+        }
+
+        synthesis_functions
+    }
+
+    /// Collect all constraints from the current environment
+    fn collect_constraints(&self) -> Vec<String> {
+        // For now, we'll return an empty vector
+        // In a full implementation, we would collect all constraint terms
+        Vec::new()
+    }
+
+    /// Solve using RE solver
+    fn solve_with_re_solver(
+        &mut self,
+        synthesis_functions: Vec<String>,
+        constraints: Vec<String>,
+    ) -> Result<(), String> {
+        debug!(
+            "Solving with RE solver for functions: {:?}",
+            synthesis_functions
+        );
+
+        // For now, we'll use the existing BV translation
+        // In a full implementation, we would call a dedicated RE solver
+        self.solve_with_bv_solver(synthesis_functions, constraints)
+    }
+
+    /// Solve using PML solver
+    fn solve_with_pml_solver(
+        &mut self,
+        synthesis_functions: Vec<String>,
+        constraints: Vec<String>,
+    ) -> Result<(), String> {
+        debug!(
+            "Solving with PML solver for functions: {:?}",
+            synthesis_functions
+        );
+
+        // For now, we'll use the existing BV translation
+        // In a full implementation, we would call a dedicated PML solver
+        self.solve_with_bv_solver(synthesis_functions, constraints)
+    }
+
+    /// Solve using FOL solver
+    fn solve_with_fol_solver(
+        &mut self,
+        synthesis_functions: Vec<String>,
+        constraints: Vec<String>,
+    ) -> Result<(), String> {
+        debug!(
+            "Solving with FOL solver for functions: {:?}",
+            synthesis_functions
+        );
+
+        // For now, we'll use the existing BV translation
+        // In a full implementation, we would call a dedicated FOL solver
+        self.solve_with_bv_solver(synthesis_functions, constraints)
+    }
+
+    /// Solve using BV solver (default)
+    fn solve_with_bv_solver(
+        &mut self,
+        synthesis_functions: Vec<String>,
+        _constraints: Vec<String>,
+    ) -> Result<(), String> {
+        debug!(
+            "Solving with BV solver for functions: {:?}",
+            synthesis_functions
+        );
+
+        // Use the enhanced translator to convert to standard SyGuS
+        use crate::translator::SyGuSTranslator;
+
+        // Create a dummy LSFile for demonstration
+        // In a full implementation, we would store the original file
+        let dummy_file = crate::parser::ast::LSFile { cmds: vec![] };
+
+        // Create translator instance
+        let mut translator = SyGuSTranslator::new(dummy_file, self);
+
+        debug!("Created SyGuSTranslator instance");
+
+        // Try to translate
+        match translator.translate() {
+            Ok(translated_commands) => {
+                debug!(
+                    "Translation successful! Generated {} commands",
+                    translated_commands.len()
+                );
+                for (i, cmd) in translated_commands.iter().enumerate() {
+                    debug!("Translated command {}: {:?}", i, cmd);
+                }
+
+                // Try to solve with CVC5
+                match translator.solve(&translated_commands) {
+                    Ok(solver_result) => {
+                        debug!("CVC5 solver result: {:?}", solver_result.status);
+                        match solver_result.status {
+                            crate::translator::SolverStatus::Sat => {
+                                debug!("Synthesis successful!");
+                                // Decode results
+                                match translator.decode_result(&solver_result) {
+                                    Ok(decoded_results) => {
+                                        debug!("Decoded {} synthesis results", decoded_results.len());
+                                        // Update synthesis results in environment
+                                        for (func_name, result_term) in decoded_results {
+                                            debug!("Function {} synthesized: {}", func_name, result_term);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        debug!("Failed to decode results: {}", e);
+                                    }
+                                }
+                            }
+                            crate::translator::SolverStatus::Unsat => {
+                                debug!("Synthesis problem is unsatisfiable");
+                            }
+                            crate::translator::SolverStatus::Unknown => {
+                                debug!("Synthesis result is unknown");
+                            }
+                            crate::translator::SolverStatus::Error(msg) => {
+                                debug!("Solver error: {}", msg);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        debug!("CVC5 solver failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("Translation failed: {}", e);
+            }
+        }
+
+        debug!("BV solver synthesis completed");
         Ok(())
     }
 
@@ -904,7 +1272,7 @@ impl Interpreter {
             let body_type = self.typing.infer(body)?;
 
             // Check return type
-            if body_type != *func_type.get_ret() {
+            if body_type != func_type.get_ret() {
                 return Err(format!(
                     "Function {} body type {} does not match declared return type {}",
                     func_name,
@@ -1001,200 +1369,5 @@ impl Interpreter {
         Ok(Value::Symbol("theory_command".to_string()))
     }
 
-    /// Define a class
-    pub fn define_class(
-        &mut self,
-        class_def: crate::parser::ast::ClassDef,
-    ) -> Result<(), String> {
-        debug!("Defining class: {}", class_def.name);
 
-        // Check for conflicts
-        self.typing.check_all_conflicts(&class_def.name, "class")?;
-
-        // Type check the class definition
-        self.type_check_class(&class_def)?;
-
-        // Store class in runtime
-        self.current_scope_mut().define_class(&class_def);
-
-        // TODO: Register class type in type environment
-        // This would require extending the type system to support class types
-
-        Ok(())
-    }
-
-    /// Define an object (instance of a class)
-    pub fn define_object(
-        &mut self,
-        object_def: crate::parser::ast::ObjectDef,
-    ) -> Result<(), String> {
-        debug!(
-            "Defining object: {} of class {}",
-            object_def.name, object_def.class_name
-        );
-
-        // Check for conflicts
-        self.typing
-            .check_all_conflicts(&object_def.name, "object")?;
-
-        // Look up the class
-        let class_value = match self.lookup_symbol_value(&object_def.class_name) {
-            Some(Value::Class(class)) => class,
-            _ => return Err(format!("Class '{}' not found", object_def.class_name)),
-        };
-
-        // Type check the object definition
-        self.type_check_object(&object_def, &class_value)?;
-
-        // Store object in runtime
-        self.current_scope_mut()
-            .define_object(&object_def, &class_value);
-
-        Ok(())
-    }
-
-    /// Type check a class definition
-    fn type_check_class(
-        &mut self,
-        class_def: &crate::parser::ast::ClassDef,
-    ) -> Result<(), String> {
-        debug!("Type checking class: {}", class_def.name);
-
-        // Enter class scope
-        self.typing.enter_scope();
-
-        // Bind type parameters
-        for type_param in &class_def.type_params {
-            self.typing.current_scope_mut().bind_variable(
-                type_param.clone(),
-                sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(type_param.clone())),
-            );
-        }
-
-        // Bind "self" to class type in method signatures
-        let class_sort =
-            sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(class_def.name.clone()));
-
-        // Type check methods
-        for method in &class_def.methods {
-            self.typing.enter_scope();
-
-            // Bind self
-            self.typing
-                .current_scope_mut()
-                .bind_variable("self".to_string(), class_sort.clone());
-
-            // Bind method parameters
-            for (i, param) in method.params.iter().enumerate() {
-                self.typing
-                    .current_scope_mut()
-                    .bind_variable(method.param_names[i].clone(), param.clone());
-            }
-
-            // Type check method body if present
-            if let Some(body) = &method.body {
-                let body_type = self.typing.infer(body)?;
-                if body_type != method.ret {
-                    return Err(format!(
-                        "Method {} body type {} does not match declared return type {}",
-                        method.name.clone().unwrap(),
-                        body_type,
-                        method.ret
-                    ));
-                }
-            }
-
-            self.typing.exit_scope();
-        }
-
-        self.typing.exit_scope();
-        Ok(())
-    }
-
-    /// Type check an object definition
-    fn type_check_object(
-        &mut self,
-        object_def: &crate::parser::ast::ObjectDef,
-        class: &crate::lang::runtime::ClassValue,
-    ) -> Result<(), String> {
-        debug!("Type checking object: {}", object_def.name);
-
-        // Check type arguments match class parameters
-        if object_def.type_args.len() != class.type_params.len() {
-            return Err(format!(
-                "Object {} has {} type arguments but class {} expects {}",
-                object_def.name,
-                object_def.type_args.len(),
-                class.name,
-                class.type_params.len()
-            ));
-        }
-
-        // Type check each method implementation or field initialization
-        for method_impl in &object_def.methods {
-            // First check if it's a method in the class
-            if let Some(_class_method) = class.methods.get(&method_impl.name) {
-                // It's a method implementation
-                // Enter object method scope
-                self.typing.enter_scope();
-
-                // Bind type parameters to concrete types
-                for (param, arg) in class.type_params.iter().zip(object_def.type_args.iter()) {
-                    self.typing.current_scope_mut().bind_variable(
-                        param.clone(),
-                        sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(arg.clone())),
-                    );
-                }
-
-                // Bind self to object type
-                let object_sort = sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(
-                    object_def.name.clone(),
-                ));
-                self.typing
-                    .current_scope_mut()
-                    .bind_variable("self".to_string(), object_sort);
-
-                // Bind method parameters
-                for param in &method_impl.params {
-                    self.typing
-                        .current_scope_mut()
-                        .bind_variable(param.name.clone(), param.sort.clone());
-                }
-
-                // Type check method body
-                let body_type = self.typing.infer(&method_impl.body)?;
-                if body_type != method_impl.ret_sort {
-                    return Err(format!(
-                        "Method {} implementation body type {} does not match declared return type {}",
-                        method_impl.name, body_type, method_impl.ret_sort
-                    ));
-                }
-
-                self.typing.exit_scope();
-            } else {
-                // Check if it's a field initialization
-                let field_found = class.fields.iter().any(|(field_name, field_type)| {
-                    field_name == &method_impl.name && field_type == &method_impl.ret_sort
-                });
-
-                if !field_found {
-                    return Err(format!(
-                        "Field {} not found in class {} or type mismatch",
-                        method_impl.name, class.name
-                    ));
-                }
-
-                // Type check field initialization
-                let body_type = self.typing.infer(&method_impl.body)?;
-                if body_type != method_impl.ret_sort {
-                    return Err(format!(
-                        "Field {} initialization type {} does not match declared type {}",
-                        method_impl.name, body_type, method_impl.ret_sort
-                    ));
-                }
-            }
-        }
-
-        Ok(())
-    }
 }

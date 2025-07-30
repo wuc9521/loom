@@ -1,6 +1,7 @@
 pub mod expr;
 pub mod interpreter;
 pub mod model;
+pub mod objects;
 pub mod pattern;
 pub mod runtime;
 pub mod theory;

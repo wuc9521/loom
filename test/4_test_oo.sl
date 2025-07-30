@@ -5,13 +5,17 @@
 (declare-fun a_char () Char)
 (declare-fun b_char () Char)
 
+(declare-datatype Interval
+  ;; endpoints are positions, not ints
+  ((mk-iv (l Pos) (r Pos))))
 
 (define-class (Model [Pos])
   ([size Int]
    [toInt (-> Pos Int)]
-   [charAt (-> Pos Char)]
-   [succ (-> Pos Pos)]
-   [leq (-> Pos Pos Bool)])
+   [charAt (-> Pos Char)])
+  (define-fun iv-len ((iv Interval)) Int
+    (- (toInt (r iv)) (toInt (l iv)))
+  )
   (define-fun-rec eval ((self Model) (iv Interval) (phi RE)) Bool
     (match phi (
       (re.empty false)
@@ -23,15 +27,6 @@
           (and (leq (l iv) cut) (leq cut (r iv))
                (eval self (mk-iv (l iv) cut) p)
                (eval self (mk-iv cut (r iv)) q))))
-      ; ((re.* p)
-      ;   (mu (Star Bool Interval)
-      ;     (lambda ((seg Interval))
-      ;       (or (= (l seg) (r seg))
-      ;           (exists ((cut Pos))
-      ;             (and (leq (l seg) cut) (leq cut (r seg))
-      ;                  (eval self (mk-iv (l seg) cut) p)
-      ;                  (Star (mk-iv cut (r seg)))))))
-      ;     iv))
       )
     )
   )

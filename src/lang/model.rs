@@ -175,12 +175,6 @@ impl MatchCase {
             LSParseError::InvalidSyntax("Expected pattern in match case".to_string())
         })?;
 
-        debug!(
-            "Pattern pair rule: {:?}, content: {}",
-            pattern_pair.as_rule(),
-            pattern_pair.as_str()
-        );
-
         let pattern = Pattern::parse(pattern_pair)?;
 
         // Second element should be the value
@@ -229,11 +223,6 @@ impl Pattern {
 
     /// Parse pattern from pest pair
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        debug!(
-            "Parsing pattern: {} (rule: {:?})",
-            pair.as_str(),
-            pair.as_rule()
-        );
 
         let mut pattern = Pattern::new();
         let pattern_str = pair.as_str().trim();
@@ -241,7 +230,6 @@ impl Pattern {
             pattern.push(PatternElem::Wildcard);
             Ok(pattern)
         } else if pattern_str.starts_with('(') && pattern_str.ends_with(')') {
-            debug!("Parsing constructor pattern: {}", pattern_str);
 
             // remove outer parentheses and parse inner elements
             let inner_str = &pattern_str[1..pattern_str.len() - 1];

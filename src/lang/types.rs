@@ -73,16 +73,14 @@ pub struct ConstructorInfo {
 
 #[derive(Debug, Clone, Display)]
 #[display(
-    fmt = "{} :: {} -> {}",
+    fmt = "{} :: {}",
     "self.get_name().unwrap_or(&\"<#unknown>\".to_string())",
-    "self.params.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(\" -> \")",
-    "self.ret.to_string()"
+    "self.sort.to_string()"
 )]
 pub struct FunctionType {
     pub name: Option<String>,
     pub param_names: Vec<String>,
-    pub params: Vec<Sort>,
-    pub ret: Sort,
+    pub sort: Sort, // Curried arrow type: (-> param1 (-> param2 (-> param3 return_type)))
     pub body: Option<LSTerm>,
     pub is_constructor: bool,
 }
@@ -94,8 +92,54 @@ impl FunctionType {
     }
 
     /// get parameter types
-    pub fn get_params(&self) -> &[Sort] {
-        &self.params
+    pub fn get_params(&self) -> Vec<Sort> {
+        FunctionType::decompose_arrow_sort(&self.sort).0
+    }
+
+    /// get return type
+    pub fn get_ret(&self) -> Sort {
+        FunctionType::decompose_arrow_sort(&self.sort).1
+    }
+
+    /// Convert a Sort to FunctionType
+    /// This handles arbitrary arrow types recursively, including:
+    /// - Simple types: Int -> (() -> Int)
+    /// - Arrow types: (-> Pos Int) -> (Pos -> Int)
+    /// - Curried functions: (-> A (-> B (-> C D))) -> (A B C -> D)
+    /// - Complex types: (-> (_ BitVec 64) Int) -> ((_ BitVec 64) -> Int)
+    pub fn from_sort(name: String, sort: &Sort) -> Self {
+        let (params, ret) = FunctionType::decompose_arrow_sort(sort);
+        FunctionType::new_signature(name, params, ret)
+    }
+
+    /// Recursively decompose an arrow sort into parameter types and return type
+    /// This handles arbitrary nesting of arrow types
+    pub fn decompose_arrow_sort(sort: &Sort) -> (Vec<Sort>, Sort) {
+        match sort {
+            Sort::Parameterized(Identifier::Symbol(sym), args) if sym == "->" => {
+                if args.len() == 2 {
+                    let (mut params, ret) = FunctionType::decompose_arrow_sort(&args[1]);
+                    params.insert(0, args[0].clone());
+                    (params, ret)
+                } else {
+                    // Malformed arrow type, treat as function with no parameters
+                    (vec![], sort.clone())
+                }
+            }
+            _ => {
+                // Non-arrow type, this is the return type
+                (vec![], sort.clone())
+            }
+        }
+    }
+
+    /// Build a curried arrow type from parameter types and return type
+    pub fn build_arrow_type(params: Vec<Sort>, ret: Sort) -> Sort {
+        let mut result = ret;
+        for param in params.into_iter().rev() {
+            result = Sort::Parameterized(Identifier::Symbol("->".to_string()), vec![param, result]);
+        }
+        result
     }
 
     /// get parameter names
@@ -103,52 +147,81 @@ impl FunctionType {
         &self.param_names
     }
 
-    /// get return type
-    pub fn get_ret(&self) -> &Sort {
-        &self.ret
-    }
-
     /// get function body
     pub fn get_body(&self) -> Option<&LSTerm> {
         self.body.as_ref()
     }
 
+    /// FuncDef = {"(" ~ #LSTkDefineFun="define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
+    /// FuncDefRec = {"(" ~ #LSTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ LSTerm ~ ")" }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        // println!("pair: {:?}", pair.as_rule());
-        let mut inner = pair.clone().into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
-        let mut args = vec![];
-        let mut ret_sort = None;
-
-        // parse sorted variables
-        while let Some(var_pair) = inner.next() {
-            if var_pair.as_rule() == Rule::SortedVar {
-                let sorted_var = sygus_parser::SortedVar::from_str(var_pair.as_str()).unwrap();
-                args.push(sorted_var);
-            } else if var_pair.as_rule() == Rule::Sort {
-                let sort_str = var_pair.as_str().to_string();
-                ret_sort = Some(sygus_parser::Sort::from_str(&sort_str).unwrap());
-                break;
-            } else {
-                eprintln!("Unexpected token: {}", var_pair.as_str());
-                break;
+        debug!("parse {:?}: {}", pair.as_rule(), pair.as_str());
+        let inner = pair.clone();
+        match pair.as_rule() {
+            Rule::MethodDef => {
+                return Self::parse(inner.into_inner().next().unwrap());
+            }
+            Rule::FuncDef => {
+                let func_inner = inner.into_inner();
+                return Self::parse_inner(func_inner);
+            }
+            Rule::FuncDefRec => {
+                let func_inner = inner.into_inner();
+                return Self::parse_inner(func_inner);
+            }
+            _ => {
+                debug!("unexpected rule: {:?}", pair.as_rule());
+                unreachable!();
             }
         }
-        debug!("inner: {:?}", inner.as_str());
-        let body_pair = inner.peek().ok_or_else(|| {
-            LSParseError::InvalidSyntax(format!(
-                "Expected function body, got {} at {}",
-                inner.as_str(),
-                name
-            ))
-        })?;
-        let body = LSTerm::parse(body_pair)?;
+    }
+
+    fn parse_inner(mut func_inner: pest::iterators::Pairs<'_, Rule>) -> Result<Self, LSParseError> {
+        // Get function name (first Symbol)
+        let name = func_inner
+            .next()
+            .ok_or_else(|| LSParseError::InvalidSyntax("Expected function name".to_string()))?
+            .as_str()
+            .to_string();
+        debug!("name: {}", name);
+
+        // Get parameters (SortedVar* inside parentheses)
+        let mut args = vec![];
+        let mut ret_sort = None;
+        let mut body = None;
+
+        while let Some(next) = func_inner.next() {
+            debug!("processing: {:?} - {}", next.as_rule(), next.as_str());
+            match next.as_rule() {
+                Rule::SortedVar => {
+                    let sorted_var = SortedVar::from_str(next.as_str()).unwrap();
+                    debug!("arg: {:?}", &sorted_var);
+                    args.push(sorted_var);
+                }
+                Rule::Sort => {
+                    ret_sort = Some(Sort::from_str(next.as_str()).unwrap());
+                    debug!("ret_sort: {:?}", ret_sort);
+                }
+                _ => {
+                    // This should be the function body
+                    body = Some(LSTerm::parse(next)?);
+                    debug!("body: {}", body.as_ref().unwrap());
+                    break;
+                }
+            }
+        }
+
+        let ret_sort = ret_sort
+            .ok_or_else(|| LSParseError::InvalidSyntax("Expected return sort".to_string()))?;
+
+        let body =
+            body.ok_or_else(|| LSParseError::InvalidSyntax("Expected function body".to_string()))?;
 
         Ok(FunctionType::new_definition(
             name,
             args.iter().map(|sv| sv.name.clone()).collect(),
             args.iter().map(|sv| sv.sort.clone()).collect(),
-            ret_sort.unwrap(),
+            ret_sort,
             body,
         ))
     }
@@ -158,8 +231,7 @@ impl FunctionType {
         Self {
             name: Some(name),
             param_names: vec![],
-            params,
-            ret,
+            sort: FunctionType::build_arrow_type(params, ret),
             body: None,
             is_constructor: false,
         }
@@ -169,8 +241,7 @@ impl FunctionType {
         Self {
             name: Some(name),
             param_names: vec![],
-            params,
-            ret,
+            sort: FunctionType::build_arrow_type(params, ret),
             body: None,
             is_constructor: true,
         }
@@ -187,8 +258,7 @@ impl FunctionType {
         Self {
             name: Some(name),
             param_names,
-            params,
-            ret,
+            sort: FunctionType::build_arrow_type(params, ret),
             body: Some(body),
             is_constructor: false,
         }
@@ -757,12 +827,18 @@ impl TypeInferer {
     }
 
     pub fn enter_scope(&mut self) {
+        debug!("Entering scope, stack size: {}", self.stack.len());
         self.stack.push(TypeEnv::new());
+        debug!("Entered scope, new stack size: {}", self.stack.len());
     }
 
     pub fn exit_scope(&mut self) {
+        debug!("Exiting scope, stack size: {}", self.stack.len());
         if self.stack.len() > 1 {
             self.stack.pop();
+            debug!("Exited scope, new stack size: {}", self.stack.len());
+        } else {
+            debug!("Cannot exit scope, stack size is 1");
         }
     }
 
@@ -778,9 +854,22 @@ impl TypeInferer {
             }
             LSTerm::Identifier(ident) => {
                 let sym = ident.to_string();
+                debug!("Looking up identifier: '{}'", sym);
                 if let Some(sort) = self.find_variable_type(&sym) {
+                    debug!("Found variable '{}' with type {}", sym, sort);
                     Ok(sort.clone())
                 } else {
+                    debug!(
+                        "Variable '{}' not found, checking functions, constructors and enum elements",
+                        sym
+                    );
+
+                    // check if it is a function (including nullary functions/constants)
+                    if let Some(func_type) = self.find_function_type(&sym) {
+                        debug!("Found function: {} with type {}", sym, func_type);
+                        return Ok(func_type.get_ret());
+                    }
+
                     // check if it is a constructor (nullary constructor)
                     for scope in &self.stack {
                         for (_, datatype) in &scope.datatypes {
@@ -859,20 +948,22 @@ impl TypeInferer {
 
         // find function type
         if let Some(func_type) = self.find_function_type(func) {
-            debug!("Found function type: {:?}", func_type);
+            debug!("Found function type: {}", func_type);
+            let params = func_type.get_params();
+            let ret = func_type.get_ret();
+
             // check argument number
-            if func_type.params.len() != arg_types.len() {
+            if params.len() != arg_types.len() {
                 return Err(format!(
                     "Function {} expects {} arguments, but {} were provided",
                     func,
-                    func_type.params.len(),
+                    params.len(),
                     arg_types.len()
                 ));
             }
 
             // check argument types
-            for (i, (expected, actual)) in func_type.params.iter().zip(arg_types.iter()).enumerate()
-            {
+            for (i, (expected, actual)) in params.iter().zip(arg_types.iter()).enumerate() {
                 if !self.checked(expected, actual) {
                     return Err(format!(
                         "Argument {} of function {} has type {}, expected {}",
@@ -884,7 +975,7 @@ impl TypeInferer {
                 }
             }
 
-            Ok(func_type.ret.clone())
+            Ok(ret)
         } else {
             // check if it is a constructor
             for scope in &self.stack {
@@ -1048,6 +1139,8 @@ impl TypeInferer {
         term: &Box<LSTerm>,
         cases: &[MatchCase],
     ) -> Result<Sort, String> {
+        debug!("Inferring match term: {}", term);
+        debug!("Current scope stack size: {}", self.stack.len());
         // infer term type
         let term_type = self.infer(term)?;
         debug!("Match term type: {}", term_type);
@@ -1141,13 +1234,13 @@ impl TypeInferer {
         // exit scope
         self.exit_scope();
 
-        // construct function type
+        // construct function type using proper Parameterized type
         let param_types: Vec<Sort> = args.iter().map(|sv| sv.sort.clone()).collect();
-        let mut func_type = body_type.to_string();
+        let mut result_type = body_type;
         for param_type in param_types.iter().rev() {
-            func_type = format!("(-> {} {})", param_type.to_string(), func_type);
+            result_type = Sort::arrow(param_type.clone(), result_type);
         }
-        Ok(Sort::Simple(Identifier::Symbol(func_type)))
+        Ok(result_type)
     }
 
     fn checked(&self, t1: &Sort, t2: &Sort) -> bool {
@@ -1179,17 +1272,38 @@ impl TypeInferer {
     }
 
     pub fn find_variable_type(&self, name: &str) -> Option<&Sort> {
+        debug!(
+            "Looking up variable type for '{}' in {} scopes",
+            name,
+            self.stack.len()
+        );
         // lookup in scope stack (from top to bottom, i.e. from recent to distant)
-        for scope in self.stack.iter().rev() {
+        for (i, scope) in self.stack.iter().enumerate().rev() {
+            debug!("Checking scope {} for variable '{}'", i, name);
             if let Some(sort) = scope.get_variable_type(name) {
+                debug!(
+                    "Found variable '{}' in scope {} with type {}",
+                    name, i, sort
+                );
                 return Some(sort);
             }
         }
+        debug!("Variable '{}' not found in any scope", name);
         None
     }
 
     fn find_function_type(&self, name: &str) -> Option<&FunctionType> {
-        for scope in &self.stack {
+        debug!(
+            "Searching for function type '{}' in {} scopes",
+            name,
+            self.stack.len()
+        );
+        for (i, scope) in self.stack.iter().enumerate() {
+            debug!(
+                "Checking scope {}: function_types = {:?}",
+                i,
+                scope.function_types.keys().collect::<Vec<_>>()
+            );
             if let Some(func_type) = scope.function_types.get(name) {
                 debug!("Found function type for '{}': {}", name, func_type);
                 return Some(func_type);
@@ -1268,11 +1382,47 @@ impl TypeInferer {
         // infer body type
         let body_type = self.infer(body)?;
 
-        // check return type
-        if body_type != *ret_sort {
+        // For mu expressions, the body should be a function type
+        // and the param should match the function's parameter types
+        debug!("Mu expression body type: {:?}", body_type);
+        if let Sort::Parameterized(identifier, _) = &body_type {
+            debug!(
+                "Mu expression body is Parameterized with identifier: {:?}",
+                identifier
+            );
+            if let Identifier::Symbol(sym) = identifier {
+                debug!("Mu expression body identifier symbol: {}", sym);
+                if sym == "->" {
+                    // Decompose the function type to get parameter types and return type
+                    let (func_params, func_ret) = FunctionType::decompose_arrow_sort(&body_type);
+
+                    // Check that function return type matches declared return type
+                    if func_ret != *ret_sort {
+                        return Err(format!(
+                            "Mu expression function return type {} does not match declared return type {}",
+                            func_ret, ret_sort
+                        ));
+                    }
+
+                    // Check that param type matches function parameter types
+                    let param_type = self.infer(_param)?;
+                    if !func_params.is_empty() && param_type != func_params[0] {
+                        return Err(format!(
+                            "Mu expression param type {} does not match function parameter type {}",
+                            param_type, func_params[0]
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "Mu expression body type {} is not a function type",
+                        body_type
+                    ));
+                }
+            }
+        } else {
             return Err(format!(
-                "Mu expression body type {} does not match declared return type {}",
-                body_type, ret_sort
+                "Mu expression body type {} is not a function type",
+                body_type
             ));
         }
 
@@ -1358,19 +1508,22 @@ impl TypeInferer {
                         arg_types.push(self.infer(arg)?);
                     }
 
+                    let params = method_type.get_params();
+                    let ret = method_type.get_ret();
+
                     // Check argument count and types
-                    if method_type.params.len() != arg_types.len() {
+                    if params.len() != arg_types.len() {
                         return Err(format!(
                             "Method {} expects {} arguments, but {} were provided",
                             method,
-                            method_type.params.len(),
+                            params.len(),
                             arg_types.len()
                         ));
                     }
 
                     // Instantiate type parameters in method signature
                     let instantiated_ret =
-                        self.instantiate_type(&method_type.ret, &class.type_params, &type_args);
+                        self.instantiate_type(&ret, &class.type_params, &type_args);
                     return Ok(instantiated_ret);
                 }
             }
@@ -1413,20 +1566,21 @@ impl TypeInferer {
                     arg_types.push(self.infer(arg)?);
                 }
 
+                let params = method_type.get_params();
+                let ret = method_type.get_ret();
+
                 // Check argument count
-                if method_type.params.len() != arg_types.len() {
+                if params.len() != arg_types.len() {
                     return Err(format!(
                         "Method {} expects {} arguments, but {} were provided",
                         method,
-                        method_type.params.len(),
+                        params.len(),
                         arg_types.len()
                     ));
                 }
 
                 // Check argument types
-                for (i, (expected, actual)) in
-                    method_type.params.iter().zip(arg_types.iter()).enumerate()
-                {
+                for (i, (expected, actual)) in params.iter().zip(arg_types.iter()).enumerate() {
                     if !self.checked(expected, actual) {
                         return Err(format!(
                             "Argument {} of method {} has type {}, expected {}",
@@ -1438,7 +1592,7 @@ impl TypeInferer {
                     }
                 }
 
-                return Ok(method_type.ret.clone());
+                return Ok(ret);
             }
 
             // Check if it's a field accessor
@@ -1460,7 +1614,12 @@ impl TypeInferer {
     }
 
     /// Instantiate type parameters in a sort
-    fn instantiate_type(&self, sort: &Sort, type_params: &[String], type_args: &[String]) -> Sort {
+    pub fn instantiate_type(
+        &self,
+        sort: &Sort,
+        type_params: &[String],
+        type_args: &[String],
+    ) -> Sort {
         match sort {
             Sort::Simple(Identifier::Symbol(name)) => {
                 // Check if it's a type parameter
@@ -1480,22 +1639,6 @@ impl TypeInferer {
             }
             _ => sort.clone(),
         }
-    }
-
-    /// Handle arrow sorts in type checking
-    pub fn parse_arrow_sort(&self, sorts: Vec<Sort>) -> Sort {
-        if sorts.len() < 2 {
-            panic!("Arrow sort must have at least 2 sorts");
-        }
-
-        let mut result = sorts.last().unwrap().clone();
-        for i in (0..sorts.len() - 1).rev() {
-            result = Sort::Parameterized(
-                Identifier::Symbol("->".to_string()),
-                vec![sorts[i].clone(), result],
-            );
-        }
-        result
     }
 
     /// Check if a sort is an arrow type

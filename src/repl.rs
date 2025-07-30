@@ -1,9 +1,121 @@
 use log::error;
 use ls_parser::lang::interpreter::Interpreter;
+use ls_parser::parser::ast::parse;
+use ls_parser::translator::SyGuSTranslator;
 use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 use std::io;
 
+/// REPL command handler
+fn handle_repl_command(cmd: &str, interpreter: &mut Interpreter) -> bool {
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    if parts.is_empty() {
+        return false;
+    }
+
+    match parts[0] {
+        ":help" | ":h" => {
+            println!("Available commands:");
+            println!("  :help, :h           - Show this help");
+            println!("  :quit, :q           - Exit the REPL");
+            println!("  :clear, :c          - Clear the current buffer");
+            println!("  :show, :s           - Show current buffer");
+            println!("  :execute, :e        - Execute current buffer");
+            println!("  :translate, :t      - Translate current buffer to SyGuS");
+            println!("  :synthesize, :syn   - Execute and run synthesis");
+            println!("  :load <file>        - Load and execute a file");
+            println!("  :theory <file>      - Load a theory file");
+            println!("  :env                - Show current environment");
+            println!("  :history            - Show command history");
+            true
+        }
+        ":quit" | ":q" => {
+            println!("Goodbye!");
+            std::process::exit(0);
+        }
+        ":clear" | ":c" => {
+            // This will be handled by the caller
+            true
+        }
+        ":show" | ":s" => {
+            // This will be handled by the caller
+            true
+        }
+        ":execute" | ":e" => {
+            // This will be handled by the caller
+            true
+        }
+        ":translate" | ":t" => {
+            // This will be handled by the caller
+            true
+        }
+        ":synthesize" | ":syn" => {
+            // This will be handled by the caller
+            true
+        }
+        ":load" => {
+            if parts.len() != 2 {
+                println!("Usage: :load <file>");
+                return true;
+            }
+            match std::fs::read_to_string(parts[1]) {
+                Ok(content) => {
+                    println!("Loading file: {}", parts[1]);
+                    match parse(&content) {
+                        Ok(ls_file) => {
+                            for cmd in &ls_file.cmds {
+                                if let Err(e) = interpreter.proc(cmd) {
+                                    println!("Error executing command: {}", e);
+                                }
+                            }
+                            println!("File loaded successfully");
+                        }
+                        Err(e) => {
+                            println!("Parse error: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Error reading file: {}", e);
+                }
+            }
+            true
+        }
+        ":theory" => {
+            if parts.len() != 2 {
+                println!("Usage: :theory <file>");
+                return true;
+            }
+            match interpreter.load_theory_file(parts[1]) {
+                Ok(_) => {
+                    println!("Theory file loaded successfully");
+                }
+                Err(e) => {
+                    println!("Error loading theory file: {}", e);
+                }
+            }
+            true
+        }
+        ":env" => {
+            println!("Current environment:");
+            println!("  Logic: {:?}", interpreter.logic);
+            println!("  Theories loaded: {}", interpreter.theories.len());
+            println!("  Global scope bindings: {}", interpreter.global_scope().bindings.len());
+            println!("  Type environment scopes: {}", interpreter.typing.stack.len());
+            true
+        }
+        ":history" => {
+            println!("Command history not yet implemented");
+            true
+        }
+        _ => {
+            println!("Unknown command: {}. Type :help for available commands.", parts[0]);
+            true
+        }
+    }
+}
+
+/// Check if a string has balanced parentheses
 fn paren_balance(s: &str) -> i32 {
     let mut count = 0;
     for c in s.chars() {
@@ -16,59 +128,152 @@ fn paren_balance(s: &str) -> i32 {
     count
 }
 
-fn handle_repl_command(_cmd: &str, _interpreter: &mut Interpreter) -> bool {
-    unimplemented!()
+/// Execute buffer content
+fn execute_buffer(buffer: &str, interpreter: &mut Interpreter) -> Result<(), String> {
+    if buffer.trim().is_empty() {
+        return Ok(());
+    }
+
+    match parse(buffer) {
+        Ok(ls_file) => {
+            for cmd in &ls_file.cmds {
+                interpreter.proc(cmd)?;
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("Parse error: {}", e)),
+    }
+}
+
+/// Translate buffer content to SyGuS
+fn translate_buffer(buffer: &str, interpreter: &Interpreter) -> Result<(), String> {
+    if buffer.trim().is_empty() {
+        return Ok(());
+    }
+
+    let ls_file = parse(buffer).map_err(|e| e.to_string())?;
+    let mut translator = SyGuSTranslator::new(ls_file, interpreter);
+    
+    match translator.translate() {
+        Ok(translated_commands) => {
+            for cmd in translated_commands {
+                println!("{}", cmd);
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("Translation error: {}", e)),
+    }
 }
 
 pub fn repl() -> io::Result<()> {
     let mut buffer = String::new();
     let mut interpreter = Interpreter::new();
-    let mut rl =
-        Editor::<(), DefaultHistory>::new().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let mut rl = Editor::<(), DefaultHistory>::new()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    println!("LS Parser REPL - Type :help for available commands");
+    println!("Enter LS commands (use Ctrl+C to exit):");
+
     loop {
-        let readline = rl.readline("@wuc9521> ");
+        let prompt = if buffer.is_empty() {
+            "ls> "
+        } else {
+            "  > "
+        };
+
+        let readline = rl.readline(prompt);
         match readline {
             Ok(line) => {
                 let line = line.trim_end();
-                let _ = rl.add_history_entry(line); // handle error
-                buffer.push_str(line);
-                buffer.push('\n');
-                if paren_balance(buffer.as_str()) != 0 {
-                    continue;
-                }
-                if buffer.trim_start().starts_with(':') {
-                    let cmd = buffer.trim();
-                    if handle_repl_command(cmd, &mut interpreter) {
-                        buffer.clear();
-                        continue;
-                    }
-                }
-                let mut has_error = false;
-                match ls_parser::parser::ast::parse(&buffer) {
-                    Ok(ls_file) => {
-                        for cmd in &ls_file.cmds {
-                            let _ = interpreter.proc(cmd).unwrap();
+                let _ = rl.add_history_entry(line);
+
+                // Handle REPL commands
+                if line.starts_with(':') {
+                    if handle_repl_command(line, &mut interpreter) {
+                        match line.split_whitespace().next().unwrap() {
+                            ":clear" | ":c" => {
+                                buffer.clear();
+                                println!("Buffer cleared");
+                            }
+                            ":show" | ":s" => {
+                                if buffer.is_empty() {
+                                    println!("Buffer is empty");
+                                } else {
+                                    println!("Current buffer:");
+                                    println!("{}", buffer);
+                                }
+                            }
+                            ":execute" | ":e" => {
+                                match execute_buffer(&buffer, &mut interpreter) {
+                                    Ok(_) => {
+                                        println!("Buffer executed successfully");
+                                        buffer.clear();
+                                    }
+                                    Err(e) => {
+                                        println!("Execution error: {}", e);
+                                    }
+                                }
+                            }
+                            ":translate" | ":t" => {
+                                match translate_buffer(&buffer, &interpreter) {
+                                    Ok(_) => {
+                                        println!("Translation completed");
+                                        buffer.clear();
+                                    }
+                                    Err(e) => {
+                                        println!("Translation error: {}", e);
+                                    }
+                                }
+                            }
+                            ":synthesize" | ":syn" => {
+                                match execute_buffer(&buffer, &mut interpreter) {
+                                    Ok(_) => {
+                                        println!("Buffer executed, synthesis will be triggered by check-synth commands");
+                                        buffer.clear();
+                                    }
+                                    Err(e) => {
+                                        println!("Execution error: {}", e);
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    Err(e) => {
-                        println!("{}", e);
-                        has_error = true;
-                    }
-                }
-                if has_error {
-                    buffer.clear();
                     continue;
                 }
-                buffer.clear();
+
+                // Add line to buffer
+                buffer.push_str(line);
+                buffer.push('\n');
+
+                // Check if we have a complete expression
+                if paren_balance(&buffer) == 0 && !buffer.trim().is_empty() {
+                    // Try to execute the buffer
+                    match execute_buffer(&buffer, &mut interpreter) {
+                        Ok(_) => {
+                            println!("✓ Executed successfully");
+                            buffer.clear();
+                        }
+                        Err(e) => {
+                            println!("✗ Error: {}", e);
+                            // Don't clear buffer on error, let user fix it
+                        }
+                    }
+                }
             }
             Err(rustyline::error::ReadlineError::Interrupted) => {
-                break;
+                if buffer.is_empty() {
+                    println!("\nUse Ctrl+C again to exit");
+                } else {
+                    println!("\nBuffer cleared (Ctrl+C)");
+                    buffer.clear();
+                }
             }
             Err(rustyline::error::ReadlineError::Eof) => {
                 break;
             }
             Err(e) => {
-                error!("readline error: {}", e);
+                error!("Readline error: {}", e);
                 break;
             }
         }

@@ -40,6 +40,7 @@ LSVarBinding = { "(" ~ Symbol ~ LSTerm ~ ")" }
 LSCmd = {
   SyGuSCmd
 | FuncDecl
+| SynthFunExt
 | ModelDef
 | FuncDef
 | FuncDefRec
@@ -55,12 +56,9 @@ EchoCmd = { "(" ~ #LSTkEcho="echo" ~ LSTerm ~ ")" }
 ThDefCmd = { "(" ~ #LSTkDefTh="define-theory" ~ Symbol ~ "(" ~ LSCmd* ~ ")" ~ ")" }
 FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
 ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
-
+SynthFunExt = { "(" ~ #LSTkSynthFun="synth-fun" ~ Symbol ~ "(" ~ SortedVar+ ~ ")" ~ Sort ~ ")" }
 // Class definition: (define-class (ClassName [TypeParams]) FieldDecl* MethodDef*) 
-ClassDef = { 
-  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~ 
-  "(" ~FieldDecl*  ~ ")" ~ MethodDef* ~ ")" 
-}
+ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ MethodDef* ~ ")" }
 
 // Field declaration: [fieldName Type]
 FieldDecl = {  "[" ~ Symbol ~ Sort ~ "]"  }

@@ -1,11 +1,7 @@
 use clap::Parser;
-use log::{error, warn};
 use ls_parser::lang::interpreter::Interpreter;
-use ls_parser::parser::ast::{parse, LSCmd};
-use ls_parser::theory::fol;
-use ls_parser::theory::pml;
-use ls_parser::theory::re;
-use ls_parser::theory::{Logic, ModelCtx, SygusDesugar};
+use ls_parser::parser::ast::parse;
+use ls_parser::translator::SyGuSTranslator;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -13,113 +9,150 @@ use std::path::PathBuf;
 mod repl;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "LS Parser - Extended SyGuS Language Interpreter", long_about = None)]
 pub struct CLI {
-    /// Path to the input file
-    #[arg(short, long)]
+    /// Input file to process (if not provided, starts interactive mode)
+    #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
+
+    /// Theory file to load before processing main file
+    #[arg(short, long = "theory", value_name = "THEORY_FILE")]
+    theory_file: Option<PathBuf>,
+
+    /// Output mode: what to do with the processed file
+    #[arg(short, long, value_enum, default_value_t = OutputMode::Execute)]
+    output: OutputMode,
 
     /// Enable verbose output
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
-    /// Translate to SyGuS BV and print to stdout
-    #[arg(short, long = "dump-sygus", default_value_t = false)]
-    dump_sygus: bool,
+    /// Solver to use for synthesis (requires CVC5 to be installed)
+    #[arg(short, long, value_enum, default_value_t = Solver::CVC5)]
+    solver: Solver,
 
-    #[arg(long = "dump-ls", default_value_t = false)]
-    dump_ls: bool,
-
-    #[arg(short, long = "as-sygus", default_value_t = false)]
-    as_sygus: bool,
-
-    #[arg(short, long = "theory-file")]
-    theory_file: Option<PathBuf>,
-
-    #[arg(short, long = "guard", default_value_t = false)]
-    guard: bool,
+    /// Output file for translated SyGuS (when using --output save)
+    #[arg(long = "output-file", value_name = "OUTPUT_FILE")]
+    output_file: Option<PathBuf>,
 }
 
-fn extract_logic_sygus(sygus_file: &sygus_parser::SyGuSFile) -> Option<String> {
-    for cmd in &sygus_file.cmds {
-        if let sygus_parser::SyGuSCmd::SetLogic(logic) = cmd {
-            return Some(logic.clone());
-        }
-    }
-    None
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum OutputMode {
+    /// Execute the file normally (default)
+    Execute,
+    /// Print the parsed LS commands
+    Show,
+    /// Translate to standard SyGuS and print
+    Translate,
+    /// Translate to standard SyGuS and save to file
+    Save,
+    /// Run synthesis using the specified solver
+    Synthesize,
 }
 
-/// unified file processing function
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum Solver {
+    /// Use CVC5 solver (default)
+    CVC5,
+    /// Use Z3 solver (if available)
+    Z3,
+    /// Use no solver (just translate)
+    None,
+}
+
+
+/// Process file with the new unified approach
 fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
-    // parse file
+    // Parse file
     let ls_file = parse(input)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Parse error: {}", e)))?;
 
-    // create interpreter and execute commands
+    // Create interpreter
     let mut interpreter = Interpreter::new();
     
-    // if theory file is provided, load it first
+    // Load theory file if provided
     if let Some(ref theory_file) = args.theory_file {
+        println!("Loading theory file: {}", theory_file.display());
         interpreter.load_theory_file(theory_file.to_str().unwrap())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Theory loading error: {}", e)))?;
     }
     
-    // execute commands directly from parsed file
-    for cmd in &ls_file.cmds {
-        interpreter.proc(cmd)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("{}", e)))?;
-    }
-
-    // execute different outputs based on arguments
-    if args.dump_ls {
-        for cmd in &ls_file.cmds {
-            println!("{}", cmd);
+    // Handle different output modes
+    match args.output {
+        OutputMode::Execute => {
+            // Execute commands normally
+            for cmd in &ls_file.cmds {
+                interpreter.proc(cmd)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Execution error: {}", e)))?;
+            }
+            println!("File executed successfully");
         }
-    }
-
-    if args.dump_sygus {
-        let mut ls_file_mut = ls_file;
-
-        // process models based on logic type
-        match interpreter.logic {
-            Some(Logic::FOL) => {
-                process_models_for_logic(&mut ls_file_mut, |model| {
-                    let mut ctx = fol::FOModelCtx::default();
-                    for thcmd in &model.ext_cmds {
-                        fol::handle_model_extcmd(&mut ctx, thcmd);
+        
+        OutputMode::Show => {
+            // Show parsed commands
+            println!("Parsed LS commands:");
+            for (i, cmd) in ls_file.cmds.iter().enumerate() {
+                println!("  {}: {}", i + 1, cmd);
+            }
+        }
+        
+        OutputMode::Translate => {
+            // Translate to standard SyGuS and print
+            let mut translator = SyGuSTranslator::new(ls_file, &interpreter);
+            match translator.translate() {
+                Ok(translated_commands) => {
+                    for cmd in translated_commands {
+                        println!("{}", cmd);
                     }
-                    model.ext_ctx = Some(ModelCtx::FOL(ctx));
-                });
-                for cmd in fol::to_sygus(&ls_file_mut) {
-                    println!("{}", cmd);
+                }
+                Err(e) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, format!("Translation error: {}", e)));
                 }
             }
-            Some(Logic::PML) => {
-                process_models_for_logic(&mut ls_file_mut, |model| {
-                    let mut ctx = pml::KripkeCtx::default();
-                    for thcmd in &model.ext_cmds {
-                        pml::handle_model_extcmd(&mut ctx, thcmd);
-                    }
-                    model.ext_ctx = Some(ModelCtx::PML(ctx));
-                });
-                for cmd in pml::to_sygus(&ls_file_mut) {
-                    println!("{}", cmd);
+        }
+        
+        OutputMode::Save => {
+            // Translate and save to file
+            let mut translator = SyGuSTranslator::new(ls_file, &interpreter);
+            match translator.translate() {
+                Ok(translated_commands) => {
+                    let output_path = args.output_file.as_ref()
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Output file required for save mode"))?;
+                    
+                    let sygus_program = translator.commands_to_string(&translated_commands)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("String conversion error: {}", e)))?;
+                    
+                    fs::write(output_path, sygus_program)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("File write error: {}", e)))?;
+                    
+                    println!("Translated SyGuS saved to: {}", output_path.display());
+                }
+                Err(e) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, format!("Translation error: {}", e)));
                 }
             }
-            Some(Logic::RE) => {
-                process_models_for_logic(&mut ls_file_mut, |model| {
-                    let mut ctx = re::StringCtx::default();
-                    for thcmd in &model.ext_cmds {
-                        re::handle_model_extcmd(&mut ctx, thcmd);
-                    }
-                    model.ext_ctx = Some(ModelCtx::RE(ctx));
-                });
-                for cmd in re::to_sygus(&ls_file_mut) {
-                    println!("{}", cmd);
-                }
+        }
+        
+        OutputMode::Synthesize => {
+            // Execute and run synthesis
+            for cmd in &ls_file.cmds {
+                interpreter.proc(cmd)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Execution error: {}", e)))?;
             }
-            _ => {
-                warn!("Unknown logic type: {}", interpreter.logic.unwrap());
+            
+            match args.solver {
+                Solver::CVC5 => {
+                    println!("Running synthesis with CVC5...");
+                    // The synthesis will be triggered automatically by check-synth commands
+                    // The interpreter's solve_with_bv_solver will handle the translation and solving
+                }
+                Solver::Z3 => {
+                    println!("Z3 solver not yet implemented");
+                    return Err(io::Error::new(io::ErrorKind::Other, "Z3 solver not yet implemented"));
+                }
+                Solver::None => {
+                    println!("Synthesis skipped (no solver specified)");
+                }
             }
         }
     }
@@ -127,21 +160,10 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
     Ok(())
 }
 
-/// generic function to process model definitions
-fn process_models_for_logic<F>(ls_file: &mut ls_parser::parser::ast::LSFile, processor: F)
-where
-    F: Fn(&mut ls_parser::lang::model::Model),
-{
-    for cmd in &mut ls_file.cmds {
-        if let LSCmd::ModelDef(model) = cmd {
-            processor(model);
-        }
-    }
-}
-
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
 
+    // Setup logging
     if args.verbose {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
             .format_timestamp(None)
@@ -150,27 +172,15 @@ fn main() -> Result<(), io::Error> {
             .init();
     }
 
-    let file_path = &args.file;
-
-    if file_path.is_none() {
-        return repl::repl();
+    // Handle different modes
+    if let Some(file_path) = &args.file {
+        // File mode
+        let input = fs::read_to_string(file_path)?;
+        process_file(&input, &args)
+    } else {
+        // Interactive mode
+        println!("LS Parser - Extended SyGuS Language Interpreter");
+        println!("Type :help for available commands");
+        repl::repl()
     }
-
-    let input = fs::read_to_string(file_path.as_ref().unwrap())?;
-
-    if args.as_sygus {
-        let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
-        let logic_str = extract_logic_sygus(&sygus_file).unwrap();
-        let logic = match logic_str.as_str() {
-            "SLIA" => Logic::RE,
-            _ => {
-                error!("Unsupported logic: {}", logic_str);
-                return Err(io::Error::new(io::ErrorKind::Other, "Unsupported logic"));
-            }
-        };
-        println!("{}", logic.desugar(&sygus_file));
-        return Ok(());
-    }
-
-    process_file(&input, &args)
 }
