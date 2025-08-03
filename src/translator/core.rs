@@ -468,6 +468,9 @@ impl SyGuSTranslator {
         let mut class_defs = Vec::new();
         let mut func_defs = Vec::new();
 
+        // Track which enum elements have been processed to avoid duplicates
+        let mut processed_enum_elements = HashSet::new();
+
         for cmd in &self.original_file.cmds {
             match cmd {
                 LSCmd::ObjectDef(object_def) => {
@@ -478,8 +481,19 @@ impl SyGuSTranslator {
                 }
                 LSCmd::DefineEnumSort { name, elems } => {
                     enum_sorts.push((name.clone(), elems.clone()));
+                    // Mark all enum elements as processed
+                    for elem in elems {
+                        processed_enum_elements.insert(elem.clone());
+                    }
                 }
                 LSCmd::As(sygus_cmd) => {
+                    // Skip DefineFun commands that define enum elements
+                    if let sygus_parser::SyGuSCmd::DefineFun(func_name, _, _, _) = sygus_cmd {
+                        if processed_enum_elements.contains(func_name) {
+                            debug!("Skipping enum element definition: {}", func_name);
+                            continue;
+                        }
+                    }
                     sygus_commands.push(sygus_cmd.clone());
                 }
                 LSCmd::ClassDef(class_def) => {
@@ -535,8 +549,7 @@ impl SyGuSTranslator {
                     let translated_cmd = self.translate_sygus_command(&sygus_cmd)?;
                     synthesis_block.push(translated_cmd);
                 }
-                sygus_parser::SyGuSCmd::Constraint(_)
-                | sygus_parser::SyGuSCmd::CheckSynth => {
+                sygus_parser::SyGuSCmd::Constraint(_) | sygus_parser::SyGuSCmd::CheckSynth => {
                     let translated_cmd = self.translate_sygus_command(&sygus_cmd)?;
                     constraints.push(translated_cmd);
                 }
@@ -643,6 +656,27 @@ impl SyGuSTranslator {
                 ))
             }
             sygus_parser::SyGuSTerm::Identifier(ident) => {
+                // Handle enum value references in SyGuS terms (e.g., $0, $1, $a, $b)
+                if let sygus_parser::Identifier::Symbol(sym) = ident {
+                    if sym.starts_with('$') {
+                        // Find the enum sort that contains this element
+                        for cmd in &self.original_file.cmds {
+                            if let LSCmd::DefineEnumSort { name, elems: enum_elems } = cmd {
+                                if enum_elems.contains(sym) {
+                                    // Calculate the bit width and value
+                                    use crate::translator::utils::{calculate_bit_width, bv};
+                                    let width = calculate_bit_width(enum_elems.len());
+                                    let index = enum_elems.iter().position(|e| e == sym).unwrap_or(0);
+                                    let bv_literal = bv(index as u64, width);
+                                    
+                                    return Ok(sygus_parser::SyGuSTerm::Identifier(
+                                        sygus_parser::Identifier::Symbol(bv_literal),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
                 Ok(sygus_parser::SyGuSTerm::Identifier(ident.clone()))
             }
             sygus_parser::SyGuSTerm::Literal(lit) => {
@@ -666,14 +700,12 @@ impl SyGuSTranslator {
             name, elems
         );
 
+        use crate::translator::utils::{bv, calculate_bit_width};
+
         let mut commands = Vec::new();
 
         // 1. Calculate the required bit vector width
-        let width = if elems.is_empty() {
-            1
-        } else {
-            (elems.len() as f64).log2().ceil() as usize
-        };
+        let width = calculate_bit_width(elems.len());
         let bv_sort = sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(format!(
             "(_ BitVec {})",
             width
@@ -689,9 +721,9 @@ impl SyGuSTranslator {
         // 3. Define each enum element as a bit vector constant
         for (i, elem) in elems.iter().enumerate() {
             let elem_name = elem.trim_start_matches('$'); // Remove the $ prefix
-            let bv_value = sygus_parser::SyGuSTerm::Identifier(sygus_parser::Identifier::Symbol(
-                format!("(_ bv{} {})", i, width),
-            ));
+            let bv_literal = bv(i as u64, width);
+            let bv_value =
+                sygus_parser::SyGuSTerm::Identifier(sygus_parser::Identifier::Symbol(bv_literal));
 
             let cmd = sygus_parser::SyGuSCmd::DefineFun(
                 elem_name.to_string(),
@@ -949,7 +981,28 @@ impl SyGuSTranslator {
                     // Handle enum value references (e.g., $a, $b, $0, $1)
                     if sym.starts_with('$') {
                         let enum_value = &sym[1..]; // Remove the '$' prefix
-                                                    // Convert enum value reference to function call
+                        
+                        // Look up the bit vector value for this enum element
+                        if let Some(translated_name) = self.context.symbol_mapping.forward.get(sym) {
+                            // Find the enum sort that contains this element
+                            for cmd in &self.original_file.cmds {
+                                if let LSCmd::DefineEnumSort { name, elems: enum_elems } = cmd {
+                                    if enum_elems.contains(sym) {
+                                        // Calculate the bit width and value
+                                        use crate::translator::utils::{calculate_bit_width, bv};
+                                        let width = calculate_bit_width(enum_elems.len());
+                                        let index = enum_elems.iter().position(|e| e == sym).unwrap_or(0);
+                                        let bv_literal = bv(index as u64, width);
+                                        
+                                        return Ok(sygus_parser::SyGuSTerm::Identifier(
+                                            sygus_parser::Identifier::Symbol(bv_literal),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Fallback: convert enum value reference to function call
                         return Ok(sygus_parser::SyGuSTerm::Application(
                             sygus_parser::Identifier::Symbol(enum_value.to_string()),
                             vec![], // No arguments - this is a constant function
