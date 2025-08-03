@@ -1,3 +1,4 @@
+// objects.rs
 use crate::lang::interpreter::Interpreter;
 use crate::lang::runtime::{Function, Scope, Value};
 use crate::lang::types::FunctionType;
@@ -139,16 +140,8 @@ impl Interpreter {
                 sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(type_param.clone())),
             );
         }
-
-        // Bind "self" to class type in method signatures
-        let class_sort =
-            sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(class_def.name.clone()));
-
-        // First, register all class fields as function types in the class scope
-        // This allows methods to call field accessors during type checking
-        // Fields are accessed directly without self parameter in class context
+        let class_sort = sygus_parser::Sort::from_name(&class_def.name);
         for field in &class_def.fields {
-            // Register field with its original type (no self parameter)
             self.typing.current_scope_mut().register_function_type(
                 field.name.clone(),
                 FunctionType::from_sort(field.name.clone(), &field.sort),

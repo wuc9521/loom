@@ -1,3 +1,5 @@
+; (set-logic ALL)
+
 ; test datatype pattern matching
 (declare-datatype List (
   (nil)

@@ -97,38 +97,52 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
         }
         
         OutputMode::Translate => {
-            // Translate to standard SyGuS and print
-            let mut translator = SyGuSTranslator::new(ls_file, &interpreter);
-            match translator.translate() {
-                Ok(translated_commands) => {
-                    for cmd in translated_commands {
-                        println!("{}", cmd);
+            // Translate to standard SyGuS and print using dynamic translation
+            let mut translator = SyGuSTranslator::new(ls_file, Some(interpreter));
+            match translator.preprocess_with_interpreter() {
+                Ok(_) => {
+                    match translator.translate_dynamically() {
+                        Ok(translated_commands) => {
+                            for cmd in translated_commands {
+                                println!("{}", cmd);
+                            }
+                        }
+                        Err(e) => {
+                            return Err(io::Error::new(io::ErrorKind::Other, format!("Dynamic translation error: {}", e)));
+                        }
                     }
                 }
                 Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, format!("Translation error: {}", e)));
+                    return Err(io::Error::new(io::ErrorKind::Other, format!("Preprocessing error: {}", e)));
                 }
             }
         }
         
         OutputMode::Save => {
-            // Translate and save to file
-            let mut translator = SyGuSTranslator::new(ls_file, &interpreter);
-            match translator.translate() {
-                Ok(translated_commands) => {
-                    let output_path = args.output_file.as_ref()
-                        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Output file required for save mode"))?;
-                    
-                    let sygus_program = translator.commands_to_string(&translated_commands)
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("String conversion error: {}", e)))?;
-                    
-                    fs::write(output_path, sygus_program)
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("File write error: {}", e)))?;
-                    
-                    println!("Translated SyGuS saved to: {}", output_path.display());
+            // Translate and save to file using dynamic translation
+            let mut translator = SyGuSTranslator::new(ls_file, Some(interpreter));
+            match translator.preprocess_with_interpreter() {
+                Ok(_) => {
+                    match translator.translate_dynamically() {
+                        Ok(translated_commands) => {
+                            let output_path = args.output_file.as_ref()
+                                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Output file required for save mode"))?;
+                            
+                            let sygus_program = translator.commands_to_string(&translated_commands)
+                                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("String conversion error: {}", e)))?;
+                            
+                            fs::write(output_path, sygus_program)
+                                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("File write error: {}", e)))?;
+                            
+                            println!("Translated SyGuS saved to: {}", output_path.display());
+                        }
+                        Err(e) => {
+                            return Err(io::Error::new(io::ErrorKind::Other, format!("Dynamic translation error: {}", e)));
+                        }
+                    }
                 }
                 Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, format!("Translation error: {}", e)));
+                    return Err(io::Error::new(io::ErrorKind::Other, format!("Preprocessing error: {}", e)));
                 }
             }
         }

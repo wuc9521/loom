@@ -200,7 +200,7 @@ impl Interpreter {
             if !self.typing.global_scope().has_function(&func_name) {
                 self.typing
                     .global_scope_mut()
-                    .register_function_type(func_name, func_type);
+                    .register_function_type(func_name.to_string(), func_type);
             } else {
                 debug!(
                     "Skipping theory function '{}' as it already exists in global scope",
@@ -218,7 +218,7 @@ impl Interpreter {
             if !self.typing.global_scope().has_variable(&var_name) {
                 self.typing
                     .global_scope_mut()
-                    .bind_variable(var_name, var_type);
+                    .bind_variable(var_name.to_string(), var_type);
             } else {
                 debug!(
                     "Skipping theory variable '{}' as it already exists in global scope",
@@ -233,7 +233,7 @@ impl Interpreter {
             if !self.typing.global_scope().has_datatype(&dt_name) {
                 self.typing
                     .global_scope_mut()
-                    .register_datatype(dt_name, dt_def);
+                    .register_datatype(dt_name.to_string(), dt_def);
             } else {
                 debug!(
                     "Skipping theory datatype '{}' as it already exists in global scope",
@@ -254,82 +254,24 @@ impl Interpreter {
     fn handle_constraint(&mut self, term: &sygus_parser::SyGuSTerm) -> Result<(), String> {
         debug!("handling constraint term: {}", term);
 
-        // recursively evaluate the constraint term
-        self.eval_constraint_term(term)?;
+        // In preprocessing phase, we should not evaluate constraints immediately
+        // because synth-fun results are not available yet.
+        // Instead, we should collect constraints for later evaluation after synthesis.
+        // For now, we'll just store the constraint term for later processing.
+
+        // TODO: Implement constraint collection mechanism
+        // For now, we'll skip constraint evaluation during preprocessing
+        debug!(
+            "Skipping constraint evaluation during preprocessing: {}",
+            term
+        );
 
         Ok(())
     }
 
-    /// evaluate constraint term recursively
-    fn eval_constraint_term(&mut self, term: &sygus_parser::SyGuSTerm) -> Result<Value, String> {
-        match term {
-            sygus_parser::SyGuSTerm::Application(func_name, args) => {
-                debug!(
-                    "evaluating constraint function call: {} with {} args",
-                    func_name,
-                    args.len()
-                );
-
-                // recursively evaluate arguments
-                let mut evaluated_args = Vec::new();
-                for arg in args {
-                    let arg_value = self.eval_constraint_term(arg)?;
-                    evaluated_args.push(arg_value);
-                }
-
-                // find and execute function
-                self.execute_constraint_function(&func_name.to_string(), &evaluated_args)
-            }
-            sygus_parser::SyGuSTerm::Identifier(ident) => {
-                debug!("evaluating constraint identifier: {}", ident);
-                // find the value of the identifier
-                if let Some(value) = self.lookup_symbol_value(&ident.to_string()) {
-                    Ok(value)
-                } else {
-                    // Check if it's a function (including synthesis functions)
-                    let lookup_result = self.lookup_symbol(&ident.to_string());
-                    match lookup_result {
-                        SymbolLookupResult::Variable(value) => Ok(value),
-                        SymbolLookupResult::Constructor(_) => {
-                            // For constructors, return a symbol value
-                            Ok(Value::Symbol(ident.to_string()))
-                        }
-                        SymbolLookupResult::EnumElement { name, enum_type: _ } => {
-                            // For enum elements, return a symbol value
-                            Ok(Value::Symbol(name))
-                        }
-                        SymbolLookupResult::ToBeSynthed { name, return_type } => {
-                            debug!("Encountered synthesis function placeholder: {}", name);
-                            // For synthesis functions, we should not evaluate them during constraint checking
-                            // Instead, we should collect them for later synthesis
-                            // Return a synthesis placeholder value with the actual return type
-                            Ok(Value::SynthesisPlaceholder {
-                                name: name.clone(),
-                                return_type: return_type.clone(),
-                            })
-                        }
-                        SymbolLookupResult::NotFound => {
-                            Err(format!("Undefined identifier in constraint: {}", ident))
-                        }
-                    }
-                }
-            }
-            sygus_parser::SyGuSTerm::Literal(lit) => {
-                debug!("evaluating constraint literal: {}", lit);
-                // convert the literal to Value
-                match lit {
-                    sygus_parser::Literal::Bool(b) => Ok(Value::Bool(*b)),
-                    sygus_parser::Literal::Numeral(n) => Ok(Value::Int(*n as i64)),
-                    sygus_parser::Literal::Decimal(d) => Ok(Value::String(d.to_string())),
-                    _ => Ok(Value::Symbol(lit.to_string())),
-                }
-            }
-            _ => Err(format!("Unsupported constraint term type: {}", term)),
-        }
-    }
-
+    
     /// execute constraint function
-    fn execute_constraint_function(
+    fn _execute_constraint_function(
         &mut self,
         func_name: &str,
         args: &[Value],
@@ -1025,6 +967,7 @@ impl Interpreter {
 
         // Get the return type from the type environment
         let return_type = self.get_function_return_type(&name);
+        debug!("Synthesis function {} return type: {:?}", name, return_type);
 
         // Create synthesis placeholder value instead of using string placeholder
         let placeholder_value = Value::SynthesisPlaceholder {
@@ -1173,7 +1116,7 @@ impl Interpreter {
         let dummy_file = crate::parser::ast::LSFile { cmds: vec![] };
 
         // Create translator instance
-        let mut translator = SyGuSTranslator::new(dummy_file, self);
+        let mut translator = SyGuSTranslator::new(dummy_file, None);
 
         debug!("Created SyGuSTranslator instance");
 
@@ -1198,10 +1141,16 @@ impl Interpreter {
                                 // Decode results
                                 match translator.decode_result(&solver_result) {
                                     Ok(decoded_results) => {
-                                        debug!("Decoded {} synthesis results", decoded_results.len());
+                                        debug!(
+                                            "Decoded {} synthesis results",
+                                            decoded_results.len()
+                                        );
                                         // Update synthesis results in environment
                                         for (func_name, result_term) in decoded_results {
-                                            debug!("Function {} synthesized: {}", func_name, result_term);
+                                            debug!(
+                                                "Function {} synthesized: {}",
+                                                func_name, result_term
+                                            );
                                         }
                                     }
                                     Err(e) => {
@@ -1368,6 +1317,4 @@ impl Interpreter {
         // here we can add theory specific handling logic
         Ok(Value::Symbol("theory_command".to_string()))
     }
-
-
 }

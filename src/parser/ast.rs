@@ -138,14 +138,14 @@ pub enum LSTerm {
         "args.iter().map(|s| format!(\"{}\", s)).collect::<Vec<_>>().join(\" \")",
         ret_sort,
         body,
-        param
+        "params.iter().map(|p| format!(\"{}\", p)).collect::<Vec<_>>().join(\" \")"
     )]
     MuTerm {
         name: String,
         args: Vec<SortedVar>,
         ret_sort: Sort,
         body: Box<LSTerm>,
-        param: Box<LSTerm>,
+        params: Vec<LSTerm>,
     },
 
     #[display(
@@ -154,14 +154,14 @@ pub enum LSTerm {
         "args.iter().map(|s| format!(\"{}\", s)).collect::<Vec<_>>().join(\" \")",
         ret_sort,
         body,
-        param
+        "params.iter().map(|p| format!(\"{}\", p)).collect::<Vec<_>>().join(\" \")"
     )]
     NuTerm {
         name: String,
         args: Vec<SortedVar>,
         ret_sort: Sort,
         body: Box<LSTerm>,
-        param: Box<LSTerm>,
+        params: Vec<LSTerm>,
     },
 
     #[display(
@@ -330,7 +330,10 @@ impl LSTerm {
                 let body = LSTerm::parse(inner.next().unwrap())?;
 
                 // parse parameter
-                let param = LSTerm::parse(inner.next().unwrap())?;
+                let mut params = vec![];
+                while let Some(param) = inner.next() {
+                    params.push(LSTerm::parse(param)?);
+                }
 
                 match pair.as_rule() {
                     Rule::MuTerm => Ok(LSTerm::MuTerm {
@@ -338,14 +341,14 @@ impl LSTerm {
                         args: vars,
                         ret_sort,
                         body: Box::new(body),
-                        param: Box::new(param),
+                        params,
                     }),
                     Rule::NuTerm => Ok(LSTerm::NuTerm {
                         name,
                         args: vars,
                         ret_sort,
                         body: Box::new(body),
-                        param: Box::new(param),
+                        params,
                     }),
                     _ => unreachable!(),
                 }
@@ -524,10 +527,10 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
                 LSParseError::InvalidSyntax(format!("Failed to parse SyGuS command: {}", e))
             })?;
 
-            // validate the constraint format
-            if let SyGuSCmd::Constraint(ref term) = sygus_cmd {
-                validate_constraint(term, cmd_str)?;
-            }
+            // // validate the constraint format
+            // if let SyGuSCmd::Constraint(ref term) = sygus_cmd {
+            //     validate_constraint(term, cmd_str)?;
+            // }
 
             Ok(LSCmd::As(sygus_cmd))
         }
@@ -615,31 +618,31 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
     }
 }
 
-/// validate the constraint format
-fn validate_constraint(term: &sygus_parser::SyGuSTerm, cmd_str: &str) -> Result<(), LSParseError> {
-    use sygus_parser::SyGuSTerm::*;
+// /// validate the constraint format
+// fn validate_constraint(term: &sygus_parser::SyGuSTerm, cmd_str: &str) -> Result<(), LSParseError> {
+//     use sygus_parser::SyGuSTerm::*;
 
-    let supported = match term {
-        Application(sym, args) if sym.to_string() == "models" && args.len() >= 1 => true,
-        Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-            if let Application(models_sym, models_args) = &args[0] {
-                models_sym.to_string() == "models" && models_args.len() >= 1
-            } else {
-                false
-            }
-        }
-        _ => false,
-    };
+//     let supported = match term {
+//         Application(sym, args) if sym.to_string() == "models" && args.len() >= 1 => true,
+//         Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
+//             if let Application(models_sym, models_args) = &args[0] {
+//                 models_sym.to_string() == "models" && models_args.len() >= 1
+//             } else {
+//                 false
+//             }
+//         }
+//         _ => false,
+//     };
 
-    if !supported {
-        return Err(LSParseError::UnsupportedFeature(format!(
-            "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
-            cmd_str
-        )));
-    }
+//     if !supported {
+//         return Err(LSParseError::UnsupportedFeature(format!(
+//             "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
+//             cmd_str
+//         )));
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 impl LSCmd {
     pub fn declare_fun(name: &str, arg_sorts: Vec<Sort>, ret_sort: Sort) -> Self {

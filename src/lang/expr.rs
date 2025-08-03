@@ -109,14 +109,14 @@ impl Interpreter {
                 name,
                 args: _args,
                 body,
-                param: _,
+                params,
                 ret_sort: _,
-            } => self.eval_mu(name, body),
+            } => self.eval_mu(name, body, params),
             LSTerm::NuTerm {
                 name: _name,
                 args: _args,
                 body: _body,
-                param: _,
+                params: _,
                 ret_sort: _,
             } => {
                 // TODO: implement nu expression
@@ -323,9 +323,17 @@ impl Interpreter {
                 "Synthesis placeholder '{}' encountered in pattern matching, returning placeholder",
                 name
             );
-            // For synthesis placeholders, return the placeholder itself
-            // This allows the constraint solver to handle the pattern matching
-            return Ok(value);
+            // For synthesis placeholders, we need to create a new synthesis placeholder
+            // that represents the result of the pattern matching
+            // Since we can't determine the result statically, we'll create a placeholder
+            // with the expected return type of the match expression
+            // For now, let's assume the match expression returns Bool (common case)
+            return Ok(Value::SynthesisPlaceholder {
+                name: format!("match_result_{}", name),
+                return_type: sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(
+                    "Bool".to_string(),
+                )),
+            });
         }
 
         // try each case
@@ -372,7 +380,12 @@ impl Interpreter {
         Err(format!("No pattern matched for value: {}", value))
     }
 
-    pub fn eval_mu(&mut self, binder: &str, _body: &Box<LSTerm>) -> Result<Value, String> {
+    pub fn eval_mu(
+        &mut self,
+        binder: &str,
+        _body: &Box<LSTerm>,
+        _params: &[LSTerm],
+    ) -> Result<Value, String> {
         debug!("Evaluating mu expression with binder: {}", binder);
         // TODO
         Ok(Value::Bool(false))

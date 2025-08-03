@@ -1,4 +1,4 @@
-use crate::parser::ast::{ClassDef, ObjectDef, LSTerm};
+use crate::parser::ast::{ClassDef, LSTerm, ObjectDef};
 use derive_more::Display;
 use std::collections::HashMap;
 use sygus_parser::SortedVar;
@@ -157,7 +157,7 @@ impl Scope {
         for field in &class_def.fields {
             fields.push((field.name.clone(), field.sort.clone()));
         }
-        
+
         let mut methods = HashMap::new();
         for method in &class_def.methods {
             let mut params = Vec::new();
@@ -168,28 +168,31 @@ impl Scope {
                     sort: param.clone(),
                 });
             }
-            methods.insert(method.name.clone().unwrap(), MethodSignature {
-                params,
-                ret_sort: method.get_ret(),
-                body: method.body.clone(),
-                is_recursive: method.is_constructor,
-            });
+            methods.insert(
+                method.name.clone().unwrap(),
+                MethodSignature {
+                    params,
+                    ret_sort: method.get_ret(),
+                    body: method.body.clone(),
+                    is_recursive: method.is_constructor,
+                },
+            );
         }
-        
+
         let class_value = ClassValue {
             name: class_def.name.clone(),
             type_params: class_def.type_params.clone(),
             fields,
             methods,
         };
-        
+
         self.define(class_def.name.clone(), Value::Class(class_value));
     }
-    
+
     /// Define an object instance in the current scope
     pub fn define_object(&mut self, object_def: &ObjectDef, _class: &ClassValue) {
         let mut methods = HashMap::new();
-        
+
         // Convert method implementations to functions
         for method_impl in &object_def.methods {
             if let Some(body) = &method_impl.body {
@@ -202,15 +205,15 @@ impl Scope {
                 methods.insert(method_impl.name.as_ref().unwrap().clone(), function);
             }
         }
-        
+
         let object_value = ObjectValue {
             name: object_def.name.clone(),
             class_name: object_def.class_name.clone(),
-            type_args: object_def.type_args.iter().map(|s| s.to_string()).collect(),    
+            type_args: object_def.type_args.iter().map(|s| s.to_string()).collect(),
             fields: HashMap::new(), // Fields can be initialized later
             methods,
         };
-        
+
         self.define(object_def.name.clone(), Value::Object(object_value));
     }
 }

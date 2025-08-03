@@ -146,13 +146,13 @@ fn execute_buffer(buffer: &str, interpreter: &mut Interpreter) -> Result<(), Str
 }
 
 /// Translate buffer content to SyGuS
-fn translate_buffer(buffer: &str, interpreter: &Interpreter) -> Result<(), String> {
+fn translate_buffer(buffer: &str, _interpreter: &Interpreter) -> Result<(), String> {
     if buffer.trim().is_empty() {
         return Ok(());
     }
 
     let ls_file = parse(buffer).map_err(|e| e.to_string())?;
-    let mut translator = SyGuSTranslator::new(ls_file, interpreter);
+    let mut translator = SyGuSTranslator::new(ls_file, None);
     
     match translator.translate() {
         Ok(translated_commands) => {
