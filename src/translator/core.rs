@@ -355,7 +355,7 @@ impl SyGuSTranslator {
         Ok(())
     }
 
-        /// Collect all symbols and create mappings to avoid conflicts
+    /// Collect all symbols and create mappings to avoid conflicts
     fn collect_symbols_for_mapping(&mut self) -> Result<(), String> {
         debug!("Collecting symbols for mapping...");
 
@@ -363,53 +363,69 @@ impl SyGuSTranslator {
         if let Some(interpreter) = &self.interpreter {
             // Get all symbols from the global scope
             let global_scope = interpreter.global_scope();
-            
+
             for (name, value) in &global_scope.bindings {
                 match value {
                     crate::lang::runtime::Value::Function(_function) => {
                         // This is a function (including object methods)
                         debug!("Found function: {}", name);
-                        self.context.symbol_mapping.forward.insert(name.clone(), name.clone());
+                        self.context
+                            .symbol_mapping
+                            .forward
+                            .insert(name.clone(), name.clone());
                     }
                     crate::lang::runtime::Value::Object(object_value) => {
                         // This is an object - map its methods and fields
-                        debug!("Found object: {} of class {}", object_value.name, object_value.class_name);
-                        
+                        debug!(
+                            "Found object: {} of class {}",
+                            object_value.name, object_value.class_name
+                        );
+
                         // Map object methods
                         for (method_name, _) in &object_value.methods {
                             let flattened_name = format!("{}_{}", object_value.name, method_name);
                             self.context.symbol_mapping.object_methods.insert(
                                 (object_value.name.clone(), method_name.clone()),
-                                flattened_name.clone()
+                                flattened_name.clone(),
                             );
-                            self.context.symbol_mapping.forward.insert(method_name.clone(), flattened_name);
+                            self.context
+                                .symbol_mapping
+                                .forward
+                                .insert(method_name.clone(), flattened_name);
                         }
-                        
+
                         // Map object fields
                         for (field_name, _) in &object_value.fields {
                             let flattened_name = format!("{}@{}", field_name, object_value.name);
                             self.context.object_fields.insert(
                                 (object_value.name.clone(), field_name.clone()),
-                                flattened_name.clone()
+                                flattened_name.clone(),
                             );
                         }
                     }
                     crate::lang::runtime::Value::Class(class_value) => {
                         // This is a class - map its methods as templates
-                        debug!("Found class: {} with {} methods", class_value.name, class_value.methods.len());
-                        
+                        debug!(
+                            "Found class: {} with {} methods",
+                            class_value.name,
+                            class_value.methods.len()
+                        );
+
                         for (method_name, _) in &class_value.methods {
                             let template_name = format!("{}_{}", class_value.name, method_name);
                             self.context.symbol_mapping.class_methods.insert(
                                 (class_value.name.clone(), method_name.clone()),
-                                template_name.clone()
+                                template_name.clone(),
                             );
                         }
                     }
                     _ => {
                         // Other values (constants, etc.)
                         debug!("Found other symbol: {}", name);
-                        self.context.symbol_mapping.forward.insert(name.clone(), name.clone());
+                        self.context
+                            .symbol_mapping
+                            .forward
+                            .insert(name.clone(), name.clone());
                     }
                 }
             }
@@ -440,12 +456,18 @@ impl SyGuSTranslator {
         let mut definitions = Vec::new(); // For declare-sort, declare-datatype, define-fun
         let mut synthesis_block = Vec::new(); // For synth-fun, synth-inv
         let mut constraints = Vec::new(); // For constraint, check-synth
-        
-        // Collect commands by type first to avoid borrow checker issues
+
+        // Add set-logic at the beginning
+        definitions.push(sygus_parser::SyGuSCmd::SetLogic("BV".to_string()));
+
+        // Collect all commands first to avoid borrow checker issues
         let mut object_defs = Vec::new();
         let mut recursive_funcs = Vec::new();
-        let mut other_commands = Vec::new();
-        
+        let mut enum_sorts = Vec::new();
+        let mut sygus_commands = Vec::new();
+        let mut class_defs = Vec::new();
+        let mut func_defs = Vec::new();
+
         for cmd in &self.original_file.cmds {
             match cmd {
                 LSCmd::ObjectDef(object_def) => {
@@ -454,59 +476,17 @@ impl SyGuSTranslator {
                 LSCmd::DefineFuncRec(func_type) => {
                     recursive_funcs.push(func_type.clone());
                 }
-                _ => {
-                    other_commands.push(cmd);
-                }
-            }
-        }
-        
-        // Process other commands first
-        for cmd in other_commands {
-            match cmd {
-                LSCmd::ObjectDef(_) | LSCmd::DefineFuncRec(_) => {
-                    // These are handled separately
-                    unreachable!("ObjectDef and DefineFuncRec should be handled separately");
+                LSCmd::DefineEnumSort { name, elems } => {
+                    enum_sorts.push((name.clone(), elems.clone()));
                 }
                 LSCmd::As(sygus_cmd) => {
-                    // Sort standard SyGuS commands into appropriate vectors
-                    match sygus_cmd {
-                        sygus_parser::SyGuSCmd::DeclareSort(_, _) |
-                        sygus_parser::SyGuSCmd::DeclareDatatype(_, _) |
-                        sygus_parser::SyGuSCmd::DefineFun(_, _, _, _) => {
-                            let translated_cmd = self.translate_sygus_command(sygus_cmd)?;
-                            definitions.push(translated_cmd);
-                        }
-                        sygus_parser::SyGuSCmd::SynthFun(_, _, _, _) => {
-                            let translated_cmd = self.translate_sygus_command(sygus_cmd)?;
-                            synthesis_block.push(translated_cmd);
-                        }
-                        sygus_parser::SyGuSCmd::Constraint(_) |
-                        sygus_parser::SyGuSCmd::CheckSynth => {
-                            let translated_cmd = self.translate_sygus_command(sygus_cmd)?;
-                            constraints.push(translated_cmd);
-                        }
-                        _ => {
-                            // For other commands, keep as-is
-                            definitions.push(sygus_cmd.clone());
-                        }
-                    }
-                }
-                LSCmd::DefineEnumSort { name, elems } => {
-                    // Convert enum sort definition to standard SyGuS
-                    let enum_cmd = self.translate_enum_sort_dynamically(name, elems)?;
-                    definitions.push(enum_cmd);
+                    sygus_commands.push(sygus_cmd.clone());
                 }
                 LSCmd::ClassDef(class_def) => {
-                    // Translate class definitions to standard SyGuS functions
-                    let translated_cmds = self.translate_class_definition_dynamically(class_def)?;
-                    definitions.extend(translated_cmds);
+                    class_defs.push(class_def.clone());
                 }
                 LSCmd::DefineFunc(func_type) => {
-                    // Translate function definitions to standard SyGuS
-                    let translated_cmd =
-                        self.translate_function_definition_dynamically(func_type)?;
-                    info!("Translated function definition: {:?}", translated_cmd);
-                    definitions.push(translated_cmd);
+                    func_defs.push(func_type.clone());
                 }
                 LSCmd::DefineTheory { name, cmds: _ } => {
                     // Skip theory definitions for now
@@ -534,28 +514,76 @@ impl SyGuSTranslator {
                 }
             }
         }
-        
+
+        // Process enum sorts first (they need mutable self)
+        for (name, elems) in enum_sorts {
+            let enum_cmd = self.translate_enum_sort_dynamically(&name, &elems)?;
+            definitions.extend(enum_cmd);
+        }
+
+        // Process SyGuS commands
+        for sygus_cmd in sygus_commands {
+            // Sort standard SyGuS commands into appropriate vectors
+            match sygus_cmd {
+                sygus_parser::SyGuSCmd::DeclareSort(_, _)
+                | sygus_parser::SyGuSCmd::DeclareDatatype(_, _)
+                | sygus_parser::SyGuSCmd::DefineFun(_, _, _, _) => {
+                    let translated_cmd = self.translate_sygus_command(&sygus_cmd)?;
+                    definitions.push(translated_cmd);
+                }
+                sygus_parser::SyGuSCmd::SynthFun(_, _, _, _) => {
+                    let translated_cmd = self.translate_sygus_command(&sygus_cmd)?;
+                    synthesis_block.push(translated_cmd);
+                }
+                sygus_parser::SyGuSCmd::Constraint(_)
+                | sygus_parser::SyGuSCmd::CheckSynth => {
+                    let translated_cmd = self.translate_sygus_command(&sygus_cmd)?;
+                    constraints.push(translated_cmd);
+                }
+                _ => {
+                    // For other commands, keep as-is
+                    definitions.push(sygus_cmd);
+                }
+            }
+        }
+
+        // Process class definitions
+        for class_def in class_defs {
+            let translated_cmds = self.translate_class_definition_dynamically(&class_def)?;
+            definitions.extend(translated_cmds);
+        }
+
+        // Process function definitions
+        for func_type in func_defs {
+            let translated_cmd = self.translate_function_definition_dynamically(&func_type)?;
+            info!("Translated function definition: {:?}", translated_cmd);
+            definitions.push(translated_cmd);
+        }
+
         // Process object definitions
         for object_def in object_defs {
             let translated_cmds = self.translate_object_definition_dynamically(&object_def)?;
             definitions.extend(translated_cmds);
         }
-        
+
         // Process recursive functions
         for func_type in recursive_funcs {
             let translated_cmds = self.translate_recursive_function_dynamically(&func_type)?;
             definitions.extend(translated_cmds);
         }
-        
+
         // Combine vectors in the correct order
         definitions.append(&mut synthesis_block);
         definitions.append(&mut constraints);
-        
+
         Ok(definitions)
     }
 
     /// Translate SyGuS command to handle object method calls in constraints
-    fn translate_sygus_command(&self, sygus_cmd: &sygus_parser::SyGuSCmd) -> Result<sygus_parser::SyGuSCmd, String> {
+    fn translate_sygus_command(
+        &self,
+        sygus_cmd: &sygus_parser::SyGuSCmd,
+    ) -> Result<sygus_parser::SyGuSCmd, String> {
         match sygus_cmd {
             sygus_parser::SyGuSCmd::Constraint(term) => {
                 // Translate constraint terms to handle object method calls
@@ -570,7 +598,10 @@ impl SyGuSTranslator {
     }
 
     /// Translate SyGuS term to handle object method calls
-    fn translate_sygus_term(&self, term: &sygus_parser::SyGuSTerm) -> Result<sygus_parser::SyGuSTerm, String> {
+    fn translate_sygus_term(
+        &self,
+        term: &sygus_parser::SyGuSTerm,
+    ) -> Result<sygus_parser::SyGuSTerm, String> {
         match term {
             sygus_parser::SyGuSTerm::Application(func, args) => {
                 let translated_args: Result<Vec<sygus_parser::SyGuSTerm>, String> = args
@@ -581,17 +612,21 @@ impl SyGuSTranslator {
                 // Check if this is an object method call: (models w1 regex) -> (models@w1 regex)
                 if let sygus_parser::Identifier::Symbol(func_name) = func {
                     if let Some(first_arg) = args.first() {
-                        if let sygus_parser::SyGuSTerm::Identifier(sygus_parser::Identifier::Symbol(obj_name)) = first_arg {
+                        if let sygus_parser::SyGuSTerm::Identifier(
+                            sygus_parser::Identifier::Symbol(obj_name),
+                        ) = first_arg
+                        {
                             // Check if this looks like an object method call
                             if self.is_class_method_call(func_name, obj_name) {
                                 // Get the flattened function name with correct format: w1_models instead of models@w1
                                 let flattened_name = format!("{}_{}", obj_name, func_name);
-                                
+
                                 // Skip the first argument (object) and translate the rest
-                                let remaining_args: Result<Vec<sygus_parser::SyGuSTerm>, String> = args[1..]
-                                    .iter()
-                                    .map(|arg| self.translate_sygus_term(arg))
-                                    .collect();
+                                let remaining_args: Result<Vec<sygus_parser::SyGuSTerm>, String> =
+                                    args[1..]
+                                        .iter()
+                                        .map(|arg| self.translate_sygus_term(arg))
+                                        .collect();
 
                                 return Ok(sygus_parser::SyGuSTerm::Application(
                                     sygus_parser::Identifier::Symbol(flattened_name),
@@ -622,20 +657,58 @@ impl SyGuSTranslator {
 
     /// Translate enum sort definition dynamically
     fn translate_enum_sort_dynamically(
-        &self,
+        &mut self,
         name: &str,
         elems: &[String],
-    ) -> Result<sygus_parser::SyGuSCmd, String> {
+    ) -> Result<Vec<sygus_parser::SyGuSCmd>, String> {
         debug!(
             "Dynamically translating enum sort: {} with elements: {:?}",
             name, elems
         );
 
-        // Create standard SyGuS sort declaration
-        Ok(sygus_parser::SyGuSCmd::DeclareSort(
+        let mut commands = Vec::new();
+
+        // 1. Calculate the required bit vector width
+        let width = if elems.is_empty() {
+            1
+        } else {
+            (elems.len() as f64).log2().ceil() as usize
+        };
+        let bv_sort = sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(format!(
+            "(_ BitVec {})",
+            width
+        )));
+
+        // 2. Declare the sort as a bit vector
+        commands.push(sygus_parser::SyGuSCmd::DefineSort(
             name.to_string(),
-            0, // arity
-        ))
+            vec![],
+            bv_sort.clone(),
+        ));
+
+        // 3. Define each enum element as a bit vector constant
+        for (i, elem) in elems.iter().enumerate() {
+            let elem_name = elem.trim_start_matches('$'); // Remove the $ prefix
+            let bv_value = sygus_parser::SyGuSTerm::Identifier(sygus_parser::Identifier::Symbol(
+                format!("(_ bv{} {})", i, width),
+            ));
+
+            let cmd = sygus_parser::SyGuSCmd::DefineFun(
+                elem_name.to_string(),
+                vec![],
+                bv_sort.clone(),
+                bv_value,
+            );
+            commands.push(cmd);
+
+            // Store the mapping for later use
+            self.context
+                .symbol_mapping
+                .forward
+                .insert(elem.clone(), elem_name.to_string());
+        }
+
+        Ok(commands)
     }
 
     /// Translate class definition dynamically
@@ -667,12 +740,19 @@ impl SyGuSTranslator {
         let class = self.find_class_for_object(object_def)?.clone();
 
         // Find the semantic function definition from the class
-        let semantic_func_def = class.methods.iter()
-            .find(|m| self.is_semantic_function(m, &class).unwrap_or(None).is_some())
+        let semantic_func_def = class
+            .methods
+            .iter()
+            .find(|m| {
+                self.is_semantic_function(m, &class)
+                    .unwrap_or(None)
+                    .is_some()
+            })
             .ok_or("Could not find a semantic function like 'eval' in the class definition")?;
 
         // Translate the semantic function (this will generate the eval and all bv_helpers)
-        let semantic_cmds = self.translate_semantic_function(object_def, semantic_func_def, &class)?;
+        let semantic_cmds =
+            self.translate_semantic_function(object_def, semantic_func_def, &class)?;
         translated_cmds.extend(semantic_cmds);
 
         // Translate ALL OTHER methods (size, toInt, charAt, models, iv-len) as simple methods
@@ -682,7 +762,7 @@ impl SyGuSTranslator {
                 translated_cmds.push(cmd);
             }
         }
-        
+
         Ok(translated_cmds)
     }
 
@@ -836,12 +916,13 @@ impl SyGuSTranslator {
         // Use the interpreter's runtime information to check if this is a class method call
         if let Some(interpreter) = &self.interpreter {
             // Check if the object exists in the global scope
-            if let Some(crate::lang::runtime::Value::Object(_)) = 
-                interpreter.global_scope().lookup(obj_name) {
-                
+            if let Some(crate::lang::runtime::Value::Object(_)) =
+                interpreter.global_scope().lookup(obj_name)
+            {
                 // Check if the function exists in the global scope (as a method)
-                if let Some(crate::lang::runtime::Value::Function(_)) = 
-                    interpreter.global_scope().lookup(func_name) {
+                if let Some(crate::lang::runtime::Value::Function(_)) =
+                    interpreter.global_scope().lookup(func_name)
+                {
                     return true;
                 }
             }
@@ -862,6 +943,16 @@ impl SyGuSTranslator {
                         // For now, we'll use a placeholder that will be resolved during method instantiation
                         return Ok(sygus_parser::SyGuSTerm::Identifier(
                             sygus_parser::Identifier::Symbol("__self_placeholder__".to_string()),
+                        ));
+                    }
+
+                    // Handle enum value references (e.g., $a, $b, $0, $1)
+                    if sym.starts_with('$') {
+                        let enum_value = &sym[1..]; // Remove the '$' prefix
+                                                    // Convert enum value reference to function call
+                        return Ok(sygus_parser::SyGuSTerm::Application(
+                            sygus_parser::Identifier::Symbol(enum_value.to_string()),
+                            vec![], // No arguments - this is a constant function
                         ));
                     }
                 }
@@ -991,7 +1082,8 @@ impl SyGuSTranslator {
                         {
                             if sym == "self" {
                                 // This is a field access: (field self) -> (object_field)
-                                let flattened_field_name = format!("{}@{}", field_name, object_name);
+                                let flattened_field_name =
+                                    format!("{}@{}", field_name, object_name);
                                 return Ok(sygus_parser::SyGuSTerm::Application(
                                     sygus_parser::Identifier::Symbol(flattened_field_name),
                                     vec![],
@@ -1006,8 +1098,9 @@ impl SyGuSTranslator {
                     // Use the interpreter's runtime information to check if this is an object method
                     if let Some(interpreter) = &self.interpreter {
                         // Check if this function exists in the global scope
-                        if let Some(crate::lang::runtime::Value::Function(_)) = 
-                            interpreter.global_scope().lookup(func_name) {
+                        if let Some(crate::lang::runtime::Value::Function(_)) =
+                            interpreter.global_scope().lookup(func_name)
+                        {
                             // This is a function that should be object-specific
                             let object_method_name = format!("{}@{}", func_name, object_name);
                             return Ok(sygus_parser::SyGuSTerm::Application(
@@ -1614,12 +1707,18 @@ impl SyGuSTranslator {
     ) -> Result<Vec<sygus_parser::SyGuSCmd>, String> {
         let unknown_str = "unknown".to_string();
         let func_name = func_def.get_name().unwrap_or(&unknown_str);
-        debug!("Expanding match function: {} with object context: {:?}", func_name, object_context);
+        debug!(
+            "Expanding match function: {} with object context: {:?}",
+            func_name, object_context
+        );
 
         // For now, return a placeholder implementation
         // This will be implemented in the next iteration
-        debug!("Match expansion not yet implemented for function: {}", func_name);
-        
+        debug!(
+            "Match expansion not yet implemented for function: {}",
+            func_name
+        );
+
         // Return the original function as a simple DefineFun for now
         if let Some(body) = func_def.get_body() {
             let param_names = func_def.get_param_names();
@@ -1657,5 +1756,4 @@ impl SyGuSTranslator {
             Err(format!("Function {} has no body", func_name))
         }
     }
-
 }
