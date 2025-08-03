@@ -213,10 +213,11 @@ pub mod adapter {
                     sort: field_decl.sort.clone(),
                 });
             }
-            constructors.push(super::super::basic::Constructor {
-                name: constructor_decl.name.clone(),
+            constructors.push(super::super::basic::Constructor::new(
+                constructor_decl.name.clone(),
+                name.to_string(),
                 fields,
-            });
+            ));
         }
         super::super::basic::DataType {
             name: name.to_string(),

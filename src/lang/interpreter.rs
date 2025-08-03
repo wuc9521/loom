@@ -1,5 +1,5 @@
 use crate::lang::runtime::{Function, Scope, Value};
-use crate::lang::types::{ConstructorInfo, FunctionType, TypeInferer};
+use crate::lang::types::{Constructor, FunctionType, TypeInferer};
 use crate::parser::ast::{parse, LSCmd, LSTerm};
 use crate::theory::{Logic, ModelCtx};
 use log::debug;
@@ -8,7 +8,7 @@ use sygus_parser::{Sort, SyGuSCmd};
 #[derive(Debug, Clone)]
 pub enum SymbolLookupResult {
     Variable(Value),
-    Constructor(ConstructorInfo),
+    Constructor(Constructor),
     EnumElement {
         name: String,
         enum_type: String,
@@ -886,14 +886,14 @@ impl Interpreter {
     /// evaluate a constructor call.
     pub fn eval_constructor_call(
         &mut self,
-        info: &ConstructorInfo,
+        info: &Constructor,
         args: &[LSTerm],
     ) -> Result<Value, String> {
-        if args.len() != info.field_types.len() {
+        if args.len() != info.field_types().len() {
             return Err(format!(
                 "Constructor {} expects {} arguments, got {}",
                 info.name,
-                info.field_types.len(),
+                info.field_types().len(),
                 args.len()
             ));
         }

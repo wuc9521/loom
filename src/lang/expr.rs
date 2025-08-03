@@ -38,19 +38,19 @@ impl Interpreter {
                         }
                     }
                     SymbolLookupResult::Constructor(info) => {
-                        if info.field_types.is_empty() {
+                        if info.field_types().is_empty() {
                             // nullary constructor, create data value
                             Ok(Value::DataValue {
-                                constructor: info.name,
-                                datatype: info.datatype,
+                                constructor: info.name.clone(),
+                                datatype: info.datatype.clone(),
                                 fields: vec![],
                             })
                         } else {
                             // constructor with arguments, return constructor value
                             Ok(Value::Constructor {
-                                name: info.name,
-                                datatype: info.datatype,
-                                arity: info.field_types.len(),
+                                name: info.name.clone(),
+                                datatype: info.datatype.clone(),
+                                arity: info.field_types().len(),
                             })
                         }
                     }

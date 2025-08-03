@@ -1,7 +1,7 @@
 use crate::parser::ast::{ClassDef, LSTerm, ObjectDef};
+use crate::lang::types::FunctionType;
 use derive_more::Display;
 use std::collections::HashMap;
-use sygus_parser::SortedVar;
 
 #[derive(Debug, Default, Clone)]
 pub struct ModelSymbolTable {
@@ -33,14 +33,7 @@ impl ModelSymbolTable {
     }
 }
 
-/// Method signature for class methods
-#[derive(Debug, Clone)]
-pub struct MethodSignature {
-    pub params: Vec<sygus_parser::SortedVar>,
-    pub ret_sort: sygus_parser::Sort,
-    pub body: Option<LSTerm>,
-    pub is_recursive: bool,
-}
+// Remove MethodSignature - use FunctionType instead
 
 /// Class definition value
 #[derive(Debug, Clone, Display)]
@@ -49,7 +42,7 @@ pub struct ClassValue {
     pub name: String,
     pub type_params: Vec<String>,
     pub fields: Vec<(String, sygus_parser::Sort)>,
-    pub methods: HashMap<String, MethodSignature>,
+    pub methods: HashMap<String, FunctionType>,
 }
 
 /// Object instance value
@@ -160,22 +153,9 @@ impl Scope {
 
         let mut methods = HashMap::new();
         for method in &class_def.methods {
-            let mut params = Vec::new();
-            let method_params = method.get_params();
-            for (i, param) in method_params.iter().enumerate() {
-                params.push(SortedVar {
-                    name: method.param_names[i].clone(),
-                    sort: param.clone(),
-                });
-            }
             methods.insert(
                 method.name.clone().unwrap(),
-                MethodSignature {
-                    params,
-                    ret_sort: method.get_ret(),
-                    body: method.body.clone(),
-                    is_recursive: method.is_constructor,
-                },
+                method.clone(),
             );
         }
 

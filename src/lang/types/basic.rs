@@ -15,11 +15,24 @@ pub struct Field {
     pub sort: Sort,
 }
 
-/// datatype constructor
+/// Unified constructor structure
 #[derive(Debug, Clone)]
 pub struct Constructor {
     pub name: String,
-    pub fields: Vec<Field>, // list of fields
+    pub datatype: String,
+    pub fields: Vec<Field>,
+}
+
+impl Constructor {
+    /// Get field types as a vector of Sort
+    pub fn field_types(&self) -> Vec<Sort> {
+        self.fields.iter().map(|f| f.sort.clone()).collect()
+    }
+    
+    /// Create a new constructor
+    pub fn new(name: String, datatype: String, fields: Vec<Field>) -> Self {
+        Self { name, datatype, fields }
+    }
 }
 
 /// datatype definition
@@ -36,18 +49,11 @@ pub struct EnumType {
     pub elements: Vec<String>,
 }
 
-/// Class type definition
+/// Class type definition (for type checking phase)
 #[derive(Debug, Clone)]
 pub struct ClassType {
     pub name: String,
     pub type_params: Vec<String>,
     pub fields: Vec<(String, Sort)>,
     pub methods: HashMap<String, super::FunctionType>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ConstructorInfo {
-    pub name: String,
-    pub datatype: String,
-    pub field_types: Vec<Sort>,
 } 

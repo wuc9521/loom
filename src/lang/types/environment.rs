@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use sygus_parser::{Identifier, Sort};
 
-use super::basic::{ConstructorInfo, DataType, EnumType, ClassType, Finiteness};
+use super::basic::{Constructor, DataType, EnumType, ClassType, Finiteness};
 use super::function::FunctionType;
 
 /// type environment
@@ -11,7 +11,7 @@ pub struct TypeEnv {
     pub enums: HashMap<String, EnumType>,
     pub variables: HashMap<String, Sort>,
     pub function_types: HashMap<String, FunctionType>,
-    pub constructors: HashMap<String, ConstructorInfo>,
+    pub constructors: HashMap<String, Constructor>,
     pub classes: HashMap<String, ClassType>,
     pub objects: HashMap<String, (String, Vec<String>)>, // object name -> (class name, type args)
 }
@@ -84,13 +84,10 @@ impl TypeEnv {
 
         // register constructor info
         for constructor in &data_type.constructors {
-            let constructor_info = ConstructorInfo {
-                name: constructor.name.clone(),
-                datatype: name.clone(),
-                field_types: constructor.fields.iter().map(|f| f.sort.clone()).collect(),
-            };
+            let mut constructor_with_datatype = constructor.clone();
+            constructor_with_datatype.datatype = name.clone();
             self.constructors
-                .insert(constructor.name.clone(), constructor_info);
+                .insert(constructor.name.clone(), constructor_with_datatype);
 
             // register constructor type information, but mark as constructor
             let param_sorts: Vec<Sort> =
@@ -115,7 +112,7 @@ impl TypeEnv {
     }
 
     /// get constructor info
-    pub fn get_constructor(&self, name: &str) -> Option<&ConstructorInfo> {
+    pub fn get_constructor(&self, name: &str) -> Option<&Constructor> {
         self.constructors.get(name)
     }
 
