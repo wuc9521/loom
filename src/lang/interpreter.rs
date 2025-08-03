@@ -515,7 +515,7 @@ impl Interpreter {
                 debug!("handling theory-specific command: {}", th_cmd.name);
                 let _ = self.handle_thspec_cmd(th_cmd);
             }
-            LSCmd::DefineEnumSort { name, elems } => {
+            LSCmd::DefineSortEnum { name, elems } => {
                 debug!(
                     "defining enum sort: {} with elements: {}",
                     name,

@@ -448,7 +448,7 @@ pub enum LSCmd {
         "name",
         "elems.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"
     )]
-    DefineEnumSort { name: String, elems: Vec<String> },
+    DefineSortEnum { name: String, elems: Vec<String> },
 
     #[display(
         fmt = "(define-theory {} ({}))",
@@ -601,7 +601,7 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
             let elements = inner_pairs
                 .map(|p| p.as_str().to_string())
                 .collect::<Vec<_>>();
-            Ok(LSCmd::DefineEnumSort {
+            Ok(LSCmd::DefineSortEnum {
                 name,
                 elems: elements,
             })
