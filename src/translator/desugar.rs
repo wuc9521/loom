@@ -289,6 +289,54 @@ impl Desugarer {
 
     fn desugar_cmd_rec(&mut self, cmd: &LSCmd) -> Result<Vec<SyGuSCmd>, String> {
         match cmd {
+            // Step 1: Filter out declare-sort commands (templates)
+            LSCmd::As(SyGuSCmd::DeclareSort(_, _)) => {
+                // This is a template - do not add to output
+                debug!("Filtering out declare-sort template: {:?}", cmd);
+                Ok(vec![])
+            }
+
+            // Step 1: Filter out declare-datatypes that depend on uninterpreted sorts (templates)
+            LSCmd::As(SyGuSCmd::DeclareDatatypes(sort_decls, dt_decls)) => {
+                let mut commands = Vec::new();
+
+                for (i, dt_decl) in dt_decls.iter().enumerate() {
+                    let sort_decl = &sort_decls[i];
+                    let name = &sort_decl.symbol;
+
+                    // Check if this datatype depends on uninterpreted sorts
+                    let mut has_dependencies = false;
+                    for constructor in dt_decl {
+                        for field in &constructor.args {
+                            if let Sort::Simple(ident) = &field.sort {
+                                let sort_name = ident.get_name();
+                                if self.context.is_uninterpreted_sort(sort_name) {
+                                    has_dependencies = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if has_dependencies {
+                            break;
+                        }
+                    }
+
+                    if has_dependencies {
+                        // This is a template - do not add to output
+                        debug!("Filtering out declare-datatype template: {}", name);
+                    } else {
+                        // This is a concrete datatype - add to output
+                        let concrete_sort_decl = vec![sort_decl.clone()];
+                        let concrete_dt_decl = vec![dt_decl.clone()];
+                        commands.push(SyGuSCmd::DeclareDatatypes(
+                            concrete_sort_decl,
+                            concrete_dt_decl,
+                        ));
+                    }
+                }
+
+                Ok(commands)
+            }
             LSCmd::DefineSortEnum { name, elems } => {
                 let mut commands = Vec::new();
                 let bit_width = log2_ceil(elems.len());
@@ -339,29 +387,45 @@ impl Desugarer {
                 // Create an isolated context for this object
                 let mut object_context = self.context.clone();
 
-                // Determine the concrete type for the generic parameter
-                if !object_def.class_name.is_empty() {
-                    // For now, assume the first type parameter is the concrete type
-                    // This would need to be enhanced to properly parse class instantiation
-                    let type_arg = "Posw1"; // Placeholder - should be derived from object definition
+                // Step 2: Extract concrete type from object definition
+                let concrete_type = self.extract_concrete_type_from_object(object_def)?;
+
+                if let Some(concrete_type_name) = concrete_type {
                     debug!(
-                        "Object {} instantiates generic T with {}",
-                        object_def.name, type_arg
+                        "Object {} instantiates generic type with {}",
+                        object_def.name, concrete_type_name
                     );
 
-                    // Instantiate any dependent datatype templates
+                    // Step 2: Map generic type placeholder to concrete type in object context
+                    if let Some(mapped_sort) = self.context.sort_map.get(&concrete_type_name) {
+                        object_context
+                            .sort_map
+                            .insert("Pos".to_string(), mapped_sort.clone());
+                        debug!(
+                            "Mapped generic Pos to {} for object {}",
+                            concrete_type_name, object_def.name
+                        );
+                    }
+
+                    // Step 2: Instantiate any dependent datatype templates
                     let instantiated_datatypes = self.instantiate_datatype_templates(
                         &object_def.name,
-                        type_arg,
+                        &concrete_type_name,
                         &mut object_context,
                     )?;
+
+                    debug!(
+                        "Instantiated {} datatype templates for object {}",
+                        instantiated_datatypes.len(),
+                        object_def.name
+                    );
                     commands.extend(instantiated_datatypes);
                 }
 
                 // Generate object methods with the isolated context
                 for method in &object_def.methods {
                     if let Some(_) = method.get_name() {
-                        let flattened_func = self.create_flattened_method_function_with_context(
+                        let flattened_func = self.create_flattened_method_function(
                             object_def,
                             method,
                             &mut object_context,
@@ -656,7 +720,7 @@ impl Desugarer {
     }
 
     /// Create a flattened method function with self eliminated and specific context
-    fn create_flattened_method_function_with_context(
+    fn create_flattened_method_function(
         &mut self,
         object_def: &crate::parser::ast::ObjectDef,
         method: &crate::lang::types::FunctionType,
@@ -694,11 +758,8 @@ impl Desugarer {
 
         // Create function body with self references replaced
         if let Some(body) = method.get_body() {
-            let body_term = self.eliminate_self_references_with_context(
-                body,
-                &object_def.name,
-                object_context,
-            )?;
+            let body_term =
+                self.eliminate_self_references(body, &object_def.name, object_context)?;
 
             // Desugar the function definition completely with object context
             let desugared_func =
@@ -711,26 +772,17 @@ impl Desugarer {
     }
 
     /// Eliminate self references and desugar terms with specific context
-    fn eliminate_self_references_with_context(
+    fn eliminate_self_references(
         &mut self,
         term: &LSTerm,
         object_name: &str,
         object_context: &DesugarContext,
     ) -> Result<SyGuSTerm, String> {
-        self.desugar_term_with_context(term, object_name, object_context)
-    }
-
-    /// Eliminate self references and desugar terms (legacy method for compatibility)
-    fn eliminate_self_references(
-        &mut self,
-        term: &LSTerm,
-        object_name: &str,
-    ) -> Result<SyGuSTerm, String> {
-        self.desugar_term(term, object_name)
+        self.desugar_term(term, object_name, object_context)
     }
 
     /// Desugar a term with context-aware transformations
-    fn desugar_term_with_context(
+    fn desugar_term(
         &mut self,
         term: &LSTerm,
         object_name: &str,
@@ -759,10 +811,7 @@ impl Desugarer {
                     if let Some(_value) = runtime_ctx.get(name) {
                         // If the value is an enum value, convert it to function call
                         if let Some(enum_func) = context.enum_val_map.get(&format!("${}", name)) {
-                            return Ok(SyGuSTerm::Application(
-                                Identifier::Symbol(enum_func.clone()),
-                                vec![],
-                            ));
+                            return Ok(Term::var(enum_func));
                         }
                     }
                 }
@@ -774,7 +823,7 @@ impl Desugarer {
                 // Recursively process arguments with context
                 let processed_args: Result<Vec<SyGuSTerm>, String> = args
                     .iter()
-                    .map(|arg| self.desugar_term_with_context(arg, object_name, context))
+                    .map(|arg| self.desugar_term(arg, object_name, context))
                     .collect();
 
                 Ok(SyGuSTerm::Application(func.clone(), processed_args?))
@@ -784,7 +833,7 @@ impl Desugarer {
                 cases,
             } => {
                 // Desugar match expression into nested ite expressions with context
-                self.desugar_match_expression_with_context(scrutinee, cases, object_name, context)
+                self.desugar_match_expr(scrutinee, cases, object_name, context)
             }
             LSTerm::Literal(literal) => {
                 // Convert literal to SyGuSTerm
@@ -792,58 +841,6 @@ impl Desugarer {
             }
             _ => {
                 // For other terms, convert to SyGuSTerm (simplified)
-                Ok(SyGuSTerm::Identifier(Identifier::Symbol(
-                    "placeholder".to_string(),
-                )))
-            }
-        }
-    }
-
-    /// Desugar a term, handling match expressions and enum values (legacy method)
-    fn desugar_term(&mut self, term: &LSTerm, object_name: &str) -> Result<SyGuSTerm, String> {
-        match term {
-            LSTerm::Identifier(identifier) => {
-                // Check if this is a self reference
-                if identifier.get_name() == "self" {
-                    // Replace self with object name
-                    Ok(SyGuSTerm::Identifier(Identifier::Symbol(
-                        object_name.to_string(),
-                    )))
-                } else {
-                    // Check if this is an enum value that needs to be replaced
-                    let name = identifier.get_name();
-                    if let Some(new_function) = self.context.enum_val_map.get(name) {
-                        // Replace enum value with function call
-                        Ok(Term::var(new_function.as_str()))
-                    } else {
-                        // Keep other identifiers as-is
-                        Ok(SyGuSTerm::Identifier(identifier.clone()))
-                    }
-                }
-            }
-            LSTerm::AppTerm(func, args) => {
-                // Recursively process arguments
-                let processed_args: Result<Vec<SyGuSTerm>, String> = args
-                    .iter()
-                    .map(|arg| self.desugar_term(arg, object_name))
-                    .collect();
-
-                Ok(SyGuSTerm::Application(func.clone(), processed_args?))
-            }
-            LSTerm::MatchTerm {
-                term: scrutinee,
-                cases,
-            } => {
-                // Desugar match expression into nested ite expressions
-                self.desugar_match_expression(scrutinee, cases, object_name)
-            }
-            LSTerm::Literal(literal) => {
-                // Convert literal to SyGuSTerm
-                Ok(SyGuSTerm::Literal(literal.clone()))
-            }
-            _ => {
-                // For other terms, convert to SyGuSTerm (simplified)
-                // This is a placeholder - in a full implementation, you'd handle all term types
                 Ok(SyGuSTerm::Identifier(Identifier::Symbol(
                     "placeholder".to_string(),
                 )))
@@ -852,7 +849,7 @@ impl Desugarer {
     }
 
     /// Desugar match expression into nested ite expressions with context
-    fn desugar_match_expression_with_context(
+    fn desugar_match_expr(
         &mut self,
         scrutinee: &LSTerm,
         cases: &[crate::lang::model::MatchCase],
@@ -864,46 +861,14 @@ impl Desugarer {
         }
 
         // Desugar the scrutinee with context
-        let scrutinee_term = self.desugar_term_with_context(scrutinee, object_name, context)?;
+        let scrutinee_term = self.desugar_term(scrutinee, object_name, context)?;
 
         // Build nested ite expressions
         let mut result =
-            self.desugar_match_case_with_context(&cases[0], &scrutinee_term, object_name, context)?;
+            self.desugar_match_case(&cases[0], &scrutinee_term, object_name, context)?;
 
         for case in &cases[1..] {
-            let case_term =
-                self.desugar_match_case_with_context(case, &scrutinee_term, object_name, context)?;
-
-            // Create ite expression: (ite condition then_branch else_branch)
-            result = Term::ite(
-                self.create_equality_test(&scrutinee_term, &case.pattern)?,
-                case_term,
-                result,
-            );
-        }
-
-        Ok(result)
-    }
-
-    /// Desugar match expression into nested ite expressions (legacy method)
-    fn desugar_match_expression(
-        &mut self,
-        scrutinee: &LSTerm,
-        cases: &[crate::lang::model::MatchCase],
-        object_name: &str,
-    ) -> Result<SyGuSTerm, String> {
-        if cases.is_empty() {
-            return Err("Match expression has no cases".to_string());
-        }
-
-        // Desugar the scrutinee
-        let scrutinee_term = self.desugar_term(scrutinee, object_name)?;
-
-        // Build nested ite expressions
-        let mut result = self.desugar_match_case(&cases[0], &scrutinee_term, object_name)?;
-
-        for case in &cases[1..] {
-            let case_term = self.desugar_match_case(case, &scrutinee_term, object_name)?;
+            let case_term = self.desugar_match_case(case, &scrutinee_term, object_name, context)?;
 
             // Create ite expression: (ite condition then_branch else_branch)
             result = Term::ite(
@@ -917,7 +882,7 @@ impl Desugarer {
     }
 
     /// Desugar a single match case with context
-    fn desugar_match_case_with_context(
+    fn desugar_match_case(
         &mut self,
         case: &crate::lang::model::MatchCase,
         _: &SyGuSTerm,
@@ -925,18 +890,7 @@ impl Desugarer {
         context: &DesugarContext,
     ) -> Result<SyGuSTerm, String> {
         // Desugar the case value with context
-        self.desugar_term_with_context(&case.value, object_name, context)
-    }
-
-    /// Desugar a single match case (legacy method)
-    fn desugar_match_case(
-        &mut self,
-        case: &crate::lang::model::MatchCase,
-        _: &SyGuSTerm,
-        object_name: &str,
-    ) -> Result<SyGuSTerm, String> {
-        // Desugar the case value
-        self.desugar_term(&case.value, object_name)
+        self.desugar_term(&case.value, object_name, context)
     }
 
     /// Desugar a function definition completely
@@ -1017,6 +971,32 @@ impl Desugarer {
             }
             _ => Ok(term.clone()),
         }
+    }
+
+    /// Extract concrete type from object definition
+    /// For objects like "w1: Model<Posw1>", extract "Posw1" from type_args
+    fn extract_concrete_type_from_object(
+        &self,
+        object_def: &crate::parser::ast::ObjectDef,
+    ) -> Result<Option<String>, String> {
+        // Look at the type_args field to find the concrete type
+        if !object_def.type_args.is_empty() {
+            // Get the first type argument as the concrete type
+            if let Sort::Simple(ident) = &object_def.type_args[0] {
+                let concrete_type = ident.get_name().to_string();
+                debug!(
+                    "Extracted concrete type {} from object {} type args",
+                    concrete_type, object_def.name
+                );
+                return Ok(Some(concrete_type));
+            }
+        }
+
+        debug!(
+            "Could not extract concrete type from object {} (no type args or complex type)",
+            object_def.name
+        );
+        Ok(None)
     }
 
     /// Create equality test for match pattern

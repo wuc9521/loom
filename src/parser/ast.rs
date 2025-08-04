@@ -741,25 +741,23 @@ impl ObjectDef {
             .as_str()
             .to_string();
         debug!("name: {:?}", name);
-        // Parse class instantiation: (ClassName TypeArg1 TypeArg2 ...)
-        let class_inner = inner.next().ok_or_else(|| {
-            LSParseError::InvalidSyntax("Expected class instantiation".to_string())
-        })?;
-        let class_name = class_inner.as_str().to_string();
+        // Parse class instantiation: next should be class name, followed by type args
+        let class_name = inner.next()
+            .ok_or_else(|| LSParseError::InvalidSyntax("Expected class name".to_string()))?
+            .as_str()
+            .to_string();
+            
         let mut type_args = Vec::new();
         while let Some(sort_pair) = inner.peek() {
             if sort_pair.as_rule() == Rule::Sort {
                 let sort = Sort::from_str(sort_pair.as_str()).unwrap();
-                type_args.push(sort);
                 debug!(
-                    "type_args: [{}]",
-                    type_args
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    "Parsed type_arg: {} for class {}",
+                    sort.to_string(),
+                    class_name
                 );
-                inner.next();
+                type_args.push(sort);
+                inner.next(); // consume the sort
             } else {
                 break;
             }
