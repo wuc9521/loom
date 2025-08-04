@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use derive_more::Display;
 use sygus_parser::{Identifier, Sort};
 
 use super::basic::{Constructor, DataType, EnumType, ClassType, Finiteness};
 use super::function::FunctionType;
 
 /// type environment
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
+#[display(fmt = "{}", "datatypes.iter().map(|(k, v)| format!(\"{} -> {}\", k, v)).collect::<Vec<String>>().join(\", \")")]
 pub struct TypeEnv {
     pub datatypes: HashMap<String, DataType>,
     pub enums: HashMap<String, EnumType>,

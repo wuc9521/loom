@@ -1,6 +1,7 @@
 use crate::lang::interpreter::Interpreter;
-use crate::parser::ast::{LSCmd, LSFile, LSTerm};
+use crate::parser::ast::{LSFile, LSTerm};
 use crate::translator::desugar::Desugarer;
+use crate::translator::semantic::SemanticAnalyzer;
 use log::{debug, info};
 use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
@@ -107,27 +108,31 @@ impl CVC5Solver {
     }
 
     pub fn solve(&self, sygus_program: &str) -> Result<SolverResult, String> {
-        debug!("Calling CVC5 solver...");
-        let mut cmd = Command::new(&self.executable_path);
-        cmd.arg("--lang=sygus2");
+        info!("Starting CVC5 solver...");
+
+        let mut command = Command::new(&self.executable_path);
+        command.arg("--lang=sygus2");
+
         if let Some(timeout) = self.timeout {
-            cmd.arg(format!("--tlimit={}", timeout.as_millis()));
+            command.arg(format!("--tlimit={}", timeout.as_millis()));
         }
-        cmd.stdin(Stdio::piped())
+
+        command
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = cmd
+
+        let mut child = command
             .spawn()
-            .map_err(|e| format!("Failed to spawn CVC5: {}", e))?;
-        // Write the SyGuS program to stdin
-        if let Some(stdin) = child.stdin.as_mut() {
+            .map_err(|e| format!("Failed to start CVC5: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
             stdin
                 .write_all(sygus_program.as_bytes())
                 .map_err(|e| format!("Failed to write to CVC5 stdin: {}", e))?;
         }
 
-        // Wait for completion
         let output = child
             .wait_with_output()
             .map_err(|e| format!("Failed to get CVC5 output: {}", e))?;
@@ -135,68 +140,61 @@ impl CVC5Solver {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
+        info!("CVC5 solver completed");
         debug!("CVC5 stdout: {}", stdout);
         debug!("CVC5 stderr: {}", stderr);
 
-        // Parse the result
         self.decode_output(&stdout, &stderr)
     }
 
     fn decode_output(&self, stdout: &str, stderr: &str) -> Result<SolverResult, String> {
-        let mut synthesis_results = HashMap::new();
-        let mut status = SolverStatus::Unknown;
-        let mut error_message = None;
+        let mut result = SolverResult {
+            status: SolverStatus::Unknown,
+            synthesis_results: HashMap::new(),
+            error_message: None,
+        };
 
-        // Check for error in stderr
+        // Check for error messages
         if !stderr.is_empty() && !stderr.contains("WARNING") {
-            error_message = Some(stderr.to_string());
-            status = SolverStatus::Error(stderr.to_string());
-        } else {
-            // Parse synthesis results from stdout
-            for line in stdout.lines() {
-                if line.starts_with("(define-fun") {
-                    // Parse synthesis result
-                    if let Some((func_name, body)) = self.parse_define_fun(line) {
-                        synthesis_results.insert(func_name, body);
-                    }
-                } else if line.contains("sat") {
-                    status = SolverStatus::Sat;
-                } else if line.contains("unsat") {
-                    status = SolverStatus::Unsat;
-                } else if line.contains("unknown") {
-                    status = SolverStatus::Unknown;
+            result.status = SolverStatus::Error(stderr.to_string());
+            return Ok(result);
+        }
+
+        // Parse solver status
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line == "sat" {
+                result.status = SolverStatus::Sat;
+            } else if line == "unsat" {
+                result.status = SolverStatus::Unsat;
+            } else if line == "unknown" {
+                result.status = SolverStatus::Unknown;
+            } else if line.starts_with("(define-fun") {
+                // Parse synthesis result
+                if let Some((func_name, func_body)) = self.parse_define_fun(line) {
+                    result.synthesis_results.insert(func_name, func_body);
                 }
             }
         }
 
-        Ok(SolverResult {
-            status,
-            synthesis_results,
-            error_message,
-        })
+        Ok(result)
     }
 
     fn parse_define_fun(&self, line: &str) -> Option<(String, String)> {
         // Simple parsing of (define-fun func_name ... body)
-        // This is a basic implementation - can be enhanced later
         if let Some(start) = line.find("(define-fun ") {
-            let content = &line[start..];
-            if let Some(end) = content.rfind(')') {
-                let func_def = &content[..=end];
-                // Extract function name (simplified)
-                if let Some(name_start) = func_def.find(' ') {
-                    if let Some(name_end) = func_def[name_start..].find(' ') {
-                        let func_name = func_def[name_start + 1..name_start + name_end].to_string();
-                        return Some((func_name, func_def.to_string()));
-                    }
-                }
+            let rest = &line[start + 12..]; // Skip "(define-fun "
+            if let Some(end) = rest.find(' ') {
+                let func_name = rest[..end].to_string();
+                let func_body = line.to_string();
+                return Some((func_name, func_body));
             }
         }
         None
     }
 }
 
-/// Enhanced SyGuS translator with dynamic translation capabilities
+/// Main SyGuS translator with four-stage compilation pipeline
 pub struct SyGuSTranslator {
     pub original_file: LSFile,
     pub context: TranslationContext,
@@ -208,32 +206,34 @@ impl SyGuSTranslator {
     pub fn new(original_file: LSFile, interpreter: Option<Interpreter>) -> Self {
         Self {
             original_file,
-            context: TranslationContext {
-                symbol_mapping: SymbolMapping::new(),
-                type_environment: None,
-                runtime_context: None,
-                object_fields: HashMap::new(),
-            },
+            context: TranslationContext::new(),
             synthesis_results: HashMap::new(),
             interpreter,
         }
     }
 
-    /// Phase 1: Preprocess and type check using interpreter
-    pub fn preprocess_with_interpreter(&mut self) -> Result<(), String> {
-        debug!("Phase 1: Preprocessing with interpreter...");
+    /// Translate the LS file to SyGuS commands
+    pub fn translate(&mut self) -> Result<Vec<SyGuSCmd>, String> {
+        let mut semantic_analyzer = SemanticAnalyzer::new();
+        let semantic_result = semantic_analyzer.analyze(&self.original_file)?;
+        let mut desugarer = Desugarer::new(self.original_file.clone(), semantic_result);
+        let desugared_commands = desugarer.desugar_ast()?;
+        Ok(desugared_commands)
+    }
 
-        if let Some(interpreter) = &mut self.interpreter {
-            // Process all commands to build complete type environment
+    /// Preprocess the LS file with the interpreter
+    pub fn preprocess(&mut self) -> Result<(), String> {
+        info!("Using legacy interpreter-based preprocessing");
+
+        if let Some(ref mut interpreter) = self.interpreter {
             for cmd in &self.original_file.cmds {
                 interpreter.proc(cmd)?;
             }
 
             // Extract type environment and runtime context
-            let type_env = interpreter.typing.global_scope().clone();
-            self.context.type_environment = Some(type_env);
+            self.context.type_environment = Some(interpreter.typing.global_scope().clone());
 
-            // Extract runtime context (simplified - in practice you might want more sophisticated extraction)
+            // Extract runtime context from interpreter stack
             let mut runtime_context = HashMap::new();
             for scope in &interpreter.stack {
                 for (name, value) in &scope.bindings {
@@ -241,242 +241,84 @@ impl SyGuSTranslator {
                 }
             }
             self.context.runtime_context = Some(runtime_context);
-
-            debug!("Preprocessing completed with type environment and runtime context");
-        } else {
-            return Err("No interpreter provided for dynamic translation".to_string());
         }
 
         Ok(())
     }
 
-    /// Phase 2: Dynamic translation based on complete context
-    pub fn translate_dynamically(&mut self) -> Result<Vec<SyGuSCmd>, String> {
-        if self.context.type_environment.is_none() {
-            return Err(
-                "Type environment not available. Run preprocess_with_interpreter first."
-                    .to_string(),
-            );
-        }
-
-        info!("Starting new multi-pass translation pipeline...");
-
-        // Step 1: Desugaring pass - transform high-level constructs into simple SyGuS
-        let type_env = self.context.type_environment.as_ref().unwrap();
-        let runtime_context = self.context.runtime_context.as_ref();
-
-        let mut desugarer = Desugarer::new(
-            self.original_file.clone(),
-            Some(type_env.clone()),
-            runtime_context.cloned(),
-        );
-
-        // Call the unified desugaring method
-        let desugared_commands = desugarer.desugar_ast()?;
-        info!(
-            "Desugaring completed. Generated {} simplified commands.",
-            desugared_commands.len()
-        );
-
-        // Step 2: Bit-vector translation pass - transform simple SyGuS into bit-vector logic
-        let mut final_commands = Vec::new();
-        final_commands.push(SyGuSCmd::SetLogic("BV".to_string()));
-
-        for cmd in desugared_commands {
-            let translated_cmd = self.translate_simple_sygus_command(&cmd)?;
-            final_commands.push(translated_cmd);
-        }
-
-        info!(
-            "Translation completed. Generated {} final commands.",
-            final_commands.len()
-        );
-        Ok(final_commands)
-    }
-
-    /// Translate a simple SyGuS command (after desugaring)
-    fn translate_simple_sygus_command(&self, cmd: &SyGuSCmd) -> Result<SyGuSCmd, String> {
-        // For now, just pass through the command as-is
-        // In the future, this could handle bit-vector specific translations
-        Ok(cmd.clone())
-    }
-
-    /// Preprocess: collect all type information and symbols (legacy method)
-    pub fn preprocess(&mut self) -> Result<(), String> {
-        debug!("Preprocessing translation context...");
-
-        // For now, just initialize empty symbol mapping
-        // We'll implement proper symbol collection later
-
-        debug!(
-            "Preprocessing completed with {} symbols",
-            self.context.symbol_mapping.forward.len()
-        );
-        Ok(())
-    }
-
-    /// Translate: convert LS to standard SyGuS (legacy method)
-    pub fn translate(&mut self) -> Result<Vec<SyGuSCmd>, String> {
-        debug!("Starting translation...");
-
-        self.preprocess()?;
-
-        let mut translated_commands = Vec::new();
-
-        // Process commands in order, keeping standard SyGuS commands unchanged
-        for cmd in &self.original_file.cmds {
-            match cmd {
-                LSCmd::As(sygus_cmd) => {
-                    // Keep standard SyGuS commands as-is
-                    translated_commands.push(sygus_cmd.clone());
-                }
-                LSCmd::DefineSortEnum { name, elems } => {
-                    // Convert enum sort definition to standard SyGuS
-                    let enum_cmd = self.translate_enum_sort(name, elems)?;
-                    translated_commands.push(enum_cmd);
-                }
-                LSCmd::ClassDef(_) => {
-                    // Skip class definitions for now
-                    debug!("Skipping class definition");
-                }
-                LSCmd::ObjectDef(_) => {
-                    // Skip object definitions for now
-                    debug!("Skipping object definition");
-                }
-                LSCmd::DefineTheory { name, cmds: _ } => {
-                    // Skip theory definitions for now
-                    debug!("Skipping theory definition: {}", name);
-                }
-                LSCmd::Echo(_) => {
-                    // Skip echo commands
-                    debug!("Skipping echo command");
-                }
-                LSCmd::DeclareFunc(_) => {
-                    // Skip function declarations for now
-                    debug!("Skipping function declaration");
-                }
-                LSCmd::DefineFunc(_) => {
-                    // Skip function definitions for now
-                    debug!("Skipping function definition");
-                }
-                LSCmd::DefineFuncRec(_) => {
-                    // Skip recursive function definitions for now
-                    debug!("Skipping recursive function definition");
-                }
-                LSCmd::ModelDef(_) => {
-                    // Skip model definitions for now
-                    debug!("Skipping model definition");
-                }
-                LSCmd::ThSpec(_) => {
-                    // Skip theory-specific commands for now
-                    debug!("Skipping theory-specific command");
-                }
-                LSCmd::SynthFunExt(_) => {
-                    // Skip synthesis function extensions for now
-                    debug!("Skipping synthesis function extension");
-                }
-            }
-        }
-
-        debug!(
-            "Translation completed with {} commands",
-            translated_commands.len()
-        );
-        Ok(translated_commands)
-    }
-
-    /// Translate enum sort definition to standard SyGuS (legacy method)
-    fn translate_enum_sort(&self, name: &str, elems: &[String]) -> Result<SyGuSCmd, String> {
-        debug!("Translating enum sort: {} with elements: {:?}", name, elems);
-
-        // For now, skip enum sort translation to avoid complex type issues
-        // We'll implement this properly later
-        debug!("Skipping enum sort translation for now");
-
-        // Return a placeholder command
-        Ok(SyGuSCmd::DeclareSort(
-            name.to_string(),
-            0, // arity
-        ))
-    }
-
-    /// Solve: call CVC5
+    /// Solve the SyGuS commands using the CVC5 solver
     pub fn solve(&self, sygus_commands: &[SyGuSCmd]) -> Result<SolverResult, String> {
-        debug!("Preparing to call CVC5 solver...");
-
-        // Convert commands to string
-        let sygus_program = self.commands_to_string(sygus_commands)?;
-        debug!("SyGuS program:\n{}", sygus_program);
-
-        // Call CVC5
         let solver = CVC5Solver::new();
-        solver.solve(&sygus_program)
+        let sygus_string = self.commands_to_string(sygus_commands)?;
+        solver.solve(&sygus_string)
     }
 
-    /// Convert SyGuS commands to string
+    /// Convert SyGuS commands to a string
     pub fn commands_to_string(&self, commands: &[SyGuSCmd]) -> Result<String, String> {
-        let mut program = String::new();
+        let mut result = String::new();
 
-        for cmd in commands {
-            program.push_str(&cmd.to_string());
-            program.push('\n');
+        // Add set-logic if not present
+        let has_logic = commands
+            .iter()
+            .any(|cmd| matches!(cmd, SyGuSCmd::SetLogic(_)));
+
+        if !has_logic {
+            result.push_str("(set-logic BV)\n");
         }
 
-        Ok(program)
+        // Add all commands
+        for cmd in commands {
+            result.push_str(&format!("{}\n", cmd));
+        }
+
+        // Add check-synth if not present
+        let has_check = commands
+            .iter()
+            .any(|cmd| matches!(cmd, SyGuSCmd::CheckSynth));
+
+        if !has_check {
+            result.push_str("(check-synth)\n");
+        }
+
+        Ok(result)
     }
 
-    /// Decode: convert CVC5 result back to LS format
+    /// Decode the solver result back to LS terms
     pub fn decode_result(&self, result: &SolverResult) -> Result<HashMap<String, LSTerm>, String> {
-        debug!("Decoding CVC5 result...");
-
         let mut decoded_results = HashMap::new();
 
         match &result.status {
             SolverStatus::Sat => {
-                for (func_name, sygus_body) in &result.synthesis_results {
-                    debug!("Decoding synthesis result for function: {}", func_name);
-
-                    // Convert SyGuS term back to LSTerm
-                    if let Some(ls_term) = self.sygus_term_to_ls_term(sygus_body)? {
+                for (func_name, func_body) in &result.synthesis_results {
+                    if let Some(ls_term) = self.sygus_term_to_ls_term(func_body)? {
                         decoded_results.insert(func_name.clone(), ls_term);
                     }
                 }
             }
             SolverStatus::Unsat => {
-                return Err("Synthesis problem is unsatisfiable".to_string());
+                info!("Solver returned UNSAT - no solution exists");
             }
             SolverStatus::Unknown => {
-                return Err("Synthesis result is unknown".to_string());
+                info!("Solver returned UNKNOWN - could not determine satisfiability");
             }
             SolverStatus::Error(msg) => {
                 return Err(format!("Solver error: {}", msg));
             }
         }
 
-        debug!("Decoded {} synthesis results", decoded_results.len());
         Ok(decoded_results)
     }
 
-    /// Convert SyGuS term to LSTerm (simplified implementation)
-    fn sygus_term_to_ls_term(&self, sygus_term: &str) -> Result<Option<LSTerm>, String> {
-        debug!("Converting SyGuS term to LSTerm: {}", sygus_term);
-
-        // This is a simplified implementation
-        // In a full implementation, we would parse the SyGuS term properly
-        // For now, we'll just return None to indicate we can't decode yet
-        debug!("Term conversion not implemented yet");
+    /// Convert a SyGuS term back to an LS term (simplified)
+    fn sygus_term_to_ls_term(&self, _sygus_term: &str) -> Result<Option<LSTerm>, String> {
+        // TODO: Implement proper SyGuS to LS term conversion
+        // For now, return None to indicate no conversion
         Ok(None)
     }
 
-    /// Get the translated file as a string (legacy method)
+    /// Convert the SyGuS commands to a string
     pub fn to_string(&mut self) -> Result<String, String> {
-        let translated_commands = self.translate()?;
-        self.commands_to_string(&translated_commands)
-    }
-
-    /// Get the dynamically translated file as a string
-    pub fn to_string_dynamic(&mut self) -> Result<String, String> {
-        let translated_commands = self.translate_dynamically()?;
-        self.commands_to_string(&translated_commands)
+        let commands = self.translate()?;
+        self.commands_to_string(&commands)
     }
 }

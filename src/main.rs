@@ -1,4 +1,5 @@
 use clap::Parser;
+use log::info;
 use ls_parser::lang::interpreter::Interpreter;
 use ls_parser::parser::ast::parse;
 use ls_parser::translator::SyGuSTranslator;
@@ -14,10 +15,6 @@ pub struct CLI {
     /// Input file to process (if not provided, starts interactive mode)
     #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
-
-    /// Theory file to load before processing main file
-    #[arg(short, long = "theory", value_name = "THEORY_FILE")]
-    theory_file: Option<PathBuf>,
 
     /// Output mode: what to do with the processed file
     #[arg(short, long, value_enum, default_value_t = OutputMode::Execute)]
@@ -60,112 +57,135 @@ pub enum Solver {
     None,
 }
 
-
-/// Process file with the new unified approach
+/// Process file with the new four-stage compilation pipeline
 fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
     // Parse file
     let ls_file = parse(input)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Parse error: {}", e)))?;
 
-    // Create interpreter
+    // Create interpreter for legacy compatibility
     let mut interpreter = Interpreter::new();
-    
-    // Load theory file if provided
-    if let Some(ref theory_file) = args.theory_file {
-        println!("Loading theory file: {}", theory_file.display());
-        interpreter.load_theory_file(theory_file.to_str().unwrap())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Theory loading error: {}", e)))?;
-    }
-    
+
     // Handle different output modes
     match args.output {
         OutputMode::Execute => {
-            // Execute commands normally
+            // Execute commands normally using interpreter
             for cmd in &ls_file.cmds {
-                interpreter.proc(cmd)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Execution error: {}", e)))?;
+                interpreter.proc(cmd).map_err(|e| {
+                    io::Error::new(io::ErrorKind::Other, format!("Execution error: {}", e))
+                })?;
             }
-            println!("File executed successfully");
+            info!("File executed successfully");
         }
-        
+
         OutputMode::Show => {
             // Show parsed commands
-            println!("Parsed LS commands:");
+            info!("Parsed LS commands:");
             for (i, cmd) in ls_file.cmds.iter().enumerate() {
-                println!("  {}: {}", i + 1, cmd);
+                info!("  {}: {}", i + 1, cmd);
             }
         }
-        
+
         OutputMode::Translate => {
-            // Translate to standard SyGuS and print using dynamic translation
+            // Translate to standard SyGuS using new pipeline
             let mut translator = SyGuSTranslator::new(ls_file, Some(interpreter));
-            match translator.preprocess_with_interpreter() {
-                Ok(_) => {
-                    match translator.translate_dynamically() {
-                        Ok(translated_commands) => {
-                            for cmd in translated_commands {
-                                println!("{}", cmd);
-                            }
-                        }
-                        Err(e) => {
-                            return Err(io::Error::new(io::ErrorKind::Other, format!("Dynamic translation error: {}", e)));
-                        }
+            match translator.translate() {
+                Ok(commands) => {
+                    info!("Translation completed successfully!");
+                    info!("Generated {} SyGuS commands:", commands.len());
+                    for cmd in commands.iter() {
+                        println!("{}", cmd);
                     }
                 }
                 Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, format!("Preprocessing error: {}", e)));
+                    eprintln!("Translation error: {}", e);
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Translation error: {}", e),
+                    ));
                 }
             }
         }
-        
+
         OutputMode::Save => {
-            // Translate and save to file using dynamic translation
+            // Translate and save to file
+            info!("Translating and saving to file...");
             let mut translator = SyGuSTranslator::new(ls_file, Some(interpreter));
-            match translator.preprocess_with_interpreter() {
-                Ok(_) => {
-                    match translator.translate_dynamically() {
-                        Ok(translated_commands) => {
-                            let output_path = args.output_file.as_ref()
-                                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Output file required for save mode"))?;
-                            
-                            let sygus_program = translator.commands_to_string(&translated_commands)
-                                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("String conversion error: {}", e)))?;
-                            
-                            fs::write(output_path, sygus_program)
-                                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("File write error: {}", e)))?;
-                            
-                            println!("Translated SyGuS saved to: {}", output_path.display());
-                        }
+
+            let output_file = args
+                .output_file
+                .as_ref()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Output file not specified"))?;
+
+            match translator.to_string() {
+                Ok(sygus_string) => {
+                    fs::write(output_file, sygus_string).map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("Failed to write output file: {}", e),
+                        )
+                    })?;
+                    println!("Translated SyGuS saved to: {}", output_file.display());
+                }
+                Err(e) => {
+                    eprintln!("Translation error: {}", e);
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Translation error: {}", e),
+                    ));
+                }
+            }
+        }
+
+        OutputMode::Synthesize => {
+            // Run synthesis using the specified solver
+            info!("Running synthesis using {:?} solver...", args.solver);
+            let mut translator = SyGuSTranslator::new(ls_file, Some(interpreter));
+
+            match translator.translate() {
+                Ok(commands) => {
+                    info!("Translation completed, running synthesis...");
+
+                    match translator.solve(&commands) {
+                        Ok(result) => match result.status {
+                            ls_parser::translator::SolverStatus::Sat => {
+                                println!("Synthesis successful!");
+                                if !result.synthesis_results.is_empty() {
+                                    println!("Synthesized functions:");
+                                    for (func_name, func_body) in &result.synthesis_results {
+                                        println!("  {}: {}", func_name, func_body);
+                                    }
+                                }
+                            }
+                            ls_parser::translator::SolverStatus::Unsat => {
+                                println!("Synthesis failed: No solution exists");
+                            }
+                            ls_parser::translator::SolverStatus::Unknown => {
+                                println!("Synthesis result unknown: Solver could not determine satisfiability");
+                            }
+                            ls_parser::translator::SolverStatus::Error(msg) => {
+                                eprintln!("Solver error: {}", msg);
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Other,
+                                    format!("Solver error: {}", msg),
+                                ));
+                            }
+                        },
                         Err(e) => {
-                            return Err(io::Error::new(io::ErrorKind::Other, format!("Dynamic translation error: {}", e)));
+                            eprintln!("Solver error: {}", e);
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                format!("Solver error: {}", e),
+                            ));
                         }
                     }
                 }
                 Err(e) => {
-                    return Err(io::Error::new(io::ErrorKind::Other, format!("Preprocessing error: {}", e)));
-                }
-            }
-        }
-        
-        OutputMode::Synthesize => {
-            // Execute and run synthesis
-            for cmd in &ls_file.cmds {
-                interpreter.proc(cmd)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Execution error: {}", e)))?;
-            }
-            
-            match args.solver {
-                Solver::CVC5 => {
-                    println!("Running synthesis with CVC5...");
-                    // The synthesis will be triggered automatically by check-synth commands
-                    // The interpreter's solve_with_bv_solver will handle the translation and solving
-                }
-                Solver::Z3 => {
-                    println!("Z3 solver not yet implemented");
-                    return Err(io::Error::new(io::ErrorKind::Other, "Z3 solver not yet implemented"));
-                }
-                Solver::None => {
-                    println!("Synthesis skipped (no solver specified)");
+                    eprintln!("Translation error: {}", e);
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Translation error: {}", e),
+                    ));
                 }
             }
         }
@@ -177,24 +197,21 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
 
-    // Setup logging
+    // Set up logging
     if args.verbose {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-            .format_timestamp(None)
-            .format_module_path(false)
-            .format_target(false)
-            .init();
+        env_logger::init();
     }
 
-    // Handle different modes
+    // Handle file input or interactive mode
     if let Some(file_path) = &args.file {
-        // File mode
-        let input = fs::read_to_string(file_path)?;
-        process_file(&input, &args)
+        // Read and process file
+        let input = fs::read_to_string(&file_path).map_err(|e| {
+            io::Error::new(io::ErrorKind::Other, format!("Failed to read file: {}", e))
+        })?;
+        process_file(&input, &args)?;
     } else {
-        // Interactive mode
-        println!("LS Parser - Extended SyGuS Language Interpreter");
-        println!("Type :help for available commands");
-        repl::repl()
+        repl::repl()?;
     }
+
+    Ok(())
 }

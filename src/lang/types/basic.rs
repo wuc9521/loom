@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use derive_more::Display;
 use sygus_parser::Sort;
 
 /// finiteness
@@ -36,7 +37,8 @@ impl Constructor {
 }
 
 /// datatype definition
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
+#[display(fmt = "({} ({}))", name, "constructors.iter().map(|c| format!(\"({})\", c.name)).collect::<Vec<String>>().join(\", \")")]
 pub struct DataType {
     pub name: String,
     pub constructors: Vec<Constructor>,
