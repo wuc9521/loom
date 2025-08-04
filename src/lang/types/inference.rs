@@ -2,7 +2,7 @@ use crate::lang::model::MatchCase;
 use crate::parser::ast::{LSTerm, LSVarBinding};
 use crate::ANY_TYPE;
 use log::{debug, error};
-use sygus_parser::{Identifier, Sort, SortedVar};
+use sygus_parser::{Identifier, Literal, Sort, SortedVar};
 
 use super::basic::EnumType;
 use super::environment::TypeEnv;
@@ -99,9 +99,9 @@ impl TypeInferer {
         let result = match expr {
             LSTerm::Literal(lit) => {
                 match lit {
-                    sygus_parser::Literal::Numeral(_) => Ok(Sort::int()),
-                    sygus_parser::Literal::Decimal(_) => Ok(Sort::real()),
-                    sygus_parser::Literal::Bool(_) => Ok(Sort::bool()),
+                    Literal::Numeral(_) => Ok(Sort::int()),
+                    Literal::Decimal(_) => Ok(Sort::real()),
+                    Literal::Bool(_) => Ok(Sort::bool()),
                     _ => Ok(Sort::string()), // default string type
                 }
             }
@@ -132,9 +132,7 @@ impl TypeInferer {
                                         "Found constructor: {} for datatype {}",
                                         sym, datatype.name
                                     );
-                                    return Ok(Sort::Simple(Identifier::Symbol(
-                                        datatype.name.clone(),
-                                    )));
+                                    return Ok(Sort::from_name(datatype.name.as_str()));
                                 }
                             }
                         }
@@ -145,9 +143,7 @@ impl TypeInferer {
                         for (_, enum_type) in &scope.enums {
                             if enum_type.elements.contains(&sym) {
                                 debug!("Found enum element: {} for enum {}", sym, enum_type.name);
-                                return Ok(Sort::Simple(Identifier::Symbol(
-                                    enum_type.name.clone(),
-                                )));
+                                return Ok(Sort::from_name(enum_type.name.as_str()));
                             }
                         }
                     }
@@ -263,7 +259,7 @@ impl TypeInferer {
                             }
 
                             // return the datatype
-                            return Ok(Sort::Simple(Identifier::Symbol(datatype.name.clone())));
+                            return Ok(Sort::from_name(datatype.name.as_str()));
                         }
                     }
                 }
@@ -276,7 +272,7 @@ impl TypeInferer {
                         debug!("Found enum element: {} for enum {}", func, enum_type.name);
                         // Enum elements are constants, not functions
                         if args.is_empty() {
-                            return Ok(Sort::Simple(Identifier::Symbol(enum_type.name.clone())));
+                            return Ok(Sort::from_name(enum_type.name.as_str()));
                         } else {
                             return Err(format!("Enum element '{}' is not a function and cannot be called with arguments", func));
                         }
@@ -785,7 +781,7 @@ impl TypeInferer {
                 // Check if it's a type parameter
                 if let Some(index) = type_params.iter().position(|p| p == name) {
                     if index < type_args.len() {
-                        return Sort::Simple(Identifier::Symbol(type_args[index].clone()));
+                        return Sort::from_name(type_args[index].as_str());
                     }
                 }
                 sort.clone()

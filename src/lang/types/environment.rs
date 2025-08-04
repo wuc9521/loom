@@ -305,7 +305,7 @@ impl TypeEnv {
     fn is_datatype_recursive(&self, datatype: &DataType) -> bool {
         for constructor in &datatype.constructors {
             for field in &constructor.fields {
-                if field.sort == Sort::Simple(Identifier::Symbol(datatype.name.clone())) {
+                if field.sort == Sort::from_name(datatype.name.as_str()) {
                     return true; // found recursive reference
                 }
             }

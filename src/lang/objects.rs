@@ -252,8 +252,7 @@ impl Interpreter {
         }
 
         // Bind self to object type once
-        let object_sort =
-            sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(object_def.name.clone()));
+        let object_sort = Sort::from_name(&object_def.name);
         debug!("Binding self -> {}", object_sort);
         self.typing
             .current_scope_mut()

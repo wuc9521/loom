@@ -666,7 +666,7 @@ impl Interpreter {
                 self.typing.check_all_conflicts(name, "function")?;
 
                 // register function type using FunctionType
-                let param_sorts: Vec<sygus_parser::Sort> =
+                let param_sorts: Vec<Sort> =
                     args.iter().map(|sv| sv.sort.clone()).collect();
                 let func_type =
                     FunctionType::new_signature(name.clone(), param_sorts, ret_sort.clone());
@@ -702,7 +702,7 @@ impl Interpreter {
 
                 // create FunctionType
                 let param_names: Vec<String> = args.iter().map(|sv| sv.name.clone()).collect();
-                let param_sorts: Vec<sygus_parser::Sort> =
+                let param_sorts: Vec<Sort> =
                     args.iter().map(|sv| sv.sort.clone()).collect();
                 let func_type = FunctionType::new_definition(
                     name.clone(),
@@ -848,7 +848,7 @@ impl Interpreter {
     }
 
     /// Get the return type of a function from the type environment
-    fn get_function_return_type(&self, func_name: &str) -> sygus_parser::Sort {
+    fn get_function_return_type(&self, func_name: &str) -> Sort {
         // Look up the function type in the type environment
         for scope in &self.typing.stack {
             if let Some(func_type) = scope.get_function_type(func_name) {
@@ -856,7 +856,7 @@ impl Interpreter {
             }
         }
         // Default to a generic type if not found
-        sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol("Any".to_string()))
+        Sort::from_name("Any")
     }
 
     /// lookup a symbol and return only the value (for backward compatibility)
@@ -1249,7 +1249,7 @@ impl Interpreter {
             debug!("registering type parameter: {}", type_param);
             self.typing.current_scope_mut().bind_variable(
                 type_param.clone(),
-                sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(type_param.clone())),
+                Sort::from_name(type_param.as_str()),
             );
         }
 

@@ -6,7 +6,7 @@ use crate::theory::utils::get_universe_domain_and_map;
 use crate::theory::Logic;
 use std::collections::{HashMap, HashSet};
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
-use sygus_parser::{Literal, Sort, SortedVar, SyGuSCmd};
+use sygus_parser::{GrammarDef, Literal, Sort, SortedVar, SyGuSCmd};
 
 pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut cmds = Vec::new();
@@ -244,15 +244,15 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     );
     // 7. grammar/synth-fun, check here.
     fn replace_grammardef_sort(
-        g: &Option<sygus_parser::GrammarDef>,
+        g: &Option<GrammarDef>,
         bv_len: usize,
-    ) -> Option<sygus_parser::GrammarDef> {
+    ) -> Option<GrammarDef> {
         g.as_ref().map(|grammar| {
             let mut new_g = grammar.clone();
             new_g.sorted_vars = grammar
                 .sorted_vars
                 .iter()
-                .map(|v| sygus_parser::SortedVar {
+                .map(|v| SortedVar {
                     name: v.name.clone(),
                     sort: Sort::bitvec(bv_len),
                 })
@@ -271,7 +271,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     }
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::As(sygus_parser::SyGuSCmd::SynthFun(
+        if let crate::parser::LSCmd::As(SyGuSCmd::SynthFun(
             name,
             args,
             _sort,
@@ -280,7 +280,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         {
             let new_args: Vec<SortedVar> = args
                 .iter()
-                .map(|v| sygus_parser::SortedVar {
+                .map(|v| SortedVar {
                     name: v.name.clone(),
                     sort: bv_sort.clone(),
                 })

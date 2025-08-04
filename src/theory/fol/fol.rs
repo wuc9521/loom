@@ -5,7 +5,7 @@ use sygus_parser::Sort;
 
 #[derive(Debug, Default, Clone)]
 pub struct FOModelCtx {
-    pub qvars: Vec<(String, sygus_parser::Sort)>, // (name, sort)
+    pub qvars: Vec<(String, Sort)>, // (name, sort)
     pub interp_table: crate::lang::runtime::ModelSymbolTable, 
 }
 

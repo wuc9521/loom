@@ -7,7 +7,6 @@ use derive_more::Display;
 use log::debug;
 
 use pest::iterators::Pair;
-use sygus_parser::Identifier;
 use sygus_parser::Sort;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ SetUniv* ~ ")" }
@@ -116,7 +115,7 @@ impl Univ {
     pub fn define_univ(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            sort: Sort::Simple(Identifier::Symbol(name.to_string())),
+            sort: Sort::from_name(name),
         }
     }
 }
@@ -203,7 +202,7 @@ pub enum PatternElem {
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
-    fmt = "({})",
+    fmt = "{}",
     "elements.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"
 )]
 pub struct Pattern {

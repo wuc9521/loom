@@ -1,6 +1,6 @@
 use crate::lang::model::{Pattern, PatternElem};
 use crate::lang::model::Model;
-use sygus_parser::Sort;
+    use sygus_parser::{GrammarDef, Sort, SortedVar};
 use std::collections::HashMap;
 use crate::lang::runtime::ModelSymbolTable;
 use crate::parser::ast::LSTerm;
@@ -107,15 +107,15 @@ pub fn prop_bitvecs(
 
 /// replace sort in grammarDef
 pub fn replace_grammardef_sort(
-    g: &Option<sygus_parser::GrammarDef>,
+    g: &Option<GrammarDef>,
     bv_len: usize,
-) -> Option<sygus_parser::GrammarDef> {
+) -> Option<GrammarDef> {
     g.as_ref().map(|grammar| {
         let mut new_g = grammar.clone();
         new_g.sorted_vars = grammar
             .sorted_vars
             .iter()
-            .map(|v| sygus_parser::SortedVar {
+            .map(|v| SortedVar {
                 name: v.name.clone(),
                 sort: Sort::bitvec(bv_len)
             })
@@ -161,39 +161,4 @@ pub fn collect_constraint_models(lsfile: &crate::parser::LSFile) -> Vec<(String,
         }
     }
     constraint_models
-}
-
-/// collect all needed model names (deduplicate, preserve first occurrence order)
-pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &HashMap<String, &Model>) -> Vec<String> {
-    let mut all_model_names = Vec::new();
-    for (name, _) in constraint_models {
-        if models.contains_key(name) && !all_model_names.contains(name) {
-            all_model_names.push(name.clone());
-        }
-    }
-    all_model_names
-}
-
-/// collect ModelDef list according to all_model_names
-pub fn collect_loaded_models<'a>(all_model_names: &[String], models: &'a HashMap<String, &Model>) -> Vec<&'a Model> {
-    all_model_names.iter().filter_map(|n| models.get(n).copied()).collect()
-}
-
-/// automatically get domain_sort (e.g. U/Pos/S)
-pub fn get_domain_sort_from_models(models: &HashMap<String, &Model>) -> Option<String> {
-    for model in models.values() {
-        if let Some(univ) = model.univ_defs.get(0) {
-            return Some(univ.sort.to_string());
-        }
-    }
-    None
-}
-
-pub fn get_interped_value<'a>(
-    _interp: &'a (), // remove, because interp-fun is not actually parsed
-    _args: &[usize],
-    _id2sym: &[String],
-) -> Option<&'a crate::parser::ast::LSTerm> {
-    // remove func_interps handling, because interp-fun is not actually parsed
-    None
 }

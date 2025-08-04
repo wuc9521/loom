@@ -1,13 +1,12 @@
-use crate::lang::types::TypeEnv;
+use crate::lang::{model::Pattern, types::TypeEnv};
+use crate::model::PatternElem;
 use crate::parser::ast::{LSCmd, LSFile, LSTerm, ObjectDef};
 use crate::translator::utils::log2_ceil;
 use log::{debug, info};
 use std::collections::{HashMap, HashSet};
 use sygus_parser::api::Cmd;
 use sygus_parser::api::Term;
-use sygus_parser::{
-    DTConsDecl, DTDecl, Identifier, Sort, SortDecl, SortedVar, SyGuSCmd, SyGuSTerm, VarBinding,
-};
+use sygus_parser::{DTDecl, Identifier, Sort, SortedVar, SyGuSCmd, SyGuSTerm, VarBinding};
 
 /// Desugaring pass that transforms high-level LS constructs into simple SyGuS constructs
 pub struct Desugarer {
@@ -28,7 +27,7 @@ pub struct Desugarer {
 pub struct DatatypeTemplate {
     pub name: String,
     pub constructors: DTDecl,
-    pub dependent_sorts: HashSet<String>, // Which sorts this template depends on
+    pub dependent_sorts: HashSet<Sort>, // Which sorts this template depends on
 }
 
 /// Template for class definitions
@@ -43,7 +42,7 @@ pub struct ClassTemplate {
 #[derive(Debug, Clone)]
 pub struct DesugarContext {
     /// Sort mappings: old_type_name -> new_sort_definition
-    pub sort_map: HashMap<String, sygus_parser::Sort>,
+    pub sort_map: HashMap<String, Sort>,
     /// Enum value mappings: enum_value -> new_function_name
     pub enum_val_map: HashMap<String, String>,
     /// Object field mappings: (object_name, field_name) -> flattened_function_name
@@ -78,7 +77,7 @@ impl DesugarContext {
     }
 
     /// Map an old type name to a new sort definition
-    pub fn map_sort(&mut self, old_type: &str, new_sort: sygus_parser::Sort) {
+    pub fn map_sort(&mut self, old_type: &str, new_sort: Sort) {
         let sort_clone = new_sort.clone();
         self.sort_map.insert(old_type.to_string(), new_sort);
         debug!("Mapped sort: {} -> {:?}", old_type, sort_clone);
@@ -213,7 +212,7 @@ impl Desugarer {
                                 if let Sort::Simple(ident) = &field.sort {
                                     let sort_name = ident.get_name();
                                     if self.context.is_uninterpreted_sort(sort_name) {
-                                        dependent_sorts.insert(sort_name.to_string());
+                                        dependent_sorts.insert(Sort::from_name(sort_name));
                                     }
                                 }
                             }
@@ -241,14 +240,9 @@ impl Desugarer {
                     let bit_width = log2_ceil(elems.len());
                     self.context.map_sort(name, Sort::bitvec(bit_width));
 
-                    for (i, elem) in elems.iter().enumerate() {
+                    for (_i, elem) in elems.iter().enumerate() {
                         let func_name = format!("{}@{}", name, elem);
                         self.context.map_enum_value(elem, &func_name);
-
-                        debug!(
-                            "Mapped enum value: {} -> {} (bit-vector: {})",
-                            elem, func_name, i
-                        );
                     }
                 }
 
@@ -294,6 +288,20 @@ impl Desugarer {
                 // This is a template - do not add to output
                 debug!("Filtering out declare-sort template: {:?}", cmd);
                 Ok(vec![])
+            }
+
+            // pub struct DTConsDecl {
+            // pub name: String,
+            // pub args: Vec<SortedVar>,
+            // }
+            LSCmd::As(SyGuSCmd::DeclareDatatype(_name, _dt_decls)) => {
+                let commands = Vec::new();
+                // let sort_decl = SortDecl {
+                //     symbol: name.clone(),
+                //     constructors: dt_decl.clone(),
+                // };
+                // commands.push(SyGuSCmd::DeclareDatatypes(vec![sort_decl], vec![dt_decl.clone()]));
+                Ok(commands)
             }
 
             // Step 1: Filter out declare-datatypes that depend on uninterpreted sorts (templates)
@@ -366,8 +374,7 @@ impl Desugarer {
             LSCmd::ClassDef(class_def) => {
                 let commands = Vec::new();
 
-                // For now, we just register the methods in the context
-                // The actual method instantiation happens when processing object definitions
+                // TODO: unimplemented
                 for method in &class_def.methods {
                     if let Some(method_name) = method.get_name() {
                         debug!(
@@ -463,9 +470,9 @@ impl Desugarer {
             }
 
             SyGuSCmd::Constraint(term) => {
-                debug!("Desugaring constraint term: {:?}", term);
+                debug!("Desugaring constraint term: {}", term);
                 let desugared_term = self.desugar_sygus_term_rec(term)?;
-                debug!("Desugared constraint term: {:?}", desugared_term);
+                debug!("Desugared constraint term: {}", desugared_term);
                 Ok(SyGuSCmd::Constraint(desugared_term))
             }
 
@@ -550,7 +557,15 @@ impl Desugarer {
 
             SyGuSTerm::Application(func, args) => {
                 // Recursively transform arguments
-                debug!("Desugaring application: {}", func);
+                debug!(
+                    "Desugaring application: {} with args: {}",
+                    func,
+                    args.iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                // TODO: find funcname (potentially desugared) in the context
                 let desugared_args: Result<Vec<SyGuSTerm>, String> = args
                     .iter()
                     .map(|arg| self.desugar_sygus_term_rec(arg))
@@ -595,7 +610,7 @@ impl Desugarer {
 
                 let desugared_body = self.desugar_sygus_term_rec(body)?;
 
-                Ok(SyGuSTerm::Exists(desugared_vars?, Box::new(desugared_body)))
+                Ok(Term::exists(desugared_vars?, desugared_body))
             }
 
             SyGuSTerm::Forall(vars, body) => {
@@ -613,7 +628,7 @@ impl Desugarer {
 
                 let desugared_body = self.desugar_sygus_term_rec(body)?;
 
-                Ok(SyGuSTerm::Forall(desugared_vars?, Box::new(desugared_body)))
+                Ok(Term::forall(desugared_vars?, desugared_body))
             }
 
             SyGuSTerm::Annotated(term, attrs) => {
@@ -632,73 +647,15 @@ impl Desugarer {
     /// Instantiate datatype templates for a specific object
     fn inst_dt_templ(
         &self,
-        object_name: &str,
-        concrete_type: &str,
-        object_context: &mut DesugarContext,
+        _object_name: &str,
+        _concrete_type: &str,
+        _object_context: &mut DesugarContext,
     ) -> Result<Vec<SyGuSCmd>, String> {
-        let mut commands = Vec::new();
+        let commands = Vec::new();
 
-        for (template_name, template) in &self.context.datatype_templates {
+        for (_template_name, _template) in &self.context.datatype_templates {
             // Check if this template depends on the type being concretized
-            if template.dependent_sorts.contains("Pos") {
-                // Assuming Pos is the generic type
-                // Create a concrete instance of this datatype
-                let concrete_datatype_name = format!("{}@{}", template_name, object_name);
-
-                // Update the object context to map the template name to the concrete name
-                object_context.sort_map.insert(
-                    template_name.clone(),
-                    Sort::Simple(Identifier::Symbol(concrete_datatype_name.clone())),
-                );
-
-                // Create the concrete datatype definition
-                let mut concrete_constructors = Vec::new();
-                for constructor in &template.constructors {
-                    let mut concrete_fields = Vec::new();
-                    for field in &constructor.args {
-                        let concrete_sort = if let Sort::Simple(ident) = &field.sort {
-                            if ident.get_name() == "Pos" {
-                                // Replace with concrete type
-                                if let Some(mapped_sort) =
-                                    object_context.sort_map.get(concrete_type)
-                                {
-                                    mapped_sort.clone()
-                                } else {
-                                    Sort::Simple(Identifier::Symbol(concrete_type.to_string()))
-                                }
-                            } else {
-                                field.sort.clone()
-                            }
-                        } else {
-                            field.sort.clone()
-                        };
-
-                        concrete_fields.push(sygus_parser::SortedVar {
-                            name: field.name.clone(),
-                            sort: concrete_sort,
-                        });
-                    }
-
-                    concrete_constructors.push(DTConsDecl {
-                        name: constructor.name.clone(),
-                        args: concrete_fields,
-                    });
-                }
-
-                // Create the declare-datatypes command
-                let sort_decl = SortDecl {
-                    symbol: concrete_datatype_name.clone(),
-                    arity: 0,
-                };
-                let datatype_cmd =
-                    SyGuSCmd::DeclareDatatypes(vec![sort_decl], vec![concrete_constructors]);
-                commands.push(datatype_cmd);
-
-                debug!(
-                    "Instantiated datatype template {} as {} for object {}",
-                    template_name, template_name, object_name
-                );
-            }
+            unimplemented!()
         }
 
         Ok(commands)
@@ -779,9 +736,7 @@ impl Desugarer {
 
                 // Check if this is a self reference
                 if name == "self" {
-                    return Ok(SyGuSTerm::Identifier(Identifier::Symbol(
-                        object_name.to_string(),
-                    )));
+                    return Ok(Term::var(object_name));
                 }
 
                 // Check if this is an enum value that needs to be converted to function call
@@ -802,7 +757,7 @@ impl Desugarer {
                 }
 
                 // Keep other identifiers as-is
-                Ok(SyGuSTerm::Identifier(identifier.clone()))
+                Ok(Term::var(name))
             }
             LSTerm::AppTerm(func, args) => {
                 // Recursively process arguments with context
@@ -822,13 +777,11 @@ impl Desugarer {
             }
             LSTerm::Literal(literal) => {
                 // Convert literal to SyGuSTerm
-                Ok(SyGuSTerm::Literal(literal.clone()))
+                Ok(Term::lit(literal.clone()))
             }
             _ => {
                 // For other terms, convert to SyGuSTerm (simplified)
-                Ok(SyGuSTerm::Identifier(Identifier::Symbol(
-                    "placeholder".to_string(),
-                )))
+                Ok(Term::var("__#placeholder__"))
             }
         }
     }
@@ -857,7 +810,7 @@ impl Desugarer {
 
             // Create ite expression: (ite condition then_branch else_branch)
             result = Term::ite(
-                self.create_equality_test(&scrutinee_term, &case.pattern)?,
+                self.desugar_eq_test(&scrutinee_term, &case.pattern)?,
                 case_term,
                 result,
             );
@@ -883,7 +836,7 @@ impl Desugarer {
         &mut self,
         func_name: &str,
         params: &[SortedVar],
-        ret_type: &sygus_parser::Sort,
+        ret_type: &Sort,
         body: &SyGuSTerm,
     ) -> Result<SyGuSCmd, String> {
         // Desugar parameter types
@@ -913,9 +866,9 @@ impl Desugarer {
     }
 
     /// Desugar a sort, replacing old type names with new sort definitions
-    fn desugar_sort(&self, sort: &sygus_parser::Sort) -> Result<sygus_parser::Sort, String> {
+    fn desugar_sort(&self, sort: &Sort) -> Result<Sort, String> {
         match sort {
-            sygus_parser::Sort::Simple(identifier) => {
+            Sort::Simple(identifier) => {
                 if let Identifier::Symbol(name) = identifier {
                     if let Some(new_sort) = self.context.sort_map.get(name) {
                         Ok(new_sort.clone())
@@ -976,74 +929,35 @@ impl Desugarer {
         Ok(vec![])
     }
 
-    /// Create equality test for match pattern
-    fn create_equality_test(
+    /// Desugar a match pattern into an equality test
+    fn desugar_eq_test(
         &self,
         scrutinee: &SyGuSTerm,
-        pattern: &Option<crate::lang::model::Pattern>,
+        pattern: &Option<Pattern>,
     ) -> Result<SyGuSTerm, String> {
         match pattern {
             Some(pattern) => {
-                // Handle different pattern types based on the Pattern structure
-                if pattern.elements.is_empty() {
-                    // Empty pattern, always match
-                    Ok(SyGuSTerm::Literal(sygus_parser::Literal::Bool(true)))
-                } else if pattern.elements.len() == 1 {
-                    // Single element pattern
-                    match &pattern.elements[0] {
-                        crate::lang::model::PatternElem::SortElem(elem) => {
-                            // Enum element pattern, check if it's an enum value we can map
-                            let enum_value = format!("${}", elem.name);
-                            if let Some(new_function) = self.context.enum_val_map.get(&enum_value) {
-                                // Create function call to the new enum function
-                                let func_call = SyGuSTerm::Application(
-                                    Identifier::Symbol(new_function.clone()),
-                                    vec![],
-                                );
-                                Ok(SyGuSTerm::Application(
-                                    Identifier::Symbol("=".to_string()),
-                                    vec![scrutinee.clone(), func_call],
-                                ))
-                            } else {
-                                // Fallback to identifier comparison
-                                let pattern_term =
-                                    SyGuSTerm::Identifier(Identifier::Symbol(elem.name.clone()));
-                                Ok(SyGuSTerm::Application(
-                                    Identifier::Symbol("=".to_string()),
-                                    vec![scrutinee.clone(), pattern_term],
-                                ))
-                            }
-                        }
-                        crate::lang::model::PatternElem::Var(_) => {
-                            // Variable pattern, always match (wildcard)
-                            Ok(SyGuSTerm::Literal(sygus_parser::Literal::Bool(true)))
-                        }
-                        crate::lang::model::PatternElem::Wildcard => {
-                            // Wildcard pattern, always match
-                            Ok(SyGuSTerm::Literal(sygus_parser::Literal::Bool(true)))
-                        }
-                    }
+                if pattern.elements.len() > 1 {
+                    unimplemented!("Pattern with multiple elements: {}", pattern)
                 } else {
-                    // Multiple element pattern (constructor pattern)
-                    // For now, use the first element as the constructor name
-                    if let Some(crate::lang::model::PatternElem::SortElem(elem)) =
-                        pattern.elements.first()
-                    {
-                        let pattern_term =
-                            SyGuSTerm::Identifier(Identifier::Symbol(elem.name.clone()));
-                        Ok(SyGuSTerm::Application(
-                            Identifier::Symbol("=".to_string()),
-                            vec![scrutinee.clone(), pattern_term],
-                        ))
-                    } else {
-                        // Fallback for complex patterns
-                        Ok(SyGuSTerm::Literal(sygus_parser::Literal::Bool(true)))
+                    let elem = pattern.elements[0].clone();
+                    match elem {
+                        PatternElem::SortElem(sort_elem) => Ok(Term::eq(
+                            scrutinee.clone(),
+                            Term::var(sort_elem.name.as_str()),
+                        )),
+                        PatternElem::Var(var) => {
+                            Ok(Term::eq(scrutinee.clone(), Term::var(var.as_str())))
+                        }
+                        PatternElem::Wildcard => {
+                            // If it's a wildcard, we don't need an equality test
+                            Ok(Term::bool(true))
+                        }
                     }
                 }
             }
             None => {
-                // No pattern (default case), always match
-                Ok(SyGuSTerm::Literal(sygus_parser::Literal::Bool(true)))
+                unimplemented!("No pattern (default case), always match")
             }
         }
     }

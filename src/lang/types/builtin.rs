@@ -129,7 +129,7 @@ impl TypeInferer {
         // register finiteness function
         let finite_func = FunctionType::new_signature(
             "finite".to_string(),
-            vec![Sort::Simple(Identifier::Symbol(ANY_TYPE.to_string()))], // parameter can be any type
+            vec![Sort::from_name(ANY_TYPE)], // parameter can be any type
             Sort::bool(),
         );
         self.global_scope_mut()
@@ -138,7 +138,7 @@ impl TypeInferer {
         // register cardinality function
         let cardinality_func = FunctionType::new_signature(
             "card".to_string(),
-            vec![Sort::Simple(Identifier::Symbol(ANY_TYPE.to_string()))], // parameter can be any type
+            vec![Sort::from_name(ANY_TYPE)], // parameter can be any type
             Sort::int(),
         );
         self.global_scope_mut()

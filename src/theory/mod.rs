@@ -37,16 +37,3 @@ pub fn dispatch_extcmd(logic: Logic, ctx: &mut ModelCtx, extcmd: &ThSpecCmd) {
         _ => {}
     }
 }
-
-pub trait SygusDesugar {
-    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> String;
-}
-
-impl SygusDesugar for Logic {
-    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> String {
-        match self {
-            Logic::RE => crate::theory::re::sugar::desugar(sygus_file).to_string(),
-            _ => unimplemented!("desugar not implemented for this logic"),
-        }
-    }
-}

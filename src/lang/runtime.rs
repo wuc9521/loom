@@ -2,7 +2,7 @@ use crate::parser::ast::{ClassDef, LSTerm, ObjectDef};
 use crate::lang::types::FunctionType;
 use derive_more::Display;
 use std::collections::HashMap;
-
+use sygus_parser::Sort;
 #[derive(Debug, Default, Clone)]
 pub struct ModelSymbolTable {
     table: std::collections::HashMap<String, SymbolInterp>,
@@ -41,7 +41,7 @@ impl ModelSymbolTable {
 pub struct ClassValue {
     pub name: String,
     pub type_params: Vec<String>,
-    pub fields: Vec<(String, sygus_parser::Sort)>,
+    pub fields: Vec<(String,    Sort)>,
     pub methods: HashMap<String, FunctionType>,
 }
 

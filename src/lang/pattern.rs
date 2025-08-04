@@ -1,6 +1,7 @@
 use crate::lang::model::{EnumSortElem, Pattern, PatternElem};
 use crate::lang::runtime::{Scope, Value};
 use log::debug;
+use sygus_parser::Sort;
 
 /// Result of pattern matching
 #[derive(Debug, Clone)]
@@ -322,7 +323,7 @@ impl PatternMatcher {
         &self,
         pattern: &Pattern,
         type_env: &mut crate::lang::types::TypeEnv,
-        term_type: &sygus_parser::Sort,
+        term_type: &Sort,
     ) -> Result<(), String> {
         // Extract variables from pattern and bind them with appropriate types
         let vars = self.extract_variables(pattern);

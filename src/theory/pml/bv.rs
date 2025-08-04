@@ -166,7 +166,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     // 6. grammar/synth-fun
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::As(sygus_parser::SyGuSCmd::SynthFun(
+        if let crate::parser::LSCmd::As(SyGuSCmd::SynthFun(
             name,
             args,
             _sort,
@@ -175,7 +175,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
         {
             let new_args: Vec<SortedVar> = args
                 .iter()
-                .map(|v| sygus_parser::SortedVar {
+                .map(|v| SortedVar {
                     name: v.name.clone(),
                     sort: bv_sort.clone(),
                 })
