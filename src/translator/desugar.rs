@@ -1,5 +1,5 @@
 use crate::lang::types::TypeEnv;
-use crate::parser::ast::{LSCmd, LSFile, LSTerm};
+use crate::parser::ast::{LSCmd, LSFile, LSTerm, ObjectDef};
 use crate::translator::utils::log2_ceil;
 use log::{debug, info};
 use std::collections::{HashMap, HashSet};
@@ -175,7 +175,7 @@ impl Desugarer {
     /// Main desugaring method that transforms the entire AST
     pub fn desugar_ast(&mut self) -> Result<Vec<SyGuSCmd>, String> {
         info!("Starting unified desugaring pass...");
-        self.build_mapping_context()?;
+        self.build_mapping_ctx()?;
 
         let commands_to_process = self.original_file.cmds.clone();
         for cmd in &commands_to_process {
@@ -190,7 +190,7 @@ impl Desugarer {
         Ok(self.desugared_commands.clone())
     }
 
-    fn build_mapping_context(&mut self) -> Result<(), String> {
+    fn build_mapping_ctx(&mut self) -> Result<(), String> {
         info!("Building complete mapping context...");
 
         let cmds = &self.original_file.cmds;
@@ -388,37 +388,22 @@ impl Desugarer {
                 let mut object_context = self.context.clone();
 
                 // Step 2: Extract concrete type from object definition
-                let concrete_type = self.extract_concrete_type_from_object(object_def)?;
-
-                if let Some(concrete_type_name) = concrete_type {
-                    debug!(
-                        "Object {} instantiates generic type with {}",
-                        object_def.name, concrete_type_name
-                    );
-
-                    // Step 2: Map generic type placeholder to concrete type in object context
-                    if let Some(mapped_sort) = self.context.sort_map.get(&concrete_type_name) {
+                let concrete_types = self.type_params_of_object(object_def)?;
+                for (i, concrete_type) in concrete_types.iter().enumerate() {
+                    if let Some(mapped_sort) = self.context.sort_map.get(concrete_type) {
+                        let class_type_param = self
+                            .context
+                            .class_templates
+                            .get(&object_def.class_name)
+                            .unwrap()
+                            .type_params[i]
+                            .clone();
                         object_context
                             .sort_map
-                            .insert("Pos".to_string(), mapped_sort.clone());
-                        debug!(
-                            "Mapped generic Pos to {} for object {}",
-                            concrete_type_name, object_def.name
-                        );
+                            .insert(class_type_param, mapped_sort.clone());
                     }
-
-                    // Step 2: Instantiate any dependent datatype templates
-                    let instantiated_datatypes = self.instantiate_datatype_templates(
-                        &object_def.name,
-                        &concrete_type_name,
-                        &mut object_context,
-                    )?;
-
-                    debug!(
-                        "Instantiated {} datatype templates for object {}",
-                        instantiated_datatypes.len(),
-                        object_def.name
-                    );
+                    let instantiated_datatypes =
+                        self.inst_dt_templ(&object_def.name, &concrete_type, &mut object_context)?;
                     commands.extend(instantiated_datatypes);
                 }
 
@@ -439,7 +424,7 @@ impl Desugarer {
 
             // Handle standard SyGuS commands with recursive term transformation
             LSCmd::As(sygus_cmd) => {
-                let desugared_cmd = self.desugar_sygus_command_recursively(sygus_cmd)?;
+                let desugared_cmd = self.desugar_sygus_cmd_rec(sygus_cmd)?;
                 Ok(vec![desugared_cmd])
             }
 
@@ -452,14 +437,14 @@ impl Desugarer {
     }
 
     /// Recursively desugar a SyGuS command with full context awareness
-    fn desugar_sygus_command_recursively(&mut self, cmd: &SyGuSCmd) -> Result<SyGuSCmd, String> {
+    fn desugar_sygus_cmd_rec(&mut self, cmd: &SyGuSCmd) -> Result<SyGuSCmd, String> {
         match cmd {
             SyGuSCmd::DefineFun(func_name, params, ret_type, body) => {
                 // Recursively transform parameters, return type, and body
                 let desugared_params: Result<Vec<SortedVar>, String> = params
                     .iter()
                     .map(|param| {
-                        let desugared_sort = self.desugar_sort_recursively(&param.sort)?;
+                        let desugared_sort = self.desugar_sort_rec(&param.sort)?;
                         Ok(SortedVar {
                             name: param.name.clone(),
                             sort: desugared_sort,
@@ -467,8 +452,8 @@ impl Desugarer {
                     })
                     .collect();
 
-                let desugared_ret_type = self.desugar_sort_recursively(ret_type)?;
-                let desugared_body = self.desugar_sygus_term_recursively(body)?;
+                let desugared_ret_type = self.desugar_sort_rec(ret_type)?;
+                let desugared_body = self.desugar_sygus_term_rec(body)?;
                 Ok(SyGuSCmd::DefineFun(
                     func_name.clone(),
                     desugared_params?,
@@ -479,7 +464,7 @@ impl Desugarer {
 
             SyGuSCmd::Constraint(term) => {
                 debug!("Desugaring constraint term: {:?}", term);
-                let desugared_term = self.desugar_sygus_term_recursively(term)?;
+                let desugared_term = self.desugar_sygus_term_rec(term)?;
                 debug!("Desugared constraint term: {:?}", desugared_term);
                 Ok(SyGuSCmd::Constraint(desugared_term))
             }
@@ -489,7 +474,7 @@ impl Desugarer {
                 let desugared_params: Result<Vec<SortedVar>, String> = params
                     .iter()
                     .map(|param| {
-                        let desugared_sort = self.desugar_sort_recursively(&param.sort)?;
+                        let desugared_sort = self.desugar_sort_rec(&param.sort)?;
                         Ok(SortedVar {
                             name: param.name.clone(),
                             sort: desugared_sort,
@@ -497,7 +482,7 @@ impl Desugarer {
                     })
                     .collect();
 
-                let desugared_ret_type = self.desugar_sort_recursively(ret_type)?;
+                let desugared_ret_type = self.desugar_sort_rec(ret_type)?;
 
                 // For now, keep grammar as-is (could be enhanced later)
                 Ok(SyGuSCmd::SynthFun(
@@ -514,7 +499,7 @@ impl Desugarer {
     }
 
     /// Recursively desugar a sort with full context awareness
-    fn desugar_sort_recursively(&self, sort: &Sort) -> Result<Sort, String> {
+    fn desugar_sort_rec(&self, sort: &Sort) -> Result<Sort, String> {
         match sort {
             Sort::Simple(ident) => {
                 // Check if this is a mapped enum sort
@@ -533,7 +518,7 @@ impl Desugarer {
                 // Recursively transform parameter sorts
                 let desugared_params: Result<Vec<Sort>, String> = param_sorts
                     .iter()
-                    .map(|s| self.desugar_sort_recursively(s))
+                    .map(|s| self.desugar_sort_rec(s))
                     .collect();
 
                 Ok(Sort::Parameterized(ident.clone(), desugared_params?))
@@ -542,7 +527,7 @@ impl Desugarer {
     }
 
     /// Recursively desugar a SyGuS term with full context awareness
-    fn desugar_sygus_term_recursively(&mut self, term: &SyGuSTerm) -> Result<SyGuSTerm, String> {
+    fn desugar_sygus_term_rec(&mut self, term: &SyGuSTerm) -> Result<SyGuSTerm, String> {
         match term {
             SyGuSTerm::Identifier(ident) => {
                 // Check if this is a mapped enum value
@@ -568,7 +553,7 @@ impl Desugarer {
                 debug!("Desugaring application: {}", func);
                 let desugared_args: Result<Vec<SyGuSTerm>, String> = args
                     .iter()
-                    .map(|arg| self.desugar_sygus_term_recursively(arg))
+                    .map(|arg| self.desugar_sygus_term_rec(arg))
                     .collect();
 
                 Ok(SyGuSTerm::Application(func.clone(), desugared_args?))
@@ -579,7 +564,7 @@ impl Desugarer {
                 let desugared_bindings: Result<Vec<VarBinding>, String> = bindings
                     .iter()
                     .map(|binding| {
-                        let desugared_term = self.desugar_sygus_term_recursively(&binding.term)?;
+                        let desugared_term = self.desugar_sygus_term_rec(&binding.term)?;
                         Ok(VarBinding {
                             name: binding.name.clone(),
                             term: Box::new(desugared_term),
@@ -587,7 +572,7 @@ impl Desugarer {
                     })
                     .collect();
 
-                let desugared_body = self.desugar_sygus_term_recursively(body)?;
+                let desugared_body = self.desugar_sygus_term_rec(body)?;
 
                 Ok(SyGuSTerm::Let(
                     desugared_bindings?,
@@ -600,7 +585,7 @@ impl Desugarer {
                 let desugared_vars: Result<Vec<SortedVar>, String> = vars
                     .iter()
                     .map(|var| {
-                        let desugared_sort = self.desugar_sort_recursively(&var.sort)?;
+                        let desugared_sort = self.desugar_sort_rec(&var.sort)?;
                         Ok(SortedVar {
                             name: var.name.clone(),
                             sort: desugared_sort,
@@ -608,7 +593,7 @@ impl Desugarer {
                     })
                     .collect();
 
-                let desugared_body = self.desugar_sygus_term_recursively(body)?;
+                let desugared_body = self.desugar_sygus_term_rec(body)?;
 
                 Ok(SyGuSTerm::Exists(desugared_vars?, Box::new(desugared_body)))
             }
@@ -618,7 +603,7 @@ impl Desugarer {
                 let desugared_vars: Result<Vec<SortedVar>, String> = vars
                     .iter()
                     .map(|var| {
-                        let desugared_sort = self.desugar_sort_recursively(&var.sort)?;
+                        let desugared_sort = self.desugar_sort_rec(&var.sort)?;
                         Ok(SortedVar {
                             name: var.name.clone(),
                             sort: desugared_sort,
@@ -626,14 +611,14 @@ impl Desugarer {
                     })
                     .collect();
 
-                let desugared_body = self.desugar_sygus_term_recursively(body)?;
+                let desugared_body = self.desugar_sygus_term_rec(body)?;
 
                 Ok(SyGuSTerm::Forall(desugared_vars?, Box::new(desugared_body)))
             }
 
             SyGuSTerm::Annotated(term, attrs) => {
                 // Recursively transform the annotated term
-                let desugared_term = self.desugar_sygus_term_recursively(term)?;
+                let desugared_term = self.desugar_sygus_term_rec(term)?;
                 Ok(SyGuSTerm::Annotated(
                     Box::new(desugared_term),
                     attrs.clone(),
@@ -645,7 +630,7 @@ impl Desugarer {
     }
 
     /// Instantiate datatype templates for a specific object
-    fn instantiate_datatype_templates(
+    fn inst_dt_templ(
         &self,
         object_name: &str,
         concrete_type: &str,
@@ -975,28 +960,20 @@ impl Desugarer {
 
     /// Extract concrete type from object definition
     /// For objects like "w1: Model<Posw1>", extract "Posw1" from type_args
-    fn extract_concrete_type_from_object(
-        &self,
-        object_def: &crate::parser::ast::ObjectDef,
-    ) -> Result<Option<String>, String> {
-        // Look at the type_args field to find the concrete type
+    fn type_params_of_object(&self, object_def: &ObjectDef) -> Result<Vec<String>, String> {
         if !object_def.type_args.is_empty() {
-            // Get the first type argument as the concrete type
-            if let Sort::Simple(ident) = &object_def.type_args[0] {
-                let concrete_type = ident.get_name().to_string();
-                debug!(
-                    "Extracted concrete type {} from object {} type args",
-                    concrete_type, object_def.name
-                );
-                return Ok(Some(concrete_type));
+            for arg in &object_def.type_args {
+                if let Sort::Simple(ident) = arg {
+                    let concrete_type = ident.get_name().to_string();
+                    return Ok(vec![concrete_type]);
+                }
             }
         }
-
         debug!(
             "Could not extract concrete type from object {} (no type args or complex type)",
             object_def.name
         );
-        Ok(None)
+        Ok(vec![])
     }
 
     /// Create equality test for match pattern

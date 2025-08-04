@@ -58,7 +58,7 @@ FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sor
 ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
 SynthFunExt = { "(" ~ #LSTkSynthFun="synth-fun" ~ Symbol ~ "(" ~ SortedVar+ ~ ")" ~ Sort ~ ")" }
 // Class definition: (define-class (ClassName [TypeParams]) FieldDecl* MethodDef*) 
-ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ MethodDef* ~ ")" }
+ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ (SyGuSCmdDeclareDatatype | SyGuSCmdDeclareDatatypes | MethodDef)* ~ ")" }
 
 // Field declaration: [fieldName Type]
 FieldDecl = {  "[" ~ Symbol ~ Sort ~ "]"  }

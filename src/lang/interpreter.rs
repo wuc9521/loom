@@ -4,6 +4,7 @@ use crate::parser::ast::{parse, LSCmd, LSTerm};
 use crate::theory::{Logic, ModelCtx};
 use log::debug;
 use sygus_parser::{Sort, SyGuSCmd};
+use crate::lang::types::adapter;
 
 #[derive(Debug, Clone)]
 pub enum SymbolLookupResult {
@@ -228,8 +229,6 @@ impl Interpreter {
         }
 
         for (dt_name, dt_def) in datatypes_to_merge {
-            debug!("Merging datatype from theory: {}", dt_name);
-            // check if the datatype already exists, if so, skip
             if !self.typing.global_scope().has_datatype(&dt_name) {
                 self.typing
                     .global_scope_mut()
@@ -593,7 +592,7 @@ impl Interpreter {
                 debug!("Declaring datatype: {}", name);
                 self.typing.check_all_conflicts(name, "datatype")?;
 
-                let data_type = crate::lang::types::adapter::from_dtdecl(name, dtdecl);
+                let data_type =  adapter::from_dtdecl(name, dtdecl);
                 debug!(
                     "Registering datatype: {} with {} constructors",
                     name,

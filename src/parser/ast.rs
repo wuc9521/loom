@@ -54,6 +54,7 @@ pub struct ClassDef {
     pub type_params: Vec<String>,
     pub fields: Vec<ClassField>,
     pub methods: Vec<FunctionType>,
+    pub datatypes: Vec<SyGuSCmd>,
 }
 
 /// Object definition
@@ -618,32 +619,6 @@ pub fn parse_cmd(cmd: Pair<'_, Rule>) -> Result<LSCmd, LSParseError> {
     }
 }
 
-// /// validate the constraint format
-// fn validate_constraint(term: &sygus_parser::SyGuSTerm, cmd_str: &str) -> Result<(), LSParseError> {
-//     use sygus_parser::SyGuSTerm::*;
-
-//     let supported = match term {
-//         Application(sym, args) if sym.to_string() == "models" && args.len() >= 1 => true,
-//         Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-//             if let Application(models_sym, models_args) = &args[0] {
-//                 models_sym.to_string() == "models" && models_args.len() >= 1
-//             } else {
-//                 false
-//             }
-//         }
-//         _ => false,
-//     };
-
-//     if !supported {
-//         return Err(LSParseError::UnsupportedFeature(format!(
-//             "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
-//             cmd_str
-//         )));
-//     }
-
-//     Ok(())
-// }
-
 impl LSCmd {
     pub fn declare_fun(name: &str, arg_sorts: Vec<Sort>, ret_sort: Sort) -> Self {
         LSCmd::DeclareFunc(FunctionType::new_signature(
@@ -655,7 +630,7 @@ impl LSCmd {
 }
 
 impl ClassDef {
-    // ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ MethodDef* ~ ")" }
+    // ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ (SyGuSCmdDeclareDatatype | SyGuSCmdDeclareDatatypes | MethodDef)* ~ ")" }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         debug!("ClassDef: {:?}", pair.as_str());
         let mut inner = pair.into_inner();
@@ -668,6 +643,7 @@ impl ClassDef {
         let mut type_params = vec![];
         let mut fields = vec![];
         let mut methods = vec![];
+        let mut datatypes = vec![];
         while let Some(field_pair) = inner.peek() {
             match field_pair.as_rule() {
                 Rule::Symbol => {
@@ -679,6 +655,13 @@ impl ClassDef {
                     let field = ClassField::parse(field_pair.clone())?;
                     fields.push(field.clone());
                     debug!("field: {}", field);
+                }
+                Rule::SyGuSCmdDeclareDatatype | Rule::SyGuSCmdDeclareDatatypes => {
+                    let datatype = SyGuSCmd::from_str(field_pair.as_str()).map_err(|e| {
+                        LSParseError::InvalidSyntax(format!("Failed to parse datatype: {}", e))
+                    })?;
+                    datatypes.push(datatype.clone());
+                    // TODO: register constructors.
                 }
                 Rule::MethodDef => {
                     let method = FunctionType::parse(field_pair.clone())?;
@@ -697,6 +680,7 @@ impl ClassDef {
             type_params,
             fields,
             methods,
+            datatypes,
         })
     }
 }
@@ -742,11 +726,12 @@ impl ObjectDef {
             .to_string();
         debug!("name: {:?}", name);
         // Parse class instantiation: next should be class name, followed by type args
-        let class_name = inner.next()
+        let class_name = inner
+            .next()
             .ok_or_else(|| LSParseError::InvalidSyntax("Expected class name".to_string()))?
             .as_str()
             .to_string();
-            
+
         let mut type_args = Vec::new();
         while let Some(sort_pair) = inner.peek() {
             if sort_pair.as_rule() == Rule::Sort {

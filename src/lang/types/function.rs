@@ -201,8 +201,7 @@ impl FunctionType {
 
 /// adapter: convert sygus-parser's datatype to our type system
 pub mod adapter {
-    use sygus_parser::{DTDecl, SyGuSCmd};
-
+    use sygus_parser::DTDecl;
     pub fn from_dtdecl(name: &str, dtdecl: &DTDecl) -> super::super::basic::DataType {
         let mut constructors = vec![];
         for constructor_decl in dtdecl {
@@ -222,15 +221,6 @@ pub mod adapter {
         super::super::basic::DataType {
             name: name.to_string(),
             constructors,
-        }
-    }
-
-    pub fn from_sygus_cmd(cmd: &SyGuSCmd) -> Option<(String, super::super::basic::DataType)> {
-        match cmd {
-            SyGuSCmd::DeclareDatatype(name, datatype) => {
-                Some((name.clone(), from_dtdecl(name, datatype)))
-            }
-            _ => None,
         }
     }
 } 

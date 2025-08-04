@@ -1,9 +1,10 @@
 // objects.rs
 use crate::lang::interpreter::Interpreter;
 use crate::lang::runtime::{Function, Scope, Value};
-use crate::lang::types::FunctionType;
+use crate::lang::types::{adapter, FunctionType};
 use crate::parser::ast::{ClassDef, ObjectDef};
 use log::debug;
+use sygus_parser::{Sort, SyGuSCmd};
 
 impl Interpreter {
     /// Define a class
@@ -61,6 +62,14 @@ impl Interpreter {
             self.typing
                 .global_scope_mut()
                 .register_function_type(field.name.clone(), field_function_type);
+        }
+
+        // Register datatypes
+        for datatype in &class_def.datatypes {
+            if let SyGuSCmd::DeclareDatatype(name, datatype) = datatype {
+                let data_type = adapter::from_dtdecl(name, datatype);
+                self.typing.current_scope_mut().register_datatype(name.clone(), data_type);
+            }
         }
 
         Ok(())
@@ -137,10 +146,10 @@ impl Interpreter {
         for type_param in &class_def.type_params {
             self.typing.current_scope_mut().bind_variable(
                 type_param.clone(),
-                sygus_parser::Sort::Simple(sygus_parser::Identifier::Symbol(type_param.clone())),
+                Sort::from_name(type_param),
             );
         }
-        let class_sort = sygus_parser::Sort::from_name(&class_def.name);
+        let class_sort = Sort::from_name(&class_def.name);
         for field in &class_def.fields {
             self.typing.current_scope_mut().register_function_type(
                 field.name.clone(),
@@ -162,6 +171,14 @@ impl Interpreter {
                 self.typing
                     .current_scope_mut()
                     .register_function_type(method.name.clone().unwrap(), method_type);
+            }
+        }
+
+        // Then, register all declared datatypes
+        for datatype in &class_def.datatypes {
+            if let SyGuSCmd::DeclareDatatype(name, datatype) = datatype {
+                let data_type = adapter::from_dtdecl(name, datatype);
+                self.typing.current_scope_mut().register_datatype(name.clone(), data_type);
             }
         }
 
