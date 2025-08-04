@@ -1,13 +1,13 @@
 use log::error;
-use ls_parser::lang::interpreter::Interpreter;
-use ls_parser::parser::ast::parse;
+use ls_parser::lang::runtime::Runtime;
+use ls_parser::parser::LSFile;
 use ls_parser::translator::SyGuSTranslator;
 use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 use std::io;
 
 /// REPL command handler
-fn handle_repl_command(cmd: &str, interpreter: &mut Interpreter) -> bool {
+fn handle_repl_command(cmd: &str, interpreter: &mut Runtime) -> bool {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() {
         return false;
@@ -24,7 +24,6 @@ fn handle_repl_command(cmd: &str, interpreter: &mut Interpreter) -> bool {
             println!("  :translate, :t      - Translate current buffer to SyGuS");
             println!("  :synthesize, :syn   - Execute and run synthesis");
             println!("  :load <file>        - Load and execute a file");
-            println!("  :theory <file>      - Load a theory file");
             println!("  :env                - Show current environment");
             println!("  :history            - Show command history");
             true
@@ -61,10 +60,10 @@ fn handle_repl_command(cmd: &str, interpreter: &mut Interpreter) -> bool {
             match std::fs::read_to_string(parts[1]) {
                 Ok(content) => {
                     println!("Loading file: {}", parts[1]);
-                    match parse(&content) {
+                    match LSFile::parse(&content) {
                         Ok(ls_file) => {
                             for cmd in &ls_file.cmds {
-                                if let Err(e) = interpreter.proc(cmd) {
+                                if let Err(e) = interpreter.run(cmd) {
                                     println!("Error executing command: {}", e);
                                 }
                             }
@@ -81,25 +80,8 @@ fn handle_repl_command(cmd: &str, interpreter: &mut Interpreter) -> bool {
             }
             true
         }
-        ":theory" => {
-            if parts.len() != 2 {
-                println!("Usage: :theory <file>");
-                return true;
-            }
-            match interpreter.load_theory_file(parts[1]) {
-                Ok(_) => {
-                    println!("Theory file loaded successfully");
-                }
-                Err(e) => {
-                    println!("Error loading theory file: {}", e);
-                }
-            }
-            true
-        }
         ":env" => {
             println!("Current environment:");
-            println!("  Logic: {:?}", interpreter.logic);
-            println!("  Theories loaded: {}", interpreter.theories.len());
             println!("  Global scope bindings: {}", interpreter.global_scope().bindings.len());
             println!("  Type environment scopes: {}", interpreter.typing.stack.len());
             true
@@ -129,15 +111,15 @@ fn paren_balance(s: &str) -> i32 {
 }
 
 /// Execute buffer content
-fn execute_buffer(buffer: &str, interpreter: &mut Interpreter) -> Result<(), String> {
+fn execute_buffer(buffer: &str, interpreter: &mut Runtime) -> Result<(), String> {
     if buffer.trim().is_empty() {
         return Ok(());
     }
 
-    match parse(buffer) {
+    match LSFile::parse(buffer) {
         Ok(ls_file) => {
             for cmd in &ls_file.cmds {
-                interpreter.proc(cmd)?;
+                interpreter.run(cmd)?;
             }
             Ok(())
         }
@@ -146,12 +128,12 @@ fn execute_buffer(buffer: &str, interpreter: &mut Interpreter) -> Result<(), Str
 }
 
 /// Translate buffer content to SyGuS
-fn translate_buffer(buffer: &str, _interpreter: &Interpreter) -> Result<(), String> {
+fn translate_buffer(buffer: &str, _interpreter: &Runtime) -> Result<(), String> {
     if buffer.trim().is_empty() {
         return Ok(());
     }
 
-    let ls_file = parse(buffer).map_err(|e| e.to_string())?;
+    let ls_file = LSFile::parse(buffer).map_err(|e| e.to_string())?;
     let mut translator = SyGuSTranslator::new(ls_file, None);
     
     match translator.translate() {
@@ -167,7 +149,7 @@ fn translate_buffer(buffer: &str, _interpreter: &Interpreter) -> Result<(), Stri
 
 pub fn repl() -> io::Result<()> {
     let mut buffer = String::new();
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Runtime::new();
     let mut rl = Editor::<(), DefaultHistory>::new()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 

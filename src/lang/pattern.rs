@@ -1,5 +1,5 @@
-use crate::lang::model::{EnumSortElem, Pattern, PatternElem};
-use crate::lang::runtime::{Scope, Value};
+use crate::parser::{EnumSortElem, Pattern, PatternElem};
+use crate::lang::utils::{Scope, Value};
 use log::debug;
 use sygus_parser::Sort;
 

@@ -58,4 +58,5 @@ pub struct ClassType {
     pub type_params: Vec<String>,
     pub fields: Vec<(String, Sort)>,
     pub methods: HashMap<String, super::FunctionType>,
+    pub datatypes: Vec<String>,
 } 

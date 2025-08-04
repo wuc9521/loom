@@ -1,5 +1,5 @@
 use crate::lang::types::{TypeEnv, TypeInferer};
-use crate::parser::ast::{LSCmd, LSFile};
+use crate::parser::{LSCmd, ast::LSFile};
 use log::{debug, info};
 use std::collections::HashMap;
 use derive_more::Display;
@@ -135,7 +135,7 @@ impl SemanticAnalyzer {
                     // Enum sorts will be processed in the third pass
                 }
                 
-                LSCmd::ClassDef(class_def) => {
+                LSCmd::DefineClass(class_def) => {
                     debug!("Found class definition: {} with type params: {:?}", 
                            class_def.name, class_def.type_params);
                     
@@ -147,7 +147,7 @@ impl SemanticAnalyzer {
                     result.class_templates.insert(class_def.name.clone(), template);
                 }
                 
-                LSCmd::ObjectDef(object_def) => {
+                LSCmd::DefineObj(object_def) => {
                     debug!("Found object definition: {} of class {}", 
                            object_def.name, object_def.class_name);
                     // Object definitions will be processed in the second pass
@@ -182,7 +182,7 @@ impl SemanticAnalyzer {
                     // TODO: Perform type checking on constraint
                 }
                 
-                LSCmd::ObjectDef(object_def) => {
+                LSCmd::DefineObj(object_def) => {
                     debug!("Type checking object: {}", object_def.name);
                     // TODO: Perform type checking on object definition
                 }

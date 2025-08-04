@@ -1,7 +1,7 @@
 use clap::Parser;
 use log::info;
-use ls_parser::lang::interpreter::Interpreter;
-use ls_parser::parser::ast::parse;
+use ls_parser::lang::runtime::Runtime;
+use ls_parser::parser::LSFile;
 use ls_parser::translator::SyGuSTranslator;
 use std::fs;
 use std::io;
@@ -51,8 +51,8 @@ pub enum OutputMode {
 pub enum Solver {
     /// Use CVC5 solver (default)
     CVC5,
-    /// Use Z3 solver (if available)
-    Z3,
+    /// Use DryadSynth solver (if available)
+    DryadSynth,
     /// Use no solver (just translate)
     None,
 }
@@ -60,18 +60,18 @@ pub enum Solver {
 /// Process file with the new four-stage compilation pipeline
 fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
     // Parse file
-    let ls_file = parse(input)
+    let ls_file = LSFile::parse(input)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Parse error: {}", e)))?;
 
     // Create interpreter for legacy compatibility
-    let mut interpreter = Interpreter::new();
+    let mut interpreter = Runtime::new();
 
     // Handle different output modes
     match args.output {
         OutputMode::Execute => {
             // Execute commands normally using interpreter
             for cmd in &ls_file.cmds {
-                interpreter.proc(cmd).map_err(|e| {
+                interpreter.run(cmd).map_err(|e| {
                     io::Error::new(io::ErrorKind::Other, format!("Execution error: {}", e))
                 })?;
             }
@@ -82,7 +82,7 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
             // Show parsed commands
             info!("Parsed LS commands:");
             for (i, cmd) in ls_file.cmds.iter().enumerate() {
-                info!("  {}: {}", i + 1, cmd);
+                println!("  {i:>2}: {cmd}");
             }
         }
 
@@ -94,7 +94,7 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
                     info!("Translation completed successfully!");
                     info!("Generated {} SyGuS commands:", commands.len());
                     for cmd in commands.iter() {
-                        println!("{}", cmd);
+                        println!("{cmd}");
                     }
                 }
                 Err(e) => {

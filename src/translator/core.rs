@@ -1,5 +1,5 @@
-use crate::lang::interpreter::Interpreter;
-use crate::parser::ast::{LSFile, LSTerm};
+use crate::lang::runtime::Runtime;
+use crate::parser::{ast::LSFile, LSTerm};
 use crate::translator::desugar::Desugarer;
 use crate::translator::semantic::SemanticAnalyzer;
 use log::{debug, info};
@@ -60,7 +60,7 @@ impl SymbolMapping {
 pub struct TranslationContext {
     pub symbol_mapping: SymbolMapping,
     pub type_environment: Option<crate::lang::types::TypeEnv>,
-    pub runtime_context: Option<HashMap<String, crate::lang::runtime::Value>>,
+    pub runtime_context: Option<HashMap<String, crate::lang::utils::Value>>,
     /// Object field mappings: (object_name, field_name) -> flattened_function_name
     pub object_fields: HashMap<(String, String), String>,
 }
@@ -199,11 +199,11 @@ pub struct SyGuSTranslator {
     pub original_file: LSFile,
     pub context: TranslationContext,
     pub synthesis_results: HashMap<String, LSTerm>,
-    pub interpreter: Option<Interpreter>, // For dynamic translation
+    pub interpreter: Option<Runtime>, // For dynamic translation
 }
 
 impl SyGuSTranslator {
-    pub fn new(original_file: LSFile, interpreter: Option<Interpreter>) -> Self {
+    pub fn new(original_file: LSFile, interpreter: Option<Runtime>) -> Self {
         Self {
             original_file,
             context: TranslationContext::new(),
@@ -227,7 +227,7 @@ impl SyGuSTranslator {
 
         if let Some(ref mut interpreter) = self.interpreter {
             for cmd in &self.original_file.cmds {
-                interpreter.proc(cmd)?;
+                interpreter.run(cmd)?;
             }
 
             // Extract type environment and runtime context

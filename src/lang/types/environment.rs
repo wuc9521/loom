@@ -180,6 +180,7 @@ impl TypeEnv {
             type_params,
             fields,
             methods: HashMap::new(),
+            datatypes: Vec::new(),
         };
         self.classes.insert(name, class_type);
     }

@@ -1,8 +1,8 @@
 use crate::lang::types::{TypeInferer, FunctionType};
-use crate::parser::ast::LSTerm;
+use crate::parser::LSTerm;
 use log::{debug, error};
 use sygus_parser::{Identifier, Sort};
-use crate::ANY_TYPE;
+use crate::lang::ANY_TYPE;
 
 impl TypeInferer {
     pub fn register_builtins(&mut self) {

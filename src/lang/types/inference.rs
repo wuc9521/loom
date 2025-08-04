@@ -1,6 +1,5 @@
-use crate::lang::model::MatchCase;
-use crate::parser::ast::{LSTerm, LSVarBinding};
-use crate::ANY_TYPE;
+use crate::parser::{LSTerm, LSVarBinding, MatchCase, Pattern};
+use crate::lang::ANY_TYPE;
 use log::{debug, error};
 use sygus_parser::{Identifier, Literal, Sort, SortedVar};
 
@@ -342,7 +341,7 @@ impl TypeInferer {
     /// bind variables in pattern matching - fixed version
     pub fn bind_pattern_variables(
         &mut self,
-        pattern: &crate::lang::model::Pattern,
+        pattern: &Pattern,
         term_type: &Sort,
     ) -> Result<(), String> {
         debug!("Binding pattern variables: {}", pattern);

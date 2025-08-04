@@ -1,5 +1,4 @@
-use crate::parser::ast::LSTerm;
-use crate::parser::{LSParseError, Rule};
+use crate::parser::{LSParseError, Rule, LSTerm};
 use derive_more::Display;
 use log::debug;
 use pest::iterators::Pair;

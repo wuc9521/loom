@@ -1,10 +1,10 @@
-use crate::lang::interpreter::{Interpreter, SymbolLookupResult};
-use crate::lang::model::MatchCase;
-use crate::lang::runtime::{Function, Value};
-use crate::parser::ast::LSTerm;
+use crate::lang::runtime::{Runtime, SymbolLookupResult};
+use crate::lang::utils::{Function, Value};
+use crate::parser::{LSTerm, MatchCase};
+use crate::lang::pattern::PatternMatcher;
 use log::{debug, error};
 
-impl Interpreter {
+impl Runtime {
     /// evaluate an expression
     pub fn eval(&mut self, term: &LSTerm) -> Result<Value, String> {
         match term {
@@ -342,7 +342,7 @@ impl Interpreter {
                 debug!("Trying pattern: {}", pattern);
 
                 // create pattern matcher
-                let matcher = crate::lang::pattern::PatternMatcher::new();
+                let matcher = PatternMatcher::new();
 
                 // Create pattern context with current type environment
                 // Get the current type environment from the interpreter's type inferer

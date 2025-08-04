@@ -1,12 +1,11 @@
-use crate::lang::model::Pattern;
-use crate::model::PatternElem;
-use crate::parser::ast::{LSCmd, LSFile, LSTerm, ObjectDef};
+use crate::parser::{LSCmd, ast::LSFile, LSTerm, ObjectDef, MatchCase, Pattern, PatternElem};
 use crate::translator::semantic::SemanticAnalysisResult;
 use crate::translator::utils::log2_ceil;
 use log::{debug, info};
 use std::collections::HashMap;
 use sygus_parser::{Identifier, Sort, SortedVar, SyGuSCmd, SyGuSTerm, VarBinding};
 use sygus_parser::api::{Cmd, Term};
+
 
 /// Context-aware desugarer that transforms high-level LS constructs into simple SyGuS constructs
 pub struct Desugarer {
@@ -106,14 +105,14 @@ impl Desugarer {
             }
 
             // Handle class definitions - store as templates (no output)
-            LSCmd::ClassDef(class_def) => {
+            LSCmd::DefineClass(class_def) => {
                 debug!("Processing class definition: {}", class_def.name);
                 // Classes are templates - no immediate output
                 Ok(vec![])
             }
 
             // Handle object definitions with isolated context and template instantiation
-            LSCmd::ObjectDef(object_def) => {
+            LSCmd::DefineObj(object_def) => {
                 let mut commands = Vec::new();
 
                 // Create an isolated context for this object
@@ -444,7 +443,7 @@ impl Desugarer {
     fn desugar_match_expr_with_context(
         &self,
         scrutinee: &LSTerm,
-        cases: &[crate::lang::model::MatchCase],
+        cases: &[MatchCase],
         object_name: &str,
         context: &ObjectContext,
     ) -> Result<SyGuSTerm, String> {
@@ -485,7 +484,7 @@ impl Desugarer {
     /// Desugar a single match case with context
     fn desugar_match_case_with_context(
         &self,
-        case: &crate::lang::model::MatchCase,
+        case: &MatchCase,
         _: &SyGuSTerm,
         object_name: &str,
         context: &ObjectContext,

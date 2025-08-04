@@ -1,12 +1,13 @@
 // objects.rs
-use crate::lang::interpreter::Interpreter;
-use crate::lang::runtime::{Function, Scope, Value};
+use crate::lang::runtime::Runtime;
+use crate::lang::utils::{Function, Scope, Value};
 use crate::lang::types::{adapter, FunctionType};
-use crate::parser::ast::{ClassDef, ObjectDef};
+use crate::parser::{ClassDef, ObjectDef};
 use log::debug;
 use sygus_parser::{Sort, SyGuSCmd};
+use crate::lang::ClassValue;
 
-impl Interpreter {
+impl Runtime {
     /// Define a class
     pub fn define_class(&mut self, class_def: ClassDef) -> Result<(), String> {
         debug!("Defining class: {}", class_def.name);
@@ -225,7 +226,7 @@ impl Interpreter {
     fn type_check_object(
         &mut self,
         object_def: &ObjectDef,
-        class: &crate::lang::runtime::ClassValue,
+        class: &ClassValue,
     ) -> Result<(), String> {
         debug!("Type checking object: {}", object_def.name);
 

@@ -1,8 +1,8 @@
-use crate::lang::interpreter::Interpreter;
-use crate::lang::runtime::Value;
-use crate::parser::ast::LSTerm;
+use crate::lang::runtime::Runtime;
+use crate::lang::utils::Value;
+use crate::parser::LSTerm;
 
-impl Interpreter {
+impl Runtime {
     pub fn eval_builtin_function(
         &mut self,
         func_name: &str,
@@ -111,24 +111,6 @@ impl Interpreter {
             _ => Err("multiply requires integer arguments".to_string()),
         }
     }
-
-    // fn eval_div(&mut self, args: &[LSTerm]) -> Result<Value, String> {
-    //     if args.len() != 2 {
-    //         return Err("divide requires exactly 2 arguments".to_string());
-    //     }
-    //     let a = self.eval(&args[0])?;
-    //     let b = self.eval(&args[1])?;
-    //     match (a, b) {
-    //         (Value::Int(x), Value::Int(y)) => {
-    //             if y == 0 {
-    //                 Err("division by zero".to_string())
-    //             } else {
-    //                 Ok(Value::Int(x / y))
-    //             }
-    //         }
-    //         _ => Err("divide requires integer arguments".to_string()),
-    //     }
-    // }
 
     fn eval_eq(&mut self, args: &[LSTerm]) -> Result<Value, String> {
         if args.len() != 2 {
