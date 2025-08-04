@@ -38,27 +38,22 @@ LetTerm = { "(" ~ #LSTkLet="let" ~ "(" ~ LSVarBinding+ ~ ")" ~ LSTerm ~ ")" }
 LSVarBinding = { "(" ~ Symbol ~ LSTerm ~ ")" }
 
 LSCmd = {
-  SyGuSCmd
-| FuncDecl
+FuncDecl
 | SynthFunExt
-| ModelDef
 | FuncDef
 | FuncDefRec
 | EnumSortDef
-| ThDefCmd
 | EchoCmd
 | ThSpecCmd
 | ClassDef
 | ObjectDef
+| SyGuSCmd
 }
 
 EchoCmd = { "(" ~ #LSTkEcho="echo" ~ LSTerm ~ ")" }
-ThDefCmd = { "(" ~ #LSTkDefTh="define-theory" ~ Symbol ~ "(" ~ LSCmd* ~ ")" ~ ")" }
 FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
-ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ (SetUniv | LSCmd)* ~ ")" }
 SynthFunExt = { "(" ~ #LSTkSynthFun="synth-fun" ~ Symbol ~ "(" ~ SortedVar+ ~ ")" ~ Sort ~ ")" }
-// Class definition: (define-class (ClassName [TypeParams]) FieldDecl* MethodDef*) 
-ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ (SyGuSCmdDeclareDatatype | SyGuSCmdDeclareDatatypes | MethodDef)* ~ ")" }
+ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ (LSCmd)* ~ ")" }
 
 // Field declaration: [fieldName Type]
 FieldDecl = {  "[" ~ Symbol ~ Sort ~ "]"  }
@@ -67,7 +62,7 @@ FieldDecl = {  "[" ~ Symbol ~ Sort ~ "]"  }
 MethodDef = { FuncDef | FuncDefRec }
 
 // Object definition: (define-object ObjectName (ClassName TypeArgs) ObjectMember*)
-ObjectDef = {  "(" ~ #LSTkDefObject="define-object" ~ Symbol ~ "(" ~ Symbol ~ Sort* ~ ")" ~ MethodDef* ~ ")"  }
+ObjectDef = {  "(" ~ #LSTkDefObject="define-object" ~ Symbol ~ "(" ~ Symbol ~ Sort* ~ ")" ~ LSCmd* ~ ")"  }
 MatchCase = { "(" ~ Pattern ~ LSTerm ~ ")" }
 
 SetUniv = { "(" ~ #LSTkSetUniv="set-univ" ~ Symbol ~ Sort ~ ")" }

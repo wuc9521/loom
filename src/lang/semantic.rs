@@ -38,11 +38,11 @@ pub struct DatatypeTemplate {
 }
 
 /// Semantic analyzer that performs context-sensitive analysis
-pub struct SemanticAnalyzer {
+pub struct Analyzer {
     type_inferer: TypeInferer,
 }
 
-impl SemanticAnalyzer {
+impl Analyzer {
     pub fn new() -> Self {
         Self {
             type_inferer: TypeInferer::new(),
@@ -65,7 +65,7 @@ impl SemanticAnalyzer {
         self.collect_declarations(ls_file, &mut result)?;
         
         // Second pass: perform type checking and inference
-        self.type_check_commands(ls_file, &mut result)?;
+        self.type_check_cmds(ls_file, &mut result)?;
         
         // Third pass: build enum mappings
         self.build_enum_mappings(ls_file, &mut result)?;
@@ -163,7 +163,7 @@ impl SemanticAnalyzer {
     }
 
     /// Second pass: perform type checking and inference
-    fn type_check_commands(
+    fn type_check_cmds(
         &mut self,
         ls_file: &LSFile,
         _result: &mut SemanticAnalysisResult,

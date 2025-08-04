@@ -1,10 +1,10 @@
 // objects.rs
 use crate::lang::runtime::Runtime;
 use crate::lang::utils::{Function, Scope, Value};
-use crate::lang::types::{adapter, FunctionType};
+use crate::lang::types::FunctionType;
 use crate::parser::{ClassDef, ObjectDef};
 use log::debug;
-use sygus_parser::{Sort, SyGuSCmd};
+use sygus_parser::Sort;
 use crate::lang::ClassValue;
 
 impl Runtime {
@@ -67,10 +67,7 @@ impl Runtime {
 
         // Register datatypes
         for datatype in &class_def.datatypes {
-            if let SyGuSCmd::DeclareDatatype(name, datatype) = datatype {
-                let data_type = adapter::from_dtdecl(name, datatype);
-                self.typing.current_scope_mut().register_datatype(name.clone(), data_type);
-            }
+            self.typing.current_scope_mut().register_datatype(datatype.name.clone(), datatype.clone());
         }
 
         Ok(())
@@ -177,10 +174,7 @@ impl Runtime {
 
         // Then, register all declared datatypes
         for datatype in &class_def.datatypes {
-            if let SyGuSCmd::DeclareDatatype(name, datatype) = datatype {
-                let data_type = adapter::from_dtdecl(name, datatype);
-                self.typing.current_scope_mut().register_datatype(name.clone(), data_type);
-            }
+            self.typing.current_scope_mut().register_datatype(datatype.name.clone(), datatype.clone());
         }
 
         // Type check methods

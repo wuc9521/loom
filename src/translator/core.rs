@@ -1,7 +1,7 @@
 use crate::lang::runtime::Runtime;
 use crate::parser::{ast::LSFile, LSTerm};
 use crate::translator::desugar::Desugarer;
-use crate::translator::semantic::SemanticAnalyzer;
+use crate::lang::semantic::Analyzer;
 use log::{debug, info};
 use std::collections::{HashMap, HashSet};
 use std::process::{Command, Stdio};
@@ -214,7 +214,7 @@ impl SyGuSTranslator {
 
     /// Translate the LS file to SyGuS commands
     pub fn translate(&mut self) -> Result<Vec<SyGuSCmd>, String> {
-        let mut semantic_analyzer = SemanticAnalyzer::new();
+        let mut semantic_analyzer = Analyzer::new();
         let semantic_result = semantic_analyzer.analyze(&self.original_file)?;
         let mut desugarer = Desugarer::new(self.original_file.clone(), semantic_result);
         let desugared_commands = desugarer.desugar_ast()?;

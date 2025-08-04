@@ -1,7 +1,7 @@
 use derive_more::Display;
 use pest::iterators::Pair;
 use sygus_parser::Sort;
-use crate::parser::{LSParseError, Rule};
+use crate::parser::{LSCmd, LSParseError, Rule};
 use crate::lang::types::FunctionType;
 use log::debug;
 
@@ -22,7 +22,7 @@ pub struct ObjectDef {
 
 // Parse object definition
 impl ObjectDef {
-    // ObjectDef = {  "(" ~ #LSTkDefObject="define-object" ~ Symbol ~ "(" ~ Symbol ~ Sort* ~ ")" ~ MethodDef* ~ ")"  }
+    // ObjectDef = {  "(" ~ #LSTkDefObject="define-object" ~ Symbol ~ "(" ~ Symbol ~ Sort* ~ ")" ~ LSCmd* ~ ")"  }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
         debug!("{:?}: {:?}", pair.as_rule(), pair.as_str());
         let mut inner = pair.into_inner();
@@ -57,9 +57,16 @@ impl ObjectDef {
         }
         let mut methods = Vec::new();
         while let Some(method_pair) = inner.peek() {
-            if method_pair.as_rule() == Rule::MethodDef {
-                let method_impl = FunctionType::parse(method_pair.clone())?;
-                methods.push(method_impl.clone());
+            if method_pair.as_rule() == Rule::LSCmd {
+                let cmd = LSCmd::parse(method_pair.clone())?;
+                match cmd {
+                    LSCmd::DefineFunc(func) | LSCmd::DefineFuncRec(func) => {
+                        methods.push(func.clone());
+                    }
+                    _ => {
+                        return Err(LSParseError::InvalidSyntax(format!("{}", cmd)));
+                    }
+                }
                 inner.next();
             } else {
                 break;

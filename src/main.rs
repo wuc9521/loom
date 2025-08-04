@@ -63,6 +63,7 @@ fn process_file(input: &str, args: &CLI) -> Result<(), io::Error> {
     let ls_file = LSFile::parse(input)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Parse error: {}", e)))?;
 
+
     // Create interpreter for legacy compatibility
     let mut interpreter = Runtime::new();
 

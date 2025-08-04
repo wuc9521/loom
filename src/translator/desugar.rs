@@ -1,5 +1,5 @@
 use crate::parser::{LSCmd, ast::LSFile, LSTerm, ObjectDef, MatchCase, Pattern, PatternElem};
-use crate::translator::semantic::SemanticAnalysisResult;
+use crate::lang::semantic::SemanticAnalysisResult;
 use crate::translator::utils::log2_ceil;
 use log::{debug, info};
 use std::collections::HashMap;
@@ -256,7 +256,7 @@ impl Desugarer {
     fn instantiate_single_datatype_template(
         &self,
         template_name: &str,
-        template: &crate::translator::semantic::DatatypeTemplate,
+        template: &crate::lang::semantic::DatatypeTemplate,
         object_def: &ObjectDef,
         _object_context: &ObjectContext,
     ) -> Result<SyGuSCmd, String> {

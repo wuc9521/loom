@@ -2,7 +2,7 @@ use crate::parser::{LSParseError, LSTerm, Rule, ObjectDef, ThSpecCmd};
 use derive_more::Display;
 use pest::iterators::Pair;
 use sygus_parser::{Identifier, Sort, SyGuSCmd};
-use crate::lang::types::FunctionType;
+use crate::lang::types::{DataType, FunctionType};
 
 #[derive(Debug, Display, Clone)]
 // display every cmd
@@ -78,7 +78,7 @@ pub struct ClassDef {
     pub type_params: Vec<String>,
     pub fields: Vec<ClassField>,
     pub methods: Vec<FunctionType>,
-    pub datatypes: Vec<SyGuSCmd>,
+    pub datatypes: Vec<DataType>,
 }
 
 /// Helper function to parse arrow sorts: (-> T1 T2 ... Tn)

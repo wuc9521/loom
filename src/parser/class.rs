@@ -1,16 +1,14 @@
-
+use crate::lang::types::adapter;
+use crate::parser::LSCmd;
+use crate::parser::{ClassDef, ClassField};
+use crate::parser::{LSParseError, Rule};
+use log::{debug, error};
 use pest::iterators::Pair;
 use sygus_parser::{Sort, SyGuSCmd};
-use crate::parser::{LSParseError, Rule};
-use crate::lang::types::FunctionType;
-use log::debug;
-use crate::parser::{ClassDef, ClassField};
-
 
 impl ClassDef {
-    // ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ (SyGuSCmdDeclareDatatype | SyGuSCmdDeclareDatatypes | MethodDef)* ~ ")" }
+    // ClassDef = {  "(" ~ #LSTkDefClass="define-class" ~ "(" ~ Symbol ~ "[" ~ Symbol* ~ "]" ~ ")" ~  "(" ~FieldDecl*  ~ ")" ~ (LSCmd)* ~ ")" }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
-        debug!("ClassDef: {:?}", pair.as_str());
         let mut inner = pair.into_inner();
         let name = inner
             .next()
@@ -34,17 +32,21 @@ impl ClassDef {
                     fields.push(field.clone());
                     debug!("field: {}", field);
                 }
-                Rule::SyGuSCmdDeclareDatatype | Rule::SyGuSCmdDeclareDatatypes => {
-                    let datatype = SyGuSCmd::from_str(field_pair.as_str()).map_err(|e| {
-                        LSParseError::InvalidSyntax(format!("Failed to parse datatype: {}", e))
-                    })?;
-                    datatypes.push(datatype.clone());
-                    // TODO: register constructors.
-                }
-                Rule::MethodDef => {
-                    let method = FunctionType::parse(field_pair.clone())?;
-                    methods.push(method.clone());
-                    debug!("method: {}", method);
+                Rule::LSCmd => {
+                    println!("field_pair: {:?}", field_pair.as_str());
+                    let cmd = LSCmd::parse(field_pair.clone())?;
+                    match cmd {
+                        LSCmd::DefineFunc(func) | LSCmd::DefineFuncRec(func) => {
+                            methods.push(func.clone());
+                        }
+                        LSCmd::As(SyGuSCmd::DeclareDatatype(name, decl)) => {
+                            datatypes.push(adapter::from_dtdecl(&name, &decl));
+                        }
+                        _ => {
+                            error!("invalid cmd: {:?}", cmd);
+                            return Err(LSParseError::InvalidSyntax(format!("{}", cmd)));
+                        }
+                    }
                 }
                 _ => {
                     debug!("break at {:?}", field_pair.as_rule());
