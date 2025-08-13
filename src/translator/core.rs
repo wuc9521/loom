@@ -59,7 +59,7 @@ impl SymbolMapping {
 /// Translation context containing type and runtime information
 pub struct TranslationContext {
     pub symbol_mapping: SymbolMapping,
-    pub type_environment: Option<crate::lang::types::TypeEnv>,
+    pub type_environment: Option<crate::lang::types::SymbolMap>,
     pub runtime_context: Option<HashMap<String, crate::lang::utils::Value>>,
     /// Object field mappings: (object_name, field_name) -> flattened_function_name
     pub object_fields: HashMap<(String, String), String>,

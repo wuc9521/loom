@@ -2,60 +2,16 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{listings}
+\usepackage{amsthm}
+\usepackage{stmaryrd} % Where \llbracket and \rrbracket are defined
+
+\usepackage{mathtools}
 \allowdisplaybreaks
 
 \input{macros.tex}
 
 \begin{document}
 
-\section*{Formal Syntax of Logic Learning Language}
-
-\begin{align*}
-     \Program             ::=~       & \Stmt^+                                                                                \\
-     \\
-     \Stmt                ::=~       & \Lparen\SetLogic~\Logic\Rparen                                                         \\
-     \mid~                           & \Lparen\DeclareSort~\Sort~\Arity\Rparen                                                \\
-     \mid~                           & \Lparen\DefineSignature~\Sig~\SigDef\Rparen                                            \\
-     \mid~                           & \Lparen\DefineModel~\Model~\textsf{:signature}~\Sig~\Lparen\InterpStmt^*\Rparen\Rparen \\
-     \mid~                           & \Lparen\DefineGrammar~\Grammar~\GrammarDef\Rparen                                      \\
-     \mid~                           & \Lparen\SynthForm~\Form~\textsf{:signature}~\Sig~\textsf{:grammar}~\Grammar\Rparen     \\
-     \mid~                           & \Lparen\Constraint~\Bexp\Rparen                                                        \\
-     \mid~                           & \Lparen\CheckSynth\Rparen                                                              \\
-     \\
-     \SigDef           ::=~          & \SigStmt^+                                                                             \\
-     \SigStmt       ::=~             & \Lparen\DeclareFun~\Func~\Lparen\Sort^*\Rparen~\Sort\Rparen                            \\
-     \\
-     \Sort                ::=~       & \Ident                                                                                 \\
-     \Func           ::=~            & \Ident                                                                                 \\
-     \\
-     \FuncInterp ::=~                & \Func~\InterpValue                                                                     \\
-     \InterpStmt  ::=~               & \Lparen\DefineUniverse~\UniverseDef\Rparen                                             \\
-     \mid~                           & \Lparen\Interpret~\Lparen\FuncInterp^*\Rparen\Rparen                                   \\
-     \InterpValue ::=~               & \Ident \mid \Match                                                                     \\
-     \UniverseDef         ::=~       & \Lparen\Ident~\{ \Ident^+ \}\Rparen                                                    \\
-     \\
-     \Match               ::=~       & \Lparen\texttt{match}~\MatchCase^+\Rparen                                              \\
-     \MatchCase           ::=~       & \Lparen\Lparen\InputValue^+\Rparen~\OutValue\Rparen                                    \\                                                      \\
-     \\
-     \Grammar             ::=~       & \GrammarRule^+                                                                         \\
-     \GrammarRule         ::=~       & \Lparen\NonTermName~\Sort\Rparen                                                             \\
-     \mid~                           & \Lparen\NonTermName~\ProductionRules\Rparen                                                  \\
-     \ProductionRules     ::=~       & \Ident^+                                                                               \\
-     \\
-     \Bexp                 ::=~      & \Lparen\And~\Bexp~\Bexp\Rparen                                                         \\
-     \mid~                           & \Lparen\Or~\Bexp~\Bexp\Rparen                                                          \\
-     \mid~                           & \Lparen\Not~\Bexp\Rparen                                                               \\
-     \mid~                           & \Lparen\texttt{models}~\Model~\Form\Rparen                                             \\
-     \mid~                           & \Bool
-     \\
-     \InputValue                ::=~ & \Ident \mid~\texttt{\_}                                                                \\
-     \OutValue ::=~                  & \Ident \mid~\Bool                                                                      \\
-     \Logic               ::=~       & \Ident                                                                                 \\
-     \Nat                 ::=~       & \texttt{0} \mid \texttt{1} \mid \dots                                                  \\
-     \Bool                ::=~       & \True~\mid~\False                                                                      \\
-     \Ident               ::=~       & \texttt{a} \mid \texttt{b} \mid \dots~\Lparen\text{any valid identifier}\Rparen        \\
-     \Arity               ::=~       & \Nat                                                                                   \\
-     \NonTermName         ::=~       & \Ident                                                                                 \\
-\end{align*}
-
+\input{syntax.tex}
+\input{desugar.tex}
 \end{document}

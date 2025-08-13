@@ -1,20 +1,22 @@
-% textsf
-\newcommand{\SetLogic}{\texttt{set-logic}}
-\newcommand{\DeclareSort}{\texttt{declare-sort}}
-\newcommand{\DeclareFun}{\texttt{declare-fun}}
+% utils
+\newcommand{\Lparen}{~\texttt{(}}
+\newcommand{\Rparen}{\texttt{)}~}
+
+% commands
+\newcommand{\SetLogic}[1]{\Lparen\texttt{set-logic}~#1\Rparen}
+\newcommand{\DeclareSort}[2]{\Lparen\texttt{declare-sort}~#1~#2\Rparen}
+\newcommand{\DeclareFun}[4]{\Lparen\texttt{declare-fun}~#1~\Lparen~#2~\Rparen~#3~#4\Rparen}
 \newcommand{\DefineSignature}{\texttt{define-signature}}
 \newcommand{\DefineModel}{\texttt{define-model}}
 \newcommand{\Interpret}{\texttt{interpret}}
 \newcommand{\DefineGrammar}{\texttt{define-grammar}}
 \newcommand{\SynthForm}{\texttt{synth-form}}
-\newcommand{\Constraint}{\texttt{constraint}}
-\newcommand{\CheckSynth}{\texttt{check-synth}}
+\newcommand{\Constraint}[1]{\Lparen\texttt{constraint}~#1\Rparen}
+\newcommand{\CheckSynth}{\Lparen\texttt{check-synth}\Rparen}
 \newcommand{\DefineUniverse}{\texttt{define-univ}}
 \renewcommand{\And}{\texttt{and}}
 \newcommand{\Or}{\texttt{or}}
 \newcommand{\Not}{\texttt{not}}
-\newcommand{\Lparen}{~\texttt{(}}
-\newcommand{\Rparen}{\texttt{)}~}
 \newcommand{\True}{\texttt{True}}
 \newcommand{\False}{\texttt{False}}
 
@@ -49,3 +51,5 @@
 \newcommand{\OutValue}{\langle\textit{OutValue}\rangle}
 \newcommand{\TermName}{\langle\textit{TermName}\rangle}
 \newcommand{\NonTermName}{\langle\textit{NonTermName}\rangle}
+
+\newcommand{\Sem}[1]{\llbracket #1 \rrbracket}

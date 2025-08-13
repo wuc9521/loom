@@ -1,84 +1,115 @@
-(declare-sort Char 0)
-(declare-fun a () Char)
-(declare-fun b () Char)
-
+(define-enum-sort Char ($a $b))
+(define-fun a () Char $a)
+(define-fun b () Char $b)
 
 (declare-datatype RE (
-    (re.empty) (re.eps)
+    (re.empty) 
+    (re.eps)
     (re.sym (sym Char))
     (re.union (lhs RE) (rhs RE))
     (re.++ (lhs RE) (rhs RE))
     (re.* (body RE))
-    (re.inter (lhs RE) (rhs RE))
-    (re.comp (body RE))
 ))
 
-
-(define-class (Model [T])
-    (
-        [size Int]
-        [toInt (-> T Int)]
-        [charAt (-> T Char)]
+(model-spec 
+    (declare-sort T 0)
+    (declare-fun-inline toInt () (-> T Int))
+    (declare-fun-inline charAt () (-> T Char))
+    (declare-fun-inline fst () T) 
+    (declare-fun-inline end () T)
+    (declare-datatype Interval (
+        (mk-iv 
+            (l-iv T) 
+            (r-iv T)
+        ))
     )
-
-    (declare-datatype Interval
-        ((mk-iv (l T) (r T))))
-
-    (define-fun iv-len ((iv Interval)) Int
-        (- (toInt (r iv)) (toInt (l iv))))
-    
-    (define-fun-rec eval ((m Model) (iv Interval) (phi RE)) Bool
-        (match phi (
-            (re.empty false)
-            (re.eps (= (iv-len iv) 0))
-            ((re.sym c)
-                (and (= (iv-len iv) 1)
-                    (exists ((p T))
-                        (and (= (toInt p) (toInt (l iv)))
-                            (= (charAt p) c)
-                            ))))
-            ((re.union p q)
-            (or (eval m iv p)
-                (eval m iv q)))
-            ((re.++ p q)
-                (exists ((cut T))
-                    (and (and (<= (toInt (l iv)) (toInt cut))
-                        (<= (toInt cut) (toInt (r iv))))
-                        (and (eval m (mk-iv (l iv) cut) p)
-                            (eval m (mk-iv cut (r iv)) q)))))
-            ((re.* p)
-            ((mu (Star ((seg Interval)) Bool) ; (mu name (param) return sort)
-                (lambda ((seg Interval)) ; body
-                    (or (= (toInt (l seg)) (toInt (r seg))) ; empty interval
-                        (exists ((cut T))
-                            (and (and (<= (toInt (l seg)) (toInt cut)) (<= (toInt cut) (toInt (r seg))))
-                                (and (eval m (mk-iv (l seg) cut) p)
-                                    (Star (mk-iv cut (r seg)))))))))
-                    iv))
-            )
+    (define-fun-inline iv-len () (-> Interval Int)
+        (lambda ((iv Interval))
+            (- (toInt (r-iv iv)) (toInt (l-iv iv)))
         )
     )
-    (define-fun models ((m Model) (phi RE)) Bool
-        (eval m (mk-iv (toInt (l iv)) (toInt (r iv))) phi)
+    (define-fun iv-valid () (-> Interval Bool)
+        (lambda ((iv Interval))
+            (<= (iv-len iv) 0)
+        )
+    )
+    (define-fun-rec eval ((phi RE)) (-> Interval Bool)
+        (match phi (
+            (re.empty 
+                (lambda ((iv Interval)) false) ; constant bitvec #b0...0
+            )
+            (re.eps 
+                (lambda ((iv Interval)) (= (iv-len iv) 0)) ; constant bitvec 
+            )
+            ((re.sym c) ; (define-fun re.sym ((c (_ BitVec ...)) (_ BitVec ...)) .....)
+                (lambda ((iv Interval))
+                    (and (= (iv-len iv) 1)
+                        (exists ((p T))
+                            (and (= (toInt p) (toInt (l-iv iv)))
+                                (= (charAt p) c)
+                                )))
+                )
+            )
+            ((re.union p q) ; bvor
+                (lambda ((iv Interval))
+                    (or (eval p iv)
+                        (eval q iv))
+                )
+            )
+            ((re.++ p q) 
+                (lambda ((iv Interval))
+                    (exists ((cut T))
+                        (and (and (<= (toInt (l-iv iv)) (toInt cut))
+                            (<= (toInt cut) (toInt (r-iv iv))))
+                            (and (eval p (mk-iv (l-iv iv) cut))
+                                (eval q (mk-iv cut (r-iv iv))))))
+                )
+            )
+            ((re.* p)
+                (lambda ((iv Interval))
+                    ((mu (Star ((seg Interval)) Bool) ; (mu name (param) return sort)
+                        (lambda ((seg Interval)) ; body
+                            (or (= (iv-len seg) 0) ; empty interval
+                                (exists ((cut T))
+                                    (and (and (<= (toInt (l-iv seg)) (toInt cut)) (<= (toInt cut) (toInt (r-iv seg))))
+                                        (and (eval p (mk-iv (l-iv seg) cut))
+                                            (Star (mk-iv cut (r-iv seg)))))))))
+                            iv)
+                )
+            )
+        ))
+    )
+    (define-fun models ((phi RE)) Bool
+        (let ((iv (mk-iv fst end)))
+            (and (iv-valid iv)
+                (eval phi iv)))
     )
 )
 
 
+
 (define-enum-sort Pos_w1 ($0 $1))
-(define-object w1 (Model Pos_w1)
-    (define-fun size () Int 2)
-    (define-fun toInt ((p Pos_w1)) Int (match p (($0 0) ($1 1))))
-    (define-fun charAt ((p Pos_w1)) Char (match p (
+(define-enum-sort Pos_w2 ($0 $1 $2 $3))
+(define-enum-sort Pos_w4 ($0 $1 $2))
+
+(define-model w1
+    (interp-sort T () Pos_w1)
+    (interp-fun fst () T $0)
+    (interp-fun end () T $1)
+    (interp-fun toInt ((p Pos_w1)) Int (match p (($0 0) ($1 1))))
+    (interp-fun charAt ((p Pos_w1)) Char (match p (
         ($0 a) 
         ($1 b))))
 )
 
-(define-enum-sort Pos_w2 ($0 $1 $2 $3))
-(define-object w2 (Model Pos_w2)
-    (define-fun size () Int 4)
-    (define-fun toInt ((p Pos_w2)) Int
+
+(define-model w2
+    (interp-sort T () Pos_w2)
+    (interp-fun fst () T $0)
+    (interp-fun end () T $3)
+    (interp-fun toInt ((p Pos_w2)) Int
     (match p (($0 0) ($1 1) ($2 2) ($3 3))))
-    (define-fun charAt ((p Pos_w2)) Char
+    (interp-fun charAt ((p Pos_w2)) Char
     (match p (
         ($0 a) 
         ($2 a)
@@ -88,11 +119,12 @@
 
 
 
-(define-enum-sort Pos_w4 ($0 $1 $2))
-(define-object w4 (Model Pos_w4)
-    (define-fun size () Int 3)
-    (define-fun toInt ((p Pos_w4)) Int (match p (($0 0) ($1 1) ($2 2))))
-    (define-fun charAt ((p Pos_w4)) Char
+(define-model w4
+    (interp-sort T () Pos_w4)
+    (interp-fun fst () T $0)
+    (interp-fun end () T $2)
+    (interp-fun toInt ((p Pos_w4)) Int (match p (($0 0) ($1 1) ($2 2))))
+    (interp-fun charAt ((p Pos_w4)) Char
     (match p (
         ($0 b) 
         (_ a))))
@@ -102,7 +134,8 @@
 
 (synth-fun regex () RE)
 
-(constraint (models w1 regex))
-(constraint (models w2 regex))
-(constraint (not (models w4 regex)))
+; switch symbol-map according to model name
+(constraint (w1 (models regex)))    
+(constraint (w2 (models regex)))
+(constraint (not (w4 (models regex))))
 (check-synth)

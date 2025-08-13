@@ -4,19 +4,19 @@ use log::{debug, error};
 use sygus_parser::{Identifier, Literal, Sort, SortedVar};
 
 use super::basic::EnumType;
-use super::environment::TypeEnv;
+use super::environment::{SymbolMap, SymbolKind};
 use super::function::FunctionType;
 
 /// type inferer
 #[derive(Debug, Clone)]
 pub struct TypeInferer {
-    pub stack: Vec<TypeEnv>, // unified scope stack, manage all type environments
+    pub stack: Vec<SymbolMap>, // unified scope stack, manage all type environments
 }
 
 impl TypeInferer {
     pub fn new() -> Self {
         let mut inferer = Self { stack: Vec::new() };
-        inferer.stack.push(TypeEnv::new());
+        inferer.stack.push(SymbolMap::new());
         inferer.register_builtins();
         inferer
     }
@@ -25,10 +25,10 @@ impl TypeInferer {
     pub fn check_global_conflict(&self, name: &str, symbol_type: &str) -> Result<(), String> {
         let global_scope = self.global_scope();
         if global_scope.has_symbol(name) {
-            let existing_type = global_scope.get_symbol_type(name).unwrap_or("unknown");
+            let existing_type = global_scope.get_symbol_type(name).unwrap_or(SymbolKind::Unknown);
             Err(format!(
                 "Symbol '{}' is already defined as {} in global scope, cannot redefine as {}",
-                name, existing_type, symbol_type
+                name, existing_type.to_string(), symbol_type
             ))
         } else {
             Ok(())
@@ -39,7 +39,7 @@ impl TypeInferer {
     pub fn check_current_conflict(&self, name: &str, symbol_type: &str) -> Result<(), String> {
         let current_scope = self.current_scope();
         if current_scope.has_symbol(name) {
-            let existing_type = current_scope.get_symbol_type(name).unwrap_or("unknown");
+            let existing_type = current_scope.get_symbol_type(name).unwrap_or(SymbolKind::Unknown);
             Err(format!(
                 "Symbol '{}' is already defined as {} in current scope, cannot redefine as {}",
                 name, existing_type, symbol_type
@@ -58,29 +58,29 @@ impl TypeInferer {
         Ok(())
     }
 
-    pub fn current_scope(&self) -> &TypeEnv {
+    pub fn current_scope(&self) -> &SymbolMap {
         &self.stack[self.stack.len() - 1]
     }
 
     /// get current scope mutable reference
-    pub fn current_scope_mut(&mut self) -> &mut TypeEnv {
+    pub fn current_scope_mut(&mut self) -> &mut SymbolMap {
         let len = self.stack.len();
         &mut self.stack[len - 1]
     }
 
     /// get global scope
-    pub fn global_scope(&self) -> &TypeEnv {
+    pub fn global_scope(&self) -> &SymbolMap {
         &self.stack[0]
     }
 
     /// get global scope mutable reference
-    pub fn global_scope_mut(&mut self) -> &mut TypeEnv {
+    pub fn global_scope_mut(&mut self) -> &mut SymbolMap {
         &mut self.stack[0]
     }
 
     pub fn enter_scope(&mut self) {
         debug!("Entering scope, stack size: {}", self.stack.len());
-        self.stack.push(TypeEnv::new());
+        self.stack.push(SymbolMap::new());
         debug!("Entered scope, new stack size: {}", self.stack.len());
     }
 
@@ -434,7 +434,7 @@ impl TypeInferer {
         // lookup in scope stack (from top to bottom, i.e. from recent to distant)
         for (i, scope) in self.stack.iter().enumerate().rev() {
             debug!("Checking scope {} for variable '{}'", i, name);
-            if let Some(sort) = scope.get_variable_type(name) {
+            if let Some(sort) = scope.get_variable_sort(name) {
                 debug!(
                     "Found variable '{}' in scope {} with type {}",
                     name, i, sort

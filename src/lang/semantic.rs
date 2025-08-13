@@ -1,4 +1,4 @@
-use crate::lang::types::{TypeEnv, TypeInferer};
+use crate::lang::types::{SymbolMap, TypeInferer};
 use crate::parser::{LSCmd, ast::LSFile};
 use log::{debug, info};
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use sygus_parser::{Identifier, Sort, SyGuSCmd};
 #[display(fmt = "{}", "type_env.to_string()")]
 pub struct SemanticAnalysisResult {
     /// Complete type environment with all symbol information
-    pub type_env: TypeEnv,
+    pub type_env: SymbolMap,
     /// Mapping from enum values to their concrete representations
     pub enum_value_map: HashMap<String, String>,
     /// Mapping from class names to their templates
@@ -54,7 +54,7 @@ impl Analyzer {
         info!("Starting semantic analysis...");
         
         let mut result = SemanticAnalysisResult {
-            type_env: TypeEnv::new(),
+            type_env: SymbolMap::new(),
             enum_value_map: HashMap::new(),
             class_templates: HashMap::new(),
             datatype_templates: HashMap::new(),
@@ -236,12 +236,12 @@ impl Analyzer {
     }
 
     /// Get the type environment from the analyzer
-    pub fn get_type_env(&self) -> &TypeEnv {
+    pub fn get_type_env(&self) -> &SymbolMap {
         self.type_inferer.global_scope()
     }
 
     /// Get a mutable reference to the type environment
-    pub fn get_type_env_mut(&mut self) -> &mut TypeEnv {
+    pub fn get_type_env_mut(&mut self) -> &mut SymbolMap {
         self.type_inferer.global_scope_mut()
     }
 } 

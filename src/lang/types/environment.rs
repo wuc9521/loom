@@ -5,10 +5,31 @@ use sygus_parser::{Identifier, Sort};
 use super::basic::{Constructor, DataType, EnumType, ClassType, Finiteness};
 use super::function::FunctionType;
 
+#[derive(Debug, Clone, Display)]
+pub enum SymbolKind {
+    #[display(fmt = "unknown")]
+    Unknown,
+    #[display(fmt = "datatype")]
+    Datatype,
+    #[display(fmt = "enum")]
+    Enum,
+    #[display(fmt = "variable")]
+    Variable,
+    #[display(fmt = "function")]
+    Function,
+    #[display(fmt = "constructor")]
+    Constructor,
+    #[display(fmt = "class")]
+    Class,
+    #[display(fmt = "object")]
+    Object,
+}
+
 /// type environment
 #[derive(Debug, Clone, Display)]
 #[display(fmt = "{}", "datatypes.iter().map(|(k, v)| format!(\"{} -> {}\", k, v)).collect::<Vec<String>>().join(\", \")")]
-pub struct TypeEnv {
+pub struct SymbolMap {
+    symbols: HashMap<String, SymbolKind>, // maintain private.
     pub datatypes: HashMap<String, DataType>,
     pub enums: HashMap<String, EnumType>,
     pub variables: HashMap<String, Sort>,
@@ -16,11 +37,13 @@ pub struct TypeEnv {
     pub constructors: HashMap<String, Constructor>,
     pub classes: HashMap<String, ClassType>,
     pub objects: HashMap<String, (String, Vec<String>)>, // object name -> (class name, type args)
+    pub type_envs: HashMap<String, SymbolMap>, // type name -> symbol map
 }
 
-impl TypeEnv {
+impl SymbolMap {
     pub fn new() -> Self {
         Self {
+            symbols: HashMap::new(),
             datatypes: HashMap::new(),
             enums: HashMap::new(),
             variables: HashMap::new(),
@@ -28,6 +51,7 @@ impl TypeEnv {
             constructors: HashMap::new(),
             classes: HashMap::new(),
             objects: HashMap::new(),
+            type_envs: HashMap::new(),
         }
     }
 
@@ -62,19 +86,19 @@ impl TypeEnv {
     }
 
     /// get the type of the symbol (if exists)
-    pub fn get_symbol_type(&self, name: &str) -> Option<&str> {
+    pub fn get_symbol_type(&self, name: &str) -> Option<SymbolKind> {
         if self.has_datatype(name) {
-            Some("datatype")
+            Some(SymbolKind::Datatype)
         } else if self.has_enum(name) {
-            Some("enum")
+            Some(SymbolKind::Enum)
         } else if self.has_variable(name) {
-            Some("variable")
+            Some(SymbolKind::Variable)
         } else if self.has_function(name) {
-            Some("function")
+            Some(SymbolKind::Function)
         } else if self.is_class(name) {
-            Some("class")
+            Some(SymbolKind::Class)
         } else if self.objects.contains_key(name) {
-            Some("object")
+            Some(SymbolKind::Object)
         } else {
             None
         }
@@ -133,8 +157,8 @@ impl TypeEnv {
         self.variables.insert(name, sort);
     }
 
-    /// get variable type by name
-    pub fn get_variable_type(&self, name: &str) -> Option<&Sort> {
+    /// get variable sort by name
+    pub fn get_variable_sort(&self, name: &str) -> Option<&Sort> {
         self.variables.get(name)
     }
 

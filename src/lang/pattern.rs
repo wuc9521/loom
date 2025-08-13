@@ -296,11 +296,11 @@ impl PatternMatchable for Value {
 /// Pattern context for type checking during pattern matching
 #[derive(Debug, Clone)]
 pub struct PatternContext {
-    pub type_env: crate::lang::types::TypeEnv,
+    pub type_env: crate::lang::types::SymbolMap,
 }
 
 impl PatternContext {
-    pub fn new(type_env: crate::lang::types::TypeEnv) -> Self {
+    pub fn new(type_env: crate::lang::types::SymbolMap) -> Self {
         Self { type_env }
     }
 }
@@ -322,7 +322,7 @@ impl PatternMatcher {
     pub fn bind_pattern_variables_for_type_inference(
         &self,
         pattern: &Pattern,
-        type_env: &mut crate::lang::types::TypeEnv,
+        type_env: &mut crate::lang::types::SymbolMap,
         term_type: &Sort,
     ) -> Result<(), String> {
         // Extract variables from pattern and bind them with appropriate types
