@@ -3,6 +3,15 @@ edition = "2021"
 name = "ls-parser"
 version = "0.1.0"
 
+[lib]
+name = "ls_parser"
+
+[[bin]]
+name = "ls-parser"
+path = "src/main.rs"
+
+
+
 [dependencies]
 clap = {version = "4.4", features = ["derive"]}# command line argument parser  
 derive_more = "0.99.17" 
@@ -19,3 +28,12 @@ walkdir = "2"
 rustyline = "13"
 env_logger = "0.10"
 log = "0.4"
+thiserror = "1.0"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }
+
+# Internal dependency for the proc-macro
+ls-parser-derive = { path = "derive", package = "ls-parser-derive" }
+
+

@@ -33,7 +33,7 @@
             (<= (iv-len iv) 0)
         )
     )
-    (define-fun-rec eval ((phi RE)) (-> Interval Bool)
+    (define-fun-rec eval ((phi RE)) (-> Interval Bool)       
         (match phi (
             (re.empty 
                 (lambda ((iv Interval)) false) ; constant bitvec #b0...0
