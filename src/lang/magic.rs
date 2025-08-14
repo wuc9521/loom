@@ -1,1 +1,0 @@
-pub const ANY_TYPE: &str = "$_ANY_TYPE_";
