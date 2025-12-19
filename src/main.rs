@@ -1,5 +1,5 @@
 use clap::Parser as ClapParser;
-use ls_parser::{
+use delis::{
     lang::runtime::Session,
     parser::ast::LSCmd,
     theory::{fol, pml, re, Logic, ModelCtx, SygusDesugar},
@@ -66,8 +66,8 @@ fn main() -> Result<(), io::Error> {
         return Ok(());
     }
     let mut session = Session::new();
-    let results = ls_parser::parser::ast::parse_commands(&input, Some(&mut session.runtime));
-    let mut lscmd_vec: Vec<ls_parser::parser::ast::LSCmd> = vec![];
+    let results = delis::parser::ast::parse_commands(&input, Some(&mut session.runtime));
+    let mut lscmd_vec: Vec<delis::parser::ast::LSCmd> = vec![];
     for res in results {
         match res {
             Ok(cmd) => {
@@ -83,7 +83,7 @@ fn main() -> Result<(), io::Error> {
             }
         }
     }
-    let mut ls_file = ls_parser::parser::ast::LSFile { cmds: lscmd_vec };
+    let mut ls_file = delis::parser::ast::LSFile { cmds: lscmd_vec };
     if args.dump_sygus {
         match session.logic {
             Some(Logic::FOL) => {

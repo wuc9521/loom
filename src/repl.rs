@@ -1,5 +1,5 @@
-use ls_parser::lang::runtime::Session;
-use ls_parser::theory::ModelCtx;
+use delis::lang::runtime::Session;
+use delis::theory::ModelCtx;
 use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 use std::io;
@@ -24,8 +24,7 @@ fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
         let filename = cmd[6..].trim();
         match std::fs::read_to_string(filename) {
             Ok(content) => {
-                for res in
-                    ls_parser::parser::ast::parse_commands(&content, Some(&mut session.runtime))
+                for res in delis::parser::ast::parse_commands(&content, Some(&mut session.runtime))
                 {
                     match res {
                         Ok(cmd) => {
@@ -49,17 +48,17 @@ fn handle_repl_command(cmd: &str, session: &mut Session) -> bool {
         let filename = cmd[6..].trim();
         match &session.last_model {
             Some((model, ModelCtx::FOL(fol_ctx))) => {
-                let json = ls_parser::theory::fol::model_to_json_with_symbol_map(model, fol_ctx);
+                let json = delis::theory::fol::model_to_json_with_symbol_map(model, fol_ctx);
                 std::fs::write(filename, serde_json::to_string_pretty(&json).unwrap()).unwrap();
                 println!("FOL model json saved to {}", filename);
             }
             Some((model, ModelCtx::PML(pml_ctx))) => {
-                let json = ls_parser::theory::pml::model_to_json_with_symbol_map(model, pml_ctx);
+                let json = delis::theory::pml::model_to_json_with_symbol_map(model, pml_ctx);
                 std::fs::write(filename, serde_json::to_string_pretty(&json).unwrap()).unwrap();
                 println!("PML model json saved to {}", filename);
             }
             Some((model, ModelCtx::RE(re_ctx))) => {
-                let json = ls_parser::theory::re::model_to_json_with_symbol_map(model, re_ctx);
+                let json = delis::theory::re::model_to_json_with_symbol_map(model, re_ctx);
                 std::fs::write(filename, serde_json::to_string_pretty(&json).unwrap()).unwrap();
                 println!("RE model json saved to {}", filename);
             }
@@ -99,7 +98,7 @@ pub fn repl() -> io::Result<()> {
                 }
                 let mut has_error = false;
                 let results =
-                    ls_parser::parser::ast::parse_commands(&buffer, Some(&mut session.runtime));
+                    delis::parser::ast::parse_commands(&buffer, Some(&mut session.runtime));
                 for res in &results {
                     match res {
                         Ok(cmd) => {

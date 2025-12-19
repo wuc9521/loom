@@ -7,11 +7,7 @@ use std::process::{Command, Stdio};
 use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
-#[command(
-    author,
-    version,
-    about = "Rust benchmark for ls-parser + cvc5 pipeline"
-)]
+#[command(author, version, about = "Rust benchmark for delis + cvc5 pipeline")]
 struct Args {
     /// File or directory containing .sl files
     input_path: String,
@@ -35,7 +31,7 @@ fn benchmark_file(file: &Path, output_dir: &Path, iterations: usize) {
     fs::create_dir_all(&file_output_dir).unwrap();
     println!("Benchmarking: {}", file.display());
     let command = format!(
-        "./target/release/ls-parser --file '{}' --dump-sygus --dump '{}' | cvc5 --lang=sygus2",
+        "./target/release/delis --file '{}' --dump-sygus --dump '{}' | cvc5 --lang=sygus2",
         file.display(),
         file_output_dir.display()
     );
