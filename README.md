@@ -1,20 +1,11 @@
-# Logic Learning Language Parser
-
-Frontend of Logic Learning Problems
-
-To run the project.
+# Delis
 
 Install dependencies `cvc5`.
 
-Some examples
+Demo
 
 ```bash
-# First Order Logic
-cargo run -- --file ./exp/fol/finite-variable-2v-t12f34.sl --to-bv --dump . | cvc5 --lang=sygus2
+cargo build --release
 
-# Propositional Modal Logic
-cargo run -- --file ./exp/pml/meta-thm-t13f24.sl --to-bv --dump . | cvc5 --lang=sygus2
-
-# Regular Expression
-cargo run -- --input ./exp/re/1.sl 
+./target/release/delis --file benchmark/dl/re/no3_endwith_ab.sl --dump-sygus | cvc5 --lang=sygus2 
 ```

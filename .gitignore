@@ -5,6 +5,4 @@ src/.antlr
 target
 .vscode/
 logs/
-.cursorrules
-benchmark/
 theory/
