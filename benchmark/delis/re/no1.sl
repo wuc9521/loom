@@ -86,8 +86,6 @@
     ( 
         (Start RegLan
             ( 
-                ; (str.to.re "a")        ; regex of string "a"
-                ; (str.to.re "b")        ; regex of string "b" 
                 a
                 b
                 (re.++ Start Start)    ; concat (re.++ r1 r2) = (re.union (re.concat r1 r2) (re.concat r2 r1))

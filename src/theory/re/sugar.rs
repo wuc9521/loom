@@ -1,14 +1,14 @@
 use crate::lang::model::{
     FuncInterp, InterpedValue, MatchCase, Model, Pattern, PatternElem, DefineUniv, UnivElem,
 };
-use crate::parser::{LSCmd, LSFile};
+use crate::parser::{DelisCmd, DelisFile};
 use crate::signature::FuncSig;
 use std::collections::HashSet;
 use sygus_parser::api::{Cmd, GTerm};
 use sygus_parser::ast::{SyGuSGTerm, SyGuSTerm};
 use sygus_parser::{Identifier, Literal, Sort, SyGuSCmd, SyGuSFile};
 
-pub fn desugar(sygus: &SyGuSFile) -> LSFile {
+pub fn desugar(sygus: &SyGuSFile) -> DelisFile {
     let mut char_set = HashSet::new();
     let mut models = Vec::new();
     let mut skip_definefun = HashSet::new();
@@ -55,7 +55,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                         ext_cmds: vec![],
                         ext_ctx: None,
                     };
-                    models.push(LSCmd::DefineModel(model));
+                    models.push(DelisCmd::DefineModel(model));
                     skip_definefun.insert(idx);
                 }
             }
@@ -80,7 +80,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                                 Identifier::Symbol("models".to_string()),
                                 vec![w, regex],
                             );
-                            output_cmds.push(LSCmd::As(SyGuSCmd::Constraint(new_term)));
+                            output_cmds.push(DelisCmd::As(SyGuSCmd::Constraint(new_term)));
                             continue;
                         }
                     }
@@ -101,7 +101,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                                                 vec![w, regex],
                                             )],
                                         );
-                                        output_cmds.push(LSCmd::As(SyGuSCmd::Constraint(new_term)));
+                                        output_cmds.push(DelisCmd::As(SyGuSCmd::Constraint(new_term)));
                                         continue;
                                     }
                                 }
@@ -110,7 +110,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                     }
                 }
                 // output other constraint commands
-                output_cmds.push(LSCmd::As(cmd.clone()));
+                output_cmds.push(DelisCmd::As(cmd.clone()));
             }
             SyGuSCmd::SynthFun(name, args, sort, grammar) => {
                 // replace str.to_re in grammar with character name
@@ -131,7 +131,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                         }
                     }
                 }
-                output_cmds.push(LSCmd::As(SyGuSCmd::SynthFun(
+                output_cmds.push(DelisCmd::As(SyGuSCmd::SynthFun(
                     name.clone(),
                     args.clone(),
                     sort.clone(),
@@ -140,16 +140,16 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
             }
             _ => {
                 // output other commands
-                output_cmds.push(LSCmd::As(cmd.clone()));
+                output_cmds.push(DelisCmd::As(cmd.clone()));
             }
         }
     }
     let mut final_cmds = Vec::new();
-    final_cmds.push(LSCmd::As(SyGuSCmd::SetLogic("RE".to_string())));
+    final_cmds.push(DelisCmd::As(SyGuSCmd::SetLogic("RE".to_string())));
     let mut inserted_sort = false;
     for cmd in output_cmds.iter() {
         if !inserted_sort {
-            if let LSCmd::DeclareFunc(FuncSig {
+            if let DelisCmd::DeclareFunc(FuncSig {
                 name,
                 arg_sorts,
                 ret_sort,
@@ -159,7 +159,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
                     && arg_sorts[0].to_string() == "Pos"
                     && ret_sort.to_string() == "Bool"
                 {
-                    final_cmds.push(LSCmd::As(Cmd::declare_sort(name, 0).build()));
+                    final_cmds.push(DelisCmd::As(Cmd::declare_sort(name, 0).build()));
                     inserted_sort = true;
                 }
             }
@@ -168,7 +168,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     }
     if !inserted_sort {
         // if there is no declare-fun, insert one
-        final_cmds.insert(0, LSCmd::As(Cmd::declare_sort("Pos", 0).build()));
+        final_cmds.insert(0, DelisCmd::As(Cmd::declare_sort("Pos", 0).build()));
     }
 
     // 4. declare-fun a/b (Pos) Bool, insert after declare-sort
@@ -176,12 +176,12 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     char_funs.sort();
     let mut insert_idx = final_cmds
         .iter()
-        .position(|cmd| matches!(cmd, LSCmd::DeclareFunc(_)))
+        .position(|cmd| matches!(cmd, DelisCmd::DeclareFunc(_)))
         .unwrap_or(1); // if there is no declare-fun, insert after declare-sort
     for fname in char_funs {
         final_cmds.insert(
             insert_idx,
-            LSCmd::DeclareFunc(FuncSig {
+            DelisCmd::DeclareFunc(FuncSig {
                 name: fname,
                 arg_sorts: vec![Sort::from_name("Pos")],
                 ret_sort: Sort::bool(),
@@ -194,7 +194,7 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
     // insert after declare-fun
     let mut model_insert_idx = final_cmds
         .iter()
-        .position(|cmd| matches!(cmd, LSCmd::DeclareFunc(_)))
+        .position(|cmd| matches!(cmd, DelisCmd::DeclareFunc(_)))
         .map(|idx| idx + char_set.len())
         .unwrap_or(final_cmds.len());
     for m in models {
@@ -202,5 +202,5 @@ pub fn desugar(sygus: &SyGuSFile) -> LSFile {
         model_insert_idx += 1;
     }
 
-    LSFile { cmds: final_cmds }
+    DelisFile { cmds: final_cmds }
 }

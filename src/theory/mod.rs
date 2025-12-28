@@ -20,6 +20,12 @@ pub enum Logic {
     CFE,
     #[display(fmt = "SLIA")]
     SLIA,
+    #[display(fmt = "CFL")]
+    CFL,
+    #[display(fmt = "LTL")]
+    LTL,
+    #[display(fmt = "CTL")]
+    CTL,
 }
 
 #[derive(Debug, Clone)]

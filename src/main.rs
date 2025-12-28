@@ -1,7 +1,7 @@
 use clap::Parser as ClapParser;
 use delis::{
     lang::runtime::Session,
-    parser::ast::LSCmd,
+    parser::ast::DelisCmd,
     theory::{fol, pml, re, Logic, ModelCtx, SygusDesugar},
     utils::extract_logic_sygus,
 };
@@ -35,19 +35,12 @@ pub struct CLI {
 
     #[arg(short, long = "as-sygus", default_value_t = false)]
     as_sygus: bool,
-
-    #[arg(short, long = "theory-file")]
-    theory_file: Option<PathBuf>,
-
-    #[arg(short, long = "guard", default_value_t = false)]
-    guard: bool,
 }
 
 /// Run the language parsing application
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     let file_path = args.file;
-    // let theory_file = args.theory_file.unwrap();
     if file_path == None {
         return repl::repl();
     }
@@ -67,12 +60,12 @@ fn main() -> Result<(), io::Error> {
     }
     let mut session = Session::new();
     let results = delis::parser::ast::parse_commands(&input, Some(&mut session.runtime));
-    let mut lscmd_vec: Vec<delis::parser::ast::LSCmd> = vec![];
+    let mut delis_cmd_vec: Vec<delis::parser::ast::DelisCmd> = vec![];
     for res in results {
         match res {
             Ok(cmd) => {
                 let _ = session.handle_command(&cmd);
-                lscmd_vec.push(cmd);
+                delis_cmd_vec.push(cmd);
             }
             Err(e) => {
                 eprintln!("parse error: {}", e);
@@ -83,12 +76,14 @@ fn main() -> Result<(), io::Error> {
             }
         }
     }
-    let mut ls_file = delis::parser::ast::LSFile { cmds: lscmd_vec };
+    let mut delis_file = delis::parser::ast::DelisFile {
+        cmds: delis_cmd_vec,
+    };
     if args.dump_sygus {
         match session.logic {
             Some(Logic::FOL) => {
-                for cmd in &mut ls_file.cmds {
-                    if let LSCmd::DefineModel(model) = cmd {
+                for cmd in &mut delis_file.cmds {
+                    if let DelisCmd::DefineModel(model) = cmd {
                         let mut ctx = fol::FOModelCtx::default();
                         for thcmd in &model.ext_cmds {
                             fol::handle_model_extcmd(&mut ctx, thcmd);
@@ -96,13 +91,13 @@ fn main() -> Result<(), io::Error> {
                         model.ext_ctx = Some(ModelCtx::FOL(ctx));
                     }
                 }
-                for cmd in fol::to_sygus(&ls_file) {
+                for cmd in fol::to_sygus(&delis_file) {
                     println!("{}", cmd);
                 }
             }
             Some(Logic::PML) => {
-                for cmd in &mut ls_file.cmds {
-                    if let LSCmd::DefineModel(model) = cmd {
+                for cmd in &mut delis_file.cmds {
+                    if let DelisCmd::DefineModel(model) = cmd {
                         let mut ctx = pml::KripkeCtx::default();
                         for thcmd in &model.ext_cmds {
                             pml::handle_model_extcmd(&mut ctx, thcmd);
@@ -110,13 +105,13 @@ fn main() -> Result<(), io::Error> {
                         model.ext_ctx = Some(ModelCtx::PML(ctx));
                     }
                 }
-                for cmd in pml::to_sygus(&ls_file) {
+                for cmd in pml::to_sygus(&delis_file) {
                     println!("{}", cmd);
                 }
             }
             Some(Logic::RE) => {
-                for cmd in &mut ls_file.cmds {
-                    if let LSCmd::DefineModel(model) = cmd {
+                for cmd in &mut delis_file.cmds {
+                    if let DelisCmd::DefineModel(model) = cmd {
                         let mut ctx = re::StringCtx::default();
                         for thcmd in &model.ext_cmds {
                             re::handle_model_extcmd(&mut ctx, thcmd);
@@ -124,7 +119,7 @@ fn main() -> Result<(), io::Error> {
                         model.ext_ctx = Some(ModelCtx::RE(ctx));
                     }
                 }
-                for cmd in re::to_sygus(&ls_file) {
+                for cmd in re::to_sygus(&delis_file) {
                     println!("{}", cmd);
                 }
             }

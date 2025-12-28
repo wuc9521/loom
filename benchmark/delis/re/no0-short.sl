@@ -1,0 +1,59 @@
+(set-logic RE)
+
+(declare-sort Pos 0)
+
+; define signatures here.
+(declare-fun a (Pos) Bool)
+(declare-fun b (Pos) Bool)
+
+
+; ab
+(define-model w1
+  (define-univ Pos ($0 $1))
+  (interp-fun a (match (
+      (($0) true)
+      ((_) false)
+  )))
+  (interp-fun b (match (
+      (($0) false)
+      ((_) true)
+  )))
+)
+
+; aab
+(define-model w5
+  (define-univ Pos ($0 $1 $2))
+  (interp-fun a (match (
+      (($0) true)
+      ((_) false)
+  )))   
+  (interp-fun b (match (
+      (($0) true)
+      (($1) true)
+      ((_) false)
+  )))
+)
+
+(synth-fun regex () RegLan
+    ((Start RegLan))
+    ( 
+        (Start RegLan
+            ( 
+                a
+                b
+                (re.++ Start Start)    ; concat (re.++ r1 r2) = (re.union (re.concat r1 r2) (re.concat r2 r1))
+                (re.union Start Start) ; union
+                (re.inter Start Start) ; intersection
+                (re.comp Start)        ; complement
+                (re.* Start)           ; Kleene star
+            )
+        )
+    )
+)
+
+
+
+(constraint (models w1 regex))              
+(constraint (not (models w5 regex)))        
+
+(check-synth)

@@ -1,4 +1,4 @@
-use crate::parser::LSFile;
+use crate::parser::DelisFile;
 use crate::theory::Logic;
 use lexpr::Value;
 
@@ -24,11 +24,11 @@ pub struct Theory {
 }
 
 pub trait SygusDesugar {
-    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> LSFile;
+    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> DelisFile;
 }
 
 impl SygusDesugar for Logic {
-    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> LSFile {
+    fn desugar(&self, sygus_file: &sygus_parser::SyGuSFile) -> DelisFile {
         match self {
             Logic::RE => crate::theory::re::sugar::desugar(sygus_file),
             _ => unimplemented!("desugar not implemented for this logic"),

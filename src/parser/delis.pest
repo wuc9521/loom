@@ -1,21 +1,21 @@
-LSProg = { SOI ~ LSCmd* ~ EOI }
+DelisProg = { SOI ~ DelisCmd* ~ EOI }
 
-LSCmd = {
+DelisCmd = {
   SyGuSCmd
 | FuncDecl
 | ModelDef
 | FuncDefRec
 | ThSpecCmd
 }
-FuncDecl = { "(" ~ #LSTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
-ModelDef = { "(" ~ #LSTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
-FuncInterp = { "(" ~ #LSTkInterpFun="interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
+FuncDecl = { "(" ~ #DelisTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
+ModelDef = { "(" ~ #DelisTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
+FuncInterp = { "(" ~ #DelisTkInterpFun="interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
 SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
-MatchInterp = { "(" ~ #LSTkMatch="match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
+MatchInterp = { "(" ~ #DelisTkMatch="match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
 MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
-UnivDef = { "(" ~ #LSTkDefUniv="define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
+UnivDef = { "(" ~ #DelisTkDefUniv="define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
 UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
-FuncDefRec = {"(" ~ #LSTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ SyGuSTerm ~ ")" }
+FuncDefRec = {"(" ~ #DelisTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ SyGuSTerm ~ ")" }
 
 // Define values that can be interpreted
 InterpedValue = {
@@ -30,12 +30,12 @@ Pattern = {
   "(" ~ (UnivElem | Symbol | "_")+ ~ ")"  // Compound pattern in parentheses
 }
 
-LSReservedCmd = { 
+DelisReservedCmd = { 
   "define-univ" | "interp-fun" | "define-model" | "declare-fun"
 }
 
 // Theory specific commands
-ThSpecCmd = { "(" ~ !(LSReservedCmd|ReservedCommandName) ~ Symbol ~ ThSpecBody* ~ ")" }
+ThSpecCmd = { "(" ~ !(DelisReservedCmd|ReservedCommandName) ~ Symbol ~ ThSpecBody* ~ ")" }
 ThSpecBody = { ThSpecAtom | ThSpecList }
 ThSpecAtom = { (!("(" | ")") ~ ANY)+ }
 ThSpecList = { "(" ~ ThSpecBody* ~ ")" }

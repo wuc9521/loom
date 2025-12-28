@@ -1,15 +1,35 @@
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (declare-fun b (Pos) Bool)
+
+; a
 (define-model wb (define-univ Pos ($0)) (interp-fun a (match ((($0) true)))) )
+
+; b
 (define-model w2 (define-univ Pos ($0)) (interp-fun b (match ((($0) true)))) (interp-fun a (match ((($0) false)))) )
+
+; ab
 (define-model w3 (define-univ Pos ($0 $1)) (interp-fun b (match ((($0) false) (($1) true)))) (interp-fun a (match ((($0) true) (($1) false)))) )
+
+; ba
 (define-model w4 (define-univ Pos ($0 $1)) (interp-fun b (match ((($0) true) (($1) false)))) (interp-fun a (match ((($0) false) (($1) true)))) )
+
+; bab
 (define-model w5 (define-univ Pos ($0 $1 $2)) (interp-fun b (match ((($0) true) (($1) false) (($2) true)))) (interp-fun a (match ((($0) false) (($1) true) (($2) false)))) )
+
+; aa
 (define-model wba (define-univ Pos ($0 $1)) (interp-fun b (match ((($0) false) (($1) false)))) (interp-fun a (match ((($0) true) (($1) true)))) )
+
+; bb
 (define-model wbb (define-univ Pos ($0 $1)) (interp-fun b (match ((($0) true) (($1) true)))) (interp-fun a (match ((($0) false) (($1) false)))) )
+
+; abb
 (define-model wb2 (define-univ Pos ($0 $1 $2)) (interp-fun b (match ((($0) false) (($1) true) (($2) true)))) (interp-fun a (match ((($0) true) (($1) false) (($2) false)))) )
+
+; aab
 (define-model wb3 (define-univ Pos ($0 $1 $2)) (interp-fun b (match ((($0) false) (($1) false) (($2) true)))) (interp-fun a (match ((($0) true) (($1) true) (($2) false)))) )
+
+; bba
 (define-model wb4 (define-univ Pos ($0 $1 $2)) (interp-fun b (match ((($0) true) (($1) true) (($2) false)))) (interp-fun a (match ((($0) false) (($1) false) (($2) true)))) )
 (set-logic RE)
 (set-logic SLIA)

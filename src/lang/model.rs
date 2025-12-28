@@ -1,13 +1,13 @@
 // src/logic/model.rs
 
-use crate::parser::{LSParseError, Rule};
+use crate::parser::{DelisParseError, Rule};
 use core::str;
 use derive_more::Display;
 use pest::iterators::Pair;
+use sygus_parser::Identifier;
 use sygus_parser::Literal;
 use sygus_parser::Sort;
 use sygus_parser::SyGuSTerm;
-use sygus_parser::Identifier;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -15,11 +15,11 @@ use sygus_parser::Identifier;
 pub struct ThSpecCmd {
     pub name: String,
     pub args: String, // may be refined to Vec<String>
-    pub sexpr: Option<lexpr::Value>, 
+    pub sexpr: Option<lexpr::Value>,
 }
 
 impl ThSpecCmd {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap().as_str().to_string();
         let args = inner.map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
@@ -41,7 +41,7 @@ pub struct Model {
     pub univ_defs: Vec<DefineUniv>,
     pub func_interps: Vec<FuncInterp>,
     pub ext_cmds: Vec<ThSpecCmd>,
-    pub ext_ctx: Option<crate::theory::ModelCtx>, 
+    pub ext_ctx: Option<crate::theory::ModelCtx>,
 }
 
 impl Model {
@@ -54,7 +54,7 @@ impl Model {
             ext_ctx: None,
         }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
         let name = inner_pairs.next().unwrap().as_str();
         let mut model = Self::new(name);
@@ -78,7 +78,7 @@ impl Model {
                         item_pair.as_rule(),
                         item_pair.as_str()
                     );
-                    Err(LSParseError::UnsupportedFeature(format!(
+                    Err(DelisParseError::UnsupportedFeature(format!(
                         "Unsupported feature in model definition: {}",
                         item_pair.as_str()
                     )))?;
@@ -97,15 +97,27 @@ impl Model {
         for interp in &self.func_interps {
             match interp {
                 FuncInterp::SimpleInterp(name, val) => {
-                    table.insert(name.clone(), crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), val.clone()));
+                    table.insert(
+                        name.clone(),
+                        crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), val.clone()),
+                    );
                 }
                 FuncInterp::MatchInterp(name, _cases) => {
-                    table.insert(name.clone(), crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), InterpedValue::FuncApp(name.clone(), vec![])));
+                    table.insert(
+                        name.clone(),
+                        crate::lang::runtime::SymbolInterp::InterpFun(
+                            name.clone(),
+                            InterpedValue::FuncApp(name.clone(), vec![]),
+                        ),
+                    );
                 }
             }
         }
         for univ in &self.univ_defs {
-            table.insert(univ.sort.to_string(), crate::lang::runtime::SymbolInterp::Univ(univ.clone()));
+            table.insert(
+                univ.sort.to_string(),
+                crate::lang::runtime::SymbolInterp::Univ(univ.clone()),
+            );
         }
     }
 }
@@ -126,7 +138,7 @@ impl DefineUniv {
     pub fn new(sort: Sort, elems: Vec<UnivElem>) -> Self {
         Self { sort, elems }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
         let sort = Sort::from_str(inner_pairs.next().unwrap().as_str()).unwrap();
         let mut elems = Vec::new();
@@ -135,7 +147,7 @@ impl DefineUniv {
                 let elem = UnivElem::parse(elem_pair)?;
                 elems.push(elem);
             } else {
-                Err(LSParseError::InvalidSyntax(format!(
+                Err(DelisParseError::InvalidSyntax(format!(
                     "Invalid element in universe definition: {}",
                     elem_pair.as_str()
                 )))?;
@@ -163,10 +175,10 @@ impl UnivElem {
             name: name.to_string(),
         }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         Ok(Self::new(pair.as_str()))
     }
-    pub fn from_str(s: &str) -> Result<Self, LSParseError> {
+    pub fn from_str(s: &str) -> Result<Self, DelisParseError> {
         Ok(Self::new(s))
     }
 }
@@ -203,7 +215,7 @@ impl FuncInterp {
             FuncInterp::SimpleInterp(_, _) => 0,
         }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.clone().into_inner();
         let name = inner_pairs.next().unwrap().as_str();
         let mut cases = Vec::new();
@@ -222,7 +234,7 @@ impl FuncInterp {
                         let match_case = MatchCase::parse(case_pair)?;
                         cases.push(match_case);
                     } else {
-                        return Err(LSParseError::InvalidSyntax(format!(
+                        return Err(DelisParseError::InvalidSyntax(format!(
                             "Invalid element in function interpretation: {}",
                             case_pair.as_str()
                         )));
@@ -231,7 +243,7 @@ impl FuncInterp {
                 return Ok(Self::MatchInterp(name.to_string(), cases));
             }
             _ => {
-                return Err(LSParseError::UnsupportedFeature(format!(
+                return Err(DelisParseError::UnsupportedFeature(format!(
                     "Unsupported feature in function interpretation: {}",
                     pair.as_str()
                 )));
@@ -269,7 +281,7 @@ pub enum InterpedValue {
 }
 
 impl InterpedValue {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut pair = pair.into_inner().next().unwrap();
         if pair.as_rule() == Rule::InterpedValue {
             pair = pair.into_inner().next().unwrap();
@@ -305,7 +317,7 @@ impl MatchCase {
     }
 
     // InterpedCase =    "(" ~ Pattern? ~ InterpedValue ~ ")"
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
         // inner_pairs.next(); // skip the opening parenthesis
         let pattern = inner_pairs.next().map(|p| Pattern::parse(p).unwrap());
@@ -340,7 +352,7 @@ impl Pattern {
     pub fn new(elements: Vec<PatternElem>) -> Self {
         Self { elements }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LSParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let elements = pair
             .into_inner()
             .map(|elem| match elem.as_rule() {

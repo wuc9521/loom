@@ -2,7 +2,7 @@ use derive_more::Display;
 
 
 #[derive(Debug, Display)]
-pub enum LSParseError {
+pub enum DelisParseError {
     #[display(fmt = "[ERROR] Pest parser error: {}", _0)]
     PestError(pest::error::Error<crate::parser::Rule>),
 
@@ -13,8 +13,8 @@ pub enum LSParseError {
     UnsupportedFeature(String),
 }
 
-impl From<pest::error::Error<crate::parser::Rule>> for LSParseError {
+impl From<pest::error::Error<crate::parser::Rule>> for DelisParseError {
     fn from(err: pest::error::Error<crate::parser::Rule>) -> Self {
-        LSParseError::PestError(err)
+        DelisParseError::PestError(err)
     }
 }

@@ -31,7 +31,6 @@ impl FuncSig {
         }
         // the last one is the return type
         let ret_sort = sort_list.pop().unwrap();
-        // ls_file.push(LSCmd::FuncDecl(func_name, sort_list, ret_sort));
         Ok(FuncSig {
             name: func_name,
             arg_sorts: sort_list,

@@ -1,5 +1,5 @@
 use crate::lang::model::Model;
-use crate::parser::LSFile;
+use crate::parser::DelisFile;
 use crate::theory::utils::{
     collect_bool_props, collect_constraint_models, eval, get_universe_domain_and_map, prop_bitvecs,
     replace_grammardef_sort,
@@ -35,7 +35,7 @@ where
     (bv_str, total_bits)
 }
 
-pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &DelisFile) -> Vec<SyGuSCmd> {
     let mut cmds = Vec::new();
     cmds.push(SyGuSCmd::SetLogic(Logic::BV.to_string()));
     cmds.push(
@@ -60,7 +60,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut models = HashMap::new();
     let mut domain_sort = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::DefineModel(model) = cmd {
+        if let crate::parser::DelisCmd::DefineModel(model) = cmd {
             if domain_sort.is_none() {
                 if let Some(univ) = model.univ_defs.get(0) {
                     domain_sort = Some(univ.sort.to_string());
@@ -167,7 +167,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     // 6. grammar/synth-fun
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::As(sygus_parser::SyGuSCmd::SynthFun(
+        if let crate::parser::DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(
             name,
             args,
             _sort,

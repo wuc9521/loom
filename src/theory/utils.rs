@@ -1,8 +1,8 @@
-use crate::lang::model::{Pattern, PatternElem};
 use crate::lang::model::Model;
-use sygus_parser::Sort;
-use std::collections::{HashMap, HashSet};
+use crate::lang::model::{Pattern, PatternElem};
 use crate::lang::runtime::ModelSymbolTable;
+use std::collections::{HashMap, HashSet};
+use sygus_parser::Sort;
 
 pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
     let mut map = HashMap::new();
@@ -14,14 +14,17 @@ pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<
     (map, rev)
 }
 
-
 pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) -> bool {
-    if pat.elements.len() != tuple.len() { return false; }
+    if pat.elements.len() != tuple.len() {
+        return false;
+    }
     for (i, elem) in pat.elements.iter().enumerate() {
         match elem {
             PatternElem::UnivElem(e) => {
                 if let Some(sym) = id2sym.get(tuple[i]) {
-                    if &e.name != sym { return false; }
+                    if &e.name != sym {
+                        return false;
+                    }
                 } else {
                     return false;
                 }
@@ -53,16 +56,22 @@ pub fn eval<'a>(
     for interp in func_interps {
         if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
             if name == func_name {
-                for case in cases { // precise match
+                for case in cases {
+                    // precise match
                     if let Some(pat) = &case.pattern {
                         if pattern_match(&args.to_vec(), pat, id2sym) {
                             return Some(&case.value);
                         }
                     }
                 }
-                for case in cases { // fallback (_)
+                for case in cases {
+                    // fallback (_)
                     if let Some(pat) = &case.pattern {
-                        if pat.elements.iter().all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard)) {
+                        if pat
+                            .elements
+                            .iter()
+                            .all(|e| matches!(e, crate::lang::model::PatternElem::Wildcard))
+                        {
                             return Some(&case.value);
                         }
                     }
@@ -82,7 +91,9 @@ pub fn eval_with_table<'a>(
 ) -> Option<&'a crate::lang::model::InterpedValue> {
     // 1. 优先查小符号表
     if let Some(table) = interp_table {
-        if let Some(crate::lang::runtime::SymbolInterp::InterpFun(_name, val)) = table.get(func_name) {
+        if let Some(crate::lang::runtime::SymbolInterp::InterpFun(_name, val)) =
+            table.get(func_name)
+        {
             // 这里只处理 SimpleInterp 的情况
             if args.is_empty() {
                 return Some(val);
@@ -95,7 +106,9 @@ pub fn eval_with_table<'a>(
 }
 
 /// automatically identify universe sort, return (domain_syms, id2sym, universe_sort)
-pub fn get_universe_domain_and_map(model: &crate::lang::model::Model) -> (Vec<String>, Vec<String>, String) {
+pub fn get_universe_domain_and_map(
+    model: &crate::lang::model::Model,
+) -> (Vec<String>, Vec<String>, String) {
     let universe_sort = model.univ_defs.get(0).map(|u| u.sort.to_string()).unwrap();
     let mut domain_syms = vec![];
     for univ in &model.univ_defs {
@@ -145,7 +158,8 @@ pub fn prop_bitvecs(
         let mut full_bitstring_list = Vec::new();
         let mut total_bits = 0;
         for model in models {
-            let (domain_syms, id2sym, _universe_sort) = crate::theory::utils::get_universe_domain_and_map(model);
+            let (domain_syms, id2sym, _universe_sort) =
+                crate::theory::utils::get_universe_domain_and_map(model);
             let domain_size = domain_syms.len();
             for node in 0..domain_size {
                 if eval(prop, node, model, &id2sym) {
@@ -177,7 +191,7 @@ pub fn replace_grammardef_sort(
             .iter()
             .map(|v| sygus_parser::SortedVar {
                 name: v.name.clone(),
-                sort: Sort::bitvec(bv_len)
+                sort: Sort::bitvec(bv_len),
             })
             .collect();
         new_g.grouped_rule_lists = grammar
@@ -194,10 +208,10 @@ pub fn replace_grammardef_sort(
 }
 
 /// collect constraint_models (Vec<(model_name, is_true)>)
-pub fn collect_constraint_models(lsfile: &crate::parser::LSFile) -> Vec<(String, bool)> {
+pub fn collect_constraint_models(lsfile: &crate::parser::DelisFile) -> Vec<(String, bool)> {
     let mut constraint_models = Vec::new();
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::As(sygus_cmd) = cmd {
+        if let crate::parser::DelisCmd::As(sygus_cmd) = cmd {
             if let sygus_parser::SyGuSCmd::Constraint(term) = sygus_cmd {
                 use sygus_parser::SyGuSTerm::*;
                 match term {
@@ -224,7 +238,10 @@ pub fn collect_constraint_models(lsfile: &crate::parser::LSFile) -> Vec<(String,
 }
 
 /// collect all needed model names (deduplicate, preserve first occurrence order)
-pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &HashMap<String, &Model>) -> Vec<String> {
+pub fn collect_all_model_names(
+    constraint_models: &[(String, bool)],
+    models: &HashMap<String, &Model>,
+) -> Vec<String> {
     let mut all_model_names = Vec::new();
     for (name, _) in constraint_models {
         if models.contains_key(name) && !all_model_names.contains(name) {
@@ -235,8 +252,14 @@ pub fn collect_all_model_names(constraint_models: &[(String, bool)], models: &Ha
 }
 
 /// collect ModelDef list according to all_model_names
-pub fn collect_loaded_models<'a>(all_model_names: &[String], models: &'a HashMap<String, &Model>) -> Vec<&'a Model> {
-    all_model_names.iter().filter_map(|n| models.get(n).copied()).collect()
+pub fn collect_loaded_models<'a>(
+    all_model_names: &[String],
+    models: &'a HashMap<String, &Model>,
+) -> Vec<&'a Model> {
+    all_model_names
+        .iter()
+        .filter_map(|n| models.get(n).copied())
+        .collect()
 }
 
 /// automatically get domain_sort (e.g. U/Pos/S)

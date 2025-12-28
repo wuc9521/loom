@@ -3,14 +3,14 @@ use crate::lang::{
     model::{Model, ThSpecCmd},
     signature::FuncSig,
 };
-use crate::parser::{LSParseError, LSParser, Rule};
+use crate::parser::{DelisParseError, DelisParser, Rule};
 use derive_more::Display;
 use itertools::Itertools;
 use pest::Parser;
 use sygus_parser::{Sort, SyGuSCmd};
 
 #[derive(Clone, Debug, Display)]
-pub enum LSCmd {
+pub enum DelisCmd {
     #[display(fmt = "{}", _0)]
     As(SyGuSCmd), // as a sygus command.
 
@@ -30,25 +30,28 @@ pub enum LSCmd {
     fmt = "{}",
     "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\"\n\")"
 )]
-pub struct LSFile {
-    pub cmds: Vec<LSCmd>,
+pub struct DelisFile {
+    pub cmds: Vec<DelisCmd>,
 }
 
-impl LSFile {
+impl DelisFile {
     pub fn new() -> Self {
-        LSFile { cmds: Vec::new() }
+        DelisFile { cmds: Vec::new() }
     }
-    pub fn push(&mut self, cmd: LSCmd) {
+    pub fn push(&mut self, cmd: DelisCmd) {
         self.cmds.push(cmd);
     }
 }
 
-pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile, LSParseError> {
-    let [file]: [_; 1] = LSParser::parse(Rule::LSProg, content)?
+pub fn parse(
+    content: &str,
+    mut runtime: Option<&mut Runtime>,
+) -> Result<DelisFile, DelisParseError> {
+    let [file]: [_; 1] = DelisParser::parse(Rule::DelisProg, content)?
         .collect_vec()
         .try_into()
         .unwrap();
-    let mut ls_file = LSFile::new();
+    let mut ls_file = DelisFile::new();
     // first scan: record set-logic
     let mut cmds_raw = vec![];
     for cmd in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {
@@ -79,13 +82,13 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
                         _ => false,
                     };
                     if !supported {
-                        return Err(LSParseError::UnsupportedFeature(format!(
+                        return Err(DelisParseError::UnsupportedFeature(format!(
                             "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
                             cmd_str
                         )));
                     }
                 }
-                ls_file.push(LSCmd::As(sygus_cmd));
+                ls_file.push(DelisCmd::As(sygus_cmd));
             }
             Rule::FuncDecl => {
                 let sig = FuncSig::parse(cmd.clone()).unwrap();
@@ -95,7 +98,7 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
                         crate::lang::runtime::Symbol::Func(sig.clone()),
                     );
                 }
-                ls_file.push(LSCmd::DeclareFunc(sig));
+                ls_file.push(DelisCmd::DeclareFunc(sig));
             }
             Rule::ModelDef => {
                 let model = Model::parse(cmd.clone()).unwrap();
@@ -111,7 +114,7 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
                         );
                     }
                 }
-                ls_file.push(LSCmd::DefineModel(model));
+                ls_file.push(DelisCmd::DefineModel(model));
             }
             Rule::ThSpecCmd => {
                 let mut inner = cmd.clone().into_inner();
@@ -121,14 +124,14 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
                     .collect::<Vec<_>>()
                     .join(" ");
                 let sexpr = lexpr::from_str(&format!("({} {})", symbol, args)).ok();
-                ls_file.push(LSCmd::ThSpec(crate::lang::model::ThSpecCmd {
+                ls_file.push(DelisCmd::ThSpec(crate::lang::model::ThSpecCmd {
                     name: symbol,
                     args,
                     sexpr,
                 }));
             }
             _ => {
-                Err(LSParseError::InvalidSyntax(format!(
+                Err(DelisParseError::InvalidSyntax(format!(
                     "Invalid command: {:?}",
                     cmd.as_str()
                 )))?;
@@ -141,11 +144,11 @@ pub fn parse(content: &str, mut runtime: Option<&mut Runtime>) -> Result<LSFile,
 pub fn parse_command(
     input: &str,
     mut runtime: Option<&mut Runtime>,
-) -> Result<LSCmd, LSParseError> {
-    let mut pairs = LSParser::parse(Rule::LSCmd, input)?;
+) -> Result<DelisCmd, DelisParseError> {
+    let mut pairs = DelisParser::parse(Rule::DelisCmd, input)?;
     let cmd = pairs
         .next()
-        .ok_or_else(|| LSParseError::InvalidSyntax("Empty command".to_string()))?;
+        .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
     match cmd.as_rule() {
         Rule::SyGuSCmd => {
             let cmd_str = cmd.as_str();
@@ -166,13 +169,13 @@ pub fn parse_command(
                     _ => false,
                 };
                 if !supported {
-                    return Err(LSParseError::UnsupportedFeature(format!(
+                    return Err(DelisParseError::UnsupportedFeature(format!(
                         "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
                         cmd_str
                     )));
                 }
             }
-            Ok(LSCmd::As(sygus_cmd))
+            Ok(DelisCmd::As(sygus_cmd))
         }
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd.clone()).unwrap();
@@ -182,7 +185,7 @@ pub fn parse_command(
                     crate::lang::runtime::Symbol::Func(sig.clone()),
                 );
             }
-            Ok(LSCmd::DeclareFunc(sig))
+            Ok(DelisCmd::DeclareFunc(sig))
         }
         Rule::ModelDef => {
             let model = Model::parse(cmd.clone()).unwrap();
@@ -198,7 +201,7 @@ pub fn parse_command(
                     );
                 }
             }
-            Ok(LSCmd::DefineModel(model))
+            Ok(DelisCmd::DefineModel(model))
         }
         Rule::ThSpecCmd => {
             let mut inner = cmd.clone().into_inner();
@@ -208,13 +211,13 @@ pub fn parse_command(
                 .collect::<Vec<_>>()
                 .join(" ");
             let sexpr = lexpr::from_str(&format!("({} {})", symbol, args)).ok();
-            Ok(LSCmd::ThSpec(crate::lang::model::ThSpecCmd {
+            Ok(DelisCmd::ThSpec(crate::lang::model::ThSpecCmd {
                 name: symbol,
                 args,
                 sexpr,
             }))
         }
-        _ => Err(LSParseError::InvalidSyntax(format!(
+        _ => Err(DelisParseError::InvalidSyntax(format!(
             "Invalid command: {:?}",
             cmd.as_str()
         ))),
@@ -224,16 +227,16 @@ pub fn parse_command(
 pub fn parse_commands(
     input: &str,
     runtime: Option<&mut Runtime>,
-) -> Vec<Result<LSCmd, LSParseError>> {
+) -> Vec<Result<DelisCmd, DelisParseError>> {
     match parse(input, runtime) {
         Ok(ls_file) => ls_file.cmds.into_iter().map(Ok).collect(),
         Err(e) => vec![Err(e)],
     }
 }
 
-impl LSCmd {
+impl DelisCmd {
     pub fn declare_fun(name: &str, arg_sorts: Vec<Sort>, ret_sort: Sort) -> Self {
-        LSCmd::DeclareFunc(FuncSig {
+        DelisCmd::DeclareFunc(FuncSig {
             name: name.to_string(),
             arg_sorts,
             ret_sort,

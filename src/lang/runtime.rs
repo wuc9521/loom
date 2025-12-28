@@ -1,6 +1,6 @@
 use crate::lang::model::{DefineUniv, Model};
 use crate::lang::signature::FuncSig;
-use crate::parser::ast::LSCmd;
+use crate::parser::ast::DelisCmd;
 use crate::theory::{dispatch_extcmd, Logic, ModelCtx};
 use std::collections::HashMap;
 
@@ -87,11 +87,11 @@ impl Session {
             last_model: None,
         }
     }
-    pub fn handle_command(&mut self, cmd: &LSCmd) -> Option<LSCmd> {
-        use crate::parser::ast::LSCmd;
+    pub fn handle_command(&mut self, cmd: &DelisCmd) -> Option<DelisCmd> {
+        use crate::parser::ast::DelisCmd;
         use sygus_parser::SyGuSCmd;
         match cmd {
-            LSCmd::As(SyGuSCmd::SetLogic(logic_str)) => {
+            DelisCmd::As(SyGuSCmd::SetLogic(logic_str)) => {
                 if self.logic.is_some() {
                     // println!("logic is already set");
                     return None;
@@ -114,12 +114,12 @@ impl Session {
                 });
                 return Some(cmd.clone());
             }
-            LSCmd::DeclareFunc(sig) => {
+            DelisCmd::DeclareFunc(sig) => {
                 self.runtime
                     .insert(sig.name.clone(), Symbol::Func(sig.clone()));
                 return Some(cmd.clone());
             }
-            LSCmd::DefineModel(model) => {
+            DelisCmd::DefineModel(model) => {
                 self.runtime
                     .insert(model.name.clone(), Symbol::Model(model.clone()));
                 for univ in &model.univ_defs {
@@ -131,10 +131,10 @@ impl Session {
                 }
                 return Some(cmd.clone());
             }
-            LSCmd::ThSpec(cmd) => {
+            DelisCmd::ThSpec(cmd) => {
                 println!("dispatching extcmd: {}", cmd);
                 dispatch_extcmd(self.logic.unwrap(), self.ctx.as_mut().unwrap(), &cmd);
-                return Some(LSCmd::ThSpec(cmd.clone()));
+                return Some(DelisCmd::ThSpec(cmd.clone()));
             }
             _ => {
                 return Some(cmd.clone());

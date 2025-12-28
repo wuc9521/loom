@@ -1,5 +1,5 @@
 use crate::lang::model::Model;
-use crate::parser::LSFile;
+use crate::parser::DelisFile;
 use crate::theory::re::utils::{re_comp, re_inter, re_union};
 use crate::theory::utils::get_universe_domain_and_map;
 use crate::theory::Logic;
@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
 use sygus_parser::{Literal, Sort, SortedVar, SyGuSCmd};
 
-pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &DelisFile) -> Vec<SyGuSCmd> {
     let mut cmds = Vec::new();
     cmds.push(SyGuSCmd::SetLogic(Logic::BV.to_string()));
     cmds.push(
@@ -25,7 +25,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     let mut models = HashMap::new();
     let mut domain_sort = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::DefineModel(model) = cmd {
+        if let crate::parser::DelisCmd::DefineModel(model) = cmd {
             // dynamically get domain_sort
             if domain_sort.is_none() {
                 if let Some(univ) = model.univ_defs.get(0) {
@@ -284,7 +284,7 @@ pub fn to_sygus(lsfile: &LSFile) -> Vec<SyGuSCmd> {
     }
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
-        if let crate::parser::LSCmd::As(sygus_parser::SyGuSCmd::SynthFun(
+        if let crate::parser::DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(
             name,
             args,
             _sort,
