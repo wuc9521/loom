@@ -13,7 +13,6 @@ pub fn modal_and(bv_sort: &Sort) -> SyGuSCmd {
         .build()
 }
 
-
 pub fn modal_or(bv_sort: &Sort) -> SyGuSCmd {
     Cmd::define_fun("modal.or")
         .arg("x", bv_sort.clone())

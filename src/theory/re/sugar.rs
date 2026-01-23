@@ -1,11 +1,11 @@
 use crate::lang::model::{
-    FuncInterp, InterpedValue, MatchCase, Model, Pattern, PatternElem, DefineUniv, UnivElem,
+    DefineUniv, FuncInterp, InterpedValue, MatchCase, Model, Pattern, PatternElem, UnivElem,
 };
 use crate::parser::{DelisCmd, DelisFile};
 use crate::signature::FuncSig;
 use std::collections::HashSet;
-use sygus_parser::api::{Cmd, GTerm};
 use sygus_parser::ast::{SyGuSGTerm, SyGuSTerm};
+use sygus_parser::{Cmd, GTerm};
 use sygus_parser::{Identifier, Literal, Sort, SyGuSCmd, SyGuSFile};
 
 pub fn desugar(sygus: &SyGuSFile) -> DelisFile {
@@ -101,7 +101,8 @@ pub fn desugar(sygus: &SyGuSFile) -> DelisFile {
                                                 vec![w, regex],
                                             )],
                                         );
-                                        output_cmds.push(DelisCmd::As(SyGuSCmd::Constraint(new_term)));
+                                        output_cmds
+                                            .push(DelisCmd::As(SyGuSCmd::Constraint(new_term)));
                                         continue;
                                     }
                                 }

@@ -3,4 +3,7 @@ pub use re::*;
 pub mod bv;
 pub mod utils;
 pub mod sugar;
+pub mod chc;
+pub mod ctx;
 pub use bv::to_sygus;
+pub use chc::to_chc;

@@ -1,8 +1,5 @@
 use sygus_parser::Sort;
-use sygus_parser::{
-    api::{BitVec, Cmd, Term},
-    SyGuSCmd,
-};
+use sygus_parser::{BitVec, Cmd, SyGuSCmd, Term};
 
 pub fn re_union(bv_sort: &Sort) -> SyGuSCmd {
     Cmd::define_fun("re.union")
@@ -28,4 +25,4 @@ pub fn re_comp(bv_sort: &Sort) -> SyGuSCmd {
         .ret(bv_sort.clone())
         .body(BitVec::bvnot(Term::var("x")))
         .build()
-} 
+}

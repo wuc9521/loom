@@ -24,7 +24,7 @@
 		(($3 $0) true)
 		((_ _) false)
     )))
-	(interp-fun a (match (
+    (interp-fun a (match (
         (($0) true)
         ((_) false)
     )))

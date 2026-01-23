@@ -124,8 +124,8 @@
 		(Start Bool
 			(
 				a
-                c
-                v		
+                		c
+                		v		
 				(modal.not Start)
 				(modal.and Start Start)
 				(modal.or Start Start)

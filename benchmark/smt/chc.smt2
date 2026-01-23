@@ -54,4 +54,4 @@
         (P1 y))))
 
 (check-sat)
-(get-model)
+(get-models)

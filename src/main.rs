@@ -11,8 +11,6 @@ use std::{
     path::PathBuf,
 };
 
-mod repl;
-
 /// CLI application for parsing your custom language
 #[derive(clap::Parser, Debug)]
 #[command(
@@ -33,6 +31,10 @@ pub struct CLI {
     #[arg(short, long = "dump-sygus", default_value_t = false)]
     dump_sygus: bool,
 
+    /// Translate to CHC (HORN) and print to stdout
+    #[arg(long = "dump-chc", default_value_t = false)]
+    dump_chc: bool,
+
     #[arg(short, long = "as-sygus", default_value_t = false)]
     as_sygus: bool,
 }
@@ -42,7 +44,8 @@ fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     let file_path = args.file;
     if file_path == None {
-        return repl::repl();
+        eprintln!("missing --file argument");
+        return Ok(());
     }
     let input = fs::read_to_string(file_path.unwrap())?;
     if args.as_sygus {
@@ -120,6 +123,16 @@ fn main() -> Result<(), io::Error> {
                     }
                 }
                 for cmd in re::to_sygus(&delis_file) {
+                    println!("{}", cmd);
+                }
+            }
+            _ => {}
+        }
+    }
+    if args.dump_chc {
+        match session.logic {
+            Some(Logic::RE) => {
+                for cmd in re::to_chc(&delis_file) {
                     println!("{}", cmd);
                 }
             }

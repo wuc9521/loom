@@ -116,6 +116,7 @@ pub fn parse(
                 }
                 ls_file.push(DelisCmd::DefineModel(model));
             }
+            // ThSpecCmd's are parsed as sexpr.
             Rule::ThSpecCmd => {
                 let mut inner = cmd.clone().into_inner();
                 let symbol = inner.next().unwrap().as_str().to_string();
