@@ -9,7 +9,6 @@ clap = {version = "4.4", features = ["derive"]}# command line argument parser
 derive_more = "0.99.17" 
 itertools = "0.14.0" 
 lexpr = "0.2.7" 
-oxiz = "0.1.2" 
 pest = "2.7.3" 
 pest_derive = "2.7.3" 
 rustyline = "13" 

@@ -1,3 +1,4 @@
+pub mod chc;
 pub mod lang;
 pub mod parser;
 pub mod theory;

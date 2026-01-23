@@ -7,8 +7,9 @@ use delis::{
 };
 use std::{
     fs,
-    io::{self},
+    io::{self, Write},
     path::PathBuf,
+    process::{Command, Stdio},
 };
 
 /// CLI application for parsing your custom language
@@ -82,62 +83,84 @@ fn main() -> Result<(), io::Error> {
     let mut delis_file = delis::parser::ast::DelisFile {
         cmds: delis_cmd_vec,
     };
-    if args.dump_sygus {
-        match session.logic {
-            Some(Logic::FOL) => {
-                for cmd in &mut delis_file.cmds {
-                    if let DelisCmd::DefineModel(model) = cmd {
-                        let mut ctx = fol::FOModelCtx::default();
-                        for thcmd in &model.ext_cmds {
-                            fol::handle_model_extcmd(&mut ctx, thcmd);
-                        }
-                        model.ext_ctx = Some(ModelCtx::FOL(ctx));
+    match session.logic {
+        Some(Logic::FOL) => {
+            for cmd in &mut delis_file.cmds {
+                if let DelisCmd::DefineModel(model) = cmd {
+                    let mut ctx = fol::FOModelCtx::default();
+                    for thcmd in &model.ext_cmds {
+                        fol::handle_model_extcmd(&mut ctx, thcmd);
                     }
+                    model.ext_ctx = Some(ModelCtx::FOL(ctx));
                 }
+            }
+            if args.dump_sygus {
                 for cmd in fol::to_sygus(&delis_file) {
                     println!("{}", cmd);
                 }
             }
-            Some(Logic::PML) => {
-                for cmd in &mut delis_file.cmds {
-                    if let DelisCmd::DefineModel(model) = cmd {
-                        let mut ctx = pml::KripkeCtx::default();
-                        for thcmd in &model.ext_cmds {
-                            pml::handle_model_extcmd(&mut ctx, thcmd);
-                        }
-                        model.ext_ctx = Some(ModelCtx::PML(ctx));
+            if args.dump_chc {}
+        }
+        Some(Logic::PML) => {
+            for cmd in &mut delis_file.cmds {
+                if let DelisCmd::DefineModel(model) = cmd {
+                    let mut ctx = pml::KripkeCtx::default();
+                    for thcmd in &model.ext_cmds {
+                        pml::handle_model_extcmd(&mut ctx, thcmd);
                     }
-                }
-                for cmd in pml::to_sygus(&delis_file) {
-                    println!("{}", cmd);
+                    model.ext_ctx = Some(ModelCtx::PML(ctx));
                 }
             }
-            Some(Logic::RE) => {
-                for cmd in &mut delis_file.cmds {
-                    if let DelisCmd::DefineModel(model) = cmd {
-                        let mut ctx = re::StringCtx::default();
-                        for thcmd in &model.ext_cmds {
-                            re::handle_model_extcmd(&mut ctx, thcmd);
-                        }
-                        model.ext_ctx = Some(ModelCtx::RE(ctx));
-                    }
+        }
+        Some(Logic::RE) => {
+            for cmd in &mut delis_file.cmds {
+                if let DelisCmd::DefineModel(model) = cmd {
+                    model.ext_ctx = Some(ModelCtx::RE(re::StringCtx::default()));
                 }
+            }
+            let chc_cmds = re::to_chc(&delis_file);
+            let chc_text = chc_cmds
+                .iter()
+                .map(|cmd| cmd.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let mut child = Command::new("z3")
+                .arg("-in")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()?;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(chc_text.as_bytes())?;
+            }
+            let output = child.wait_with_output()?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut result = None;
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if trimmed == "sat" || trimmed == "unsat" {
+                    result = Some(trimmed.to_string());
+                    break;
+                } else {
+                    // error
+                    eprintln!("Z3 output: {}", trimmed);
+                    return Ok(());
+                }
+            }
+            if result.as_deref() == Some("unsat") {
+                println!("unsat");
+            } else {
+                // run saturate.
+            }
+            if args.dump_sygus {
                 for cmd in re::to_sygus(&delis_file) {
                     println!("{}", cmd);
                 }
             }
-            _ => {}
-        }
-    }
-    if args.dump_chc {
-        match session.logic {
-            Some(Logic::RE) => {
-                for cmd in re::to_chc(&delis_file) {
-                    println!("{}", cmd);
-                }
+            if args.dump_chc {
+                println!("{}", chc_text);
             }
-            _ => {}
         }
+        _ => {}
     }
     Ok(())
 }
