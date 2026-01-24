@@ -8,13 +8,13 @@ use delis::{
 use log::{error, warn};
 use std::{
     fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::PathBuf,
     process::{Command, Stdio},
 };
 
 /// Parse cvc5 output: extract define-fun commands from big parenthesis
-fn parse_cvc5_define_funs(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, io::Error> {
+fn parse_solver(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, io::Error> {
     let trimmed = output.trim();
     let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
         &trimmed[1..trimmed.len() - 1]
@@ -23,53 +23,13 @@ fn parse_cvc5_define_funs(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, i
     };
 
     let mut define_funs = Vec::new();
-    let mut depth = 0;
-    let mut start = 0;
-    let mut in_string = false;
-    let mut escape_next = false;
-
-    for (i, ch) in content.char_indices() {
-        if escape_next {
-            escape_next = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_string => escape_next = true,
-            '"' => in_string = !in_string,
-            '(' if !in_string => {
-                if depth == 0 {
-                    start = i;
-                }
-                depth += 1;
-            }
-            ')' if !in_string => {
-                depth -= 1;
-                if depth == 0 {
-                    let cmd_str = &content[start..=i];
-                    match sygus_parser::SyGuSCmd::from_str(cmd_str) {
-                        Ok(cmd) if matches!(cmd, sygus_parser::SyGuSCmd::DefineFun(..)) => {
-                            define_funs.push(cmd);
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                format!("Failed to parse define-fun: {} in '{}'", e, cmd_str),
-                            ));
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if define_funs.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "No define-fun commands found in cvc5 output",
-        ));
-    }
+    // use SyGuSFile to parse.
+    let sygus_file = sygus_parser::SyGuSFile::from_str(content)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    sygus_file
+        .cmds
+        .iter()
+        .for_each(|f| define_funs.push(f.clone()));
     Ok(define_funs)
 }
 
@@ -81,9 +41,13 @@ fn parse_cvc5_define_funs(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, i
     about = "Parse and analyze your custom language files"
 )]
 pub struct CLI {
-    /// Path to the input file
-    #[arg(short, long)]
+    /// Path to the input file (if not using --in)
+    #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
+
+    /// Read input from stdin instead of file
+    #[arg(short, long)]
+    r#in: bool,
 
     /// Enable verbose output
     #[arg(short, long, default_value_t = false)]
@@ -133,12 +97,23 @@ fn main() -> Result<(), io::Error> {
             log::LevelFilter::Warn
         })
         .init();
-    let file_path = args.file;
-    if file_path == None {
-        eprintln!("missing --file argument");
-        return Ok(());
-    }
-    let input = fs::read_to_string(file_path.unwrap())?;
+
+    // Read input from stdin or file
+    let input = if args.r#in {
+        // Read from stdin
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer)?;
+        buffer
+    } else {
+        // Read from file
+        let file_path = args.file.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Either provide a file path or use --in to read from stdin",
+            )
+        })?;
+        fs::read_to_string(file_path)?
+    };
     if args.as_sygus {
         let sygus_file = sygus_parser::SyGuSFile::from_str(&input.as_str()).unwrap();
         let logic_str = extract_logic_sygus(&sygus_file).unwrap();
@@ -184,12 +159,6 @@ fn main() -> Result<(), io::Error> {
                     model.ext_ctx = Some(ModelCtx::FOL(ctx));
                 }
             }
-            if args.dump_sygus {
-                for cmd in fol::to_sygus(&delis_file) {
-                    println!("{}", cmd);
-                }
-            }
-            if args.dump_chc {}
         }
         Some(Logic::PML) => {
             for cmd in &mut delis_file.cmds {
@@ -217,6 +186,18 @@ fn main() -> Result<(), io::Error> {
 
             if args.dump_chc {
                 println!("{}", chc_text);
+                return Ok(());
+            }
+
+            let sygus_cmds = re::to_sygus(&delis_file);
+            let sygus_text = sygus_cmds
+                .iter()
+                .map(|cmd| cmd.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            if args.dump_sygus {
+                println!("{}", sygus_text);
                 return Ok(());
             }
 
@@ -249,12 +230,6 @@ fn main() -> Result<(), io::Error> {
                 }
                 Some("sat") => {
                     // Generate sygus and call cvc5
-                    let sygus_cmds = re::to_sygus(&delis_file);
-                    let sygus_text = sygus_cmds
-                        .iter()
-                        .map(|cmd| cmd.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n");
 
                     let mut cvc5 = Command::new("cvc5")
                         .arg("--lang=sygus2")
@@ -276,7 +251,7 @@ fn main() -> Result<(), io::Error> {
                     }
 
                     // Parse and decode cvc5 output
-                    let define_funs = parse_cvc5_define_funs(&cvc5_stdout)?;
+                    let define_funs = parse_solver(&cvc5_stdout)?;
                     match Logic::RE.decode(&define_funs) {
                         Ok(result) => println!("(\n{}\n)", result),
                         Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
