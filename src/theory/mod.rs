@@ -56,3 +56,17 @@ impl SygusDesugar for Logic {
         }
     }
 }
+
+/// Decode cvc5 output (define-fun commands) to final result
+pub trait Decoder {
+    fn decode(&self, define_funs: &[sygus_parser::SyGuSCmd]) -> Result<String, String>;
+}
+
+impl Decoder for Logic {
+    fn decode(&self, define_funs: &[sygus_parser::SyGuSCmd]) -> Result<String, String> {
+        match self {
+            Logic::RE => crate::theory::re::bv::decode(define_funs),
+            _ => Err(format!("decode not implemented for logic: {}", self)),
+        }
+    }
+}

@@ -5,6 +5,34 @@ use crate::theory::Logic;
 use sygus_parser::api::{BitVec, Bool, Term};
 use sygus_parser::{Cmd, Literal, Sort, SortedVar, SyGuSCmd};
 
+/// Decode cvc5 output (define-fun commands) to final result
+pub fn decode(define_funs: &[SyGuSCmd]) -> Result<String, String> {
+    let mut result = String::new();
+    for define_fun in define_funs {
+        if let SyGuSCmd::DefineFun(name, args, sort, body) = define_fun {
+            result.push_str(&format!(
+                "(define-fun {} ({}) {} {})",
+                name,
+                args.iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                match sort {
+                    Sort::Simple(_) => "RegLan".to_string(),
+                    _ => {
+                        return Err(format!(
+                            "Unsupported sort while decoding cvc5 output: {:?}",
+                            sort
+                        ));
+                    }
+                },
+                body
+            ));
+        }
+    }
+    Ok(result)
+}
+
 pub fn to_sygus(lsfile: &DelisFile) -> Vec<SyGuSCmd> {
     let ctx = ReCtx::new(lsfile);
     let mut cmds = Vec::new();

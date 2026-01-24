@@ -24,10 +24,27 @@ pub struct Query {
 #[derive(Debug, Clone)]
 pub enum Decl {
     SetLogic(String),
-    DeclareRel { name: String, args: Vec<Sort> },
-    DeclareVar { name: String, sort: Sort },
-    DeclareConst { name: String, sort: Sort },
-    DeclareDatatypes { sorts: Vec<SortDecl>, decls: Vec<Vec<DTConsDecl>> },
+    SetOption {
+        key: String,
+        value: SyGuSTerm,
+    },
+    DeclareRel {
+        name: String,
+        args: Vec<Sort>,
+    },
+    DeclareVar {
+        name: String,
+        sort: Sort,
+    },
+    DeclareConst {
+        name: String,
+        sort: Sort,
+    },
+    DeclareDatatypes {
+        sorts: Vec<SortDecl>,
+        decls: Vec<Vec<DTConsDecl>>,
+    },
+    GetProof,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -35,4 +52,5 @@ pub struct Program {
     pub decls: Vec<Decl>,
     pub rules: Vec<Rule>,
     pub queries: Vec<Query>,
+    pub tail: Vec<Decl>,
 }
