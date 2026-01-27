@@ -1,5 +1,5 @@
 use crate::lang::model::Model;
-use crate::parser::DelisFile;
+use crate::parser::DelisProg;
 use crate::theory::utils::{
     collect_bool_props, collect_constraint_models, eval, get_universe_domain_and_map, prop_bitvecs,
     replace_grammardef_sort,
@@ -11,6 +11,33 @@ use crate::theory::{
 use std::collections::HashMap;
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
 use sygus_parser::{Literal, Sort, SortedVar, SyGuSCmd, SyGuSTerm};
+
+pub fn decode(define_funs: &[SyGuSCmd]) -> Result<String, String> {
+    let mut result = String::new();
+    for define_fun in define_funs {
+        if let SyGuSCmd::DefineFun(name, args, sort, body) = define_fun {
+            result.push_str(&format!(
+                "(define-fun {} ({}) {} {})",
+                name,
+                args.iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                match sort {
+                    Sort::Simple(_) => "Bool".to_string(),
+                    _ => {
+                        return Err(format!(
+                            "Unsupported sort while decoding cvc5 output: {:?}",
+                            sort
+                        ));
+                    }
+                },
+                body
+            ));
+        }
+    }
+    Ok(result)
+}
 
 pub fn generate_concatenated_bitvector<F>(models: &[&Model], eval_func: F) -> (String, usize)
 where
@@ -35,7 +62,7 @@ where
     (bv_str, total_bits)
 }
 
-pub fn to_sygus(lsfile: &DelisFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &DelisProg) -> Vec<SyGuSCmd> {
     let mut cmds = Vec::new();
     cmds.push(SyGuSCmd::SetLogic(Logic::BV.to_string()));
     cmds.push(

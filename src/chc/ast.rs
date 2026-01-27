@@ -1,56 +1,41 @@
 use sygus_parser::{DTConsDecl, Sort, SortDecl, SortedVar, SyGuSTerm};
 
+pub type HornTerm = SyGuSTerm;
+
 #[derive(Debug, Clone)]
-pub struct Atom {
+pub struct HornAtom {
     pub pred: String,
-    pub args: Vec<SyGuSTerm>,
+    pub args: Vec<HornTerm>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Rule {
+pub struct HornRule {
     pub vars: Vec<SortedVar>,
-    pub body_atoms: Vec<Atom>,
-    pub constraints: Vec<SyGuSTerm>,
-    pub head: Atom,
+    pub body_atoms: Vec<HornAtom>,
+    pub head: HornAtom,
 }
 
 #[derive(Debug, Clone)]
-pub struct Query {
+pub struct HornQuery {
     pub vars: Vec<SortedVar>,
-    pub body_atoms: Vec<Atom>,
-    pub constraints: Vec<SyGuSTerm>,
+    pub body_atoms: Vec<HornAtom>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Decl {
+pub enum HornDecl {
     SetLogic(String),
-    SetOption {
-        key: String,
-        value: SyGuSTerm,
-    },
-    DeclareRel {
-        name: String,
-        args: Vec<Sort>,
-    },
-    DeclareVar {
-        name: String,
-        sort: Sort,
-    },
-    DeclareConst {
-        name: String,
-        sort: Sort,
-    },
-    DeclareDatatypes {
-        sorts: Vec<SortDecl>,
-        decls: Vec<Vec<DTConsDecl>>,
-    },
+    SetOption(String, HornTerm),
+    DeclareRel(String, Vec<Sort>),
+    DeclareVar(String, Sort),
+    DeclareConst(String, Sort),
+    DeclareDatatypes(Vec<SortDecl>, Vec<Vec<DTConsDecl>>),
     GetProof,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Program {
-    pub decls: Vec<Decl>,
-    pub rules: Vec<Rule>,
-    pub queries: Vec<Query>,
-    pub tail: Vec<Decl>,
+pub struct HornProg {
+    pub decls: Vec<HornDecl>,
+    pub rules: Vec<HornRule>,
+    pub queries: Vec<HornQuery>,
+    pub tail: Vec<HornDecl>,
 }

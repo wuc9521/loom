@@ -1,14 +1,14 @@
 use crate::lang::model::{
     DefineUniv, FuncInterp, InterpedValue, MatchCase, Model, Pattern, PatternElem, UnivElem,
 };
-use crate::parser::{DelisCmd, DelisFile};
+use crate::parser::{DelisCmd, DelisProg};
 use crate::signature::FuncSig;
 use std::collections::HashSet;
 use sygus_parser::ast::{SyGuSGTerm, SyGuSTerm};
 use sygus_parser::{Cmd, GTerm};
 use sygus_parser::{Identifier, Literal, Sort, SyGuSCmd, SyGuSFile};
 
-pub fn desugar(sygus: &SyGuSFile) -> DelisFile {
+pub fn desugar(sygus: &SyGuSFile) -> DelisProg {
     let mut char_set = HashSet::new();
     let mut models = Vec::new();
     let mut skip_definefun = HashSet::new();
@@ -203,5 +203,5 @@ pub fn desugar(sygus: &SyGuSFile) -> DelisFile {
         model_insert_idx += 1;
     }
 
-    DelisFile { cmds: final_cmds }
+    DelisProg { cmds: final_cmds }
 }

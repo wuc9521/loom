@@ -1,5 +1,6 @@
 use clap::Parser as ClapParser;
 use delis::{
+    chc::sygus as chc_sygus,
     lang::runtime::Session,
     parser::ast::DelisCmd,
     theory::{fol, pml, re, Decoder, Logic, ModelCtx, SygusDesugar},
@@ -14,7 +15,7 @@ use std::{
 };
 
 /// Parse cvc5 output: extract define-fun commands from big parenthesis
-fn parse_solver(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, io::Error> {
+fn parse_cvc5(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, io::Error> {
     let trimmed = output.trim();
     let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
         &trimmed[1..trimmed.len() - 1]
@@ -31,6 +32,29 @@ fn parse_solver(output: &str) -> Result<Vec<sygus_parser::SyGuSCmd>, io::Error> 
         .iter()
         .for_each(|f| define_funs.push(f.clone()));
     Ok(define_funs)
+}
+
+fn run_z3(chc_text: &str, verbose: bool) -> Result<Option<String>, io::Error> {
+    let mut child = Command::new("z3")
+        .arg("-in")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(chc_text.as_bytes())?;
+    }
+    let output = child.wait_with_output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut result = None;
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if (trimmed == "sat" || trimmed == "unsat") && result.is_none() {
+            result = Some(trimmed.to_string());
+        } else if verbose && !trimmed.is_empty() {
+            error!("z3: {}", trimmed);
+        }
+    }
+    Ok(result)
 }
 
 /// CLI application for parsing your custom language
@@ -60,6 +84,14 @@ pub struct CLI {
     /// Translate to CHC (HORN) and print to stdout
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
+
+    /// Translate CHC to SyGuS BV and print to stdout
+    #[arg(long = "dump-chc-sygus", default_value_t = false)]
+    dump_chc_sygus: bool,
+
+    /// Disable CHC to SyGuS rewrite optimization
+    #[arg(long = "no-optim", default_value_t = false)]
+    no_optim: bool,
 
     #[arg(short, long = "as-sygus", default_value_t = false)]
     as_sygus: bool,
@@ -145,9 +177,20 @@ fn main() -> Result<(), io::Error> {
             }
         }
     }
-    let mut delis_file = delis::parser::ast::DelisFile {
+    let mut delis_file = delis::parser::ast::DelisProg {
         cmds: delis_cmd_vec,
     };
+    let synth_name = delis_file
+        .cmds
+        .iter()
+        .find_map(|cmd| {
+            if let DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(name, ..)) = cmd {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "phi".to_string());
     match session.logic {
         Some(Logic::FOL) => {
             for cmd in &mut delis_file.cmds {
@@ -170,6 +213,86 @@ fn main() -> Result<(), io::Error> {
                     model.ext_ctx = Some(ModelCtx::PML(ctx));
                 }
             }
+            let chc_ast = pml::chc::to_chc_ast(&delis_file, args.verbose);
+            let chc_cmds = delis::chc::emit::to_smt(&chc_ast);
+            let chc_text = chc_cmds
+                .iter()
+                .map(|cmd| cmd.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            if args.dump_chc {
+                println!("{}", chc_text);
+                return Ok(());
+            }
+            if args.dump_chc_sygus {
+                let sygus_cmds = chc_sygus::to_sygus(&chc_ast, &synth_name, !args.no_optim)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let sygus_text = sygus_cmds
+                    .iter()
+                    .map(|cmd| cmd.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                println!("{}", sygus_text);
+                return Ok(());
+            }
+
+            let sygus_cmds = pml::to_sygus(&delis_file);
+            let sygus_text = sygus_cmds
+                .iter()
+                .map(|cmd| cmd.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            if args.dump_sygus {
+                println!("{}", sygus_text);
+                return Ok(());
+            }
+
+            let z3_result = run_z3(&chc_text, args.verbose)?;
+            match z3_result.as_deref() {
+                Some("unsat") => {
+                    println!("unsat");
+                    return Ok(());
+                }
+                Some("sat") => {
+                    let mut cvc5 = Command::new("cvc5")
+                        .arg("--lang=sygus2")
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()?;
+
+                    if let Some(mut stdin) = cvc5.stdin.take() {
+                        stdin.write_all(sygus_text.as_bytes())?;
+                    }
+
+                    let cvc5_output = cvc5.wait_with_output()?;
+                    let cvc5_stdout = String::from_utf8_lossy(&cvc5_output.stdout);
+
+                    let trimmed = cvc5_stdout.trim();
+                    if trimmed.eq_ignore_ascii_case("infeasible") {
+                        println!("unsat");
+                        return Ok(());
+                    }
+                    if trimmed.eq_ignore_ascii_case("unknown")
+                        || trimmed.eq_ignore_ascii_case("fail")
+                    {
+                        warn!("cvc5 returned {}", trimmed);
+                        return Ok(());
+                    }
+
+                    let define_funs = parse_cvc5(&cvc5_stdout)?;
+                    match Logic::PML.decode(&define_funs) {
+                        Ok(result) => println!("(\n{}\n)", result),
+                        Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
+                    }
+                }
+                _ => {
+                    if z3_result.is_none() {
+                        warn!("z3 returned no sat/unsat result");
+                    }
+                }
+            }
         }
         Some(Logic::RE) => {
             for cmd in &mut delis_file.cmds {
@@ -177,7 +300,8 @@ fn main() -> Result<(), io::Error> {
                     model.ext_ctx = Some(ModelCtx::RE(re::StringCtx::default()));
                 }
             }
-            let chc_cmds = re::to_chc(&delis_file, args.verbose);
+            let chc_ast = re::chc::to_chc_ast(&delis_file, args.verbose);
+            let chc_cmds = delis::chc::emit::to_smt(&chc_ast);
             let chc_text = chc_cmds
                 .iter()
                 .map(|cmd| cmd.to_string())
@@ -186,6 +310,17 @@ fn main() -> Result<(), io::Error> {
 
             if args.dump_chc {
                 println!("{}", chc_text);
+                return Ok(());
+            }
+            if args.dump_chc_sygus {
+                let sygus_cmds = chc_sygus::to_sygus(&chc_ast, &synth_name, !args.no_optim)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let sygus_text = sygus_cmds
+                    .iter()
+                    .map(|cmd| cmd.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                println!("{}", sygus_text);
                 return Ok(());
             }
 
@@ -200,37 +335,13 @@ fn main() -> Result<(), io::Error> {
                 println!("{}", sygus_text);
                 return Ok(());
             }
-
-            let mut child = Command::new("z3")
-                .arg("-in")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(chc_text.as_bytes())?;
-            }
-            let output = child.wait_with_output()?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-
-            // Check z3 result
-            let mut z3_result = None;
-            for line in stdout.lines() {
-                let trimmed = line.trim();
-                if (trimmed == "sat" || trimmed == "unsat") && z3_result.is_none() {
-                    z3_result = Some(trimmed);
-                } else if args.verbose && !trimmed.is_empty() {
-                    error!("z3: {}", trimmed);
-                }
-            }
-
-            match z3_result {
+            let z3_result = run_z3(&chc_text, args.verbose)?;
+            match z3_result.as_deref() {
                 Some("unsat") => {
                     println!("unsat");
                     return Ok(());
                 }
                 Some("sat") => {
-                    // Generate sygus and call cvc5
-
                     let mut cvc5 = Command::new("cvc5")
                         .arg("--lang=sygus2")
                         .stdin(Stdio::piped())
@@ -244,14 +355,20 @@ fn main() -> Result<(), io::Error> {
 
                     let cvc5_output = cvc5.wait_with_output()?;
                     let cvc5_stdout = String::from_utf8_lossy(&cvc5_output.stdout);
-                    let cvc5_stderr = String::from_utf8_lossy(&cvc5_output.stderr);
 
-                    if !cvc5_stderr.is_empty() && args.verbose {
-                        eprint!("{}", cvc5_stderr);
+                    let trimmed = cvc5_stdout.trim();
+                    if trimmed.eq_ignore_ascii_case("infeasible") {
+                        println!("unsat");
+                        return Ok(());
+                    }
+                    if trimmed.eq_ignore_ascii_case("unknown")
+                        || trimmed.eq_ignore_ascii_case("fail")
+                    {
+                        warn!("cvc5 returned {}", trimmed);
+                        return Ok(());
                     }
 
-                    // Parse and decode cvc5 output
-                    let define_funs = parse_solver(&cvc5_stdout)?;
+                    let define_funs = parse_cvc5(&cvc5_stdout)?;
                     match Logic::RE.decode(&define_funs) {
                         Ok(result) => println!("(\n{}\n)", result),
                         Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
@@ -261,12 +378,6 @@ fn main() -> Result<(), io::Error> {
                     if z3_result.is_none() {
                         warn!("z3 returned no sat/unsat result");
                     }
-                }
-            }
-
-            if args.dump_sygus {
-                for cmd in re::to_sygus(&delis_file) {
-                    println!("{}", cmd);
                 }
             }
         }

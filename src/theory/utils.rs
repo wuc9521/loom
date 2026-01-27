@@ -208,7 +208,7 @@ pub fn replace_grammardef_sort(
 }
 
 /// collect constraint_models (Vec<(model_name, is_true)>)
-pub fn collect_constraint_models(lsfile: &crate::parser::DelisFile) -> Vec<(String, bool)> {
+pub fn collect_constraint_models(lsfile: &crate::parser::DelisProg) -> Vec<(String, bool)> {
     let mut constraint_models = Vec::new();
     for cmd in &lsfile.cmds {
         if let crate::parser::DelisCmd::As(sygus_cmd) = cmd {

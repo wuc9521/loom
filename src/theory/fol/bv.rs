@@ -1,7 +1,7 @@
-use crate::parser::DelisFile;
+use crate::parser::DelisProg;
 use sygus_parser::SyGuSCmd;
 
-pub fn to_sygus(lsfile: &DelisFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &DelisProg) -> Vec<SyGuSCmd> {
     if lsfile.cmds.is_empty() {
         return Vec::new();
     }

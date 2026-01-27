@@ -1,4 +1,4 @@
-use crate::parser::DelisFile;
+use crate::parser::DelisProg;
 use crate::theory::re::ctx::ReCtx;
 use crate::theory::re::utils::{re_comp, re_inter, re_union};
 use crate::theory::Logic;
@@ -33,7 +33,7 @@ pub fn decode(define_funs: &[SyGuSCmd]) -> Result<String, String> {
     Ok(result)
 }
 
-pub fn to_sygus(lsfile: &DelisFile) -> Vec<SyGuSCmd> {
+pub fn to_sygus(lsfile: &DelisProg) -> Vec<SyGuSCmd> {
     let ctx = ReCtx::new(lsfile);
     let mut cmds = Vec::new();
     cmds.push(SyGuSCmd::SetLogic(Logic::BV.to_string()));

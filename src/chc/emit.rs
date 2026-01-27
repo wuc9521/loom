@@ -1,4 +1,4 @@
-use crate::chc::ast::{Atom, Decl, Program, Query, Rule};
+use crate::chc::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule};
 use sygus_parser::{Bool, Identifier, Literal, SExpr, SyGuSTerm, Term};
 
 fn query() -> SExpr {
@@ -9,7 +9,7 @@ fn rule() -> SExpr {
     SExpr::Reserved("rule".to_string())
 }
 
-impl Atom {
+impl HornAtom {
     pub fn to_term(&self) -> SyGuSTerm {
         if self.args.is_empty() {
             SyGuSTerm::Identifier(Identifier::Symbol(self.pred.clone()))
@@ -19,13 +19,10 @@ impl Atom {
     }
 }
 
-fn body_to_term(body_atoms: &[Atom], constraints: &[SyGuSTerm]) -> Option<SyGuSTerm> {
+fn body_to_term(body_atoms: &[HornAtom]) -> Option<SyGuSTerm> {
     let mut terms = Vec::new();
     for atom in body_atoms {
         terms.push(atom.to_term());
-    }
-    for term in constraints {
-        terms.push(term.clone());
     }
     match terms.len() {
         0 => None,
@@ -34,18 +31,17 @@ fn body_to_term(body_atoms: &[Atom], constraints: &[SyGuSTerm]) -> Option<SyGuST
     }
 }
 
-impl Query {
+impl HornQuery {
     pub fn to_sexpr(&self) -> SExpr {
-        let body =
-            body_to_term(&self.body_atoms, &self.constraints).unwrap_or_else(|| Bool::true_());
+        let body = body_to_term(&self.body_atoms).unwrap_or_else(|| Bool::true_());
         SExpr::SExprList(vec![query(), body.to_sexpr()])
     }
 }
 
-impl Rule {
+impl HornRule {
     pub fn to_sexpr(&self) -> SExpr {
         let head = self.head.to_term();
-        match body_to_term(&self.body_atoms, &self.constraints) {
+        match body_to_term(&self.body_atoms) {
             None => SExpr::SExprList(vec![rule(), head.to_sexpr()]),
             Some(body) => {
                 let implication = Bool::implies(body, head);
@@ -55,19 +51,19 @@ impl Rule {
     }
 }
 
-impl Decl {
+impl HornDecl {
     pub fn to_sexpr(&self) -> SExpr {
         match self {
-            Decl::SetOption { key, value } => SExpr::SExprList(vec![
+            HornDecl::SetOption(key, value) => SExpr::SExprList(vec![
                 SExpr::Reserved("set-option".to_string()),
                 SExpr::Keyword(key.to_string()),
                 value.to_sexpr(),
             ]),
-            Decl::SetLogic(logic) => SExpr::SExprList(vec![
+            HornDecl::SetLogic(logic) => SExpr::SExprList(vec![
                 SExpr::Reserved("set-logic".to_string()),
                 SExpr::Symbol(logic.to_string()),
             ]),
-            Decl::DeclareRel { name, args } => {
+            HornDecl::DeclareRel(name, args) => {
                 let args_list = SExpr::SExprList(args.iter().map(|s| s.to_sexpr()).collect());
                 SExpr::SExprList(vec![
                     SExpr::Reserved("declare-rel".to_string()),
@@ -75,12 +71,12 @@ impl Decl {
                     args_list,
                 ])
             }
-            Decl::DeclareVar { name, sort } => SExpr::SExprList(vec![
+            HornDecl::DeclareVar(name, sort) => SExpr::SExprList(vec![
                 SExpr::Reserved("declare-var".to_string()),
                 SExpr::Symbol(name.to_string()),
                 sort.to_sexpr(),
             ]),
-            Decl::DeclareConst { name, sort } => {
+            HornDecl::DeclareConst(name, sort) => {
                 let args_list = SExpr::SExprList(Vec::new());
                 SExpr::SExprList(vec![
                     SExpr::Reserved("declare-fun".to_string()),
@@ -89,7 +85,7 @@ impl Decl {
                     sort.to_sexpr(),
                 ])
             }
-            Decl::DeclareDatatypes { sorts, decls } => {
+            HornDecl::DeclareDatatypes(sorts, decls) => {
                 let sorts_list = SExpr::SExprList(
                     sorts
                         .iter()
@@ -129,12 +125,12 @@ impl Decl {
                     decls_list,
                 ])
             }
-            Decl::GetProof => SExpr::SExprList(vec![SExpr::Reserved("get-proof".to_string())]),
+            HornDecl::GetProof => SExpr::SExprList(vec![SExpr::Reserved("get-proof".to_string())]),
         }
     }
 }
 
-pub fn to_smt(program: &Program) -> Vec<SExpr> {
+pub fn to_smt(program: &HornProg) -> Vec<SExpr> {
     let mut out = Vec::new();
     for decl in &program.decls {
         out.push(decl.to_sexpr());

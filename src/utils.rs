@@ -1,7 +1,7 @@
 use crate::parser::DelisCmd;
-use crate::parser::DelisFile;
+use crate::parser::DelisProg;
 
-pub fn extract_logic(problem: &DelisFile) -> Option<&str> {
+pub fn extract_logic(problem: &DelisProg) -> Option<&str> {
     for cmd in &problem.cmds {
         if let DelisCmd::As(sygus_cmd) = cmd {
             if let sygus_parser::SyGuSCmd::SetLogic(ref logic) = sygus_cmd {

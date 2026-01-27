@@ -30,13 +30,13 @@ pub enum DelisCmd {
     fmt = "{}",
     "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\"\n\")"
 )]
-pub struct DelisFile {
+pub struct DelisProg {
     pub cmds: Vec<DelisCmd>,
 }
 
-impl DelisFile {
+impl DelisProg {
     pub fn new() -> Self {
-        DelisFile { cmds: Vec::new() }
+        DelisProg { cmds: Vec::new() }
     }
     pub fn push(&mut self, cmd: DelisCmd) {
         self.cmds.push(cmd);
@@ -46,12 +46,12 @@ impl DelisFile {
 pub fn parse(
     content: &str,
     mut runtime: Option<&mut Runtime>,
-) -> Result<DelisFile, DelisParseError> {
+) -> Result<DelisProg, DelisParseError> {
     let [file]: [_; 1] = DelisParser::parse(Rule::DelisProg, content)?
         .collect_vec()
         .try_into()
         .unwrap();
-    let mut ls_file = DelisFile::new();
+    let mut ls_file = DelisProg::new();
     // first scan: record set-logic
     let mut cmds_raw = vec![];
     for cmd in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {

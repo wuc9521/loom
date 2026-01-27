@@ -66,6 +66,7 @@ impl Decoder for Logic {
     fn decode(&self, define_funs: &[sygus_parser::SyGuSCmd]) -> Result<String, String> {
         match self {
             Logic::RE => crate::theory::re::bv::decode(define_funs),
+            Logic::PML => crate::theory::pml::bv::decode(define_funs),
             _ => Err(format!("decode not implemented for logic: {}", self)),
         }
     }
