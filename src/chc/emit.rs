@@ -1,5 +1,5 @@
 use crate::chc::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule};
-use sygus_parser::{Bool, Identifier, Literal, SExpr, SyGuSTerm, Term};
+use sygus_parser::{Bool, Literal, SExpr, SyGuSTerm, Term};
 
 fn query() -> SExpr {
     SExpr::Reserved("query".to_string())
@@ -11,11 +11,7 @@ fn rule() -> SExpr {
 
 impl HornAtom {
     pub fn to_term(&self) -> SyGuSTerm {
-        if self.args.is_empty() {
-            SyGuSTerm::Identifier(Identifier::Symbol(self.pred.clone()))
-        } else {
-            Term::app(&self.pred, self.args.clone())
-        }
+        Term::app(&self.pred, vec![self.arg.to_sygus()])
     }
 }
 
@@ -43,10 +39,7 @@ impl HornRule {
         let head = self.head.to_term();
         match body_to_term(&self.body_atoms) {
             None => SExpr::SExprList(vec![rule(), head.to_sexpr()]),
-            Some(body) => {
-                let implication = Bool::implies(body, head);
-                SExpr::SExprList(vec![rule(), implication.to_sexpr()])
-            }
+            Some(body) => SExpr::SExprList(vec![rule(), Bool::implies(body, head).to_sexpr()]),
         }
     }
 }

@@ -1,6 +1,5 @@
 use clap::Parser as ClapParser;
 use delis::{
-    chc::sygus as chc_sygus,
     lang::runtime::Session,
     parser::ast::DelisCmd,
     theory::{fol, pml, re, Decoder, Logic, ModelCtx, SygusDesugar},
@@ -84,10 +83,6 @@ pub struct CLI {
     /// Translate to CHC (HORN) and print to stdout
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
-
-    /// Translate CHC to SyGuS BV and print to stdout
-    #[arg(long = "dump-chc-sygus", default_value_t = false)]
-    dump_chc_sygus: bool,
 
     /// Disable CHC to SyGuS rewrite optimization
     #[arg(long = "no-optim", default_value_t = false)]
@@ -180,17 +175,6 @@ fn main() -> Result<(), io::Error> {
     let mut delis_file = delis::parser::ast::DelisProg {
         cmds: delis_cmd_vec,
     };
-    let synth_name = delis_file
-        .cmds
-        .iter()
-        .find_map(|cmd| {
-            if let DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(name, ..)) = cmd {
-                Some(name.clone())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "phi".to_string());
     match session.logic {
         Some(Logic::FOL) => {
             for cmd in &mut delis_file.cmds {
@@ -224,18 +208,6 @@ fn main() -> Result<(), io::Error> {
                 println!("{}", chc_text);
                 return Ok(());
             }
-            if args.dump_chc_sygus {
-                let sygus_cmds = chc_sygus::to_sygus(&chc_ast, &synth_name, !args.no_optim)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let sygus_text = sygus_cmds
-                    .iter()
-                    .map(|cmd| cmd.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                println!("{}", sygus_text);
-                return Ok(());
-            }
-
             let sygus_cmds = pml::to_sygus(&delis_file);
             let sygus_text = sygus_cmds
                 .iter()
@@ -310,17 +282,6 @@ fn main() -> Result<(), io::Error> {
 
             if args.dump_chc {
                 println!("{}", chc_text);
-                return Ok(());
-            }
-            if args.dump_chc_sygus {
-                let sygus_cmds = chc_sygus::to_sygus(&chc_ast, &synth_name, !args.no_optim)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let sygus_text = sygus_cmds
-                    .iter()
-                    .map(|cmd| cmd.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                println!("{}", sygus_text);
                 return Ok(());
             }
 

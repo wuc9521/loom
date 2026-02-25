@@ -15,7 +15,6 @@ use sygus_parser::SyGuSTerm;
 pub struct ThSpecCmd {
     pub name: String,
     pub args: String, // may be refined to Vec<String>
-    pub sexpr: Option<lexpr::Value>,
 }
 
 impl ThSpecCmd {
@@ -23,8 +22,7 @@ impl ThSpecCmd {
         let mut inner = pair.into_inner();
         let name = inner.next().unwrap().as_str().to_string();
         let args = inner.map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
-        let sexpr = lexpr::from_str(&format!("({} {})", name, args)).ok();
-        Ok(Self { name, args, sexpr })
+        Ok(Self { name, args })
     }
 }
 

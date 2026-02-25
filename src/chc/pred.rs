@@ -1,5 +1,4 @@
 use crate::chc::ast::{HornAtom, HornRule, HornTerm};
-use sygus_parser::SortedVar;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Polarity {
     Pos,
@@ -58,7 +57,7 @@ impl Pred {
     pub fn name(&self) -> String {
         match self.polarity {
             Polarity::Pos => self.base.clone(),
-            Polarity::Neg => format!("NOT_{}", self.base),
+            Polarity::Neg => format!("_NOT_{}", self.base),
         }
     }
 }
@@ -66,16 +65,10 @@ impl Pred {
 pub type PredConj = Vec<PredAtom>;
 pub type PredDnf = Vec<PredConj>;
 
-pub fn emit_dnf_rules(
-    rules: &mut Vec<HornRule>,
-    vars: Vec<SortedVar>,
-    head: PredAtom,
-    dnf: PredDnf,
-) {
+pub fn emit_dnf_rules(rules: &mut Vec<HornRule>, head: PredAtom, dnf: PredDnf) {
     for conj in &dnf {
         let body_atoms = conj.iter().map(PredAtom::to_horn).collect();
         rules.push(HornRule {
-            vars: vars.clone(),
             body_atoms,
             head: head.to_horn(),
         });
@@ -95,7 +88,11 @@ impl PredAtom {
     fn to_horn(&self) -> HornAtom {
         HornAtom {
             pred: self.pred.name(),
-            args: self.args.clone(),
+            arg: self
+                .args
+                .first()
+                .cloned()
+                .expect("PredAtom must have one arg"),
         }
     }
 }

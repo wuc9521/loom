@@ -124,11 +124,9 @@ pub fn parse(
                     .map(|p| p.as_str().to_string())
                     .collect::<Vec<_>>()
                     .join(" ");
-                let sexpr = lexpr::from_str(&format!("({} {})", symbol, args)).ok();
                 ls_file.push(DelisCmd::ThSpec(crate::lang::model::ThSpecCmd {
                     name: symbol,
                     args,
-                    sexpr,
                 }));
             }
             _ => {
@@ -211,11 +209,9 @@ pub fn parse_command(
                 .map(|p| p.as_str().to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
-            let sexpr = lexpr::from_str(&format!("({} {})", symbol, args)).ok();
             Ok(DelisCmd::ThSpec(crate::lang::model::ThSpecCmd {
                 name: symbol,
                 args,
-                sexpr,
             }))
         }
         _ => Err(DelisParseError::InvalidSyntax(format!(
