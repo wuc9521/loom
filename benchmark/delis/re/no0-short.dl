@@ -34,7 +34,7 @@
   )))
 )
 
-(synth-fun regex () RegLan
+(synth-fun r () RegLan
     ((Start RegLan))
     ( 
         (Start RegLan
@@ -53,7 +53,7 @@
 
 
 
-(constraint (models w1 regex))              
-(constraint (not (models w5 regex)))        
+(constraint (models w1 r))              
+(constraint (not (models w5 r)))        
 
 (check-synth)

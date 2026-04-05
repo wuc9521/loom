@@ -75,14 +75,6 @@ pub struct HornProg {
     pub tail: Vec<HornDecl>,
 }
 
-/// Pattern for P(ctor(x,y,...)) — used for push/pop matching.
-#[derive(Debug, Clone)]
-pub struct CtorPat {
-    pub pred: String,
-    pub ctor: String,
-    pub vars: Vec<String>,
-}
-
 impl HornTerm {
     pub fn var(name: impl Into<String>) -> Self {
         HornTerm::Var(name.into())
@@ -95,12 +87,11 @@ impl HornTerm {
         }
     }
 
-    pub fn substitute(&self, subst: &HashMap<String, String>) -> Self {
+    pub fn substitute(&self, subst: &HashMap<String, HornTerm>) -> Self {
         match self {
             HornTerm::Var(name) => subst
                 .get(name)
                 .cloned()
-                .map(HornTerm::Var)
                 .unwrap_or_else(|| self.clone()),
             HornTerm::App { fun, args } => HornTerm::App {
                 fun: fun.clone(),
@@ -121,59 +112,17 @@ impl HornTerm {
     }
 }
 
-impl CtorPat {
-    pub fn matches(&self, other: &CtorPat) -> bool {
-        self.pred == other.pred && self.ctor == other.ctor && self.vars.len() == other.vars.len()
-    }
-}
-
 impl HornAtom {
     /// Substitutes variables in the atom's arg.
-    pub fn substitute(&self, subst: &HashMap<String, String>) -> Self {
+    pub fn substitute(&self, subst: &HashMap<String, HornTerm>) -> Self {
         HornAtom {
             pred: self.pred.clone(),
             arg: self.arg.substitute(subst),
         }
     }
-
-    /// Returns `Some(CtorPat)` when arg is `ctor(x,y,...)`.
-    pub fn as_ctor_pat(&self) -> Option<CtorPat> {
-        match &self.arg {
-            HornTerm::App { fun, args } => {
-                let mut vars = Vec::with_capacity(args.len());
-                for a in args {
-                    if let HornTerm::Var(name) = a {
-                        vars.push(name.clone());
-                    } else {
-                        return None;
-                    }
-                }
-                Some(CtorPat {
-                    pred: self.pred.clone(),
-                    ctor: fun.clone(),
-                    vars,
-                })
-            }
-            _ => None,
-        }
-    }
 }
 
 impl HornRule {
-    /// Returns `Some(CtorPat)` when the head has constructor-app form (push rule).
-    pub fn push_head(&self) -> Option<CtorPat> {
-        self.head.as_ctor_pat()
-    }
-
-    /// Returns body atoms that are constructor-apps, with their indices (pop sites).
-    pub fn pop_sites(&self) -> Vec<(usize, CtorPat)> {
-        self.body_atoms
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, atom)| atom.as_ctor_pat().map(|p| (idx, p)))
-            .collect()
-    }
-
     /// Returns true if the rule has a body atom that is a constructor application (pop clause).
     pub fn is_pop_clause(&self) -> bool {
         self.body_atoms

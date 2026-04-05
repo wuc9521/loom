@@ -1,18 +1,59 @@
-use crate::chc::ast::{CtorPat, HornAtom, HornRule};
+use crate::chc::ast::{HornAtom, HornRule, HornTerm};
 use std::collections::{HashMap, HashSet};
+
+#[derive(Clone, Copy)]
+struct ConstructorAtom<'a> {
+    pred: &'a str,
+    fun: &'a str,
+    args: &'a [HornTerm],
+}
+
+fn constructor_atom(atom: &HornAtom) -> Option<ConstructorAtom<'_>> {
+    match &atom.arg {
+        HornTerm::App { fun, args } => Some(ConstructorAtom {
+            pred: &atom.pred,
+            fun,
+            args,
+        }),
+        HornTerm::Var(_) => None,
+    }
+}
+
+fn match_constructor_atom(
+    pattern: ConstructorAtom<'_>,
+    candidate: ConstructorAtom<'_>,
+) -> Option<HashMap<String, HornTerm>> {
+    if pattern.pred != candidate.pred
+        || pattern.fun != candidate.fun
+        || pattern.args.len() != candidate.args.len()
+    {
+        return None;
+    }
+
+    let mut subst = HashMap::new();
+    for (pattern_arg, candidate_arg) in pattern.args.iter().zip(candidate.args.iter()) {
+        let HornTerm::Var(name) = pattern_arg else {
+            return None;
+        };
+
+        match subst.get(name) {
+            Some(existing) if existing != candidate_arg => return None,
+            Some(_) => {}
+            None => {
+                subst.insert(name.clone(), candidate_arg.clone());
+            }
+        }
+    }
+
+    Some(subst)
+}
 
 fn resolve_pop_clause(
     pop_rule: &HornRule,
     body_idx: usize,
-    pop_pat: &CtorPat,
     push_rule: &HornRule,
-) -> Option<HornRule> {
-    let push_pat = push_rule.push_head()?;
-    let mut subst = HashMap::new();
-    for (from, to) in push_pat.vars.iter().zip(pop_pat.vars.iter()) {
-        subst.insert(from.clone(), to.clone());
-    }
-
+    subst: &HashMap<String, HornTerm>,
+) -> HornRule {
     let mut body_atoms: Vec<HornAtom> = pop_rule
         .body_atoms
         .iter()
@@ -21,14 +62,24 @@ fn resolve_pop_clause(
         .map(|(_, a)| a.clone())
         .collect();
     for atom in &push_rule.body_atoms {
-        body_atoms.push(atom.substitute(&subst));
+        body_atoms.push(atom.substitute(subst));
     }
 
-    //TODO: merge vars.
-    Some(HornRule {
+    HornRule {
         body_atoms,
         head: pop_rule.head.clone(),
-    })
+    }
+}
+
+fn push_head(rule: &HornRule) -> Option<ConstructorAtom<'_>> {
+    constructor_atom(&rule.head)
+}
+
+fn pop_sites(rule: &HornRule) -> impl Iterator<Item = (usize, ConstructorAtom<'_>)> {
+    rule.body_atoms
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, atom)| constructor_atom(atom).map(|ctor| (idx, ctor)))
 }
 
 pub fn saturate(horn_rules: &[HornRule]) -> Vec<HornRule> {
@@ -36,33 +87,31 @@ pub fn saturate(horn_rules: &[HornRule]) -> Vec<HornRule> {
     let mut seen: HashSet<(HornAtom, Vec<HornAtom>)> = rules.iter().map(|r| r.rule_key()).collect();
 
     loop {
-        // make a snapshot of the rules to avoid modifying the rules while iterating over them.
         let snapshot: Vec<HornRule> = rules.clone();
-        // collect all push rules and their push heads.
-        let push_rules: Vec<(&HornRule, CtorPat)> = snapshot
+        let push_rules: Vec<(&HornRule, ConstructorAtom<'_>)> = snapshot
             .iter()
-            .filter_map(|r| r.push_head().map(|h| (r, h)))
+            .filter_map(|r| push_head(r).map(|h| (r, h)))
             .collect();
-        // iterate over all rules and try to resolve their pop sites.
+
         let mut changed = false;
         for r in &snapshot {
-            for (body_idx, pop_pat) in r.pop_sites() {
-                // try to resolve the pop site with all push rules and their push heads.
-                for (push_rule, push_pat) in &push_rules {
-                    if !push_pat.matches(&pop_pat) {
+            for (body_idx, pop_atom) in pop_sites(r) {
+                for (push_rule, push_head_atom) in &push_rules {
+                    let Some(subst) = match_constructor_atom(*push_head_atom, pop_atom) else {
+                        continue;
+                    };
+
+                    let new_rule = resolve_pop_clause(r, body_idx, push_rule, &subst);
+                    let key = new_rule.rule_key();
+                    if seen.contains(&key) || rules.iter().any(|r| r.subsumes(&new_rule)) {
                         continue;
                     }
-                    if let Some(new_rule) = resolve_pop_clause(r, body_idx, &pop_pat, push_rule) {
-                        let key = new_rule.rule_key();
-                        if seen.contains(&key) || rules.iter().any(|r| r.subsumes(&new_rule)) {
-                            continue;
-                        }
-                        rules.retain(|old| !new_rule.subsumes(old));
-                        seen = rules.iter().map(|r| r.rule_key()).collect();
-                        seen.insert(key);
-                        rules.push(new_rule);
-                        changed = true;
-                    }
+
+                    rules.retain(|old| !new_rule.subsumes(old));
+                    seen = rules.iter().map(|r| r.rule_key()).collect();
+                    seen.insert(key);
+                    rules.push(new_rule);
+                    changed = true;
                 }
             }
         }
@@ -91,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn saturate_tata_example_7_6_4() {
+    fn tata_eg_7_6_4() {
         let rules = vec![
             HornRule {
                 body_atoms: vec![
@@ -174,5 +223,58 @@ mod tests {
         for rule in &saturated {
             println!("{}", rule);
         }
+    }
+
+    #[test]
+    fn repeated_push_variable_must_match_same_term() {
+        let pattern_atom = atom(
+            "P",
+            HornTerm::app("f", vec![HornTerm::var("x"), HornTerm::var("x")]),
+        );
+        let candidate_atom = atom(
+            "P",
+            HornTerm::app("f", vec![HornTerm::var("a"), HornTerm::var("b")]),
+        );
+        let pattern = constructor_atom(&pattern_atom).unwrap();
+        let candidate = constructor_atom(&candidate_atom).unwrap();
+
+        assert!(match_constructor_atom(pattern, candidate).is_none());
+    }
+
+    #[test]
+    fn push_body_is_instantiated_with_matched_terms() {
+        let push_rule = HornRule {
+            body_atoms: vec![atom(
+                "Q",
+                HornTerm::app("g", vec![HornTerm::var("x"), HornTerm::var("y")]),
+            )],
+            head: atom(
+                "P",
+                HornTerm::app("f", vec![HornTerm::var("x"), HornTerm::var("y")]),
+            ),
+        };
+        let pop_rule = HornRule {
+            body_atoms: vec![atom(
+                "P",
+                HornTerm::app("f", vec![HornTerm::var("a"), HornTerm::var("b")]),
+            )],
+            head: atom("R", HornTerm::var("a")),
+        };
+
+        let subst = match_constructor_atom(
+            push_head(&push_rule).unwrap(),
+            constructor_atom(&pop_rule.body_atoms[0]).unwrap(),
+        )
+        .unwrap();
+        let resolved = resolve_pop_clause(&pop_rule, 0, &push_rule, &subst);
+
+        assert_eq!(resolved.head, atom("R", HornTerm::var("a")));
+        assert_eq!(
+            resolved.body_atoms,
+            vec![atom(
+                "Q",
+                HornTerm::app("g", vec![HornTerm::var("a"), HornTerm::var("b")]),
+            )]
+        );
     }
 }
