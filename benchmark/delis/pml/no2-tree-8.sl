@@ -1,7 +1,7 @@
 ;; ========== BENCHMARK 2: Tree Structures (8 models) ==========
 ;; Testing binary tree and more complex tree structures
 
-(set-logic PML)
+(set-logic ALL)
 (declare-sort U 0)
 (declare-fun I () U)
 (declare-fun R (U U) Bool)
@@ -288,6 +288,40 @@
     (set-tran R)
 )
 
+
+(declare-term-types
+ ((Bool 0))
+ (((a) (b) (c) (v)
+   (modal.not Bool)
+   (modal.and Bool Bool)
+   (modal.or Bool Bool)
+   (modal.box Bool)
+   (modal.dia Bool))))
+
+
+(define-finite ModalAsp
+  (record (model Model) (node U))
+  :where true)
+
+(define-semantics
+  ((Modal.Sem (phi Bool) (asp ModalAsp)))
+  ((match phi
+     ((a) (a (node asp)))
+     ((b) (b (node asp)))
+     ((c) (c (node asp)))
+     ((v) (v (node asp)))
+     ((modal.not x) (dual (Modal.Sem x asp)))
+     ((modal.and x y) (and (Modal.Sem x asp) (Modal.Sem y asp)))
+     ((modal.or x y) (or (Modal.Sem x asp) (Modal.Sem y asp)))
+     ((modal.box x)
+      (forall ((next (domain (model asp))))
+        (or (not (R (node asp) next))
+            (Modal.Sem x (ModalAsp (model asp) next)))))
+     ((modal.dia x)
+      (exists ((next (domain (model asp))))
+        (and (R (node asp) next)
+             (Modal.Sem x (ModalAsp (model asp) next))))))))
+
 (synth-fun phi2 () Bool
     ((Start Bool))
     (
@@ -304,13 +338,13 @@
     )
 )
 
-(constraint (models Tree1 phi2))
-(constraint (models Tree2 phi2))
-(constraint (models Tree3 phi2))
-(constraint (models Tree4 phi2))
-(constraint (not (models Tree5 phi2)))
-(constraint (not (models Tree6 phi2)))
-(constraint (not (models Tree7 phi2)))
-(constraint (not (models Tree8 phi2)))
+(constraint (Modal.Sem phi2 (ModalAsp Tree1 $0)))
+(constraint (Modal.Sem phi2 (ModalAsp Tree2 $0)))
+(constraint (Modal.Sem phi2 (ModalAsp Tree3 $0)))
+(constraint (Modal.Sem phi2 (ModalAsp Tree4 $0)))
+(constraint (not (Modal.Sem phi2 (ModalAsp Tree5 $0))))
+(constraint (not (Modal.Sem phi2 (ModalAsp Tree6 $0))))
+(constraint (not (Modal.Sem phi2 (ModalAsp Tree7 $0))))
+(constraint (not (Modal.Sem phi2 (ModalAsp Tree8 $0))))
 
 (check-synth)

@@ -39,7 +39,6 @@ pub struct Model {
     pub univ_defs: Vec<DefineUniv>,
     pub func_interps: Vec<FuncInterp>,
     pub ext_cmds: Vec<ThSpecCmd>,
-    pub ext_ctx: Option<crate::theory::ModelCtx>,
 }
 
 impl Model {
@@ -49,7 +48,6 @@ impl Model {
             univ_defs: Vec::new(),
             func_interps: Vec::new(),
             ext_cmds: Vec::new(),
-            ext_ctx: None,
         }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {

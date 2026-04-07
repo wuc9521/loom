@@ -1,4 +1,4 @@
-(set-logic RE)
+(set-logic ALL)
 
 (declare-sort Pos 0)
 
@@ -81,6 +81,45 @@
   )))
 )
 
+
+(declare-term-types
+ ((RegLan 0))
+ (((a) (b) (X) (re.a) (re.b)
+   (re.++ RegLan RegLan)
+   (re.union RegLan RegLan)
+   (re.inter RegLan RegLan)
+   (re.comp RegLan)
+   (re.* RegLan))))
+
+
+(define-finite ReAsp
+  (record (model Model) (i Int) (j Int))
+  :where (and (<= 0 i) (<= i j) (<= j (len model))))
+
+(define-semantics
+  ((RegLan.Sem (r RegLan) (asp ReAsp)))
+  ((match r
+     ((a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
+     ((b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
+     ((X) (and (= (j asp) (+ (i asp) 1)) (X (i asp))))
+     ((re.a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
+     ((re.b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
+     ((re.++ x y)
+      (exists ((k (int-range (i asp) (j asp))))
+        (and (RegLan.Sem x (ReAsp (model asp) (i asp) k))
+             (RegLan.Sem y (ReAsp (model asp) k (j asp))))))
+     ((re.union x y)
+      (or (RegLan.Sem x asp) (RegLan.Sem y asp)))
+     ((re.inter x y)
+      (and (RegLan.Sem x asp) (RegLan.Sem y asp)))
+     ((re.comp x)
+      (dual (RegLan.Sem x asp)))
+     ((re.* x)
+      (or (= (i asp) (j asp))
+          (exists ((k (int-range (+ (i asp) 1) (j asp))))
+            (and (RegLan.Sem x (ReAsp (model asp) (i asp) k))
+                 (RegLan.Sem r (ReAsp (model asp) k (j asp))))))))))
+
 (synth-fun regex () RegLan
     ((Start RegLan))
     ( 
@@ -100,10 +139,10 @@
 
 
 
-(constraint (models w1 regex))        
-(constraint (models w2 regex))        
-(constraint (models w3 regex))        
-(constraint (not (models w4 regex)))        
-(constraint (not (models w5 regex)))        
+(constraint (RegLan.Sem regex (ReAsp w1 0 (len w1))))        
+(constraint (RegLan.Sem regex (ReAsp w2 0 (len w2))))        
+(constraint (RegLan.Sem regex (ReAsp w3 0 (len w3))))        
+(constraint (not (RegLan.Sem regex (ReAsp w4 0 (len w4)))))        
+(constraint (not (RegLan.Sem regex (ReAsp w5 0 (len w5)))))        
 
 (check-synth)

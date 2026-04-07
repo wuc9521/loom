@@ -1,4 +1,4 @@
-(set-logic RE)
+(set-logic ALL)
 
 (declare-term-types  
  ((RegLan 0))  ; Each term type corresponds to a nonterminal in the default grammar
@@ -49,8 +49,34 @@
   )))
 )
 
+
+(define-finite ReAsp
+  (record (model Model) (i Int) (j Int))
+  :where (and (<= 0 i) (<= i j) (<= j (len model))))
+
+(define-semantics
+  ((RegLan.Sem (r RegLan) (asp ReAsp)))
+  ((match r
+     ((re.a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
+     ((re.b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
+     ((re.++ x y)
+      (exists ((k (int-range (i asp) (j asp))))
+        (and (RegLan.Sem x (ReAsp (model asp) (i asp) k))
+             (RegLan.Sem y (ReAsp (model asp) k (j asp))))))
+     ((re.union x y)
+      (or (RegLan.Sem x asp) (RegLan.Sem y asp)))
+     ((re.inter x y)
+      (and (RegLan.Sem x asp) (RegLan.Sem y asp)))
+     ((re.comp x)
+      (dual (RegLan.Sem x asp)))
+     ((re.* x)
+      (or (= (i asp) (j asp))
+          (exists ((k (int-range (+ (i asp) 1) (j asp))))
+            (and (RegLan.Sem x (ReAsp (model asp) (i asp) k))
+                 (RegLan.Sem r (ReAsp (model asp) k (j asp))))))))))
+
 (synth-fun r () RegLan)
-(constraint (models w1 r))              
-(constraint (not (models w5 r)))        
+(constraint (RegLan.Sem r (ReAsp w1 0 (len w1))))              
+(constraint (not (RegLan.Sem r (ReAsp w5 0 (len w5)))))        
 
 (check-synth)
