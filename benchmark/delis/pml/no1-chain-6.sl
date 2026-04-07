@@ -1,7 +1,7 @@
 ;; ========== BENCHMARK 1: Chain Structures (6 models) ==========
 ;; Testing linear chain structures with different lengths and properties
 
-(set-logic PML)
+(set-logic ALL)
 (declare-sort U 0)
 (declare-fun I () U)
 (declare-fun R (U U) Bool)
@@ -198,6 +198,40 @@
     (set-tran R)
 )
 
+
+(declare-term-types
+ ((Bool 0))
+ (((a) (b) (c) (v)
+   (modal.not Bool)
+   (modal.and Bool Bool)
+   (modal.or Bool Bool)
+   (modal.box Bool)
+   (modal.dia Bool))))
+
+
+(define-finite ModalAsp
+  (record (model Model) (node U))
+  :where true)
+
+(define-semantics
+  ((Modal.Sem (phi Bool) (asp ModalAsp)))
+  ((match phi
+     ((a) (a (node asp)))
+     ((b) (b (node asp)))
+     ((c) (c (node asp)))
+     ((v) (v (node asp)))
+     ((modal.not x) (dual (Modal.Sem x asp)))
+     ((modal.and x y) (and (Modal.Sem x asp) (Modal.Sem y asp)))
+     ((modal.or x y) (or (Modal.Sem x asp) (Modal.Sem y asp)))
+     ((modal.box x)
+      (forall ((next (domain (model asp))))
+        (or (not (R (node asp) next))
+            (Modal.Sem x (ModalAsp (model asp) next)))))
+     ((modal.dia x)
+      (exists ((next (domain (model asp))))
+        (and (R (node asp) next)
+             (Modal.Sem x (ModalAsp (model asp) next))))))))
+
 (synth-fun phi1 () Bool
     ((Start Bool))
     (
@@ -214,11 +248,11 @@
     )
 )
 
-(constraint (models Chain1 phi1))
-(constraint (models Chain2 phi1))
-(constraint (models Chain3 phi1))
-(constraint (not (models Chain4 phi1)))
-(constraint (not (models Chain5 phi1)))
-(constraint (not (models Chain6 phi1)))
+(constraint (Modal.Sem phi1 (ModalAsp Chain1 $0)))
+(constraint (Modal.Sem phi1 (ModalAsp Chain2 $0)))
+(constraint (Modal.Sem phi1 (ModalAsp Chain3 $0)))
+(constraint (not (Modal.Sem phi1 (ModalAsp Chain4 $0))))
+(constraint (not (Modal.Sem phi1 (ModalAsp Chain5 $0))))
+(constraint (not (Modal.Sem phi1 (ModalAsp Chain6 $0))))
 
 (check-synth)

@@ -1,0 +1,91 @@
+(set-logic CFE)
+
+(declare-term-types  
+ ((CFG 0) (Rhs 0) (Rules 0))
+ (
+   (
+      (cfg.top.S Rhs Rules)
+    )
+   (
+      (a)      ; The leading `$`-signs are a naming convention with no special significance.
+      (b) 
+      (cfg.++ Rhs Rhs)
+      (cfg.rhs.S)
+      (cfg.rhs.T)
+    )
+   (
+      (cfg.lhs.S Rhs Rules)
+      (cfg.lhs.T Rhs Rules)
+      (z)
+   )
+  )
+)
+
+(declare-sort Pos 0)
+
+; define signatures here.
+(declare-fun a (Pos) Bool)
+(declare-fun b (Pos) Bool)
+
+
+; a
+(define-model w0
+  (define-univ Pos ($0))
+  (interp-fun a (match (
+      (($0) true)
+      ((_) false)
+  )))
+  (interp-fun b (match (
+      ((_) false)
+  )))
+)
+
+; ab
+(define-model w1
+  (define-univ Pos ($0 $1))
+  (interp-fun a (match (
+      (($0) true)
+      ((_) false)
+  )))
+  (interp-fun b (match (
+      (($0) false)
+      ((_) true)
+  )))
+)
+
+; abab
+(define-model w2
+  (define-univ Pos ($0 $1 $2 $3))
+  (interp-fun a (match (
+      (($0) true)
+      (($2) true)
+      ((_) false)
+  )))   
+  (interp-fun b (match (
+      (($1) true)
+      (($3) true)
+      ((_) false)
+  )))
+)
+
+; aab
+(define-model w5
+  (define-univ Pos ($0 $1 $2))
+  (interp-fun a (match (
+      (($0) true)
+      ((_) false)
+  )))   
+  (interp-fun b (match (
+      (($0) true)
+      (($1) true)
+      ((_) false)
+  )))
+)
+
+(synth-fun r () CFG)
+; (constraint (models w0 r))  
+(constraint (models w1 r))
+(constraint (models w2 r))
+(constraint (not (models w5 r)))
+
+(check-synth)

@@ -1,7 +1,7 @@
 ;; ========== BENCHMARK 3: Grid Structures (10 models) ==========
 ;; Testing 2D grid-like structures with different connectivity patterns
 
-(set-logic PML)
+(set-logic ALL)
 (declare-sort U 0)
 (declare-fun I () U)
 (declare-fun R (U U) Bool)
@@ -231,6 +231,40 @@
 )
 
 
+
+(declare-term-types
+ ((Bool 0))
+ (((a) (b) (c) (v)
+   (modal.not Bool)
+   (modal.and Bool Bool)
+   (modal.or Bool Bool)
+   (modal.box Bool)
+   (modal.dia Bool))))
+
+
+(define-finite ModalAsp
+  (record (model Model) (node U))
+  :where true)
+
+(define-semantics
+  ((Modal.Sem (phi Bool) (asp ModalAsp)))
+  ((match phi
+     ((a) (a (node asp)))
+     ((b) (b (node asp)))
+     ((c) (c (node asp)))
+     ((v) (v (node asp)))
+     ((modal.not x) (dual (Modal.Sem x asp)))
+     ((modal.and x y) (and (Modal.Sem x asp) (Modal.Sem y asp)))
+     ((modal.or x y) (or (Modal.Sem x asp) (Modal.Sem y asp)))
+     ((modal.box x)
+      (forall ((next (domain (model asp))))
+        (or (not (R (node asp) next))
+            (Modal.Sem x (ModalAsp (model asp) next)))))
+     ((modal.dia x)
+      (exists ((next (domain (model asp))))
+        (and (R (node asp) next)
+             (Modal.Sem x (ModalAsp (model asp) next))))))))
+
 (synth-fun phi () Bool
     ((Start Bool))
     (
@@ -247,12 +281,12 @@
     )
 )
 
-(constraint (models Grid1 phi))
-(constraint (models Grid2 phi))
-(constraint (models Grid3 phi))
-(constraint (models Grid4 phi))
-(constraint (not (models Grid5 phi)))
-(constraint (not (models Grid6 phi)))
-(constraint (not (models Grid7 phi)))
+(constraint (Modal.Sem phi (ModalAsp Grid1 $0)))
+(constraint (Modal.Sem phi (ModalAsp Grid2 $0)))
+(constraint (Modal.Sem phi (ModalAsp Grid3 $0)))
+(constraint (Modal.Sem phi (ModalAsp Grid4 $0)))
+(constraint (not (Modal.Sem phi (ModalAsp Grid5 $0))))
+(constraint (not (Modal.Sem phi (ModalAsp Grid6 $0))))
+(constraint (not (Modal.Sem phi (ModalAsp Grid7 $0))))
 
 (check-synth)

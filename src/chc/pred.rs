@@ -57,7 +57,7 @@ impl Pred {
     pub fn name(&self) -> String {
         match self.polarity {
             Polarity::Pos => self.base.clone(),
-            Polarity::Neg => format!("_NOT_{}", self.base),
+            Polarity::Neg => format!("${}", self.base),
         }
     }
 }

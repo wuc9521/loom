@@ -6,8 +6,8 @@ use crate::lang::{
 use crate::parser::{DelisParseError, DelisParser, Rule};
 use derive_more::Display;
 use itertools::Itertools;
-use pest::Parser;
 use pest::iterators::Pair;
+use pest::Parser;
 use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd};
 
 #[derive(Clone, Debug, Display)]
@@ -132,6 +132,52 @@ impl DeclareTermTypesCmd {
     }
 }
 
+fn format_sexpr_body(body: &[String]) -> String {
+    if body.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", body.join(" "))
+    }
+}
+
+#[derive(Clone, Debug, Display)]
+#[display(fmt = "(define-finite {}{})", name, "format_sexpr_body(body)")]
+pub struct DefineFiniteCmd {
+    pub name: String,
+    pub body: Vec<String>,
+}
+
+impl DefineFiniteCmd {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+        let mut inner = pair.into_inner();
+        let name = inner
+            .next()
+            .ok_or_else(|| {
+                DelisParseError::InvalidSyntax(
+                    "define-finite expects a finite domain name".to_string(),
+                )
+            })?
+            .as_str()
+            .to_string();
+        let body = inner.map(|p| p.as_str().to_string()).collect();
+        Ok(Self { name, body })
+    }
+}
+
+#[derive(Clone, Debug, Display)]
+#[display(fmt = "(define-semantics{})", "format_sexpr_body(body)")]
+pub struct DefineSemanticsCmd {
+    pub body: Vec<String>,
+}
+
+impl DefineSemanticsCmd {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+        Ok(Self {
+            body: pair.into_inner().map(|p| p.as_str().to_string()).collect(),
+        })
+    }
+}
+
 #[derive(Clone, Debug, Display)]
 pub enum DelisCmd {
     #[display(fmt = "{}", _0)]
@@ -139,6 +185,12 @@ pub enum DelisCmd {
 
     #[display(fmt = "{}", _0)]
     DeclareTermTypes(DeclareTermTypesCmd),
+
+    #[display(fmt = "{}", _0)]
+    DefineFinite(DefineFiniteCmd),
+
+    #[display(fmt = "{}", _0)]
+    DefineSemantics(DefineSemanticsCmd),
 
     #[display(fmt = "{}", _0)]
     DeclareFunc(FuncSig),
@@ -190,35 +242,19 @@ pub fn parse(
             Rule::SyGuSCmd => {
                 let cmd_str = cmd.as_str();
                 let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
-                if let SyGuSCmd::Constraint(ref term) = sygus_cmd {
-                    use sygus_parser::SyGuSTerm::*;
-                    let supported = match term {
-                        Application(sym, args)
-                            if sym.to_string() == "models" && args.len() >= 1 =>
-                        {
-                            true
-                        }
-                        Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-                            if let Application(models_sym, models_args) = &args[0] {
-                                models_sym.to_string() == "models" && models_args.len() >= 1
-                            } else {
-                                false
-                            }
-                        }
-                        _ => false,
-                    };
-                    if !supported {
-                        return Err(DelisParseError::UnsupportedFeature(format!(
-                            "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
-                            cmd_str
-                        )));
-                    }
-                }
                 ls_file.push(DelisCmd::As(sygus_cmd));
             }
             Rule::DelisCmdDeclareTermTypes => {
                 let decl = DeclareTermTypesCmd::parse(cmd.clone())?;
                 ls_file.push(DelisCmd::DeclareTermTypes(decl));
+            }
+            Rule::DelisCmdDefineFinite => {
+                let decl = DefineFiniteCmd::parse(cmd.clone())?;
+                ls_file.push(DelisCmd::DefineFinite(decl));
+            }
+            Rule::DelisCmdDefineSemantics => {
+                let decl = DefineSemanticsCmd::parse(cmd.clone())?;
+                ls_file.push(DelisCmd::DefineSemantics(decl));
             }
             Rule::FuncDecl => {
                 let sig = FuncSig::parse(cmd.clone()).unwrap();
@@ -286,33 +322,19 @@ pub fn parse_command(
         Rule::SyGuSCmd => {
             let cmd_str = cmd.as_str();
             let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
-            if let SyGuSCmd::Constraint(ref term) = sygus_cmd {
-                use sygus_parser::SyGuSTerm::*;
-                let supported = match term {
-                    Application(sym, args) if sym.to_string() == "models" && args.len() >= 1 => {
-                        true
-                    }
-                    Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-                        if let Application(models_sym, models_args) = &args[0] {
-                            models_sym.to_string() == "models" && models_args.len() >= 1
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false,
-                };
-                if !supported {
-                    return Err(DelisParseError::UnsupportedFeature(format!(
-                        "[PARSER] Only (models ...) and (not (models ...)) constraints are supported, got: {}",
-                        cmd_str
-                    )));
-                }
-            }
             Ok(DelisCmd::As(sygus_cmd))
         }
         Rule::DelisCmdDeclareTermTypes => {
             let decl = DeclareTermTypesCmd::parse(cmd)?;
             Ok(DelisCmd::DeclareTermTypes(decl))
+        }
+        Rule::DelisCmdDefineFinite => {
+            let decl = DefineFiniteCmd::parse(cmd)?;
+            Ok(DelisCmd::DefineFinite(decl))
+        }
+        Rule::DelisCmdDefineSemantics => {
+            let decl = DefineSemanticsCmd::parse(cmd)?;
+            Ok(DelisCmd::DefineSemantics(decl))
         }
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd.clone()).unwrap();
@@ -376,5 +398,48 @@ impl DelisCmd {
             arg_sorts,
             ret_sort,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_define_finite() {
+        let cmd = parse_command(
+            "(define-finite ReAsp (record (model Model) (i Int) (j Int)) :where (<= i j))",
+            None,
+        )
+        .expect("define-finite should parse");
+
+        match cmd {
+            DelisCmd::DefineFinite(cmd) => {
+                assert_eq!(cmd.name, "ReAsp");
+                assert_eq!(cmd.body.len(), 3);
+                assert_eq!(cmd.body[0], "(record (model Model) (i Int) (j Int))");
+                assert_eq!(cmd.body[1], ":where");
+                assert_eq!(cmd.body[2], "(<= i j)");
+            }
+            other => panic!("expected define-finite, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_define_semantics() {
+        let cmd = parse_command(
+            "(define-semantics ((Regex.Sem (r Regex) (asp ReAsp))) ((match r ((a) true))))",
+            None,
+        )
+        .expect("define-semantics should parse");
+
+        match cmd {
+            DelisCmd::DefineSemantics(cmd) => {
+                assert_eq!(cmd.body.len(), 2);
+                assert_eq!(cmd.body[0], "((Regex.Sem (r Regex) (asp ReAsp)))");
+                assert_eq!(cmd.body[1], "((match r ((a) true)))");
+            }
+            other => panic!("expected define-semantics, got {other:?}"),
+        }
     }
 }

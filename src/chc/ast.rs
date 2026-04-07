@@ -89,10 +89,7 @@ impl HornTerm {
 
     pub fn substitute(&self, subst: &HashMap<String, HornTerm>) -> Self {
         match self {
-            HornTerm::Var(name) => subst
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| self.clone()),
+            HornTerm::Var(name) => subst.get(name).cloned().unwrap_or_else(|| self.clone()),
             HornTerm::App { fun, args } => HornTerm::App {
                 fun: fun.clone(),
                 args: args.iter().map(|a| a.substitute(subst)).collect(),
