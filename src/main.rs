@@ -2,8 +2,8 @@ use clap::Parser as ClapParser;
 use delis::{
     lang::runtime::Session,
     parser::ast::DelisCmd,
-    theory::{fol, pml, re, Decoder, Logic, ModelCtx, SygusDesugar},
-    utils::extract_logic_sygus,
+    theory::{cfg, fol, pml, re, Decoder, Logic, ModelCtx, SygusDesugar},
+    utils::{extract_logic_sygus, infer_logic},
 };
 use log::{error, warn};
 use std::{
@@ -54,6 +54,246 @@ fn run_z3(chc_text: &str, verbose: bool) -> Result<Option<String>, io::Error> {
         }
     }
     Ok(result)
+}
+
+fn run_cvc5(sygus_text: &str) -> Result<String, io::Error> {
+    let mut cvc5 = Command::new("cvc5")
+        .arg("--lang=sygus2")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    if let Some(mut stdin) = cvc5.stdin.take() {
+        stdin.write_all(sygus_text.as_bytes())?;
+    }
+
+    let cvc5_output = cvc5.wait_with_output()?;
+    Ok(String::from_utf8_lossy(&cvc5_output.stdout).into_owned())
+}
+
+fn prepare_fol_models(delis_file: &mut delis::parser::ast::DelisProg) {
+    for cmd in &mut delis_file.cmds {
+        if let DelisCmd::DefineModel(model) = cmd {
+            let mut ctx = fol::FOModelCtx::default();
+            for thcmd in &model.ext_cmds {
+                fol::handle_model_extcmd(&mut ctx, thcmd);
+            }
+            model.ext_ctx = Some(ModelCtx::FOL(ctx));
+        }
+    }
+}
+
+fn solve_pml(
+    delis_file: &mut delis::parser::ast::DelisProg,
+    args: &CLI,
+) -> Result<(), io::Error> {
+    for cmd in &mut delis_file.cmds {
+        if let DelisCmd::DefineModel(model) = cmd {
+            let mut ctx = pml::KripkeCtx::default();
+            for thcmd in &model.ext_cmds {
+                pml::handle_model_extcmd(&mut ctx, thcmd);
+            }
+            model.ext_ctx = Some(ModelCtx::PML(ctx));
+        }
+    }
+    let chc_ast = pml::chc::to_chc_ast(delis_file, args.verbose);
+    let chc_cmds = delis::chc::emit::to_smt(&chc_ast);
+    let chc_text = chc_cmds
+        .iter()
+        .map(|cmd| cmd.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if args.dump_chc {
+        println!("{}", chc_text);
+        return Ok(());
+    }
+    let sygus_cmds = pml::to_sygus(delis_file);
+    let sygus_text = sygus_cmds
+        .iter()
+        .map(|cmd| cmd.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if args.dump_sygus {
+        println!("{}", sygus_text);
+        return Ok(());
+    }
+
+    let z3_result = run_z3(&chc_text, args.verbose)?;
+    match z3_result.as_deref() {
+        Some("unsat") => {
+            println!("unsat");
+            Ok(())
+        }
+        Some("sat") => {
+            let cvc5_stdout = run_cvc5(&sygus_text)?;
+            let trimmed = cvc5_stdout.trim();
+            if trimmed.eq_ignore_ascii_case("infeasible") {
+                println!("unsat");
+                return Ok(());
+            }
+            if trimmed.eq_ignore_ascii_case("unknown") || trimmed.eq_ignore_ascii_case("fail") {
+                warn!("cvc5 returned {}", trimmed);
+                return Ok(());
+            }
+
+            let define_funs = parse_cvc5(&cvc5_stdout)?;
+            match Logic::PML.decode(&define_funs) {
+                Ok(result) => {
+                    println!("(\n{}\n)", result);
+                    Ok(())
+                }
+                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            }
+        }
+        _ => {
+            if z3_result.is_none() {
+                warn!("z3 returned no sat/unsat result");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn solve_re(
+    delis_file: &mut delis::parser::ast::DelisProg,
+    args: &CLI,
+) -> Result<(), io::Error> {
+    for cmd in &mut delis_file.cmds {
+        if let DelisCmd::DefineModel(model) = cmd {
+            model.ext_ctx = Some(ModelCtx::RE(re::StringCtx::default()));
+        }
+    }
+    let chc_ast = re::chc::to_chc_ast(delis_file, args.verbose);
+    let chc_cmds = delis::chc::emit::to_smt(&chc_ast);
+    let chc_text = chc_cmds
+        .iter()
+        .map(|cmd| cmd.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if args.dump_chc {
+        println!("{}", chc_text);
+        return Ok(());
+    }
+
+    let sygus_cmds = re::to_sygus(delis_file);
+    let sygus_text = sygus_cmds
+        .iter()
+        .map(|cmd| cmd.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if args.dump_sygus {
+        println!("{}", sygus_text);
+        return Ok(());
+    }
+
+    let z3_result = run_z3(&chc_text, args.verbose)?;
+    match z3_result.as_deref() {
+        Some("unsat") => {
+            println!("unsat");
+            Ok(())
+        }
+        Some("sat") => {
+            let cvc5_stdout = run_cvc5(&sygus_text)?;
+            let trimmed = cvc5_stdout.trim();
+            if trimmed.eq_ignore_ascii_case("infeasible") {
+                println!("unsat");
+                return Ok(());
+            }
+            if trimmed.eq_ignore_ascii_case("unknown") || trimmed.eq_ignore_ascii_case("fail") {
+                warn!("cvc5 returned {}", trimmed);
+                return Ok(());
+            }
+
+            let define_funs = parse_cvc5(&cvc5_stdout)?;
+            match Logic::RE.decode(&define_funs) {
+                Ok(result) => {
+                    println!("(\n{}\n)", result);
+                    Ok(())
+                }
+                Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+            }
+        }
+        _ => {
+            if z3_result.is_none() {
+                warn!("z3 returned no sat/unsat result");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn solve_general(
+    delis_file: &mut delis::parser::ast::DelisProg,
+    args: &CLI,
+) -> Result<(), io::Error> {
+    match infer_logic(delis_file) {
+        Some(Logic::FOL) => {
+            prepare_fol_models(delis_file);
+            Ok(())
+        }
+        Some(Logic::PML) => solve_pml(delis_file, args),
+        Some(Logic::RE) => solve_re(delis_file, args),
+        Some(Logic::CFE) | Some(Logic::CFL) => solve_cfg(delis_file, args),
+        Some(Logic::ALL) | None => Err(io::Error::new(
+            io::ErrorKind::Other,
+            "general solver could not infer a concrete backend for this problem",
+        )),
+        _ => Err(io::Error::new(
+            io::ErrorKind::Other,
+            "general solver selected an unsupported backend",
+        )),
+    }
+}
+
+fn solve_cfg(
+    delis_file: &mut delis::parser::ast::DelisProg,
+    args: &CLI,
+) -> Result<(), io::Error> {
+    let chc_ast = cfg::to_chc_ast(delis_file, args.verbose);
+    let chc_text = delis::chc::emit::to_smt(&chc_ast)
+        .iter()
+        .map(|cmd| cmd.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if args.dump_chc {
+        println!("{}", chc_text);
+        return Ok(());
+    }
+
+    let sygus_text = cfg::to_sygus(delis_file, args.verbose)
+        .iter()
+        .map(|cmd| cmd.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if args.dump_sygus {
+        println!("{}", sygus_text);
+        return Ok(());
+    }
+
+    let z3_result = run_z3(&chc_text, args.verbose)?;
+    match z3_result.as_deref() {
+        Some("unsat") => {
+            println!("unsat");
+            Ok(())
+        }
+        Some("sat") => {
+            let cvc5_stdout = run_cvc5(&sygus_text)?;
+            print!("{}", cvc5_stdout);
+            Ok(())
+        }
+        _ => {
+            if z3_result.is_none() {
+                warn!("z3 returned no sat/unsat result");
+            }
+            Ok(())
+        }
+    }
 }
 
 /// CLI application for parsing your custom language
@@ -133,7 +373,7 @@ fn main() -> Result<(), io::Error> {
         buffer
     } else {
         // Read from file
-        let file_path = args.file.ok_or_else(|| {
+        let file_path = args.file.as_ref().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Either provide a file path or use --in to read from stdin",
@@ -176,172 +416,11 @@ fn main() -> Result<(), io::Error> {
         cmds: delis_cmd_vec,
     };
     match session.logic {
-        Some(Logic::FOL) => {
-            for cmd in &mut delis_file.cmds {
-                if let DelisCmd::DefineModel(model) = cmd {
-                    let mut ctx = fol::FOModelCtx::default();
-                    for thcmd in &model.ext_cmds {
-                        fol::handle_model_extcmd(&mut ctx, thcmd);
-                    }
-                    model.ext_ctx = Some(ModelCtx::FOL(ctx));
-                }
-            }
-        }
-        Some(Logic::PML) => {
-            for cmd in &mut delis_file.cmds {
-                if let DelisCmd::DefineModel(model) = cmd {
-                    let mut ctx = pml::KripkeCtx::default();
-                    for thcmd in &model.ext_cmds {
-                        pml::handle_model_extcmd(&mut ctx, thcmd);
-                    }
-                    model.ext_ctx = Some(ModelCtx::PML(ctx));
-                }
-            }
-            let chc_ast = pml::chc::to_chc_ast(&delis_file, args.verbose);
-            let chc_cmds = delis::chc::emit::to_smt(&chc_ast);
-            let chc_text = chc_cmds
-                .iter()
-                .map(|cmd| cmd.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-            if args.dump_chc {
-                println!("{}", chc_text);
-                return Ok(());
-            }
-            let sygus_cmds = pml::to_sygus(&delis_file);
-            let sygus_text = sygus_cmds
-                .iter()
-                .map(|cmd| cmd.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            if args.dump_sygus {
-                println!("{}", sygus_text);
-                return Ok(());
-            }
-
-            let z3_result = run_z3(&chc_text, args.verbose)?;
-            match z3_result.as_deref() {
-                Some("unsat") => {
-                    println!("unsat");
-                    return Ok(());
-                }
-                Some("sat") => {
-                    let mut cvc5 = Command::new("cvc5")
-                        .arg("--lang=sygus2")
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn()?;
-
-                    if let Some(mut stdin) = cvc5.stdin.take() {
-                        stdin.write_all(sygus_text.as_bytes())?;
-                    }
-
-                    let cvc5_output = cvc5.wait_with_output()?;
-                    let cvc5_stdout = String::from_utf8_lossy(&cvc5_output.stdout);
-
-                    let trimmed = cvc5_stdout.trim();
-                    if trimmed.eq_ignore_ascii_case("infeasible") {
-                        println!("unsat");
-                        return Ok(());
-                    }
-                    if trimmed.eq_ignore_ascii_case("unknown")
-                        || trimmed.eq_ignore_ascii_case("fail")
-                    {
-                        warn!("cvc5 returned {}", trimmed);
-                        return Ok(());
-                    }
-
-                    let define_funs = parse_cvc5(&cvc5_stdout)?;
-                    match Logic::PML.decode(&define_funs) {
-                        Ok(result) => println!("(\n{}\n)", result),
-                        Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
-                    }
-                }
-                _ => {
-                    if z3_result.is_none() {
-                        warn!("z3 returned no sat/unsat result");
-                    }
-                }
-            }
-        }
-        Some(Logic::RE) => {
-            for cmd in &mut delis_file.cmds {
-                if let DelisCmd::DefineModel(model) = cmd {
-                    model.ext_ctx = Some(ModelCtx::RE(re::StringCtx::default()));
-                }
-            }
-            let chc_ast = re::chc::to_chc_ast(&delis_file, args.verbose);
-            let chc_cmds = delis::chc::emit::to_smt(&chc_ast);
-            let chc_text = chc_cmds
-                .iter()
-                .map(|cmd| cmd.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            if args.dump_chc {
-                println!("{}", chc_text);
-                return Ok(());
-            }
-
-            let sygus_cmds = re::to_sygus(&delis_file);
-            let sygus_text = sygus_cmds
-                .iter()
-                .map(|cmd| cmd.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            if args.dump_sygus {
-                println!("{}", sygus_text);
-                return Ok(());
-            }
-            let z3_result = run_z3(&chc_text, args.verbose)?;
-            match z3_result.as_deref() {
-                Some("unsat") => {
-                    println!("unsat");
-                    return Ok(());
-                }
-                Some("sat") => {
-                    let mut cvc5 = Command::new("cvc5")
-                        .arg("--lang=sygus2")
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn()?;
-
-                    if let Some(mut stdin) = cvc5.stdin.take() {
-                        stdin.write_all(sygus_text.as_bytes())?;
-                    }
-
-                    let cvc5_output = cvc5.wait_with_output()?;
-                    let cvc5_stdout = String::from_utf8_lossy(&cvc5_output.stdout);
-
-                    let trimmed = cvc5_stdout.trim();
-                    if trimmed.eq_ignore_ascii_case("infeasible") {
-                        println!("unsat");
-                        return Ok(());
-                    }
-                    if trimmed.eq_ignore_ascii_case("unknown")
-                        || trimmed.eq_ignore_ascii_case("fail")
-                    {
-                        warn!("cvc5 returned {}", trimmed);
-                        return Ok(());
-                    }
-
-                    let define_funs = parse_cvc5(&cvc5_stdout)?;
-                    match Logic::RE.decode(&define_funs) {
-                        Ok(result) => println!("(\n{}\n)", result),
-                        Err(e) => return Err(io::Error::new(io::ErrorKind::Other, e)),
-                    }
-                }
-                _ => {
-                    if z3_result.is_none() {
-                        warn!("z3 returned no sat/unsat result");
-                    }
-                }
-            }
-        }
+        Some(Logic::FOL) => prepare_fol_models(&mut delis_file),
+        Some(Logic::PML) => solve_pml(&mut delis_file, &args)?,
+        Some(Logic::RE) => solve_re(&mut delis_file, &args)?,
+        Some(Logic::CFE) | Some(Logic::CFL) => solve_cfg(&mut delis_file, &args)?,
+        Some(Logic::ALL) | None => solve_general(&mut delis_file, &args)?,
         _ => {}
     }
     Ok(())

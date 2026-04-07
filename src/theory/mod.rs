@@ -1,4 +1,5 @@
 pub mod fol;
+pub mod cfg;
 pub mod pml;
 pub mod re;
 pub mod utils;
@@ -8,6 +9,8 @@ use crate::lang::model::ThSpecCmd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum Logic {
+    #[display(fmt = "ALL")]
+    ALL,
     #[display(fmt = "FOL")]
     FOL,
     #[display(fmt = "PML")]

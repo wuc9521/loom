@@ -23,18 +23,18 @@ pub struct Pred {
 #[derive(Clone, Debug)]
 pub struct PredAtom {
     pub pred: Pred,
-    pub args: Vec<HornTerm>,
+    pub arg: HornTerm,
 }
 
 impl PredAtom {
-    pub fn new(pred: Pred, args: Vec<HornTerm>) -> Self {
-        Self { pred, args }
+    pub fn new(pred: Pred, arg: HornTerm) -> Self {
+        Self { pred, arg }
     }
 
     pub fn dual(&self) -> Self {
         Self {
             pred: self.pred.dual(),
-            args: self.args.clone(),
+            arg: self.arg.clone(),
         }
     }
 }
@@ -88,11 +88,7 @@ impl PredAtom {
     fn to_horn(&self) -> HornAtom {
         HornAtom {
             pred: self.pred.name(),
-            arg: self
-                .args
-                .first()
-                .cloned()
-                .expect("PredAtom must have one arg"),
+            arg: self.arg.clone(),
         }
     }
 }

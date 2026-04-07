@@ -2,11 +2,22 @@ DelisProg = { SOI ~ DelisCmd* ~ EOI }
 
 DelisCmd = {
   SyGuSCmd
+| DelisCmdDeclareTermTypes
 | FuncDecl
 | ModelDef
 | FuncDefRec
 | ThSpecCmd
 }
+DelisCmdDeclareTermTypes = {
+  "("
+  ~ #DelisTkDeclareTermTypes="declare-term-types"
+  ~ "(" ~ DelisTermSortDecl+ ~ ")"
+  ~ "(" ~ DelisTermTypeDecl+ ~ ")"
+  ~ ")"
+}
+DelisTermSortDecl = { "(" ~ Symbol ~ Numeral ~ ")" }
+DelisTermTypeDecl = { "(" ~ DelisTermCtorDecl* ~ ")" }
+DelisTermCtorDecl = { "(" ~ Identifier ~ Sort* ~ ")" }
 FuncDecl = { "(" ~ #DelisTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
 ModelDef = { "(" ~ #DelisTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
 FuncInterp = { "(" ~ #DelisTkInterpFun="interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
@@ -31,7 +42,7 @@ Pattern = {
 }
 
 DelisReservedCmd = { 
-  "define-univ" | "interp-fun" | "define-model" | "declare-fun"
+  "define-univ" | "interp-fun" | "define-model" | "declare-fun" | "declare-term-types"
 }
 
 // Theory specific commands

@@ -3,6 +3,13 @@
 (declare-sort N 0) ; nonterminal
 (declare-sort T 0) ; terminal
 
+(declare-datatypes ((RegLan 0)) 
+    (
+        (a)
+        (b)
+    )
+)
+
 ; define signatures here.
 (declare-fun a (Pos) Bool)
 (declare-fun b (Pos) Bool)
@@ -82,10 +89,10 @@
   )))
 )
 
-(synth-fun regex () Regex
-    (Start Regex)
+(synth-fun regex () Reglan
+    (Start Reglan)
     ( 
-        (Start Regex
+        (Start Reglan
             ( 
                 re.empty               ; non-recursive, const
                 re.none                ; ∅

@@ -21,3 +21,5 @@ pub fn handle_model_extcmd(ctx: &mut FOModelCtx, extcmd: &crate::lang::model::Th
         }
     }
 }
+
+// cfg -> benchmark -> frontend.

@@ -1,0 +1,1 @@
+`src/chc` is the project’s small internal representation for first-order Horn clauses plus the passes that turn that representation into SMT-LIB CHC syntax and, optionally, simplify constructor-driven rules by saturation.

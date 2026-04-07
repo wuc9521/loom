@@ -97,26 +97,33 @@ impl Session {
                     return None;
                 }
                 let logic = match logic_str.as_str() {
+                    "ALL" => Logic::ALL,
                     "FOL" => Logic::FOL,
                     "PML" => Logic::PML,
                     "RE" => Logic::RE,
+                    "CFE" | "CFG" | "CFL" => Logic::CFE,
                     _ => {
                         println!("unsupported logic: {}", logic_str);
                         return None;
                     }
                 };
                 self.logic = Some(logic);
-                self.ctx = Some(match logic {
-                    Logic::FOL => ModelCtx::FOL(Default::default()),
-                    Logic::PML => ModelCtx::PML(Default::default()),
-                    Logic::RE => ModelCtx::RE(Default::default()),
+                self.ctx = match logic {
+                    Logic::FOL => Some(ModelCtx::FOL(Default::default())),
+                    Logic::PML => Some(ModelCtx::PML(Default::default())),
+                    Logic::RE => Some(ModelCtx::RE(Default::default())),
+                    Logic::CFE | Logic::CFL => None,
+                    Logic::ALL => None,
                     _ => unreachable!(),
-                });
+                };
                 return Some(cmd.clone());
             }
             DelisCmd::DeclareFunc(sig) => {
                 self.runtime
                     .insert(sig.name.clone(), Symbol::Func(sig.clone()));
+                return Some(cmd.clone());
+            }
+            DelisCmd::DeclareTermTypes(_) => {
                 return Some(cmd.clone());
             }
             DelisCmd::DefineModel(model) => {
@@ -132,8 +139,12 @@ impl Session {
                 return Some(cmd.clone());
             }
             DelisCmd::ThSpec(cmd) => {
-                println!("dispatching extcmd: {}", cmd);
-                dispatch_extcmd(self.logic.unwrap(), self.ctx.as_mut().unwrap(), &cmd);
+                if let (Some(logic), Some(ctx)) = (self.logic, self.ctx.as_mut()) {
+                    if logic != Logic::ALL {
+                        println!("dispatching extcmd: {}", cmd);
+                        dispatch_extcmd(logic, ctx, &cmd);
+                    }
+                }
                 return Some(DelisCmd::ThSpec(cmd.clone()));
             }
             _ => {

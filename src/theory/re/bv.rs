@@ -3,7 +3,8 @@ use crate::theory::re::ctx::ReCtx;
 use crate::theory::re::utils::{re_comp, re_inter, re_union};
 use crate::theory::Logic;
 use sygus_parser::api::{BitVec, Bool, Term};
-use sygus_parser::{Cmd, Literal, Sort, SortedVar, SyGuSCmd};
+use sygus_parser::ast::{GroupedRuleList, SyGuSGTerm, SyGuSTerm};
+use sygus_parser::{Cmd, GrammarDef, Identifier, Literal, Sort, SortedVar, SyGuSCmd};
 
 /// Decode cvc5 output (define-fun commands) to final result
 pub fn decode(define_funs: &[SyGuSCmd]) -> Result<String, String> {
@@ -193,6 +194,86 @@ pub fn to_sygus(lsfile: &DelisProg) -> Vec<SyGuSCmd> {
             .build(),
     );
     // 7. grammar/synth-fun, check here.
+    fn grammar_symbol_for_sort(sort_name: &str, ret_sort_name: &str) -> String {
+        if sort_name == ret_sort_name {
+            "Start".to_string()
+        } else {
+            sort_name.to_string()
+        }
+    }
+
+    fn delis_term_type_to_grammar(
+        decl: &crate::parser::ast::DeclareTermTypesCmd,
+        ret_sort: &Sort,
+    ) -> Option<GrammarDef> {
+        let ret_sort_name = ret_sort.to_string();
+        decl.sort_decls
+            .iter()
+            .position(|sort_decl| sort_decl.symbol == ret_sort_name)?;
+
+        let sorted_vars = decl
+            .sort_decls
+            .iter()
+            .map(|sort_decl| SortedVar {
+                name: grammar_symbol_for_sort(&sort_decl.symbol, &ret_sort_name),
+                sort: Sort::from_name(&sort_decl.symbol),
+            })
+            .collect::<Vec<_>>();
+
+        let grouped_rule_lists = decl
+            .sort_decls
+            .iter()
+            .zip(decl.term_type_decls.iter())
+            .map(|(sort_decl, term_type_decl)| {
+                let symbol = grammar_symbol_for_sort(&sort_decl.symbol, &ret_sort_name);
+                let terms = term_type_decl
+                    .constructors
+                    .iter()
+                    .map(|cons_decl| {
+                        if cons_decl.sorts.is_empty() {
+                            let symbol = cons_decl.symbol.to_string();
+                            let normalized_symbol = symbol
+                                .strip_prefix("re.")
+                                .map(str::to_string)
+                                .unwrap_or(symbol);
+                            SyGuSGTerm::SyGuSTerm(SyGuSTerm::Identifier(
+                                Identifier::from_str(&normalized_symbol).unwrap(),
+                            ))
+                        } else {
+                            let args = cons_decl
+                                .sorts
+                                .iter()
+                                .map(|sort| {
+                                    SyGuSTerm::Identifier(Identifier::from_str(
+                                        &grammar_symbol_for_sort(
+                                            &sort.to_string(),
+                                            &ret_sort_name,
+                                        ),
+                                    )
+                                    .unwrap())
+                                })
+                                .collect::<Vec<_>>();
+                            SyGuSGTerm::SyGuSTerm(SyGuSTerm::Application(
+                                cons_decl.symbol.clone(),
+                                args,
+                            ))
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                GroupedRuleList {
+                    symbol,
+                    sort: Sort::from_name(&sort_decl.symbol),
+                    terms,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Some(GrammarDef {
+            sorted_vars,
+            grouped_rule_lists,
+        })
+    }
+
     fn replace_grammardef_sort(
         g: &Option<sygus_parser::GrammarDef>,
         bv_len: usize,
@@ -219,12 +300,16 @@ pub fn to_sygus(lsfile: &DelisProg) -> Vec<SyGuSCmd> {
             new_g
         })
     }
+    let declare_term_types = lsfile.cmds.iter().find_map(|cmd| match cmd {
+        crate::parser::DelisCmd::DeclareTermTypes(decl) => Some(decl),
+        _ => None,
+    });
     let mut syn_name = None;
     for cmd in &lsfile.cmds {
         if let crate::parser::DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(
             name,
             args,
-            _sort,
+            sort,
             grammar,
         )) = cmd
         {
@@ -236,7 +321,13 @@ pub fn to_sygus(lsfile: &DelisProg) -> Vec<SyGuSCmd> {
                 })
                 .collect();
             let new_sort = bv_sort.clone();
-            let new_grammar = replace_grammardef_sort(grammar, total_bv_length);
+            let fallback_grammar = if grammar.is_none() {
+                declare_term_types.and_then(|decl| delis_term_type_to_grammar(decl, sort))
+            } else {
+                None
+            };
+            let source_grammar = grammar.clone().or(fallback_grammar);
+            let new_grammar = replace_grammardef_sort(&source_grammar, total_bv_length);
             let mut builder = Cmd::synth_fun(name.as_str());
             for arg in new_args.iter() {
                 builder = builder.arg(&arg.name, arg.sort.clone());
