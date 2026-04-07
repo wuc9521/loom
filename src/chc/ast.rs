@@ -104,6 +104,9 @@ impl HornTerm {
     pub fn to_sygus(&self) -> SyGuSTerm {
         match self {
             HornTerm::Var(name) => SyGuSTerm::Identifier(Identifier::Symbol(name.clone())),
+            HornTerm::App { fun, args } if args.is_empty() => {
+                SyGuSTerm::Identifier(Identifier::Symbol(fun.clone()))
+            }
             HornTerm::App { fun, args } => SyGuSTerm::Application(
                 Identifier::Symbol(fun.clone()),
                 args.iter().map(HornTerm::to_sygus).collect(),

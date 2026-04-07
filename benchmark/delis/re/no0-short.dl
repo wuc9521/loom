@@ -1,5 +1,20 @@
 (set-logic RE)
 
+(declare-term-types  
+ ((RegLan 0))  ; Each term type corresponds to a nonterminal in the default grammar
+ (
+   ( ; Productions for term type E
+      (re.a)      ; The leading `$`-signs are a naming convention with no special significance.
+      (re.b) 
+      (re.++ RegLan RegLan)  ; The $+ production has two child terms of type RegLan
+      (re.union RegLan RegLan)
+      (re.inter RegLan RegLan)
+      (re.comp RegLan)
+      (re.* RegLan)
+    )
+  )
+)
+
 (declare-sort Pos 0)
 
 ; define signatures here.
@@ -34,25 +49,7 @@
   )))
 )
 
-(synth-fun r () RegLan
-    ((Start RegLan))
-    ( 
-        (Start RegLan
-            ( 
-                a
-                b
-                (re.++ Start Start)    ; concat (re.++ r1 r2) = (re.union (re.concat r1 r2) (re.concat r2 r1))
-                (re.union Start Start) ; union
-                (re.inter Start Start) ; intersection
-                (re.comp Start)        ; complement
-                (re.* Start)           ; Kleene star
-            )
-        )
-    )
-)
-
-
-
+(synth-fun r () RegLan)
 (constraint (models w1 r))              
 (constraint (not (models w5 r)))        
 

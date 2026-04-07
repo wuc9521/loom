@@ -4,5 +4,7 @@ TODO
 - [ ] Rust data structure of semantic Aspect.
 - [ ] maintain a map in aspect <-> predicate <-> bit position.
 
+- [ ] Make `set-logic` unneccesary.
+
 a pair is acturally a matrix.
 See if matrix is enough.

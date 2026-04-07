@@ -19,6 +19,8 @@
   )
 )
 
+; (declare-semasp RegSemAsp 0)  ; Semantic aspect for regular languages
+
 ; ab
 (define-model w1 (r RegLan) (asp (SemAsp 3 3)) ; (define-model <NAME> (<VAR> <SYNTAX>) (<SEMASP>))
     (match r
@@ -55,45 +57,59 @@
   ; In the setting of logic learning, all aux vairables and ret should have Bool type.
   ; we need a meta language to describe semantic aspects. Using everything as a bool variable is not elegant.
   (
-    ; w1: ab
-    (
-      RegLan.Sem ((regex RegLan) (l Int) (r Int)) Bool
-      :finite
-    )  ; Each relation is declared as a function Sem : (members) -> Bool
+    (RegLan.Sem ((r RegLan) (X (array Bool))) Bool)  
+    ; X = ["", "a", "ab", "", "b", ""] denoting all substrings.
   )
   ;; Bodies
   (
     (! ; The `!` expression attaches attributes to its first argument: in this case, the `:in` and `:out` labels below
-      (match regex ; E.Sem defined inductively through matching
+      (match r ; E.Sem defined inductively through matching
         (
-          ($a (and (= 0 l) (= r 1))) ; evaluating $a yields the value of a in the relation
-          ($b (and (= l 1) (= r 2))) ; evaluating $b yields the value of b in the relation
-;;; ...
+          ($a 
+            (and 
+              X[1]
+                (and (not X[0]) 
+                  (and (not X[2])
+                    (and (not X[3])
+                      (and (not X[4])
+                        (not X[5])) ; the value of $a is 1 on "a" and 0 on "" and "b"
+              ))))
+          ) ; evaluating $a yields the value of a in the relation
+          ($b 
+            (and 
+              X[4]
+                (and (not X[0]) 
+                  (and (not X[1])
+                    (and (not X[2])
+                      (and (not X[3])
+                        (not X[5])) ; the value of $b is 1 on "b" and 0 on "" and "a"
+              ))))
+          ) 
           (
             ($++ r1 r2)            ; et1 and et2 identify the child terms
             (exists ; this part is meta. 
               ((m Int))   ; r1 and r2 are auxiliary variables
               (and
-                (<= l m) (<= m r)) ; the value of m is between l and r
-                (RegLan.Sem r1 l m)  ; the value of r1 is determined by the values of l and m
-                (RegLan.Sem r2 m r)  ; the value of r2 is determined by the values of m and r
+                (<= (l asp) m) (<= m (r asp))) ; the value of m is between l and r
+                (RegLan.Sem r1 (l asp) m)  ; the value of r1 is determined by the values of l and m
+                (RegLan.Sem r2 m (r asp))  ; the value of r2 is determined by the values of m and r
               )                     ; the value of ($++ r1 r2) is the value of r1 plus the r2
           )                       ; when evaluated on the same inputs x and y
           (
             ($union r1 r2)           ; the value of ($union r1 r2) is the value of r1 or the value of r2
             (or
-              (RegLan.Sem r1 l r)
-              (RegLan.Sem r2 l r) 
+              (RegLan.Sem r1 (l asp) (r asp))
+              (RegLan.Sem r2 (l asp) (r asp)) 
             )
           )
           (
             ($* r1)
             (exists ((m Int))
               (and
-                (<= l m) (<= m r)
+                (<= (l asp) m) (<= m (r asp))
                 (or
-                  (and (= l m) (= r m)) ; the value of ($* r1) is 1 if the value of r1 is 1 on the empty string
-                  (and (RegLan.Sem r1 l m) (RegLan.Sem ($* r1) m r)) ; the value of ($* r1) is 1 if there exists a split of the input such that the value of r1 is 1 on the first part and the value of ($* r1) is 1 on the second part
+                  (and (= (l asp) m) (= (r asp) m)) ; the value of ($* r1) is 1 if the value of r1 is 1 on the empty string
+                  (and (RegLan.Sem r1 (l asp) m) (RegLan.Sem ($* r1) m (r asp))) ; the value of ($* r1) is 1 if there exists a split of the input such that the value of r1 is 1 on the first part and the value of ($* r1) is 1 on the second part
                 )
               )
             )
@@ -101,121 +117,26 @@
         )
 ;;; ...
       )
-    ) ; end `match regex`
-    :input (x y) :output (r)      ; Indicate that the value of `r` is intended to be determined
+    ) ; end `match r`
+    :aspects(X)  
   )                               
 )
 
 ; ab
-(define-model w1
-  (define-univ Pos ($0 $1)) ; same as (define-datatype Pos ((pos0) (pos1)))
-  (interp-fun a (match (
-      (($0) true)
-      ((_) false)
-  )))
-  (interp-fun b (match (
-      (($0) false)
-      ((_) true)
-  )))
-  (declare-semasp 3 3)
-;   (define-semasp 
-;   #[
-;     #[0 0 0]
-;     #[0 0 0]
-;     #[0 0 0]
-;   ])
-)
-
 ; abab
-(define-model w2
-  (define-univ Pos ($0 $1 $2 $3))
-  (interp-fun a (match (
-      (($0) true)
-      (($2) true)
-      ((_) false)
-  )))
-  (interp-fun b (match (
-      (($1) true)
-      (($3) true)
-      ((_) false)
-  )))
-  (declare-semasp 5 5)
-)
-
 ; ababab
-(define-model w3
-  (define-univ Pos ($0 $1 $2 $3 $4 $5))
-  (interp-fun a (match (
-      (($0) true)
-      (($2) true)
-      (($4) true)
-      ((_) false)
-  )))
-  (interp-fun b (match (
-      (($1) true)
-      (($3) true)
-      (($5) true)
-      ((_) false)
-  )))
-)
-
-
 ; baa
-(define-model w4
-  (define-univ Pos ($0 $1 $2))
-  (interp-fun a (match (
-      (($0) false)
-      ((_) true)
-  )))
-  (interp-fun b (match (
-      (($0) true)
-      (($1) true)
-      ((_) false)
-  )))
-  (declare-semasp 4 4)
-)
-
 ; aab
-(define-model w5
-  (define-univ Pos ($0 $1 $2))
-  (interp-fun a (match (
-      (($0) true)
-      ((_) false)
-  )))   
-  (interp-fun b (match (
-      (($0) true)
-      (($1) true)
-      ((_) false)
-  )))
-  (declare-semasp 4 4)
-)
 
 ; some way to define syntax 
 ; some way to define semantics (similar to semgus)
 
-(synth-fun regex () RegLan
-    ((Start RegLan))
-    ( 
-        (Start RegLan
-            ( 
-                a
-                b
-                ($++ Start Start)    ; concat ($++ r1 r2) = ($union ($concat r1 r2) ($concat r2 r1))
-                ($union Start Start) ; union
-                ($inter Start Start) ; intersection
-                ($comp Start)        ; complement
-                ($* Start)           ; Kleene star
-            )
-        )
-    )
-)
+(synth-fun r () RegLan)
 
-
-
-(constraint (models w1 regex))        
-(constraint (models w2 regex))        
-(constraint (models w3 regex))        
-(constraint (not (models w4 regex)))        
-(constraint (not (models w5 regex)))        
+(constraint (models w1 r))        
+(constraint (models w2 r))        
+(constraint (models w3 r))        
+(constraint (not (models w4 r)))        
+(constraint (not (models w5 r)))        
 
 (check-synth)

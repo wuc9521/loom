@@ -29,6 +29,9 @@ fn body_to_term(body_atoms: &[HornAtom]) -> Option<SyGuSTerm> {
 
 impl HornQuery {
     pub fn to_sexpr(&self) -> SExpr {
+        if let [atom] = self.body_atoms.as_slice() {
+            return SExpr::SExprList(vec![query(), SExpr::Symbol(atom.pred.clone())]);
+        }
         let body = body_to_term(&self.body_atoms).unwrap_or_else(|| Bool::true_());
         SExpr::SExprList(vec![query(), body.to_sexpr()])
     }

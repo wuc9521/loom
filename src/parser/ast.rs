@@ -7,12 +7,138 @@ use crate::parser::{DelisParseError, DelisParser, Rule};
 use derive_more::Display;
 use itertools::Itertools;
 use pest::Parser;
-use sygus_parser::{Sort, SyGuSCmd};
+use pest::iterators::Pair;
+use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd};
+
+#[derive(Clone, Debug, Display)]
+#[display(
+    fmt = "({}{})",
+    symbol,
+    "if sorts.is_empty() { String::new() } else { format!(\" {}\", sorts.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(\" \")) }"
+)]
+pub struct TermTypeConsDecl {
+    pub symbol: Identifier,
+    pub sorts: Vec<Sort>,
+}
+
+impl TermTypeConsDecl {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+        let inner_pairs = pair.into_inner().collect_vec();
+        match inner_pairs.as_slice() {
+            [symbol_pair, sorts @ ..] => {
+                let symbol = Identifier::from_str(symbol_pair.as_str())
+                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
+                let sorts = sorts
+                    .iter()
+                    .map(|sort_pair| {
+                        Sort::from_str(sort_pair.as_str())
+                            .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Self { symbol, sorts })
+            }
+            _ => Err(DelisParseError::InvalidSyntax(format!(
+                "Expected TermTypeConsDecl, found: {:?}",
+                inner_pairs
+            ))),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Display)]
+#[display(
+    fmt = "({})",
+    "constructors.iter().map(|cons| cons.to_string()).collect::<Vec<_>>().join(\" \")"
+)]
+pub struct TermTypeDecl {
+    pub constructors: Vec<TermTypeConsDecl>,
+}
+
+impl TermTypeDecl {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+        let constructors = pair
+            .into_inner()
+            .map(TermTypeConsDecl::parse)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { constructors })
+    }
+}
+
+#[derive(Clone, Debug, Display)]
+#[display(
+    fmt = "(declare-term-types ({}) ({}))",
+    "sort_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(\" \")",
+    "term_type_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(\" \")"
+)]
+pub struct DeclareTermTypesCmd {
+    pub sort_decls: Vec<SortDecl>,
+    pub term_type_decls: Vec<TermTypeDecl>,
+}
+
+impl DeclareTermTypesCmd {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+        let inner_pairs = pair.into_inner().collect_vec();
+        let mut sort_decls = Vec::new();
+        let mut term_type_decls = Vec::new();
+
+        for inner_pair in inner_pairs {
+            match inner_pair.as_rule() {
+                Rule::DelisTermSortDecl => {
+                    let inner = inner_pair.into_inner().collect_vec();
+                    match inner.as_slice() {
+                        [symbol_pair, arity_pair] => {
+                            sort_decls.push(SortDecl {
+                                symbol: symbol_pair.as_str().to_string(),
+                                arity: arity_pair.as_str().parse::<usize>().map_err(|e| {
+                                    DelisParseError::InvalidSyntax(format!(
+                                        "Invalid term type arity: {}",
+                                        e
+                                    ))
+                                })?,
+                            });
+                        }
+                        _ => {
+                            return Err(DelisParseError::InvalidSyntax(format!(
+                                "Expected DelisTermSortDecl, found: {:?}",
+                                inner
+                            )));
+                        }
+                    }
+                }
+                Rule::DelisTermTypeDecl => {
+                    term_type_decls.push(TermTypeDecl::parse(inner_pair)?);
+                }
+                _ => {
+                    return Err(DelisParseError::InvalidSyntax(format!(
+                        "Unexpected structure in DeclareTermTypesCmd parsing: {:?}",
+                        inner_pair
+                    )));
+                }
+            }
+        }
+
+        if sort_decls.len() != term_type_decls.len() {
+            return Err(DelisParseError::InvalidSyntax(format!(
+                "declare-term-types expects the same number of sort declarations and production groups, got {} and {}",
+                sort_decls.len(),
+                term_type_decls.len()
+            )));
+        }
+
+        Ok(Self {
+            sort_decls,
+            term_type_decls,
+        })
+    }
+}
 
 #[derive(Clone, Debug, Display)]
 pub enum DelisCmd {
     #[display(fmt = "{}", _0)]
     As(SyGuSCmd), // as a sygus command.
+
+    #[display(fmt = "{}", _0)]
+    DeclareTermTypes(DeclareTermTypesCmd),
 
     #[display(fmt = "{}", _0)]
     DeclareFunc(FuncSig),
@@ -90,6 +216,10 @@ pub fn parse(
                 }
                 ls_file.push(DelisCmd::As(sygus_cmd));
             }
+            Rule::DelisCmdDeclareTermTypes => {
+                let decl = DeclareTermTypesCmd::parse(cmd.clone())?;
+                ls_file.push(DelisCmd::DeclareTermTypes(decl));
+            }
             Rule::FuncDecl => {
                 let sig = FuncSig::parse(cmd.clone()).unwrap();
                 if let Some(ref mut runtime) = runtime {
@@ -145,7 +275,11 @@ pub fn parse_command(
     mut runtime: Option<&mut Runtime>,
 ) -> Result<DelisCmd, DelisParseError> {
     let mut pairs = DelisParser::parse(Rule::DelisCmd, input)?;
-    let cmd = pairs
+    let wrapper = pairs
+        .next()
+        .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
+    let cmd = wrapper
+        .into_inner()
         .next()
         .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
     match cmd.as_rule() {
@@ -175,6 +309,10 @@ pub fn parse_command(
                 }
             }
             Ok(DelisCmd::As(sygus_cmd))
+        }
+        Rule::DelisCmdDeclareTermTypes => {
+            let decl = DeclareTermTypesCmd::parse(cmd)?;
+            Ok(DelisCmd::DeclareTermTypes(decl))
         }
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd.clone()).unwrap();

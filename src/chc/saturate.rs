@@ -32,16 +32,16 @@ fn match_constructor_atom(
 
     let mut subst = HashMap::new();
     for (pattern_arg, candidate_arg) in pattern.args.iter().zip(candidate.args.iter()) {
-        let HornTerm::Var(name) = pattern_arg else {
-            return None;
-        };
-
-        match subst.get(name) {
-            Some(existing) if existing != candidate_arg => return None,
-            Some(_) => {}
-            None => {
-                subst.insert(name.clone(), candidate_arg.clone());
-            }
+        match pattern_arg {
+            HornTerm::Var(name) => match subst.get(name) {
+                Some(existing) if existing != candidate_arg => return None,
+                Some(_) => {}
+                None => {
+                    subst.insert(name.clone(), candidate_arg.clone());
+                }
+            },
+            _ if pattern_arg == candidate_arg => {}
+            _ => return None,
         }
     }
 
