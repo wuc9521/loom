@@ -2,6 +2,7 @@ use crate::lang::model::{DefineUniv, Model};
 use crate::lang::signature::FuncSig;
 use crate::parser::ast::DelisCmd;
 use std::collections::HashMap;
+use sygus_parser::SyGuSCmd;
 
 #[derive(Debug, Clone)]
 pub enum Symbol {
@@ -46,7 +47,7 @@ pub struct ModelSymbolTable {
 #[derive(Debug, Clone)]
 pub enum SymbolInterp {
     InterpFun(String, crate::lang::model::InterpedValue),
-    Univ(crate::lang::model::DefineUniv),
+    Univ(DefineUniv),
 }
 
 impl ModelSymbolTable {
@@ -81,8 +82,6 @@ impl Session {
         }
     }
     pub fn handle_command(&mut self, cmd: &DelisCmd) -> Option<DelisCmd> {
-        use crate::parser::ast::DelisCmd;
-        use sygus_parser::SyGuSCmd;
         match cmd {
             DelisCmd::As(SyGuSCmd::SetLogic(_)) => {
                 return Some(cmd.clone());

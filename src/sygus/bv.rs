@@ -1,7 +1,8 @@
-use crate::chc::ast::{HornDecl, HornProg, HornTerm, PredicatePolarity};
+use crate::chc::ast::{HornDecl, HornProg, HornRule, HornTerm, PredicatePolarity};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use sygus_parser::api::{BitVec, Bool, Cmd, Term};
-use sygus_parser::{DTConsDecl, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm};
+use sygus_parser::{
+    BitVec, Bool, Cmd, DTConsDecl, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BitPolarity {
@@ -117,7 +118,7 @@ fn is_true_term(term: &SyGuSTerm) -> bool {
 fn constructor_state_disjuncts<'a>(
     program: &HornProg,
     states: &[String],
-    rules: impl Iterator<Item = &'a crate::chc::ast::HornRule>,
+    rules: impl Iterator<Item = &'a HornRule>,
     cons: &DTConsDecl,
     state: &str,
 ) -> Vec<SyGuSTerm> {

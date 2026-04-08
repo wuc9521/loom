@@ -1,13 +1,19 @@
-use super::syntax::{TermConstructor, TermSignature};
-use super::types::{AspectKey, AspectValue};
-use crate::chc::ast::HornTerm;
-use crate::chc::pred::{dnf_and, dnf_false, dnf_or, dnf_true, negate_dnf, Pred, PredAtom, PredDnf};
-use crate::lang::eval::{eval, get_universe_domain_and_map};
-use crate::parser::{DelisCmd, DelisProg};
+use crate::{
+    chc::{
+        ast::HornTerm,
+        pred::{dnf_and, dnf_false, dnf_or, dnf_true, negate_dnf, Pred, PredAtom, PredDnf},
+    },
+    compile::{
+        syntax::{TermConstructor, TermSignature},
+        types::{AspectKey, AspectValue},
+    },
+    lang::eval::{eval, get_universe_domain_and_map},
+    parser::{DelisCmd, DelisProg},
+};
 use itertools::Itertools;
 use lexpr::Value;
 use std::collections::HashMap;
-use sygus_parser::ast::SyGuSTerm;
+use sygus_parser::SyGuSTerm;
 
 fn model_len(file: &DelisProg, model_name: &str) -> Result<usize, String> {
     let model = file

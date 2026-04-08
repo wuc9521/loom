@@ -1,4 +1,4 @@
-use crate::lang::model::{Model, Pattern, PatternElem};
+use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem};
 use std::collections::HashMap;
 
 pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
@@ -35,12 +35,12 @@ pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) ->
 pub fn eval<'a>(
     func_name: &str,
     args: &[usize],
-    func_interps: &'a [crate::lang::model::FuncInterp],
+    func_interps: &'a [FuncInterp],
     id2sym: &Vec<String>,
-) -> Option<&'a crate::lang::model::InterpedValue> {
+) -> Option<&'a InterpedValue> {
     if args.is_empty() {
         for interp in func_interps {
-            if let crate::lang::model::FuncInterp::SimpleInterp(name, val) = interp {
+            if let FuncInterp::SimpleInterp(name, val) = interp {
                 if name == func_name {
                     return Some(val);
                 }
@@ -48,7 +48,7 @@ pub fn eval<'a>(
         }
     }
     for interp in func_interps {
-        if let crate::lang::model::FuncInterp::MatchInterp(name, cases) = interp {
+        if let FuncInterp::MatchInterp(name, cases) = interp {
             if name == func_name {
                 for case in cases {
                     if let Some(pat) = &case.pattern {

@@ -144,8 +144,8 @@ mod tests {
     use super::*;
     use crate::chc::ast::{HornProg, HornTerm};
 
-    fn atom(pred: &str, arg: HornTerm) -> crate::chc::ast::HornAtom {
-        crate::chc::ast::HornAtom {
+    fn atom(pred: &str, arg: HornTerm) -> HornAtom {
+        HornAtom {
             pred: pred.to_string(),
             arg,
         }

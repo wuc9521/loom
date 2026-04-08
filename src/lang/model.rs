@@ -1,13 +1,13 @@
 // src/logic/model.rs
 
-use crate::parser::{DelisParseError, Rule};
+use crate::{
+    lang::runtime::{ModelSymbolTable, SymbolInterp},
+    parser::{DelisParseError, Rule},
+};
 use core::str;
 use derive_more::Display;
 use pest::iterators::Pair;
-use sygus_parser::Identifier;
-use sygus_parser::Literal;
-use sygus_parser::Sort;
-use sygus_parser::SyGuSTerm;
+use sygus_parser::{Identifier, Literal, Sort, SyGuSTerm};
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -62,19 +62,19 @@ impl Model {
         Ok(model)
     }
 
-    pub fn fill_interp_table(&self, table: &mut crate::lang::runtime::ModelSymbolTable) {
+    pub fn fill_interp_table(&self, table: &mut ModelSymbolTable) {
         for interp in &self.func_interps {
             match interp {
                 FuncInterp::SimpleInterp(name, val) => {
                     table.insert(
                         name.clone(),
-                        crate::lang::runtime::SymbolInterp::InterpFun(name.clone(), val.clone()),
+                        SymbolInterp::InterpFun(name.clone(), val.clone()),
                     );
                 }
                 FuncInterp::MatchInterp(name, _cases) => {
                     table.insert(
                         name.clone(),
-                        crate::lang::runtime::SymbolInterp::InterpFun(
+                        SymbolInterp::InterpFun(
                             name.clone(),
                             InterpedValue::FuncApp(name.clone(), vec![]),
                         ),
@@ -83,10 +83,7 @@ impl Model {
             }
         }
         for univ in &self.univ_defs {
-            table.insert(
-                univ.sort.to_string(),
-                crate::lang::runtime::SymbolInterp::Univ(univ.clone()),
-            );
+            table.insert(univ.sort.to_string(), SymbolInterp::Univ(univ.clone()));
         }
     }
 }

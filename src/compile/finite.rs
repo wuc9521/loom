@@ -1,14 +1,21 @@
-use super::expr::{eval_bool, eval_sygus_int};
-use super::types::{
-    AspectKey, AspectValue, BitMapping, ConstraintBit, Encoding, FieldDecl, FieldDomain,
-    FiniteSpace, SemanticConstraint,
+use crate::{
+    compile::{
+        expr::{eval_bool, eval_sygus_int},
+        types::{
+            AspectKey, AspectValue, BitMapping, ConstraintBit, Encoding, FieldDecl, FieldDomain,
+            FiniteSpace, SemanticConstraint,
+        },
+    },
+    lang::{
+        eval::{collect_loaded_models, get_universe_domain_and_map},
+        model::Model,
+    },
+    parser::{DelisCmd, DelisProg},
 };
-use crate::lang::eval::{collect_loaded_models, get_universe_domain_and_map};
-use crate::parser::{DelisCmd, DelisProg};
 use itertools::Itertools;
 use lexpr::Value;
 use std::collections::HashMap;
-use sygus_parser::ast::SyGuSTerm;
+use sygus_parser::SyGuSTerm;
 
 pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     let finite_cmds = problem
@@ -146,7 +153,7 @@ fn collect_semantic_constraints(
     problem: &DelisProg,
     semantic_relations: &[String],
     aspect_space: &FiniteSpace,
-    models_by_name: &HashMap<String, &crate::lang::model::Model>,
+    models_by_name: &HashMap<String, &Model>,
 ) -> Result<Vec<SemanticConstraint>, String> {
     let mut constraints = Vec::new();
     for cmd in &problem.cmds {

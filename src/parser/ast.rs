@@ -1,6 +1,11 @@
-use crate::lang::runtime::Runtime;
-use crate::lang::{model::Model, signature::FuncSig};
-use crate::parser::{DelisParseError, DelisParser, Rule};
+use crate::{
+    lang::{
+        model::Model,
+        runtime::{Runtime, Symbol},
+        signature::FuncSig,
+    },
+    parser::{DelisParseError, DelisParser, Rule},
+};
 use derive_more::Display;
 use itertools::Itertools;
 use pest::iterators::Pair;
@@ -253,25 +258,16 @@ pub fn parse(
             Rule::FuncDecl => {
                 let sig = FuncSig::parse(cmd.clone()).unwrap();
                 if let Some(ref mut runtime) = runtime {
-                    runtime.insert(
-                        sig.name.clone(),
-                        crate::lang::runtime::Symbol::Func(sig.clone()),
-                    );
+                    runtime.insert(sig.name.clone(), Symbol::Func(sig.clone()));
                 }
                 ls_file.push(DelisCmd::DeclareFunc(sig));
             }
             Rule::ModelDef => {
                 let model = Model::parse(cmd.clone()).unwrap();
                 if let Some(ref mut runtime) = runtime {
-                    runtime.insert(
-                        model.name.clone(),
-                        crate::lang::runtime::Symbol::Model(model.clone()),
-                    );
+                    runtime.insert(model.name.clone(), Symbol::Model(model.clone()));
                     for univ in &model.univ_defs {
-                        runtime.insert(
-                            univ.sort.to_string(),
-                            crate::lang::runtime::Symbol::Univ(univ.clone()),
-                        );
+                        runtime.insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
                     }
                 }
                 ls_file.push(DelisCmd::DefineModel(model));
@@ -320,25 +316,16 @@ pub fn parse_command(
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd.clone()).unwrap();
             if let Some(ref mut runtime) = runtime {
-                runtime.insert(
-                    sig.name.clone(),
-                    crate::lang::runtime::Symbol::Func(sig.clone()),
-                );
+                runtime.insert(sig.name.clone(), Symbol::Func(sig.clone()));
             }
             Ok(DelisCmd::DeclareFunc(sig))
         }
         Rule::ModelDef => {
             let model = Model::parse(cmd.clone()).unwrap();
             if let Some(ref mut runtime) = runtime {
-                runtime.insert(
-                    model.name.clone(),
-                    crate::lang::runtime::Symbol::Model(model.clone()),
-                );
+                runtime.insert(model.name.clone(), Symbol::Model(model.clone()));
                 for univ in &model.univ_defs {
-                    runtime.insert(
-                        univ.sort.to_string(),
-                        crate::lang::runtime::Symbol::Univ(univ.clone()),
-                    );
+                    runtime.insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
                 }
             }
             Ok(DelisCmd::DefineModel(model))
