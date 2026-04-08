@@ -99,9 +99,9 @@
 (define-semantics
   ((RegLan.Sem (r RegLan) (asp ReAsp)))
   ((match r
-     ((a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
-     ((b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
-     ((X) (and (= (j asp) (+ (i asp) 1)) (X (i asp))))
+    ;  ((a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
+    ;  ((b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
+    ;  ((X) (and (= (j asp) (+ (i asp) 1)) (X (i asp))))
      ((re.a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
      ((re.b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
      ((re.++ x y)
@@ -120,25 +120,7 @@
             (and (RegLan.Sem x (ReAsp (model asp) (i asp) k))
                  (RegLan.Sem r (ReAsp (model asp) k (j asp))))))))))
 
-(synth-fun regex () RegLan
-    ((Start RegLan))
-    ( 
-        (Start RegLan
-            ( 
-                a
-                b
-                (re.++ Start Start)    ; concat (re.++ r1 r2) = (re.union (re.concat r1 r2) (re.concat r2 r1))
-                (re.union Start Start) ; union
-                (re.inter Start Start) ; intersection
-                (re.comp Start)        ; complement
-                (re.* Start)           ; Kleene star
-            )
-        )
-    )
-)
-
-
-
+(synth-fun regex () RegLan)
 (constraint (RegLan.Sem regex (ReAsp w1 0 (len w1))))        
 (constraint (RegLan.Sem regex (ReAsp w2 0 (len w2))))        
 (constraint (RegLan.Sem regex (ReAsp w3 0 (len w3))))        

@@ -1,5 +1,5 @@
 use crate::{
-    chc::{
+    backends::smt2::{
         ast::HornTerm,
         pred::{dnf_and, dnf_false, dnf_or, dnf_true, negate_dnf, Pred, PredAtom, PredDnf},
     },

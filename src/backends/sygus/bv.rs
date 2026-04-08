@@ -1,4 +1,4 @@
-use crate::chc::ast::{HornDecl, HornProg, HornRule, HornTerm, PredicatePolarity};
+use crate::backends::smt2::ast::{HornDecl, HornProg, HornRule, HornTerm, PredicatePolarity};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use sygus_parser::{
     BitVec, Bool, Cmd, DTConsDecl, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term,

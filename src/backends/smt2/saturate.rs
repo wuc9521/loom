@@ -1,4 +1,4 @@
-use crate::chc::ast::{HornAtom, HornRule, HornTerm};
+use crate::backends::smt2::ast::{HornAtom, HornRule, HornTerm};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
@@ -142,7 +142,7 @@ pub fn saturate(horn_rules: &[HornRule]) -> Vec<HornRule> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chc::ast::{HornProg, HornTerm};
+    use crate::backends::smt2::ast::{HornProg, HornTerm};
 
     fn atom(pred: &str, arg: HornTerm) -> HornAtom {
         HornAtom {

@@ -1,4 +1,4 @@
-use crate::chc::ast::{HornAtom, HornRule, HornTerm};
+use crate::backends::smt2::ast::{HornAtom, HornRule, HornTerm};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Polarity {
     Pos,

@@ -1,5 +1,5 @@
 use crate::{
-    chc::ast::HornTerm,
+    backends::smt2::ast::HornTerm,
     compile::{types::SemCase, AspectKey},
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };

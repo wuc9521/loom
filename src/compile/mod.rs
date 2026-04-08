@@ -1,8 +1,8 @@
-use crate::chc::ast::{
+use crate::backends::smt2::ast::{
     HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm, PredicatePolarity,
 };
-use crate::chc::pred::{dualize_dnf, emit_dnf_rules, Pred, PredAtom};
-use crate::chc::saturate::saturate;
+use crate::backends::smt2::pred::{dualize_dnf, emit_dnf_rules, Pred, PredAtom};
+use crate::backends::smt2::saturate::saturate;
 use crate::parser::{DelisCmd, DelisProg};
 use std::collections::HashMap;
 use sygus_parser::{Sort, SortDecl, SyGuSCmd};
@@ -44,7 +44,7 @@ pub fn to_sygus(problem: &DelisProg) -> Result<Vec<SyGuSCmd>, String> {
     if summary.needs_saturation {
         program.rules = saturate(&program.rules);
     }
-    crate::sygus::bv::compile_one_way(&program, &synth_name(problem)?, grammar)
+    crate::backends::sygus::bv::compile_one_way(&program, &synth_name(problem)?, grammar)
         .into_iter()
         .map(Ok)
         .collect()

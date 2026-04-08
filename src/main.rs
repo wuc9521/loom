@@ -1,6 +1,7 @@
 use clap::Parser as ClapParser;
 use delis::{
-    chc, compile,
+    backends::smt2,
+    compile,
     lang::runtime::Session,
     parser::ast::{parse_commands, DelisCmd, DelisProg},
 };
@@ -15,13 +16,13 @@ use std::{
 use sygus_parser::{Sort, SyGuSCmd};
 
 fn solve_general(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
-    if args.dump_chc || args.dump_sygus {
+    if args.dump_chc || args.dump_sygus || args.dump_semgus {
         if args.dump_chc {
             let program = compile::to_chc_ast(delis_file)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             println!(
                 "{}",
-                chc::emit::to_smt(&program)
+                smt2::emit::to_smt(&program)
                     .iter()
                     .map(|sexpr| sexpr.to_string())
                     .collect::<Vec<_>>()
@@ -37,6 +38,13 @@ fn solve_general(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error
                     .map(|cmd| cmd.to_string())
                     .collect::<Vec<_>>()
                     .join("\n")
+            );
+        }
+        if args.dump_semgus {
+            println!(
+                "{}",
+                delis::backends::semgus::compile(delis_file)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
             );
         }
         return Ok(());
@@ -143,7 +151,7 @@ fn decode_cvc5_output(delis_file: &DelisProg, output: &str) -> Result<String, io
 fn solve_with_backends(delis_file: &DelisProg, args: &CLI) -> Result<(), io::Error> {
     let chc_program =
         compile::to_chc_ast(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    let chc_text = cmds_to_text(&chc::emit::to_smt(&chc_program));
+    let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));
     let sygus_text = cmds_to_text(
         &compile::to_sygus(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
     );
@@ -223,6 +231,10 @@ pub struct CLI {
     /// Translate to CHC (HORN) and print to stdout
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
+
+    /// Translate to SemGuS and print to stdout
+    #[arg(long = "dump-semgus", default_value_t = false)]
+    dump_semgus: bool,
 
     /// Run CHC first and SyGuS second instead of running both solvers in parallel
     #[arg(long = "linear", default_value_t = false)]

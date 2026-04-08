@@ -1,4 +1,4 @@
-use crate::chc::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm};
+use crate::backends::smt2::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm};
 use sygus_parser::{Bool, Literal, SExpr, SyGuSTerm, Term};
 
 fn query() -> SExpr {
