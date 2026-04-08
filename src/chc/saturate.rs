@@ -10,12 +10,15 @@ struct ConstructorAtom<'a> {
 
 fn constructor_atom(atom: &HornAtom) -> Option<ConstructorAtom<'_>> {
     match &atom.arg {
-        HornTerm::App { fun, args } => Some(ConstructorAtom {
-            pred: &atom.pred,
-            fun,
-            args,
-        }),
+        HornTerm::App { fun, args } if args.iter().all(|arg| matches!(arg, HornTerm::Var(_))) => {
+            Some(ConstructorAtom {
+                pred: &atom.pred,
+                fun,
+                args,
+            })
+        }
         HornTerm::Var(_) => None,
+        HornTerm::App { .. } => None,
     }
 }
 
@@ -88,27 +91,36 @@ pub fn saturate(horn_rules: &[HornRule]) -> Vec<HornRule> {
 
     loop {
         let snapshot: Vec<HornRule> = rules.clone();
-        let push_rules: Vec<(&HornRule, ConstructorAtom<'_>)> = snapshot
-            .iter()
-            .filter_map(|r| push_head(r).map(|h| (r, h)))
-            .collect();
+        let mut push_rules: HashMap<(&str, &str, usize), Vec<(&HornRule, ConstructorAtom<'_>)>> =
+            HashMap::new();
+        for rule in &snapshot {
+            if let Some(head) = push_head(rule) {
+                push_rules
+                    .entry((head.pred, head.fun, head.args.len()))
+                    .or_default()
+                    .push((rule, head));
+            }
+        }
 
         let mut changed = false;
         for r in &snapshot {
             for (body_idx, pop_atom) in pop_sites(r) {
-                for (push_rule, push_head_atom) in &push_rules {
+                let Some(candidates) =
+                    push_rules.get(&(pop_atom.pred, pop_atom.fun, pop_atom.args.len()))
+                else {
+                    continue;
+                };
+                for (push_rule, push_head_atom) in candidates {
                     let Some(subst) = match_constructor_atom(*push_head_atom, pop_atom) else {
                         continue;
                     };
 
                     let new_rule = resolve_pop_clause(r, body_idx, push_rule, &subst);
                     let key = new_rule.rule_key();
-                    if seen.contains(&key) || rules.iter().any(|r| r.subsumes(&new_rule)) {
+                    if seen.contains(&key) {
                         continue;
                     }
 
-                    rules.retain(|old| !new_rule.subsumes(old));
-                    seen = rules.iter().map(|r| r.rule_key()).collect();
                     seen.insert(key);
                     rules.push(new_rule);
                     changed = true;
@@ -211,6 +223,7 @@ mod tests {
             rules,
             queries: vec![],
             tail: vec![],
+            predicates: Default::default(),
         };
         println!("Original program:");
         for rule in &prog.rules {

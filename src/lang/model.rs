@@ -11,34 +11,16 @@ use sygus_parser::SyGuSTerm;
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
-#[display(fmt = "({} {})", name, args)]
-pub struct ThSpecCmd {
-    pub name: String,
-    pub args: String, // may be refined to Vec<String>
-}
-
-impl ThSpecCmd {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
-        let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
-        let args = inner.map(|p| p.as_str()).collect::<Vec<_>>().join(" ");
-        Ok(Self { name, args })
-    }
-}
-
-#[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(define-model {} {} {} {})",
+    fmt = "(define-model {} {} {})",
     name,
     "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
-    "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")",
-    "ext_cmds.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
+    "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
 pub struct Model {
     pub name: String,
     pub univ_defs: Vec<DefineUniv>,
     pub func_interps: Vec<FuncInterp>,
-    pub ext_cmds: Vec<ThSpecCmd>,
 }
 
 impl Model {
@@ -47,9 +29,9 @@ impl Model {
             name: name.to_string(),
             univ_defs: Vec::new(),
             func_interps: Vec::new(),
-            ext_cmds: Vec::new(),
         }
     }
+
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
         let name = inner_pairs.next().unwrap().as_str();
@@ -58,15 +40,11 @@ impl Model {
             match item_pair.as_rule() {
                 Rule::UnivDef => {
                     let univ_def = DefineUniv::parse(item_pair)?;
-                    model.add_univ_def(univ_def);
+                    model.univ_defs.push(univ_def);
                 }
                 Rule::FuncInterp => {
                     let func_interp = FuncInterp::parse(item_pair)?;
-                    model.add_func_interp(func_interp);
-                }
-                Rule::ThSpecCmd => {
-                    let th_spec_cmd = ThSpecCmd::parse(item_pair)?;
-                    model.ext_cmds.push(th_spec_cmd);
+                    model.func_interps.push(func_interp);
                 }
                 _ => {
                     eprintln!(
@@ -83,12 +61,7 @@ impl Model {
         }
         Ok(model)
     }
-    pub fn add_univ_def(&mut self, univ_def: DefineUniv) {
-        self.univ_defs.push(univ_def);
-    }
-    pub fn add_func_interp(&mut self, func_interp: FuncInterp) {
-        self.func_interps.push(func_interp);
-    }
+
     pub fn fill_interp_table(&self, table: &mut crate::lang::runtime::ModelSymbolTable) {
         for interp in &self.func_interps {
             match interp {

@@ -1,5 +1,9 @@
 use clap::Parser as ClapParser;
-use delis::{chc, frontend, lang::runtime::Session};
+use delis::{
+    chc, compile,
+    lang::runtime::Session,
+    parser::ast::{parse_commands, DelisCmd, DelisProg},
+};
 use std::{
     fs,
     io::{self, Read, Write},
@@ -10,13 +14,10 @@ use std::{
 };
 use sygus_parser::{Sort, SyGuSCmd};
 
-fn solve_general(
-    delis_file: &mut delis::parser::ast::DelisProg,
-    args: &CLI,
-) -> Result<(), io::Error> {
+fn solve_general(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus {
         if args.dump_chc {
-            let program = frontend::lower::to_chc_ast(delis_file)
+            let program = compile::to_chc_ast(delis_file)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             println!(
                 "{}",
@@ -28,7 +29,7 @@ fn solve_general(
             );
         }
         if args.dump_sygus {
-            let cmds = frontend::lower::to_sygus(delis_file)
+            let cmds = compile::to_sygus(delis_file)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             println!(
                 "{}",
@@ -86,13 +87,13 @@ fn run_cvc5(sygus_text: &str) -> Result<String, io::Error> {
 }
 
 fn synth_signature(
-    delis_file: &delis::parser::ast::DelisProg,
+    delis_file: &DelisProg,
 ) -> Result<(String, Vec<sygus_parser::SortedVar>, Sort), io::Error> {
     delis_file
         .cmds
         .iter()
         .find_map(|cmd| match cmd {
-            delis::parser::ast::DelisCmd::As(SyGuSCmd::SynthFun(name, args, sort, _)) => {
+            DelisCmd::As(SyGuSCmd::SynthFun(name, args, sort, _)) => {
                 Some((name.clone(), args.clone(), sort.clone()))
             }
             _ => None,
@@ -102,7 +103,11 @@ fn synth_signature(
 
 fn parse_cvc5_define_fun(output: &str) -> Result<Option<SyGuSCmd>, io::Error> {
     let trimmed = output.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown") {
+    if trimmed.is_empty()
+        || trimmed.eq_ignore_ascii_case("unknown")
+        || trimmed.eq_ignore_ascii_case("infeasible")
+        || trimmed.eq_ignore_ascii_case("fail")
+    {
         return Ok(None);
     }
     let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
@@ -118,10 +123,7 @@ fn parse_cvc5_define_fun(output: &str) -> Result<Option<SyGuSCmd>, io::Error> {
         .find(|cmd| matches!(cmd, SyGuSCmd::DefineFun(..))))
 }
 
-fn decode_cvc5_output(
-    delis_file: &delis::parser::ast::DelisProg,
-    output: &str,
-) -> Result<String, io::Error> {
+fn decode_cvc5_output(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
     let Some(cmd) = parse_cvc5_define_fun(output)? else {
         return Ok(output.trim().to_string());
     };
@@ -138,16 +140,12 @@ fn decode_cvc5_output(
     Ok(format!("(\n{}\n)", decoded))
 }
 
-fn solve_with_backends(
-    delis_file: &delis::parser::ast::DelisProg,
-    args: &CLI,
-) -> Result<(), io::Error> {
-    let chc_program = frontend::lower::to_chc_ast(delis_file)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+fn solve_with_backends(delis_file: &DelisProg, args: &CLI) -> Result<(), io::Error> {
+    let chc_program =
+        compile::to_chc_ast(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     let chc_text = cmds_to_text(&chc::emit::to_smt(&chc_program));
     let sygus_text = cmds_to_text(
-        &frontend::lower::to_sygus(delis_file)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+        &compile::to_sygus(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
     );
     if args.linear {
         match run_z3(&chc_text)?.as_deref() {
@@ -169,7 +167,7 @@ fn solve_with_backends(
 }
 
 fn solve_parallel(
-    delis_file: &delis::parser::ast::DelisProg,
+    delis_file: &DelisProg,
     chc_text: &str,
     sygus_text: &str,
 ) -> Result<(), io::Error> {
@@ -281,8 +279,8 @@ fn main() -> Result<(), io::Error> {
         fs::read_to_string(file_path)?
     };
     let mut session = Session::new();
-    let results = delis::parser::ast::parse_commands(&input, Some(&mut session.runtime));
-    let mut delis_cmd_vec: Vec<delis::parser::ast::DelisCmd> = vec![];
+    let results = parse_commands(&input, Some(&mut session.runtime));
+    let mut delis_cmd_vec: Vec<DelisCmd> = vec![];
     for res in results {
         match res {
             Ok(cmd) => {
@@ -298,7 +296,7 @@ fn main() -> Result<(), io::Error> {
             }
         }
     }
-    let mut delis_file = delis::parser::ast::DelisProg {
+    let mut delis_file = DelisProg {
         cmds: delis_cmd_vec,
     };
     solve_general(&mut delis_file, &args)

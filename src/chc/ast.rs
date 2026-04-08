@@ -73,6 +73,36 @@ pub struct HornProg {
     pub rules: Vec<HornRule>,
     pub queries: Vec<HornQuery>,
     pub tail: Vec<HornDecl>,
+    pub predicates: HashMap<String, PredicateInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PredicateInfo {
+    pub state: String,
+    pub polarity: PredicatePolarity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredicatePolarity {
+    Positive,
+    Negative,
+}
+
+impl HornProg {
+    pub fn register_predicate(
+        &mut self,
+        name: impl Into<String>,
+        state: impl Into<String>,
+        polarity: PredicatePolarity,
+    ) {
+        self.predicates.insert(
+            name.into(),
+            PredicateInfo {
+                state: state.into(),
+                polarity,
+            },
+        );
+    }
 }
 
 impl HornTerm {

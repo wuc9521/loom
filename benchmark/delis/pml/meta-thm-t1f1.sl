@@ -38,8 +38,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 (define-model K2 ;; Kripke Structure 2
@@ -67,8 +65,6 @@
         (($3) true)
         ((_) false)
     )))
-    (set-init I)
-    (set-tran R)
 )
 
 (define-model K3 ;; Kripke Structure 3
@@ -89,8 +85,6 @@
         (($1) true)
         ((_) false)
     )))
-    (set-init I)
-    (set-tran R)
 )
 
 (define-model K4 ;; Kripke Structure 4
@@ -114,19 +108,17 @@
         (($0) true)
         ((_) false)
     )))
-    (set-init I)
-    (set-tran R)
 )
 
 
 (declare-term-types
- ((Bool 0))
+ ((Modal 0))
  (((a) (b) (c) (v)
-   (modal.not Bool)
-   (modal.and Bool Bool)
-   (modal.or Bool Bool)
-   (modal.box Bool)
-   (modal.dia Bool))))
+   (modal.not Modal)
+   (modal.and Modal Modal)
+   (modal.or Modal Modal)
+   (modal.box Modal)
+   (modal.dia Modal))))
 
 
 (define-finite ModalAsp
@@ -134,7 +126,7 @@
   :where true)
 
 (define-semantics
-  ((Modal.Sem (phi Bool) (asp ModalAsp)))
+  ((Modal.Sem (phi Modal) (asp ModalAsp)))
   ((match phi
      ((a) (a (node asp)))
      ((b) (b (node asp)))
@@ -152,24 +144,7 @@
         (and (R (node asp) next)
              (Modal.Sem x (ModalAsp (model asp) next))))))))
 
-(synth-fun phi () Bool
-    ((Start Bool))
-	(
-		(Start Bool
-			(
-				a
-                c
-                v		
-				(modal.not Start)
-				(modal.and Start Start)
-				(modal.or Start Start)
-				(modal.box Start)
-				(modal.dia Start)
-			)
-		)
-	)
-)
-
+(synth-fun phi () Modal)
 (constraint (Modal.Sem phi (ModalAsp K1 $0)))
 (constraint (not (Modal.Sem phi (ModalAsp K1 $0))))
 

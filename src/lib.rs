@@ -1,8 +1,8 @@
 pub mod chc;
-pub mod frontend;
+pub mod compile;
 pub mod lang;
 pub mod parser;
-pub mod theory;
+pub mod sygus;
 
 pub use lang::*;
 pub use parser::*;

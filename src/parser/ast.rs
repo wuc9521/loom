@@ -1,8 +1,5 @@
 use crate::lang::runtime::Runtime;
-use crate::lang::{
-    model::{Model, ThSpecCmd},
-    signature::FuncSig,
-};
+use crate::lang::{model::Model, signature::FuncSig};
 use crate::parser::{DelisParseError, DelisParser, Rule};
 use derive_more::Display;
 use itertools::Itertools;
@@ -70,12 +67,12 @@ impl TermTypeDecl {
     "sort_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(\" \")",
     "term_type_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(\" \")"
 )]
-pub struct DeclareTermTypesCmd {
+pub struct TermTypes {
     pub sort_decls: Vec<SortDecl>,
     pub term_type_decls: Vec<TermTypeDecl>,
 }
 
-impl DeclareTermTypesCmd {
+impl TermTypes {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let inner_pairs = pair.into_inner().collect_vec();
         let mut sort_decls = Vec::new();
@@ -110,7 +107,7 @@ impl DeclareTermTypesCmd {
                 }
                 _ => {
                     return Err(DelisParseError::InvalidSyntax(format!(
-                        "Unexpected structure in DeclareTermTypesCmd parsing: {:?}",
+                        "Unexpected structure in TermTypes parsing: {:?}",
                         inner_pair
                     )));
                 }
@@ -142,12 +139,12 @@ fn format_sexpr_body(body: &[String]) -> String {
 
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "(define-finite {}{})", name, "format_sexpr_body(body)")]
-pub struct DefineFiniteCmd {
+pub struct FiniteAspect {
     pub name: String,
     pub body: Vec<String>,
 }
 
-impl DefineFiniteCmd {
+impl FiniteAspect {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner = pair.into_inner();
         let name = inner
@@ -166,11 +163,11 @@ impl DefineFiniteCmd {
 
 #[derive(Clone, Debug, Display)]
 #[display(fmt = "(define-semantics{})", "format_sexpr_body(body)")]
-pub struct DefineSemanticsCmd {
+pub struct Semantics {
     pub body: Vec<String>,
 }
 
-impl DefineSemanticsCmd {
+impl Semantics {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         Ok(Self {
             body: pair.into_inner().map(|p| p.as_str().to_string()).collect(),
@@ -184,22 +181,19 @@ pub enum DelisCmd {
     As(SyGuSCmd), // as a sygus command.
 
     #[display(fmt = "{}", _0)]
-    DeclareTermTypes(DeclareTermTypesCmd),
+    TermTypes(TermTypes),
 
     #[display(fmt = "{}", _0)]
-    DefineFinite(DefineFiniteCmd),
+    FiniteAspect(FiniteAspect),
 
     #[display(fmt = "{}", _0)]
-    DefineSemantics(DefineSemanticsCmd),
+    Semantics(Semantics),
 
     #[display(fmt = "{}", _0)]
     DeclareFunc(FuncSig),
 
     #[display(fmt = "{}", _0)]
     DefineModel(Model),
-
-    #[display(fmt = "{}", _0)]
-    ThSpec(ThSpecCmd),
 }
 
 #[derive(Debug, Display, Clone)]
@@ -244,17 +238,17 @@ pub fn parse(
                 let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
                 ls_file.push(DelisCmd::As(sygus_cmd));
             }
-            Rule::DelisCmdDeclareTermTypes => {
-                let decl = DeclareTermTypesCmd::parse(cmd.clone())?;
-                ls_file.push(DelisCmd::DeclareTermTypes(decl));
+            Rule::DeclareTermTypes => {
+                let decl = TermTypes::parse(cmd.clone())?;
+                ls_file.push(DelisCmd::TermTypes(decl));
             }
-            Rule::DelisCmdDefineFinite => {
-                let decl = DefineFiniteCmd::parse(cmd.clone())?;
-                ls_file.push(DelisCmd::DefineFinite(decl));
+            Rule::DefineFinite => {
+                let decl = FiniteAspect::parse(cmd.clone())?;
+                ls_file.push(DelisCmd::FiniteAspect(decl));
             }
-            Rule::DelisCmdDefineSemantics => {
-                let decl = DefineSemanticsCmd::parse(cmd.clone())?;
-                ls_file.push(DelisCmd::DefineSemantics(decl));
+            Rule::DefineSemantics => {
+                let decl = Semantics::parse(cmd.clone())?;
+                ls_file.push(DelisCmd::Semantics(decl));
             }
             Rule::FuncDecl => {
                 let sig = FuncSig::parse(cmd.clone()).unwrap();
@@ -281,19 +275,6 @@ pub fn parse(
                     }
                 }
                 ls_file.push(DelisCmd::DefineModel(model));
-            }
-            // ThSpecCmd's are parsed as sexpr.
-            Rule::ThSpecCmd => {
-                let mut inner = cmd.clone().into_inner();
-                let symbol = inner.next().unwrap().as_str().to_string();
-                let args = inner
-                    .map(|p| p.as_str().to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                ls_file.push(DelisCmd::ThSpec(crate::lang::model::ThSpecCmd {
-                    name: symbol,
-                    args,
-                }));
             }
             _ => {
                 Err(DelisParseError::InvalidSyntax(format!(
@@ -324,17 +305,17 @@ pub fn parse_command(
             let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
             Ok(DelisCmd::As(sygus_cmd))
         }
-        Rule::DelisCmdDeclareTermTypes => {
-            let decl = DeclareTermTypesCmd::parse(cmd)?;
-            Ok(DelisCmd::DeclareTermTypes(decl))
+        Rule::DeclareTermTypes => {
+            let decl = TermTypes::parse(cmd)?;
+            Ok(DelisCmd::TermTypes(decl))
         }
-        Rule::DelisCmdDefineFinite => {
-            let decl = DefineFiniteCmd::parse(cmd)?;
-            Ok(DelisCmd::DefineFinite(decl))
+        Rule::DefineFinite => {
+            let decl = FiniteAspect::parse(cmd)?;
+            Ok(DelisCmd::FiniteAspect(decl))
         }
-        Rule::DelisCmdDefineSemantics => {
-            let decl = DefineSemanticsCmd::parse(cmd)?;
-            Ok(DelisCmd::DefineSemantics(decl))
+        Rule::DefineSemantics => {
+            let decl = Semantics::parse(cmd)?;
+            Ok(DelisCmd::Semantics(decl))
         }
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd.clone()).unwrap();
@@ -361,18 +342,6 @@ pub fn parse_command(
                 }
             }
             Ok(DelisCmd::DefineModel(model))
-        }
-        Rule::ThSpecCmd => {
-            let mut inner = cmd.clone().into_inner();
-            let symbol = inner.next().unwrap().as_str().to_string();
-            let args = inner
-                .map(|p| p.as_str().to_string())
-                .collect::<Vec<_>>()
-                .join(" ");
-            Ok(DelisCmd::ThSpec(crate::lang::model::ThSpecCmd {
-                name: symbol,
-                args,
-            }))
         }
         _ => Err(DelisParseError::InvalidSyntax(format!(
             "Invalid command: {:?}",
@@ -414,7 +383,7 @@ mod tests {
         .expect("define-finite should parse");
 
         match cmd {
-            DelisCmd::DefineFinite(cmd) => {
+            DelisCmd::FiniteAspect(cmd) => {
                 assert_eq!(cmd.name, "ReAsp");
                 assert_eq!(cmd.body.len(), 3);
                 assert_eq!(cmd.body[0], "(record (model Model) (i Int) (j Int))");
@@ -434,7 +403,7 @@ mod tests {
         .expect("define-semantics should parse");
 
         match cmd {
-            DelisCmd::DefineSemantics(cmd) => {
+            DelisCmd::Semantics(cmd) => {
                 assert_eq!(cmd.body.len(), 2);
                 assert_eq!(cmd.body[0], "((Regex.Sem (r Regex) (asp ReAsp)))");
                 assert_eq!(cmd.body[1], "((match r ((a) true)))");

@@ -44,8 +44,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Grid2-10: Similar grid structures with different labelings and connectivity
@@ -81,8 +79,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Grid3-Grid10: More grid variations (abbreviated for space)
@@ -111,8 +107,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Grid4-Grid10 similar pattern (abbreviated)
@@ -140,8 +134,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Continue with Grid5-Grid10 following similar patterns but with different labelings
@@ -169,8 +161,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Grid6-Grid10 (similar structure, different labelings)
@@ -198,8 +188,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 (define-model Grid7
@@ -226,20 +214,18 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 
 
 (declare-term-types
- ((Bool 0))
+ ((Modal 0))
  (((a) (b) (c) (v)
-   (modal.not Bool)
-   (modal.and Bool Bool)
-   (modal.or Bool Bool)
-   (modal.box Bool)
-   (modal.dia Bool))))
+   (modal.not Modal)
+   (modal.and Modal Modal)
+   (modal.or Modal Modal)
+   (modal.box Modal)
+   (modal.dia Modal))))
 
 
 (define-finite ModalAsp
@@ -247,7 +233,7 @@
   :where true)
 
 (define-semantics
-  ((Modal.Sem (phi Bool) (asp ModalAsp)))
+  ((Modal.Sem (phi Modal) (asp ModalAsp)))
   ((match phi
      ((a) (a (node asp)))
      ((b) (b (node asp)))
@@ -265,10 +251,10 @@
         (and (R (node asp) next)
              (Modal.Sem x (ModalAsp (model asp) next))))))))
 
-(synth-fun phi () Bool
-    ((Start Bool))
+(synth-fun phi () Modal
+    ((Start Modal))
     (
-        (Start Bool
+        (Start Modal
             (
                 a b c
                 (modal.not Start)

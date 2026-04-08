@@ -2,15 +2,14 @@ DelisProg = { SOI ~ DelisCmd* ~ EOI }
 
 DelisCmd = {
   SyGuSCmd
-| DelisCmdDeclareTermTypes
-| DelisCmdDefineFinite
-| DelisCmdDefineSemantics
+| DeclareTermTypes
+| DefineFinite
+| DefineSemantics
 | FuncDecl
 | ModelDef
 | FuncDefRec
-| ThSpecCmd
 }
-DelisCmdDeclareTermTypes = {
+DeclareTermTypes = {
   "("
   ~ #DelisTkDeclareTermTypes="declare-term-types"
   ~ "(" ~ DelisTermSortDecl+ ~ ")"
@@ -20,21 +19,21 @@ DelisCmdDeclareTermTypes = {
 DelisTermSortDecl = { "(" ~ Symbol ~ Numeral ~ ")" }
 DelisTermTypeDecl = { "(" ~ DelisTermCtorDecl* ~ ")" }
 DelisTermCtorDecl = { "(" ~ Identifier ~ Sort* ~ ")" }
-DelisCmdDefineFinite = {
+DefineFinite = {
   "("
   ~ #DelisTkDefineFinite="define-finite"
   ~ Symbol
-  ~ ThSpecBody*
+  ~ DelisSExprBody*
   ~ ")"
 }
-DelisCmdDefineSemantics = {
+DefineSemantics = {
   "("
   ~ #DelisTkDefineSemantics="define-semantics"
-  ~ ThSpecBody*
+  ~ DelisSExprBody*
   ~ ")"
 }
 FuncDecl = { "(" ~ #DelisTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
-ModelDef = { "(" ~ #DelisTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp | ThSpecCmd)* ~ ")" }
+ModelDef = { "(" ~ #DelisTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp)* ~ ")" }
 FuncInterp = { "(" ~ #DelisTkInterpFun="interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
 SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
 MatchInterp = { "(" ~ #DelisTkMatch="match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
@@ -60,8 +59,6 @@ DelisReservedCmd = {
   "define-univ" | "interp-fun" | "define-model" | "declare-fun" | "declare-term-types" | "define-finite" | "define-semantics"
 }
 
-// Theory specific commands
-ThSpecCmd = { "(" ~ !(DelisReservedCmd|ReservedCommandName) ~ Symbol ~ ThSpecBody* ~ ")" }
-ThSpecBody = { ThSpecAtom | ThSpecList }
-ThSpecAtom = { (!("(" | ")") ~ ANY)+ }
-ThSpecList = { "(" ~ ThSpecBody* ~ ")" }
+DelisSExprBody = { DelisSExprAtom | DelisSExprList }
+DelisSExprAtom = { (!("(" | ")") ~ ANY)+ }
+DelisSExprList = { "(" ~ DelisSExprBody* ~ ")" }

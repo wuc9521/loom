@@ -1,0 +1,139 @@
+use lexpr::Value;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AspectKey {
+    pub relation: String,
+    pub model: String,
+    pub fields: Vec<(String, String)>,
+}
+
+impl AspectKey {
+    pub fn display_fields(&self) -> String {
+        self.fields
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BitMapping {
+    pub aspect: AspectKey,
+    pub bit: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Encoding {
+    pub finite_spaces: Vec<String>,
+    pub semantic_relations: Vec<String>,
+    pub bit_mappings: Vec<BitMapping>,
+    pub constraint_bits: Vec<ConstraintBit>,
+    pub needs_saturation: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstraintBit {
+    pub relation: String,
+    pub model: String,
+    pub expected: bool,
+    pub bit: usize,
+}
+
+impl Encoding {
+    pub fn to_comment_text(&self, target: &str) -> String {
+        let mut lines = Vec::new();
+        lines.push(format!("; {target} compilation summary"));
+        lines.push(format!(
+            "; finite-spaces: {}",
+            self.finite_spaces.join(", ")
+        ));
+        lines.push(format!(
+            "; semantic-relations: {}",
+            self.semantic_relations.join(", ")
+        ));
+        lines.push(format!("; needs-saturation: {}", self.needs_saturation));
+        lines.push(format!("; bv-len: {}", self.bit_mappings.len()));
+        for mapping in &self.bit_mappings {
+            lines.push(format!(
+                "; bit {} <-> {}({}; {})",
+                mapping.bit,
+                mapping.aspect.relation,
+                mapping.aspect.model,
+                mapping.aspect.display_fields()
+            ));
+        }
+        for constraint in &self.constraint_bits {
+            lines.push(format!(
+                "; constraint {}{} -> bit {} == {}",
+                if constraint.expected { "+" } else { "-" },
+                format!("{}:{}", constraint.relation, constraint.model),
+                constraint.bit,
+                if constraint.expected { 1 } else { 0 }
+            ));
+        }
+        if self.bit_mappings.is_empty() {
+            lines.push("; no semantic aspects were enumerated; add semantic constraints to create BV state bits".to_string());
+        }
+        lines.join("\n")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldDecl {
+    pub name: String,
+    pub domain: FieldDomain,
+}
+
+#[derive(Debug, Clone)]
+pub enum FieldDomain {
+    Sort(String),
+    Enum(Vec<String>),
+}
+
+impl FieldDomain {
+    pub fn as_sort(&self) -> Option<&str> {
+        match self {
+            FieldDomain::Sort(sort) => Some(sort),
+            FieldDomain::Enum(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FiniteSpace {
+    pub name: String,
+    pub fields: Vec<FieldDecl>,
+    pub where_expr: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AspectValue {
+    Model(String),
+    Int(usize),
+    Symbol(String),
+}
+
+impl AspectValue {
+    pub fn display(&self) -> String {
+        match self {
+            AspectValue::Model(value) | AspectValue::Symbol(value) => value.clone(),
+            AspectValue::Int(value) => value.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticConstraint {
+    pub relation: String,
+    pub model: String,
+    pub fields: Vec<(String, String)>,
+    pub expected: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemCase {
+    pub self_var: String,
+    pub vars: Vec<String>,
+    pub body: Value,
+}

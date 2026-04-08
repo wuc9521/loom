@@ -1,3 +1,4 @@
+pub mod eval;
 pub mod model;
 pub mod runtime;
 pub mod signature;

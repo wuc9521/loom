@@ -35,8 +35,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Chain2: Similar structure but different labeling
@@ -65,8 +63,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Chain3: Linear chain (no cycle)
@@ -98,8 +94,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 ;; Chain4-6: Similar structures with variations
@@ -130,8 +124,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 (define-model Chain5
@@ -161,8 +153,6 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 (define-model Chain6
@@ -194,19 +184,17 @@
         ((_) false)
     )))
     (interp-fun I ($0))
-    (set-init I)
-    (set-tran R)
 )
 
 
 (declare-term-types
- ((Bool 0))
+ ((Modal 0))
  (((a) (b) (c) (v)
-   (modal.not Bool)
-   (modal.and Bool Bool)
-   (modal.or Bool Bool)
-   (modal.box Bool)
-   (modal.dia Bool))))
+   (modal.not Modal)
+   (modal.and Modal Modal)
+   (modal.or Modal Modal)
+   (modal.box Modal)
+   (modal.dia Modal))))
 
 
 (define-finite ModalAsp
@@ -214,7 +202,7 @@
   :where true)
 
 (define-semantics
-  ((Modal.Sem (phi Bool) (asp ModalAsp)))
+  ((Modal.Sem (phi Modal) (asp ModalAsp)))
   ((match phi
      ((a) (a (node asp)))
      ((b) (b (node asp)))
@@ -232,10 +220,10 @@
         (and (R (node asp) next)
              (Modal.Sem x (ModalAsp (model asp) next))))))))
 
-(synth-fun phi1 () Bool
-    ((Start Bool))
+(synth-fun phi1 () Modal
+    ((Start Modal))
     (
-        (Start Bool
+        (Start Modal
             (
                 a b c
                 (modal.not Start)

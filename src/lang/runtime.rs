@@ -92,10 +92,10 @@ impl Session {
                     .insert(sig.name.clone(), Symbol::Func(sig.clone()));
                 return Some(cmd.clone());
             }
-            DelisCmd::DeclareTermTypes(_) => {
+            DelisCmd::TermTypes(_) => {
                 return Some(cmd.clone());
             }
-            DelisCmd::DefineFinite(_) | DelisCmd::DefineSemantics(_) => {
+            DelisCmd::FiniteAspect(_) | DelisCmd::Semantics(_) => {
                 return Some(cmd.clone());
             }
             DelisCmd::DefineModel(model) => {
@@ -106,9 +106,6 @@ impl Session {
                         .insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
                 }
                 return Some(cmd.clone());
-            }
-            DelisCmd::ThSpec(cmd) => {
-                return Some(DelisCmd::ThSpec(cmd.clone()));
             }
             _ => {
                 return Some(cmd.clone());

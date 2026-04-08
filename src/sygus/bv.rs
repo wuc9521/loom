@@ -1,4 +1,4 @@
-use crate::chc::ast::{HornDecl, HornProg, HornTerm};
+use crate::chc::ast::{HornDecl, HornProg, HornTerm, PredicatePolarity};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use sygus_parser::api::{BitVec, Bool, Cmd, Term};
 use sygus_parser::{DTConsDecl, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm};
@@ -9,12 +9,13 @@ enum BitPolarity {
     Zero,
 }
 
-fn pred_bit(pred: &str) -> (String, BitPolarity) {
-    if let Some(base) = pred.strip_prefix("$") {
-        (base.to_string(), BitPolarity::Zero)
-    } else {
-        (pred.to_string(), BitPolarity::One)
-    }
+fn pred_bit(program: &HornProg, pred: &str) -> Option<(String, BitPolarity)> {
+    let info = program.predicates.get(pred)?;
+    let polarity = match info.polarity {
+        PredicatePolarity::Positive => BitPolarity::One,
+        PredicatePolarity::Negative => BitPolarity::Zero,
+    };
+    Some((info.state.clone(), polarity))
 }
 
 fn state_bit(states: &[String], state: &str, term: SyGuSTerm) -> SyGuSTerm {
@@ -22,14 +23,19 @@ fn state_bit(states: &[String], state: &str, term: SyGuSTerm) -> SyGuSTerm {
     BitVec::extract(idx, idx, term)
 }
 
-fn bit_eq_polarity(states: &[String], pred: &str, term: SyGuSTerm) -> SyGuSTerm {
-    let (state, polarity) = pred_bit(pred);
+fn bit_eq_polarity(
+    program: &HornProg,
+    states: &[String],
+    pred: &str,
+    term: SyGuSTerm,
+) -> Option<SyGuSTerm> {
+    let (state, polarity) = pred_bit(program, pred)?;
     let bit = state_bit(states, &state, term);
     let value = match polarity {
         BitPolarity::One => 1,
         BitPolarity::Zero => 0,
     };
-    Bool::eq(bit, BitVec::const_(value, 1))
+    Some(Bool::eq(bit, BitVec::const_(value, 1)))
 }
 
 fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
@@ -109,6 +115,7 @@ fn is_true_term(term: &SyGuSTerm) -> bool {
 }
 
 fn constructor_state_disjuncts<'a>(
+    program: &HornProg,
     states: &[String],
     rules: impl Iterator<Item = &'a crate::chc::ast::HornRule>,
     cons: &DTConsDecl,
@@ -116,7 +123,9 @@ fn constructor_state_disjuncts<'a>(
 ) -> Vec<SyGuSTerm> {
     let mut disjuncts = Vec::new();
     for rule in rules {
-        let (head_state, head_polarity) = pred_bit(&rule.head.pred);
+        let Some((head_state, head_polarity)) = pred_bit(program, &rule.head.pred) else {
+            continue;
+        };
         if head_state != state || head_polarity != BitPolarity::One {
             continue;
         }
@@ -142,11 +151,16 @@ fn constructor_state_disjuncts<'a>(
                 supported = false;
                 break;
             };
-            conjuncts.push(bit_eq_polarity(
+            let Some(conjunct) = bit_eq_polarity(
+                program,
                 states,
                 &atom.pred,
                 Term::var(&format!("arg{}", child_idx)),
-            ));
+            ) else {
+                supported = false;
+                break;
+            };
+            conjuncts.push(conjunct);
         }
         if supported {
             disjuncts.push(match conjuncts.len() {
@@ -164,12 +178,11 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
 
     let mut states = BTreeSet::new();
     let mut constructors = Vec::new();
+    for info in program.predicates.values() {
+        states.insert(info.state.clone());
+    }
     for decl in &program.decls {
         match decl {
-            HornDecl::DeclareRel(name, args) if args.len() == 1 && name != "Goal" => {
-                let (state, _) = pred_bit(name);
-                states.insert(state);
-            }
             HornDecl::DeclareDatatypes(_, decls) => {
                 constructors.extend(decls.iter().flatten().cloned());
             }
@@ -190,7 +203,9 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
         .collect::<BTreeSet<_>>();
     let mut rules_by_constructor: BTreeMap<String, Vec<_>> = BTreeMap::new();
     for rule in &program.rules {
-        let (head_state, head_polarity) = pred_bit(&rule.head.pred);
+        let Some((head_state, head_polarity)) = pred_bit(program, &rule.head.pred) else {
+            continue;
+        };
         if head_polarity != BitPolarity::One || !state_index.contains_key(&head_state) {
             continue;
         }
@@ -221,6 +236,7 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
         let mut bits = Vec::new();
         for state in &states {
             let mut disjuncts = constructor_state_disjuncts(
+                program,
                 &states,
                 rules_by_constructor.get(&cons.name).into_iter().flatten(),
                 cons,
@@ -256,7 +272,9 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
     for rule in &program.rules {
         if rule.head.pred == "Goal" {
             for atom in &rule.body_atoms {
-                let (state, polarity) = pred_bit(&atom.pred);
+                let Some((state, polarity)) = pred_bit(program, &atom.pred) else {
+                    continue;
+                };
                 if !state_index.contains_key(&state) {
                     continue;
                 }
