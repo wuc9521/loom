@@ -84,7 +84,7 @@
 
 (declare-term-types
  ((RegLan 0))
- (((a) (b) (X) (re.a) (re.b)
+ (((re.a) (re.b)
    (re.++ RegLan RegLan)
    (re.union RegLan RegLan)
    (re.inter RegLan RegLan)
@@ -99,9 +99,6 @@
 (define-semantics
   ((RegLan.Sem (r RegLan) (asp ReAsp)))
   ((match r
-    ;  ((a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
-    ;  ((b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
-    ;  ((X) (and (= (j asp) (+ (i asp) 1)) (X (i asp))))
      ((re.a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
      ((re.b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
      ((re.++ x y)
