@@ -190,3 +190,136 @@ fn detects_two_way_navigation() {
 
     assert!(summary.needs_saturation);
 }
+
+#[test]
+fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0))
+  (interp-fun a (match (((_) true)))))
+(declare-term-types ((Regex 0)) (((a))))
+(define-finite BadAsp
+  (record (model Model) (color Color)))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp BadAsp)))
+  ((match r ((a) true))))
+(synth-fun r () Regex)
+(constraint (Regex.Sem r (BadAsp w red)))
+(check-synth)
+"#,
+    );
+
+    let err = compile(&problem).expect_err("unknown finite field sort should be rejected");
+
+    assert!(err.contains("unsupported finite field sort Color"));
+}
+
+#[test]
+fn rejects_multiple_finite_aspect_spaces() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(define-model w (define-univ Pos ($0)))
+(declare-term-types ((Regex 0)) (((a))))
+(define-finite FirstAsp (record (model Model)))
+(define-finite SecondAsp (record (model Model)))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp FirstAsp)))
+  ((match r ((a) true))))
+(synth-fun r () Regex)
+(check-synth)
+"#,
+    );
+
+    let err = compile(&problem).expect_err("multiple aspect spaces are not supported");
+
+    assert!(err.contains("exactly one define-finite"));
+}
+
+#[test]
+fn rejects_multiple_define_semantics_declarations() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(define-model w (define-univ Pos ($0)))
+(declare-term-types ((Regex 0)) (((a))))
+(define-finite ReAsp (record (model Model)))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((match r ((a) true))))
+(define-semantics
+  ((Regex.Other (r Regex) (asp ReAsp)))
+  ((match r ((a) true))))
+(synth-fun r () Regex)
+(check-synth)
+"#,
+    );
+
+    let err = compile(&problem).expect_err("multiple define-semantics should be rejected");
+
+    assert!(err.contains("exactly one define-semantics"));
+}
+
+#[test]
+fn rejects_wrong_aspect_constructor_in_semantic_body() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0))
+  (interp-fun a (match (((_) true)))))
+(declare-term-types ((Regex 0)) (((a))))
+(define-finite ReAsp
+  (record (model Model) (i Int) (j Int))
+  :where (and (<= 0 i) (<= i j) (<= j (len model))))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((match r
+     ((a) (Regex.Sem r (WrongAsp (model asp) (i asp) (j asp)))))))
+(synth-fun r () Regex)
+(constraint (Regex.Sem r (ReAsp w 0 (len w))))
+(check-synth)
+"#,
+    );
+
+    let err = to_sygus(&problem).expect_err("wrong aspect constructor should be rejected");
+
+    assert!(err.contains("aspect constructor must be ReAsp"));
+}
+
+#[test]
+fn rejects_wrong_aspect_arity_in_semantic_body() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0))
+  (interp-fun a (match (((_) true)))))
+(declare-term-types ((Regex 0)) (((a))))
+(define-finite ReAsp
+  (record (model Model) (i Int) (j Int))
+  :where (and (<= 0 i) (<= i j) (<= j (len model))))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((match r
+     ((a) (Regex.Sem r (ReAsp (model asp) (i asp)))))))
+(synth-fun r () Regex)
+(constraint (Regex.Sem r (ReAsp w 0 (len w))))
+(check-synth)
+"#,
+    );
+
+    let err = to_sygus(&problem).expect_err("wrong aspect arity should be rejected");
+
+    assert!(err.contains("provides 1 scalar fields, expected 2"));
+}

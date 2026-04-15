@@ -42,8 +42,20 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     if finite_cmds.is_empty() {
         return Err("compilation requires at least one define-finite".to_string());
     }
+    if finite_cmds.len() != 1 {
+        return Err(format!(
+            "compilation currently supports exactly one define-finite aspect space, got {}",
+            finite_cmds.len()
+        ));
+    }
     if semantics.is_empty() {
         return Err("compilation requires at least one define-semantics".to_string());
+    }
+    if semantics.len() != 1 {
+        return Err(format!(
+            "compilation currently supports exactly one define-semantics declaration, got {}",
+            semantics.len()
+        ));
     }
 
     let semantic_relations = semantics
@@ -239,7 +251,7 @@ fn parse_aspect_term(
     let model = models_by_name
         .get(&model_name)
         .ok_or_else(|| format!("constraint references unknown model {model_name}"))?;
-    let (domain, _id2sym, _sort) = get_universe_domain_and_map(model);
+    let (domain, _id2sym, universe_sort) = get_universe_domain_and_map(model);
     let model_len = domain.len();
 
     let mut assignment = Vec::new();
@@ -256,11 +268,22 @@ fn parse_aspect_term(
                 }
                 AspectValue::Int(value as usize)
             }
-            FieldDomain::Sort(sort) => AspectValue::Symbol(if arg.to_string() == *sort {
-                sort.clone()
-            } else {
-                arg.to_string()
-            }),
+            FieldDomain::Sort(sort) if sort == &universe_sort => {
+                let value = arg.to_string();
+                if !domain.contains(&value) {
+                    return Err(format!(
+                        "aspect field {} expected an element of universe sort {} but got {value}",
+                        field.name, universe_sort
+                    ));
+                }
+                AspectValue::Symbol(value)
+            }
+            FieldDomain::Sort(sort) => {
+                return Err(format!(
+                    "unsupported finite field sort {sort} for field {}; use Model, Int, the model universe sort {universe_sort}, or (enum ...)",
+                    field.name
+                ));
+            }
             FieldDomain::Enum(values) => {
                 let value = arg.to_string();
                 if !values.contains(&value) {
@@ -390,7 +413,12 @@ fn enumerate_aspects(
                     .cloned()
                     .map(AspectValue::Symbol)
                     .collect(),
-                FieldDomain::Sort(sort) => vec![AspectValue::Symbol(sort.clone())],
+                FieldDomain::Sort(sort) => {
+                    return Err(format!(
+                        "unsupported finite field sort {sort} for field {}; use Model, Int, the model universe sort {universe_sort}, or (enum ...)",
+                        field.name
+                    ));
+                }
                 FieldDomain::Enum(values) => {
                     values.iter().cloned().map(AspectValue::Symbol).collect()
                 }

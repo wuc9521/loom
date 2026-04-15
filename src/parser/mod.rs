@@ -5,6 +5,8 @@ pub struct DelisParser;
 
 pub mod ast;
 pub mod error;
+pub mod modules;
 
 pub use ast::*;
 pub use error::*;
+pub use modules::*;

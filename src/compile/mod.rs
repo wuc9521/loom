@@ -75,6 +75,10 @@ fn compile_chc(
     };
     let cases = parse_semantic_cases(file)?;
     let sig = TermSignature::from_declare_term_types(declare_term_types)?;
+    let aspect_constructor = summary
+        .finite_spaces
+        .first()
+        .ok_or_else(|| "CHC compilation requires a finite aspect space".to_string())?;
     let mut program = HornProg::default();
     program.decls.push(HornDecl::SetLogic("HORN".to_string()));
     program.decls.push(HornDecl::DeclareDatatypes(
@@ -156,6 +160,7 @@ fn compile_chc(
                 file,
                 &case.body,
                 &mapping.aspect,
+                aspect_constructor,
                 &predicate_names,
                 &summary.semantic_relations,
                 &child_vars,

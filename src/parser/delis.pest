@@ -7,7 +7,6 @@ DelisCmd = {
 | DefineSemantics
 | FuncDecl
 | ModelDef
-| FuncDefRec
 }
 DeclareTermTypes = {
   "("
@@ -23,15 +22,26 @@ DefineFinite = {
   "("
   ~ #DelisTkDefineFinite="define-finite"
   ~ Symbol
-  ~ DelisSExprBody*
+  ~ FiniteRecord
+  ~ WhereClause?
   ~ ")"
 }
+FiniteRecord = { "(" ~ #DelisTkRecord="record" ~ FiniteField* ~ ")" }
+FiniteField = { "(" ~ Symbol ~ FiniteDomain ~ ")" }
+FiniteDomain = { "(" ~ #DelisTkEnum="enum" ~ Symbol+ ~ ")" | Sort }
+WhereClause = { ":where" ~ DelisSExprBody }
 DefineSemantics = {
   "("
   ~ #DelisTkDefineSemantics="define-semantics"
-  ~ DelisSExprBody*
+  ~ SemanticsHeader
+  ~ SemanticsBody
   ~ ")"
 }
+SemanticsHeader = { "(" ~ "(" ~ Symbol ~ SortedVar+ ~ ")" ~ ")" }
+SemanticsBody = { "(" ~ SemanticsMatch ~ ")" }
+SemanticsMatch = { "(" ~ #DelisTkMatchSemantics="match" ~ Symbol ~ SemanticsMatchCase+ ~ ")" }
+SemanticsMatchCase = { "(" ~ SemanticsPattern ~ DelisSExprBody ~ ")" }
+SemanticsPattern = { "(" ~ Symbol* ~ ")" }
 FuncDecl = { "(" ~ #DelisTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" } 
 ModelDef = { "(" ~ #DelisTkDefModel="define-model" ~ Symbol ~ (UnivDef | FuncInterp)* ~ ")" }
 FuncInterp = { "(" ~ #DelisTkInterpFun="interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
@@ -40,7 +50,6 @@ MatchInterp = { "(" ~ #DelisTkMatch="match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
 MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
 UnivDef = { "(" ~ #DelisTkDefUniv="define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
 UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
-FuncDefRec = {"(" ~ #DelisTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ SyGuSTerm ~ ")" }
 
 // Define values that can be interpreted
 InterpedValue = {

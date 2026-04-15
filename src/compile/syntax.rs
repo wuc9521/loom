@@ -24,29 +24,13 @@ pub fn term_sort() -> Sort {
     Sort::Simple(Identifier::Symbol("Term".to_string()))
 }
 
-pub fn sanitize_symbol(symbol: &str) -> String {
-    symbol
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 pub fn state_name(aspect: &AspectKey) -> String {
-    let mut parts = vec![
-        sanitize_symbol(&aspect.relation),
-        sanitize_symbol(&aspect.model),
-    ];
+    let mut parts = vec![aspect.relation.as_str(), aspect.model.as_str()];
     for (field, value) in &aspect.fields {
-        parts.push(sanitize_symbol(field));
-        parts.push(sanitize_symbol(value));
+        parts.push(field.as_str());
+        parts.push(value.as_str());
     }
-    parts.join("_")
+    parts.join(".")
 }
 
 #[derive(Debug, Clone)]
@@ -95,7 +79,7 @@ impl TermSignature {
                     .iter()
                     .enumerate()
                     .map(|(idx, _sort)| SortedVar {
-                        name: format!("{}_arg{idx}", sanitize_symbol(&cons.name)),
+                        name: format!("{}_arg{idx}", &cons.name),
                         sort: term_sort(),
                     })
                     .collect(),
@@ -218,10 +202,20 @@ pub fn parse_semantic_cases(problem: &DelisProg) -> Result<HashMap<String, SemCa
     let semantics = problem
         .cmds
         .iter()
-        .find_map(|cmd| match cmd {
+        .filter_map(|cmd| match cmd {
             DelisCmd::Semantics(cmd) => Some(cmd),
             _ => None,
         })
+        .collect::<Vec<_>>();
+    if semantics.len() != 1 {
+        return Err(format!(
+            "CHC compilation currently supports exactly one define-semantics declaration, got {}",
+            semantics.len()
+        ));
+    }
+    let semantics = semantics
+        .into_iter()
+        .next()
         .ok_or_else(|| "SyGuS compilation requires define-semantics".to_string())?;
     let body_src = semantics
         .body

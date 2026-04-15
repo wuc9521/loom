@@ -161,7 +161,32 @@ impl FiniteAspect {
             })?
             .as_str()
             .to_string();
-        let body = inner.map(|p| p.as_str().to_string()).collect();
+        let mut body = Vec::new();
+        for item in inner {
+            match item.as_rule() {
+                Rule::FiniteRecord => body.push(item.as_str().to_string()),
+                Rule::WhereClause => {
+                    let expr = item
+                        .into_inner()
+                        .next()
+                        .ok_or_else(|| {
+                            DelisParseError::InvalidSyntax(
+                                "define-finite :where expects an expression".to_string(),
+                            )
+                        })?
+                        .as_str()
+                        .to_string();
+                    body.push(":where".to_string());
+                    body.push(expr);
+                }
+                _ => {
+                    return Err(DelisParseError::InvalidSyntax(format!(
+                        "Unexpected define-finite body item: {:?}",
+                        item.as_str()
+                    )));
+                }
+            }
+        }
         Ok(Self { name, body })
     }
 }
@@ -397,5 +422,29 @@ mod tests {
             }
             other => panic!("expected define-semantics, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn rejects_unsupported_define_fun_rec() {
+        let err = parse_command("(define-fun-rec f ((x Int)) Int x)", None)
+            .expect_err("define-fun-rec is not a supported Delis command");
+
+        assert!(err.to_string().contains("Pest parser error"));
+    }
+
+    #[test]
+    fn rejects_malformed_define_semantics_shape() {
+        let err = parse_command("(define-semantics ((Regex.Sem (r Regex))))", None)
+            .expect_err("define-semantics must include a match body");
+
+        assert!(err.to_string().contains("Pest parser error"));
+    }
+
+    #[test]
+    fn rejects_malformed_define_finite_shape() {
+        let err = parse_command("(define-finite ReAsp (not-a-record (i Int)))", None)
+            .expect_err("define-finite must include a record body");
+
+        assert!(err.to_string().contains("Pest parser error"));
     }
 }

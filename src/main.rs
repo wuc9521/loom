@@ -3,10 +3,9 @@ use delis::{
     backends::smt2,
     compile,
     lang::runtime::Session,
-    parser::ast::{parse_commands, DelisCmd, DelisProg},
+    parser::{load_module_file, parse_commands, DelisCmd, DelisProg},
 };
 use std::{
-    fs,
     io::{self, Read, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -268,7 +267,7 @@ fn main() -> Result<(), io::Error> {
             )
         })
         .filter_level(if args.verbose {
-            log::LevelFilter::Info
+            log::LevelFilter::Debug
         } else {
             log::LevelFilter::Warn
         })
@@ -288,7 +287,7 @@ fn main() -> Result<(), io::Error> {
                 "Either provide a file path or use --in to read from stdin",
             )
         })?;
-        fs::read_to_string(file_path)?
+        load_module_file(file_path)?
     };
     let mut session = Session::new();
     let results = parse_commands(&input, Some(&mut session.runtime));

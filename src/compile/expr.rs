@@ -48,6 +48,7 @@ pub fn eval_constructor_case(
     file: &DelisProg,
     expr: &Value,
     current_aspect: &AspectKey,
+    aspect_constructor: &str,
     predicate_names: &HashMap<AspectKey, (String, String)>,
     semantic_relations: &[String],
     child_vars: &std::collections::BTreeSet<String>,
@@ -62,6 +63,7 @@ pub fn eval_constructor_case(
         file,
         expr,
         current_aspect,
+        aspect_constructor,
         predicate_names,
         &scalar_env,
         semantic_relations,
@@ -77,6 +79,7 @@ fn eval_semantic_dnf(
     problem: &DelisProg,
     expr: &Value,
     current_aspect: &AspectKey,
+    aspect_constructor: &str,
     predicate_names: &HashMap<AspectKey, (String, String)>,
     scalar_env: &[(String, AspectValue)],
     semantic_relations: &[String],
@@ -108,6 +111,7 @@ fn eval_semantic_dnf(
                     problem,
                     arg,
                     current_aspect,
+                    aspect_constructor,
                     predicate_names,
                     scalar_env,
                     semantic_relations,
@@ -126,6 +130,7 @@ fn eval_semantic_dnf(
                     problem,
                     arg,
                     current_aspect,
+                    aspect_constructor,
                     predicate_names,
                     scalar_env,
                     semantic_relations,
@@ -141,6 +146,7 @@ fn eval_semantic_dnf(
             problem,
             items[1],
             current_aspect,
+            aspect_constructor,
             predicate_names,
             scalar_env,
             semantic_relations,
@@ -161,6 +167,7 @@ fn eval_semantic_dnf(
                         problem,
                         items[2],
                         current_aspect,
+                        aspect_constructor,
                         predicate_names,
                         &next_env,
                         semantic_relations,
@@ -185,6 +192,7 @@ fn eval_semantic_dnf(
                         problem,
                         items[2],
                         current_aspect,
+                        aspect_constructor,
                         predicate_names,
                         &next_env,
                         semantic_relations,
@@ -206,12 +214,13 @@ fn eval_semantic_dnf(
             },
         ),
         _ if semantic_relations.iter().any(|rel| rel == op) => {
-            if items.len() < 3 {
+            if items.len() != 3 {
                 return Err(format!(
-                    "semantic call {expr} expects term and aspect arguments"
+                    "semantic call {expr} expects exactly term and aspect arguments"
                 ));
             }
-            let aspect = semantic_call_aspect(items[2], op, current_aspect, scalar_env)?;
+            let aspect =
+                semantic_call_aspect(items[2], op, current_aspect, aspect_constructor, scalar_env)?;
             let (positive, negative) = predicate_names
                 .get(&aspect)
                 .ok_or_else(|| {
@@ -533,6 +542,7 @@ fn semantic_call_aspect(
     aspect_expr: &Value,
     relation: &str,
     current_aspect: &AspectKey,
+    aspect_constructor: &str,
     scalar_env: &[(String, AspectValue)],
 ) -> Result<AspectKey, String> {
     if aspect_expr.as_symbol() == Some("asp") {
@@ -545,6 +555,15 @@ fn semantic_call_aspect(
     })?;
     if items.is_empty() {
         return Err(format!("empty aspect expression {aspect_expr}"));
+    }
+    let constructor = items
+        .first()
+        .and_then(|item| item.as_symbol())
+        .ok_or_else(|| format!("aspect expression head must be a symbol: {aspect_expr}"))?;
+    if constructor != aspect_constructor {
+        return Err(format!(
+            "semantic call aspect constructor must be {aspect_constructor}, got {constructor}"
+        ));
     }
     let mut model = None;
     let mut fields = Vec::new();
@@ -563,6 +582,12 @@ fn semantic_call_aspect(
         };
         fields.push((field_name.clone(), value.display()));
         field_idx += 1;
+    }
+    if field_idx != current_aspect.fields.len() {
+        return Err(format!(
+            "aspect expression {aspect_expr} provides {field_idx} scalar fields, expected {}",
+            current_aspect.fields.len()
+        ));
     }
     Ok(AspectKey {
         relation: relation.to_string(),
