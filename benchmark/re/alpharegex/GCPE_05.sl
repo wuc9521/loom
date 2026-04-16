@@ -3,7 +3,7 @@
 
 ; GCPE_05: length is at least 3 and the third symbol is 0.
 ; '_' marks a position matched only by re.any.
-; '?' marks a position matched by both re.0 and re.1.
+; '?' marks a position matched by both char.0 and char.1.
 
 (define-model p__0
   (define-univ Pos ($0 $1 $2))

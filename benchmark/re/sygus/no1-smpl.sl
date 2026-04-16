@@ -1,21 +1,11 @@
 ; https://smt-lib.org/theories-UnicodeStrings.shtml
 (set-logic SLIA) 
 
-(define-fun w1 () String 
-    "ab"
-)
-(define-fun w2 () String
-    "abab"
-)
-(define-fun w3 () String
-    "ababab"
-) 
-(define-fun w4 () String
-    "baa"
-)
-(define-fun w5 () String
-    "aab"
-)
+(define-fun w1 () String "ab")
+(define-fun w2 () String "abab")
+(define-fun w3 () String "ababab") 
+(define-fun w4 () String "baa")
+(define-fun w5 () String "aab")
 
 (synth-fun regex () RegLan
     ((Start RegLan))

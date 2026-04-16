@@ -1,6 +1,7 @@
 use crate::backends::smt2::ast::{
     HornAtom, HornDecl, HornProg, HornRule, HornTerm, PredicatePolarity,
 };
+use crate::backends::sygus::optim::{self, BitwiseExpr};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use sygus_parser::{
     BitVec, Bool, Cmd, DTConsDecl, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term,
@@ -54,6 +55,10 @@ fn state_bit(states: &[String], state: &str, term: SyGuSTerm) -> SyGuSTerm {
     BitVec::extract(idx, idx, term)
 }
 
+fn arg_name(idx: usize) -> String {
+    format!("arg{idx}")
+}
+
 fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
     let bitstring = bits
         .iter()
@@ -73,16 +78,14 @@ enum BoolExpr {
     Dynamic(SyGuSTerm),
 }
 
-fn compact_bitvec(bits: Vec<BitExpr>) -> (SyGuSTerm, bool) {
+fn compact_bitvec(bits: Vec<BitExpr>) -> SyGuSTerm {
     let mut chunks = Vec::new();
     let mut const_bits = Vec::new();
-    let mut has_dynamic = false;
 
     for bit in bits {
         match bit {
             BitExpr::Const(value) => const_bits.push(value),
             BitExpr::Dynamic(term) => {
-                has_dynamic = true;
                 if !const_bits.is_empty() {
                     chunks.push(bitvec_literal_from_lsb(&const_bits));
                     const_bits.clear();
@@ -102,7 +105,7 @@ fn compact_bitvec(bits: Vec<BitExpr>) -> (SyGuSTerm, bool) {
     for chunk in chunks.iter().skip(1) {
         body = BitVec::concat(chunk.clone(), body);
     }
-    (body, has_dynamic)
+    body
 }
 
 fn bool_literal(term: &SyGuSTerm) -> Option<bool> {
@@ -115,7 +118,7 @@ fn bool_literal(term: &SyGuSTerm) -> Option<bool> {
 fn bool_to_bit(cond: SyGuSTerm) -> BitExpr {
     match bool_literal(&cond) {
         Some(value) => BitExpr::Const(value),
-        None => BitExpr::Dynamic(Term::app("bool->bv1", vec![cond])),
+        None => BitExpr::Dynamic(Term::ite(cond, BitVec::const_(1, 1), BitVec::const_(0, 1))),
     }
 }
 
@@ -149,18 +152,6 @@ fn or_exprs(disjuncts: Vec<BoolExpr>) -> BoolExpr {
         1 => BoolExpr::Dynamic(dynamic.remove(0)),
         _ => BoolExpr::Dynamic(Bool::or(dynamic)),
     }
-}
-
-fn bool_to_bv1_cmd() -> SyGuSCmd {
-    Cmd::define_fun("bool->bv1")
-        .arg("b", Sort::bool())
-        .ret(Sort::bitvec(1))
-        .body(Term::ite(
-            Term::var("b"),
-            BitVec::const_(1, 1),
-            BitVec::const_(0, 1),
-        ))
-        .build()
 }
 
 fn classify_atom(
@@ -292,30 +283,17 @@ fn visit_obligation(
     Ok(())
 }
 
-fn helper_call(cons_name: &str, state: &str, arity: usize) -> SyGuSTerm {
-    let name = format!("{}.{}", cons_name, state);
-    if arity == 0 {
-        return Term::var(&name);
-    }
-    let args = (0..arity)
-        .map(|idx| Term::var(&format!("arg{idx}")))
-        .collect::<Vec<_>>();
-    Term::app(&name, args)
-}
-
 fn clause_expr(
-    cons_name: &str,
-    states: &[String],
     clause: &Clause,
-    arity: usize,
     const_helpers: &HashMap<Obligation, bool>,
-) -> BoolExpr {
+    helper_exprs: &HashMap<Obligation, SyGuSTerm>,
+) -> Result<BoolExpr, String> {
     let mut conjuncts = Vec::new();
     for child in &clause.child_refs {
         let bit = BitVec::extract(
             child.state_idx,
             child.state_idx,
-            Term::var(&format!("arg{}", child.child_idx)),
+            Term::var(&arg_name(child.child_idx)),
         );
         let value = match child.polarity {
             BitPolarity::One => 1,
@@ -326,32 +304,36 @@ fn clause_expr(
     for dep in &clause.self_refs {
         if let Some(value) = const_helpers.get(dep) {
             conjuncts.push(BoolExpr::Const(*value));
+        } else if let Some(term) = helper_exprs.get(dep) {
+            conjuncts.push(BoolExpr::Dynamic(term.clone()));
         } else {
-            conjuncts.push(BoolExpr::Dynamic(helper_call(
-                cons_name,
-                &states[dep.state_idx],
-                arity,
-            )));
+            return Err(format!(
+                "unresolved constructor obligation dependency for state {}",
+                dep.state_idx
+            ));
         }
     }
-    and_exprs(conjuncts)
+    Ok(and_exprs(conjuncts))
 }
 
-fn obligation_expr_with_constants(
-    cons_name: &str,
-    states: &[String],
+fn obligation_expr_with_resolved_deps(
     clauses: &[Clause],
-    arity: usize,
     const_helpers: &HashMap<Obligation, bool>,
-) -> BoolExpr {
+    helper_exprs: &HashMap<Obligation, SyGuSTerm>,
+) -> Result<BoolExpr, String> {
     let disjuncts = clauses
         .iter()
-        .map(|clause| clause_expr(cons_name, states, clause, arity, const_helpers))
-        .collect::<Vec<_>>();
-    or_exprs(disjuncts)
+        .map(|clause| clause_expr(clause, const_helpers, helper_exprs))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(or_exprs(disjuncts))
 }
 
-pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef) -> Vec<SyGuSCmd> {
+pub fn compile_one_way(
+    program: &HornProg,
+    synth_name: &str,
+    grammar: GrammarDef,
+    optimize: bool,
+) -> Vec<SyGuSCmd> {
     let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
 
     let mut states = BTreeSet::new();
@@ -401,9 +383,7 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
         }
     }
 
-    let mut helper_cmds = Vec::new();
     let mut constructor_cmds = Vec::new();
-    let mut uses_bool_to_bv1 = false;
 
     for cons in &constructors {
         let rules = rules_by_constructor
@@ -424,29 +404,25 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
         }
 
         let mut const_helpers = HashMap::new();
+        let mut helper_exprs = HashMap::new();
         for obligation in order {
-            let helper_name = format!("{}.{}", cons.name, states[obligation.state_idx]);
-            let mut builder = Cmd::define_fun(&helper_name);
-            for idx in 0..cons.args.len() {
-                builder = builder.arg(&format!("arg{idx}"), bv_sort.clone());
-            }
             let clauses = plan
                 .obligations
                 .get(&obligation)
                 .cloned()
                 .unwrap_or_default();
-            match obligation_expr_with_constants(
-                &cons.name,
-                &states,
-                &clauses,
-                cons.args.len(),
-                &const_helpers,
-            ) {
+            match obligation_expr_with_resolved_deps(&clauses, &const_helpers, &helper_exprs)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "failed to inline constructor obligation for {}: {err}",
+                        cons.name
+                    )
+                }) {
                 BoolExpr::Const(value) => {
                     const_helpers.insert(obligation, value);
                 }
                 BoolExpr::Dynamic(body) => {
-                    helper_cmds.push(builder.ret(Sort::bool()).body(body).build());
+                    helper_exprs.insert(obligation, body);
                 }
             }
         }
@@ -472,29 +448,51 @@ pub fn compile_one_way(program: &HornProg, synth_name: &str, grammar: GrammarDef
         }
 
         let mut builder = Cmd::define_fun(&cons.name);
+        let arg_names = (0..cons.args.len()).map(arg_name).collect::<Vec<_>>();
         for idx in 0..cons.args.len() {
-            builder = builder.arg(&format!("arg{idx}"), bv_sort.clone());
+            builder = builder.arg(&arg_names[idx], bv_sort.clone());
         }
-        let bits = states
+        let bool_bits = states
             .iter()
             .enumerate()
             .map(|(state_idx, state)| {
                 if let Some(value) = const_helpers.get(&Obligation { state_idx }) {
-                    BitExpr::Const(*value)
+                    BoolExpr::Const(*value)
+                } else if let Some(expr) = helper_exprs.get(&Obligation { state_idx }) {
+                    BoolExpr::Dynamic(expr.clone())
                 } else {
-                    bool_to_bit(helper_call(&cons.name, state, cons.args.len()))
+                    panic!(
+                        "missing inlined constructor obligation for {} state {}",
+                        cons.name, state
+                    );
                 }
             })
             .collect::<Vec<_>>();
-        let (body, has_dynamic_bits) = compact_bitvec(bits);
-        uses_bool_to_bv1 |= has_dynamic_bits;
+        let lift_bits = bool_bits
+            .iter()
+            .map(|expr| match expr {
+                BoolExpr::Const(value) => BitwiseExpr::Const(*value),
+                BoolExpr::Dynamic(term) => BitwiseExpr::Expr(term.clone()),
+            })
+            .collect::<Vec<_>>();
+        let body = (if optimize {
+            optim::try_lift_native_bv(&lift_bits, &arg_names)
+        } else {
+            None
+        })
+        .unwrap_or_else(|| {
+            let bits = bool_bits
+                .into_iter()
+                .map(|expr| match expr {
+                    BoolExpr::Const(value) => BitExpr::Const(value),
+                    BoolExpr::Dynamic(term) => bool_to_bit(term),
+                })
+                .collect::<Vec<_>>();
+            compact_bitvec(bits)
+        });
         constructor_cmds.push(builder.ret(bv_sort.clone()).body(body).build());
     }
 
-    if uses_bool_to_bv1 {
-        cmds.push(bool_to_bv1_cmd());
-    }
-    cmds.extend(helper_cmds);
     cmds.extend(constructor_cmds);
 
     cmds.push(

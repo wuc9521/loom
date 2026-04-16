@@ -3,7 +3,7 @@
 
 ; GCPE_04: word begins with 0 and ends with 1.
 ; '_' marks a position matched only by re.any.
-; '?' marks a position matched by both re.0 and re.1.
+; '?' marks a position matched by both char.0 and char.1.
 
 (define-model p01
   (define-univ Pos ($0 $1))

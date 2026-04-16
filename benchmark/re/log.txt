@@ -1,0 +1,13 @@
+(base) *[feature/semgus-backend][~/Codes/Rust/delis]$ time ./target/release/delis ./benchmark/delis/re/alpharegex/GCPE_17.sl
+ç^C
+./target/release/delis ./benchmark/delis/re/alpharegex/GCPE_17.sl  0.36s user 0.25s system 0% cpu 4:07.83 total
+(base) *[feature/semgus-backend][~/Codes/Rust/delis]$ time ./target/release/delis ./benchmark/delis/re/alpharegex/GCPE_21.sl
+(
+(define-fun r () RegLan (re.* (re.++ re.any (re.union re.0 (re.++ re.any (re.++ re.any re.any))))))
+)
+./target/release/delis ./benchmark/delis/re/alpharegex/GCPE_21.sl  45.66s user 0.45s system 151% cpu 30.351 total
+(base) *[feature/semgus-backend][~/Codes/Rust/delis]$ time ./target/release/delis ./benchmark/delis/re/alpharegex/GCPE_25.sl
+(
+(define-fun r () RegLan (re.union re.0 (re.* (re.++ (re.union re.1 (re.++ re.any re.0)) re.any))))
+)
+./target/release/delis ./benchmark/delis/re/alpharegex/GCPE_25.sl  262.19s user 64.20s system 158% cpu 3:25.70 total

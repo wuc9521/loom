@@ -3,7 +3,7 @@
 
 ; GCPE_19: does not contain 100 as a substring.
 ; _ is matched only by re.any.
-; ? is matched by both re.0 and re.1.
+; ? is matched by both char.0 and char.1.
 
 (define-model p_
   (define-univ Pos ($0))

@@ -3,7 +3,7 @@
 
 ; GCPE_03: word contains 0101
 ; '_' marks a position matched only by re.any.
-; '?' marks a position matched by both re.0 and re.1.
+; '?' marks a position matched by both char.0 and char.1.
 
 (define-model p0101
   (define-univ Pos ($0 $1 $2 $3))

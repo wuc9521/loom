@@ -24,7 +24,7 @@ struct StatePredicates {
     negative: String,
 }
 
-pub fn to_sygus(problem: &DelisProg) -> Result<Vec<SyGuSCmd>, String> {
+pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
     let summary = compile(problem)?;
     if summary.bit_mappings.is_empty() {
         return Err("SyGuS compilation requires at least one semantic aspect bit".to_string());
@@ -44,7 +44,12 @@ pub fn to_sygus(problem: &DelisProg) -> Result<Vec<SyGuSCmd>, String> {
     if summary.needs_saturation {
         program.rules = saturate(&program.rules);
     }
-    crate::backends::sygus::bv::compile_one_way(&program, &synth_name(problem)?, grammar)
+    crate::backends::sygus::bv::compile_one_way(
+        &program,
+        &synth_name(problem)?,
+        grammar,
+        optimize,
+    )
         .into_iter()
         .map(Ok)
         .collect()

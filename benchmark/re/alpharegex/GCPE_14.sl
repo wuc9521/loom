@@ -3,7 +3,7 @@
 
 ; GCPE_14: starts with 0 at odd length, or starts with 1 at even length.
 ; _ is matched only by re.any.
-; ? is matched by both re.0 and re.1.
+; ? is matched by both char.0 and char.1.
 
 (define-model p0
   (define-univ Pos ($0))

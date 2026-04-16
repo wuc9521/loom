@@ -29,7 +29,7 @@ fn solve_general(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error
             );
         }
         if args.dump_sygus {
-            let cmds = compile::to_sygus(delis_file)
+            let cmds = compile::to_sygus(delis_file, args.optimize)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             println!(
                 "{}",
@@ -58,9 +58,11 @@ fn cmds_to_text(cmds: &[impl ToString]) -> String {
         .join("\n")
 }
 
-fn spawn_solver(command: &str, args: &[&str], input: &str) -> Result<Child, io::Error> {
-    let mut child = Command::new(command)
-        .args(args)
+type Solver = (String, Vec<String>);
+
+fn spawn_solver(solver: &Solver, input: &str) -> Result<Child, io::Error> {
+    let mut child = Command::new(&solver.0)
+        .args(&solver.1)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -76,20 +78,20 @@ fn solver_stdout(child: Child) -> Result<String, io::Error> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn z3_result(stdout: &str) -> Option<&str> {
+fn chc_result(stdout: &str) -> Option<&str> {
     stdout
         .lines()
         .map(str::trim)
         .find(|line| *line == "sat" || *line == "unsat")
 }
 
-fn run_z3(chc_text: &str) -> Result<Option<String>, io::Error> {
-    let child = spawn_solver("z3", &["-in"], chc_text)?;
-    Ok(z3_result(&solver_stdout(child)?).map(str::to_string))
+fn run_chc_solver(solver: &Solver, chc_text: &str) -> Result<Option<String>, io::Error> {
+    let child = spawn_solver(solver, chc_text)?;
+    Ok(chc_result(&solver_stdout(child)?).map(str::to_string))
 }
 
-fn run_cvc5(sygus_text: &str) -> Result<String, io::Error> {
-    let child = spawn_solver("cvc5", &["--lang=sygus2"], sygus_text)?;
+fn run_sygus_solver(solver: &Solver, sygus_text: &str) -> Result<String, io::Error> {
+    let child = spawn_solver(solver, sygus_text)?;
     Ok(solver_stdout(child)?.trim().to_string())
 }
 
@@ -108,7 +110,7 @@ fn synth_signature(
         .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "missing synth-fun command"))
 }
 
-fn parse_cvc5_define_fun(output: &str) -> Result<Option<SyGuSCmd>, io::Error> {
+fn parse_sygus_define_fun(output: &str) -> Result<Option<SyGuSCmd>, io::Error> {
     let trimmed = output.trim();
     if trimmed.is_empty()
         || trimmed.eq_ignore_ascii_case("unknown")
@@ -130,8 +132,8 @@ fn parse_cvc5_define_fun(output: &str) -> Result<Option<SyGuSCmd>, io::Error> {
         .find(|cmd| matches!(cmd, SyGuSCmd::DefineFun(..))))
 }
 
-fn decode_cvc5_output(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
-    let Some(cmd) = parse_cvc5_define_fun(output)? else {
+fn decode_sygus_output(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
+    let Some(cmd) = parse_sygus_define_fun(output)? else {
         return Ok(output.trim().to_string());
     };
     let (synth_name, synth_args, synth_sort) = synth_signature(delis_file)?;
@@ -152,10 +154,13 @@ fn solve_with_backends(delis_file: &DelisProg, args: &CLI) -> Result<(), io::Err
         compile::to_chc_ast(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));
     let sygus_text = cmds_to_text(
-        &compile::to_sygus(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+        &compile::to_sygus(delis_file, args.optimize)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
     );
+    let chc_solver = args.chc_solver_config();
+    let sygus_solver = args.sygus_solver_config();
     if args.linear {
-        match run_z3(&chc_text)?.as_deref() {
+        match run_chc_solver(&chc_solver, &chc_text)?.as_deref() {
             Some("unsat") => {
                 println!("unsat");
                 return Ok(());
@@ -163,40 +168,54 @@ fn solve_with_backends(delis_file: &DelisProg, args: &CLI) -> Result<(), io::Err
             Some("sat") | None => {
                 println!(
                     "{}",
-                    decode_cvc5_output(delis_file, &run_cvc5(&sygus_text)?)?
+                    decode_sygus_output(
+                        delis_file,
+                        &run_sygus_solver(&sygus_solver, &sygus_text)?
+                    )?
                 );
                 return Ok(());
             }
             _ => unreachable!(),
         }
     }
-    solve_parallel(delis_file, &chc_text, &sygus_text)
+    solve_parallel(
+        delis_file,
+        &chc_text,
+        &sygus_text,
+        &chc_solver,
+        &sygus_solver,
+    )
 }
 
 fn solve_parallel(
     delis_file: &DelisProg,
     chc_text: &str,
     sygus_text: &str,
+    chc_solver: &Solver,
+    sygus_solver: &Solver,
 ) -> Result<(), io::Error> {
-    let mut z3 = spawn_solver("z3", &["-in"], chc_text)?;
-    let mut cvc5 = spawn_solver("cvc5", &["--lang=sygus2"], sygus_text)?;
+    let mut chc = spawn_solver(chc_solver, chc_text)?;
+    let mut sygus = spawn_solver(sygus_solver, sygus_text)?;
     loop {
-        if z3.try_wait()?.is_some() {
-            let z3_stdout = solver_stdout(z3)?;
-            if z3_result(&z3_stdout) == Some("unsat") {
-                let _ = cvc5.kill();
-                let _ = cvc5.wait();
+        if chc.try_wait()?.is_some() {
+            let chc_stdout = solver_stdout(chc)?;
+            if chc_result(&chc_stdout) == Some("unsat") {
+                let _ = sygus.kill();
+                let _ = sygus.wait();
                 println!("unsat");
                 return Ok(());
             }
-            println!("{}", decode_cvc5_output(delis_file, &solver_stdout(cvc5)?)?);
+            println!(
+                "{}",
+                decode_sygus_output(delis_file, &solver_stdout(sygus)?)?
+            );
             return Ok(());
         }
-        if cvc5.try_wait()?.is_some() {
-            let cvc5_stdout = solver_stdout(cvc5)?;
-            let _ = z3.kill();
-            let _ = z3.wait();
-            println!("{}", decode_cvc5_output(delis_file, &cvc5_stdout)?);
+        if sygus.try_wait()?.is_some() {
+            let sygus_stdout = solver_stdout(sygus)?;
+            let _ = chc.kill();
+            let _ = chc.wait();
+            println!("{}", decode_sygus_output(delis_file, &sygus_stdout)?);
             return Ok(());
         }
         thread::sleep(Duration::from_millis(10));
@@ -223,6 +242,18 @@ pub struct CLI {
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
+    /// Enable SyGuS optimization passes (use -O=false or --optimize=false to disable)
+    #[arg(
+        short = 'O',
+        long = "optimize",
+        default_value_t = true,
+        default_missing_value = "true",
+        num_args = 0..=1,
+        require_equals = true,
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    optimize: bool,
+
     /// Translate to SyGuS BV and print to stdout
     #[arg(short, long = "dump-sygus", default_value_t = false)]
     dump_sygus: bool,
@@ -238,6 +269,57 @@ pub struct CLI {
     /// Run CHC first and SyGuS second instead of running both solvers in parallel
     #[arg(long = "linear", default_value_t = false)]
     linear: bool,
+
+    /// CHC solver command. Defaults to `z3`.
+    #[arg(long = "chc-solver", value_name = "COMMAND")]
+    chc_solver: Option<String>,
+
+    /// CHC solver argument. May be repeated. Defaults to `-in` unless solver command or arguments are overridden.
+    #[arg(
+        long = "chc-solver-arg",
+        value_name = "ARG",
+        action = clap::ArgAction::Append,
+        allow_hyphen_values = true
+    )]
+    chc_solver_args: Vec<String>,
+
+    /// SyGuS solver command. Defaults to `cvc5`.
+    #[arg(long = "sygus-solver", value_name = "COMMAND")]
+    sygus_solver: Option<String>,
+
+    /// SyGuS solver argument. May be repeated. Defaults to `--lang=sygus2` unless solver command or arguments are overridden.
+    #[arg(
+        long = "sygus-solver-arg",
+        value_name = "ARG",
+        action = clap::ArgAction::Append,
+        allow_hyphen_values = true
+    )]
+    sygus_solver_args: Vec<String>,
+}
+
+impl CLI {
+    fn chc_solver_config(&self) -> Solver {
+        let command = self.chc_solver.clone().unwrap_or_else(|| "z3".to_string());
+        let args = if self.chc_solver.is_none() && self.chc_solver_args.is_empty() {
+            vec!["-in".to_string()]
+        } else {
+            self.chc_solver_args.clone()
+        };
+        (command, args)
+    }
+
+    fn sygus_solver_config(&self) -> Solver {
+        let command = self
+            .sygus_solver
+            .clone()
+            .unwrap_or_else(|| "cvc5".to_string());
+        let args = if self.sygus_solver.is_none() && self.sygus_solver_args.is_empty() {
+            vec!["--lang=sygus2".to_string()]
+        } else {
+            self.sygus_solver_args.clone()
+        };
+        (command, args)
+    }
 }
 
 /// Run the language parsing application

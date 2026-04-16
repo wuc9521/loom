@@ -2,6 +2,8 @@
 
 ; GCPE_06: length is a multiple of 3.
 ; '_' marks a position matched only by re.any.
+; '?' marks a position matched by both re.0 and re.1.
+
 ; '?' marks a position matched by all character classes in the source benchmark.
 
 (declare-sort Pos 0)
@@ -12,15 +14,19 @@
    (re.? RegLan)
    (re.++ RegLan RegLan)
    (re.union RegLan RegLan)
-   (re.* RegLan))))
+    (re.* RegLan))))
 
-(define-finite ReAsp
-  (record (model Model) (i Int) (j Int))
+(define-finite ReAsp                                             
+  (record (model Model) (i Int) (j Int))                         
   :where (and (<= 0 i) (<= i j) (<= j (len model))))
 
 (define-semantics
   ((RegLan.Sem (r RegLan) (asp ReAsp)))
   ((match r
+     ((char.0)
+      (and (= (j asp) (+ (i asp) 1)) (zero (i asp))))
+     ((char.1)
+      (and (= (j asp) (+ (i asp) 1)) (one (i asp))))
      ((re.any)
       (= (j asp) (+ (i asp) 1)))
      ((re.? x)
@@ -38,25 +44,15 @@
             (and (RegLan.Sem x (ReAsp (model asp) (i asp) k))
                  (RegLan.Sem r (ReAsp (model asp) k (j asp))))))))))
 
-(define-model p___
-  (define-univ Pos ($0 $1 $2))
-)
+(define-model p___ (define-univ Pos ($0 $1 $2)))
 
-(define-model p______
-  (define-univ Pos ($0 $1 $2 $3 $4 $5))
-)
+(define-model p______ (define-univ Pos ($0 $1 $2 $3 $4 $5)))
 
-(define-model n?
-  (define-univ Pos ($0))
-)
+(define-model n? (define-univ Pos ($0)))
 
-(define-model n??
-  (define-univ Pos ($0 $1))
-)
+(define-model n?? (define-univ Pos ($0 $1)) )
 
-(define-model n????
-  (define-univ Pos ($0 $1 $2 $3))
-)
+(define-model n???? (define-univ Pos ($0 $1 $2 $3)) )
 
 (synth-fun r () RegLan)
 

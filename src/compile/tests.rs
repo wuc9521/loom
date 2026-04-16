@@ -158,9 +158,18 @@ fn semantic_predicates_use_aspect_projection() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("projected semantic predicates should compile");
+    let sygus = to_sygus(&problem, false).expect("projected semantic predicates should compile");
 
     assert!(!sygus.is_empty());
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !output.contains(".Regex.Sem."),
+        "SyGuS output should inline semantic aspect helper functions"
+    );
 }
 
 #[test]
@@ -290,7 +299,7 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 "#,
     );
 
-    let err = to_sygus(&problem).expect_err("wrong aspect constructor should be rejected");
+    let err = to_sygus(&problem, false).expect_err("wrong aspect constructor should be rejected");
 
     assert!(err.contains("aspect constructor must be ReAsp"));
 }
@@ -319,7 +328,7 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 "#,
     );
 
-    let err = to_sygus(&problem).expect_err("wrong aspect arity should be rejected");
+    let err = to_sygus(&problem, false).expect_err("wrong aspect arity should be rejected");
 
     assert!(err.contains("provides 1 scalar fields, expected 2"));
 }

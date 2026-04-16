@@ -5,7 +5,7 @@
 
 (declare-term-types
  ((RegLan 0))
- (((re.0) (re.1)
+ (((char.0) (char.1)
    (re.any)
    (re.? RegLan)
    (re.++ RegLan RegLan)
@@ -19,9 +19,9 @@
 (define-semantics
   ((RegLan.Sem (r RegLan) (asp ReAsp)))
   ((match r
-     ((re.0)
+     ((char.0)
       (and (= (j asp) (+ (i asp) 1)) (zero (i asp))))
-     ((re.1)
+     ((char.1)
       (and (= (j asp) (+ (i asp) 1)) (one (i asp))))
      ((re.any)
       (= (j asp) (+ (i asp) 1)))

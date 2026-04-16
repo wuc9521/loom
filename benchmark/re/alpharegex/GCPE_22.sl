@@ -3,7 +3,7 @@
 
 ; GCPE_22: upstream label says len > 2 and not ending with 10; constraints include length-2 positives exactly.
 ; _ is matched only by re.any.
-; ? is matched by both re.0 and re.1.
+; ? is matched by both char.0 and char.1.
 
 (define-model p00
   (define-univ Pos ($0 $1))
