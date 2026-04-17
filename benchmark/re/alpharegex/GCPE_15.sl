@@ -31,11 +31,11 @@
 
 (synth-fun r () RegLan)
 
-(constraint (RegLan.Sem r (ReAsp p__ 0 (len p__))))
-(constraint (RegLan.Sem r (ReAsp p___ 0 (len p___))))
-(constraint (RegLan.Sem r (ReAsp p____ 0 (len p____))))
+(constraint (RegLan.Sem r (ReAsp p__ 0 (len (Pos p__)))))
+(constraint (RegLan.Sem r (ReAsp p___ 0 (len (Pos p___)))))
+(constraint (RegLan.Sem r (ReAsp p____ 0 (len (Pos p____)))))
 
-(constraint (not (RegLan.Sem r (ReAsp n0 0 (len n0)))))
-(constraint (not (RegLan.Sem r (ReAsp n1 0 (len n1)))))
+(constraint (not (RegLan.Sem r (ReAsp n0 0 (len (Pos n0))))))
+(constraint (not (RegLan.Sem r (ReAsp n1 0 (len (Pos n1))))))
 
 (check-synth)

@@ -44,15 +44,15 @@
   ((Ctl.Sem (phi CTL) (asp CtlAsp)))
   ((match phi
      ((p) (p (state asp)))
-     ((ctl.not x) (dual (Ctl.Sem x asp)))
+     ((ctl.not x) (not (Ctl.Sem x asp)))
      ((ctl.and x y) (and (Ctl.Sem x asp) (Ctl.Sem y asp)))
      ((ctl.or x y) (or (Ctl.Sem x asp) (Ctl.Sem y asp)))
      ((ctl.ex x)
-      (exists ((next (domain (model asp))))
+      (exists ((next (domain (U (model asp)))))
         (and (R (state asp) next)
              (Ctl.Sem x (CtlAsp (model asp) next)))))
      ((ctl.ax x)
-      (forall ((next (domain (model asp))))
+      (forall ((next (domain (U (model asp)))))
         (or (not (R (state asp) next))
             (Ctl.Sem x (CtlAsp (model asp) next))))))))
 

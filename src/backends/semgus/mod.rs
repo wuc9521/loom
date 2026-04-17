@@ -607,7 +607,7 @@ fn translate_bool(
                     relations,
                 }
             }),
-        "not" | "dual" if items.len() == 2 => {
+        "not" if items.len() == 2 => {
             let inner = translate_bool(
                 items[1],
                 header,
@@ -733,11 +733,24 @@ fn translate_quantifier(
     let domain = list_items(binding[1])
         .ok_or_else(|| format!("quantifier domain must be a list: {}", binding[1]))?;
     match domain.first().and_then(|value| value.as_symbol()) {
-        Some("domain") => {
+        Some("domain") if domain.len() == 2 => {
+            let domain_expr = list_items(domain[1]).ok_or_else(|| {
+                format!(
+                    "SemGuS quantifier domain must have shape (domain (Sort model)): {}",
+                    binding[1]
+                )
+            })?;
+            let [sort_expr, _model_expr] = domain_expr.as_slice() else {
+                return Err(format!(
+                    "SemGuS quantifier domain must have shape (domain (Sort model)): {}",
+                    binding[1]
+                ));
+            };
+            let sort = symbol(sort_expr)?;
             let terms = model
                 .univ_defs
-                .first()
-                .into_iter()
+                .iter()
+                .filter(|univ| univ.sort.to_string() == sort)
                 .flat_map(|univ| univ.elems.iter())
                 .map(|elem| {
                     let mut env = env.clone();
@@ -908,11 +921,23 @@ fn value_expr(
                 .collect::<Vec<_>>()
                 .join(" ")
         ),
-        "len" => model
-            .univ_defs
-            .first()
-            .map(|univ| univ.elems.len().to_string())
-            .unwrap_or_else(|| "0".to_string()),
+        "len" if items.len() == 2 => {
+            let Some(domain_items) = list_items(items[1]) else {
+                return expr.to_string();
+            };
+            let [sort_expr, _model_expr] = domain_items.as_slice() else {
+                return expr.to_string();
+            };
+            let Ok(sort) = symbol(sort_expr) else {
+                return expr.to_string();
+            };
+            model
+                .univ_defs
+                .iter()
+                .find(|univ| univ.sort.to_string() == sort)
+                .map(|univ| univ.elems.len().to_string())
+                .unwrap_or_else(|| "0".to_string())
+        }
         _ if func_sigs.contains_key(op) => {
             if func_sigs
                 .get(op)

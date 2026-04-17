@@ -88,7 +88,7 @@
     (i Int)
     (j Int)
     (mode (enum base reset.S find.S reset.T find.T)))
-  :where (and (<= 0 i) (<= i j) (<= j (len model))))
+  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
 
 (define-semantics
   ((CFG.Sem (n CFG) (asp CFG.Asp)))
@@ -158,8 +158,8 @@
       false))))
 
 (synth-fun g () CFG)
-(constraint (CFG.Sem g (CFG.Asp w1 0 (len w1) reset.S)))
-(constraint (CFG.Sem g (CFG.Asp w2 0 (len w2) reset.S)))
-(constraint (not (CFG.Sem g (CFG.Asp w5 0 (len w5) reset.S))))
+(constraint (CFG.Sem g (CFG.Asp w1 0 (len (Pos w1)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp w2 0 (len (Pos w2)) reset.S)))
+(constraint (not (CFG.Sem g (CFG.Asp w5 0 (len (Pos w5)) reset.S))))
 
 (check-synth)

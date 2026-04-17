@@ -14,7 +14,7 @@
 
 (define-finite ReAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len model))))
+  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
 
 (define-semantics
   ((RegLan.Sem (r RegLan) (asp ReAsp)))

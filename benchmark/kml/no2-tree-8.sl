@@ -254,7 +254,7 @@
     (interp-fun a (match (
         (($3) true)
         (($4) true)
-        (($_) false)
+        ((_) false)
     )))
     (interp-fun b (match (
         (($0) true)
@@ -275,7 +275,7 @@
 
 (declare-term-types
  ((Modal 0))
- (((a) (b) (c) (v)
+ (((a) (b) (c)
    (modal.not Modal)
    (modal.and Modal Modal)
    (modal.or Modal Modal)
@@ -293,16 +293,15 @@
      ((a) (a (node asp)))
      ((b) (b (node asp)))
      ((c) (c (node asp)))
-     ((v) (v (node asp)))
-     ((modal.not x) (dual (Modal.Sem x asp)))
+     ((modal.not x) (not (Modal.Sem x asp)))
      ((modal.and x y) (and (Modal.Sem x asp) (Modal.Sem y asp)))
      ((modal.or x y) (or (Modal.Sem x asp) (Modal.Sem y asp)))
      ((modal.box x)
-      (forall ((next (domain (model asp))))
+      (forall ((next (domain (U (model asp)))))
         (or (not (R (node asp) next))
             (Modal.Sem x (ModalAsp (model asp) next)))))
      ((modal.dia x)
-      (exists ((next (domain (model asp))))
+      (exists ((next (domain (U (model asp)))))
         (and (R (node asp) next)
              (Modal.Sem x (ModalAsp (model asp) next))))))))
 

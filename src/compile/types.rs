@@ -4,14 +4,14 @@ use lexpr::Value;
 pub struct AspectKey {
     pub relation: String,
     pub model: String,
-    pub fields: Vec<(String, String)>,
+    pub fields: Vec<(String, AspectValue)>,
 }
 
 impl AspectKey {
     pub fn display_fields(&self) -> String {
         self.fields
             .iter()
-            .map(|(name, value)| format!("{name}={value}"))
+            .map(|(name, value)| format!("{name}={}", value.display()))
             .collect::<Vec<_>>()
             .join(",")
     }
@@ -107,10 +107,11 @@ pub struct FiniteSpace {
     pub where_expr: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AspectValue {
     Model(String),
     Int(usize),
+    Univ { sort: String, name: String },
     Symbol(String),
 }
 
@@ -118,6 +119,7 @@ impl AspectValue {
     pub fn display(&self) -> String {
         match self {
             AspectValue::Model(value) | AspectValue::Symbol(value) => value.clone(),
+            AspectValue::Univ { name, .. } => name.clone(),
             AspectValue::Int(value) => value.to_string(),
         }
     }
@@ -127,7 +129,7 @@ impl AspectValue {
 pub struct SemanticConstraint {
     pub relation: String,
     pub model: String,
-    pub fields: Vec<(String, String)>,
+    pub fields: Vec<(String, AspectValue)>,
     pub expected: bool,
 }
 

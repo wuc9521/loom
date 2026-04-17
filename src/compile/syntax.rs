@@ -25,10 +25,10 @@ pub fn term_sort() -> Sort {
 }
 
 pub fn state_name(aspect: &AspectKey) -> String {
-    let mut parts = vec![aspect.relation.as_str(), aspect.model.as_str()];
+    let mut parts = vec![aspect.relation.clone(), aspect.model.clone()];
     for (field, value) in &aspect.fields {
-        parts.push(field.as_str());
-        parts.push(value.as_str());
+        parts.push(field.clone());
+        parts.push(value.display());
     }
     parts.join(".")
 }

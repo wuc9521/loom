@@ -7,40 +7,39 @@ use crate::{
         syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue},
     },
-    lang::eval::{eval, get_universe_domain_and_map},
+    lang::eval::{eval_symbols, get_domain_for_sort},
     parser::{DelisCmd, DelisProg},
 };
 use itertools::Itertools;
 use lexpr::Value;
 use std::collections::HashMap;
-use sygus_parser::SyGuSTerm;
+use sygus_parser::{Literal, Sort, SyGuSTerm};
 
-fn model_len(file: &DelisProg, model_name: &str) -> Result<usize, String> {
-    let model = file
-        .cmds
-        .iter()
-        .find_map(|cmd| match cmd {
-            DelisCmd::DefineModel(model) if model.name == model_name => Some(model),
-            _ => None,
-        })
-        .ok_or_else(|| format!("unknown model {model_name}"))?;
-    let (domain, _id2sym, _sort) = get_universe_domain_and_map(model);
-    Ok(domain.len())
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ModelValue {
+    Bool(bool),
+    Int(isize),
+    Univ { sort: String, name: String },
 }
 
-fn aspect_scalar_env(aspect: &AspectKey, model_len: usize) -> Vec<(String, AspectValue)> {
+impl ModelValue {
+    fn sort_name(&self) -> &'static str {
+        match self {
+            ModelValue::Bool(_) => "Bool",
+            ModelValue::Int(_) => "Int",
+            ModelValue::Univ { .. } => "universe",
+        }
+    }
+}
+
+fn aspect_scalar_env(aspect: &AspectKey) -> Vec<(String, AspectValue)> {
     let mut env = vec![(
         "model".to_string(),
         AspectValue::Model(aspect.model.clone()),
     )];
     for (name, value) in &aspect.fields {
-        let value = value
-            .parse::<usize>()
-            .map(AspectValue::Int)
-            .unwrap_or_else(|_| AspectValue::Symbol(value.clone()));
-        env.push((name.clone(), value));
+        env.push((name.clone(), value.clone()));
     }
-    env.push(("__len".to_string(), AspectValue::Int(model_len)));
     env
 }
 
@@ -57,8 +56,7 @@ pub fn eval_constructor_case(
     current_term: &HornTerm,
     self_var: &str,
 ) -> Result<PredDnf, String> {
-    let model_len = model_len(file, &current_aspect.model)?;
-    let scalar_env = aspect_scalar_env(current_aspect, model_len);
+    let scalar_env = aspect_scalar_env(current_aspect);
     eval_semantic_dnf(
         file,
         expr,
@@ -142,7 +140,7 @@ fn eval_semantic_dnf(
                 )?,
             ))
         }),
-        "not" | "dual" if items.len() == 2 => Ok(negate_dnf(&eval_semantic_dnf(
+        "not" if items.len() == 2 => Ok(negate_dnf(&eval_semantic_dnf(
             problem,
             items[1],
             current_aspect,
@@ -219,8 +217,14 @@ fn eval_semantic_dnf(
                     "semantic call {expr} expects exactly term and aspect arguments"
                 ));
             }
-            let aspect =
-                semantic_call_aspect(items[2], op, current_aspect, aspect_constructor, scalar_env)?;
+            let aspect = semantic_call_aspect(
+                problem,
+                items[2],
+                op,
+                current_aspect,
+                aspect_constructor,
+                scalar_env,
+            )?;
             let (positive, negative) = predicate_names
                 .get(&aspect)
                 .ok_or_else(|| {
@@ -247,17 +251,15 @@ fn eval_semantic_dnf(
                 .collect())
         }
         _ => {
-            let args = items[1..]
-                .iter()
-                .map(|arg| value_expr(arg, scalar_env, current_model_len(scalar_env)?))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(
-                if eval_model_bool_values(problem, &current_aspect.model, op, &args)? {
-                    dnf_true()
-                } else {
-                    dnf_false()
-                },
-            )
+            let models = models_by_name(problem);
+            match eval_model_term(problem, &current_aspect.model, expr, scalar_env, &models)? {
+                ModelValue::Bool(true) => Ok(dnf_true()),
+                ModelValue::Bool(false) => Ok(dnf_false()),
+                other => Err(format!(
+                    "semantic expression {expr} must evaluate to Bool, got {}",
+                    other.sort_name()
+                )),
+            }
         }
     }
 }
@@ -307,13 +309,6 @@ fn semantic_call_terms(
     }
 }
 
-fn current_model_len(env: &[(String, AspectValue)]) -> Result<usize, String> {
-    match lookup(env, "__len") {
-        Some(AspectValue::Int(value)) => Ok(*value),
-        _ => Err("internal error: missing __len in semantic environment".to_string()),
-    }
-}
-
 fn model_by_name<'a>(
     problem: &'a DelisProg,
     model_name: &str,
@@ -328,15 +323,15 @@ fn model_by_name<'a>(
         .ok_or_else(|| format!("unknown model {model_name}"))
 }
 
-fn aspect_value_to_index(value: &AspectValue, id2sym: &[String]) -> Result<usize, String> {
-    match value {
-        AspectValue::Int(idx) => Ok(*idx),
-        AspectValue::Symbol(sym) => id2sym
-            .iter()
-            .position(|candidate| candidate == sym)
-            .ok_or_else(|| format!("unknown universe element {sym}")),
-        AspectValue::Model(model) => Err(format!("expected universe element, got model {model}")),
-    }
+fn models_by_name(problem: &DelisProg) -> HashMap<String, &crate::lang::model::Model> {
+    problem
+        .cmds
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DelisCmd::DefineModel(model) => Some((model.name.clone(), model)),
+            _ => None,
+        })
+        .collect()
 }
 
 fn aspect_projection(
@@ -363,12 +358,8 @@ fn aspect_projection(
         .unwrap_or_else(|| AspectValue::Symbol(field.to_string()))))
 }
 
-fn model_name_expr(
-    expr: &Value,
-    env: &[(String, AspectValue)],
-    model_len: usize,
-) -> Result<String, String> {
-    match value_expr(expr, env, model_len)? {
+fn model_name_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<String, String> {
+    match raw_value_expr(expr, env)? {
         AspectValue::Model(model) => Ok(model),
         AspectValue::Symbol(symbol)
             if env.iter().any(|(_, value)| {
@@ -381,11 +372,33 @@ fn model_name_expr(
     }
 }
 
-fn value_expr(
+fn sorted_model_domain_expr(
     expr: &Value,
     env: &[(String, AspectValue)],
-    model_len: usize,
-) -> Result<AspectValue, String> {
+    models: &HashMap<String, &crate::lang::model::Model>,
+) -> Result<(String, String, Vec<String>), String> {
+    let items = expr.to_ref_vec().ok_or_else(|| {
+        format!("expected sorted model domain expression (Sort model), got {expr}")
+    })?;
+    let [sort_expr, model_expr] = items.as_slice() else {
+        return Err(format!(
+            "sorted model domain expression must have shape (Sort model), got {expr}"
+        ));
+    };
+    let sort = sort_expr
+        .as_symbol()
+        .ok_or_else(|| format!("domain sort must be a symbol: {sort_expr}"))?
+        .to_string();
+    let model_name = model_name_expr(model_expr, env)?;
+    let model = models
+        .get(&model_name)
+        .ok_or_else(|| format!("unknown model {model_name}"))?;
+    let domain = get_domain_for_sort(model, &sort)
+        .ok_or_else(|| format!("model {model_name} has no universe for sort {sort}"))?;
+    Ok((sort, model_name, domain))
+}
+
+fn raw_value_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<AspectValue, String> {
     if let Some(value) = expr.as_i64() {
         return if value >= 0 {
             Ok(AspectValue::Int(value as usize))
@@ -403,7 +416,18 @@ fn value_expr(
     if let Some(value) = aspect_projection(expr, env) {
         return value;
     }
-    eval_int(expr, env, model_len).and_then(|value| {
+    Err(format!("expected finite value expression, got {expr}"))
+}
+
+fn value_expr(
+    expr: &Value,
+    env: &[(String, AspectValue)],
+    models: &HashMap<String, &crate::lang::model::Model>,
+) -> Result<AspectValue, String> {
+    if let Ok(value) = raw_value_expr(expr, env) {
+        return Ok(value);
+    }
+    eval_int(expr, env, models).and_then(|value| {
         if value >= 0 {
             Ok(AspectValue::Int(value as usize))
         } else {
@@ -414,53 +438,253 @@ fn value_expr(
     })
 }
 
-fn eval_model_bool_values(
-    problem: &DelisProg,
-    model_name: &str,
-    prop: &str,
-    args: &[AspectValue],
-) -> Result<bool, String> {
-    let model = model_by_name(problem, model_name)?;
-    let (_domain, id2sym, _sort) = get_universe_domain_and_map(model);
-    let resolved_args = args
-        .iter()
-        .map(|arg| resolve_model_value(problem, model_name, arg))
-        .collect::<Result<Vec<_>, _>>()?;
-    let indices = resolved_args
-        .iter()
-        .map(|arg| aspect_value_to_index(arg, &id2sym))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(matches!(
-        eval(prop, &indices, &model.func_interps, &id2sym),
-        Some(crate::lang::model::InterpedValue::Literal(lit))
-            if lit.to_string() == "true"
-    ))
+fn func_sig<'a>(problem: &'a DelisProg, name: &str) -> Option<&'a crate::lang::signature::FuncSig> {
+    problem.cmds.iter().find_map(|cmd| match cmd {
+        DelisCmd::DeclareFunc(sig) if sig.name == name => Some(sig),
+        _ => None,
+    })
 }
 
-fn resolve_model_value(
+fn eval_model_term(
+    problem: &DelisProg,
+    model_name: &str,
+    expr: &Value,
+    env: &[(String, AspectValue)],
+    models: &HashMap<String, &crate::lang::model::Model>,
+) -> Result<ModelValue, String> {
+    if let Some(value) = expr.as_i64() {
+        return Ok(ModelValue::Int(value as isize));
+    }
+    if let Some(symbol) = expr.as_symbol() {
+        return eval_model_symbol(problem, model_name, symbol, env);
+    }
+    if let Some(value) = aspect_projection(expr, env) {
+        return aspect_value_to_model_value(problem, model_name, &value?);
+    }
+    if let Ok(value) = eval_int(expr, env, models) {
+        return Ok(ModelValue::Int(value));
+    }
+    let items = expr
+        .to_ref_vec()
+        .ok_or_else(|| format!("expected model term expression, got {expr}"))?;
+    let func = items
+        .first()
+        .and_then(|item| item.as_symbol())
+        .ok_or_else(|| format!("model term expression must start with a symbol: {expr}"))?;
+    eval_model_application(problem, model_name, func, &items[1..], env, models)
+}
+
+fn eval_model_symbol(
+    problem: &DelisProg,
+    model_name: &str,
+    symbol: &str,
+    env: &[(String, AspectValue)],
+) -> Result<ModelValue, String> {
+    match symbol {
+        "true" => return Ok(ModelValue::Bool(true)),
+        "false" => return Ok(ModelValue::Bool(false)),
+        _ => {}
+    }
+    if let Some(value) = lookup(env, symbol) {
+        return aspect_value_to_model_value(problem, model_name, value);
+    }
+    if let Some(sig) = func_sig(problem, symbol) {
+        if sig.arg_sorts.is_empty() {
+            return eval_model_application(problem, model_name, symbol, &[], env, &models_by_name(problem));
+        }
+    }
+    let model = model_by_name(problem, model_name)?;
+    let matching_sorts = element_sorts(model, symbol);
+    match matching_sorts.as_slice() {
+        [sort] => Ok(ModelValue::Univ {
+            sort: sort.clone(),
+            name: symbol.to_string(),
+        }),
+        [] => Err(format!(
+            "symbol {symbol} is neither a local value, finite universe element, nor zero-arity model function in model {model_name}"
+        )),
+        sorts => Err(format!(
+            "symbol {symbol} is ambiguous in model {model_name}; it belongs to sorts {}",
+            sorts.join(", ")
+        )),
+    }
+}
+
+fn eval_model_application(
+    problem: &DelisProg,
+    model_name: &str,
+    func: &str,
+    args: &[&Value],
+    env: &[(String, AspectValue)],
+    models: &HashMap<String, &crate::lang::model::Model>,
+) -> Result<ModelValue, String> {
+    let model = model_by_name(problem, model_name)?;
+    let sig = func_sig(problem, func)
+        .ok_or_else(|| format!("model function {func} has no declare-fun signature"))?;
+    if sig.arg_sorts.len() != args.len() {
+        return Err(format!(
+            "{func} expects {} arguments, got {}",
+            sig.arg_sorts.len(),
+            args.len()
+        ));
+    }
+    let mut arg_symbols = Vec::new();
+    for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
+        let value = eval_model_term(problem, model_name, arg, env, models)?;
+        let sort_name = sort.to_string();
+        let Some(arg_symbol) = model_value_as_sort(model, &value, &sort_name)? else {
+            if sig.ret_sort.to_string() == "Bool" {
+                return Ok(ModelValue::Bool(false));
+            }
+            return Err(format!(
+                "argument {arg} is outside sort {sort_name} for non-Boolean function {func}"
+            ));
+        };
+        arg_symbols.push(arg_symbol);
+    }
+    let value = eval_symbols(func, &arg_symbols, &model.func_interps)
+        .ok_or_else(|| format!("model {model_name} has no interpretation for {func}{arg_symbols:?}"))?;
+    interped_value_to_model_value(problem, model_name, value, &sig.ret_sort)
+}
+
+fn aspect_value_to_model_value(
     problem: &DelisProg,
     model_name: &str,
     value: &AspectValue,
-) -> Result<AspectValue, String> {
-    let AspectValue::Symbol(symbol) = value else {
-        return Ok(value.clone());
-    };
-    let model = model_by_name(problem, model_name)?;
-    let (_domain, id2sym, _sort) = get_universe_domain_and_map(model);
-    if id2sym.iter().any(|elem| elem == symbol) {
-        return Ok(value.clone());
-    }
-    let Some(value) = eval(symbol, &[], &model.func_interps, &id2sym) else {
-        return Ok(AspectValue::Symbol(symbol.clone()));
-    };
+) -> Result<ModelValue, String> {
     match value {
-        crate::lang::model::InterpedValue::UnivElem(elem) => {
-            Ok(AspectValue::Symbol(elem.name.clone()))
-        }
-        other => Err(format!(
-            "expected zero-arity model symbol {symbol} to evaluate to a universe element, got {other}"
+        AspectValue::Int(value) => Ok(ModelValue::Int(*value as isize)),
+        AspectValue::Univ { sort, name } => Ok(ModelValue::Univ {
+            sort: sort.clone(),
+            name: name.clone(),
+        }),
+        AspectValue::Symbol(symbol) => eval_model_symbol(problem, model_name, symbol, &[]),
+        AspectValue::Model(model) => Err(format!(
+            "expected model term value in model {model_name}, got model {model}"
         )),
     }
+}
+
+fn model_value_as_sort(
+    model: &crate::lang::model::Model,
+    value: &ModelValue,
+    expected_sort: &str,
+) -> Result<Option<String>, String> {
+    match (value, expected_sort) {
+        (ModelValue::Univ { sort, name }, expected) if sort == expected => Ok(Some(name.clone())),
+        (ModelValue::Univ { name, .. }, expected)
+            if get_domain_for_sort(model, expected)
+                .map(|domain| domain.iter().any(|elem| elem == name))
+                .unwrap_or(false) =>
+        {
+            Ok(Some(name.clone()))
+        }
+        (ModelValue::Univ { sort, name }, expected) => Err(format!(
+            "expected element of sort {expected}, got {name} from sort {sort}"
+        )),
+        (ModelValue::Bool(value), "Bool") => Ok(Some(value.to_string())),
+        (ModelValue::Int(value), "Int") => Ok(Some(value.to_string())),
+        (ModelValue::Int(value), expected) => {
+            let domain = get_domain_for_sort(model, expected)
+                .ok_or_else(|| format!("model has no universe for sort {expected}"))?;
+            if *value < 0 {
+                return Ok(None);
+            }
+            Ok(domain.get(*value as usize).cloned())
+        }
+        (other, expected) => Err(format!(
+            "expected argument of sort {expected}, got {}",
+            other.sort_name()
+        )),
+    }
+}
+
+fn interped_value_to_model_value(
+    problem: &DelisProg,
+    model_name: &str,
+    value: &crate::lang::model::InterpedValue,
+    expected_sort: &Sort,
+) -> Result<ModelValue, String> {
+    let expected = expected_sort.to_string();
+    match value {
+        crate::lang::model::InterpedValue::Literal(lit) => literal_to_model_value(lit, &expected),
+        crate::lang::model::InterpedValue::UnivElem(elem) => {
+            let model = model_by_name(problem, model_name)?;
+            if !get_domain_for_sort(model, &expected)
+                .map(|domain| domain.iter().any(|name| name == &elem.name))
+                .unwrap_or(false)
+            {
+                return Err(format!(
+                    "model {model_name} interpretation returns {}, which is not in sort {expected}",
+                    elem.name
+                ));
+            }
+            Ok(ModelValue::Univ {
+                sort: expected,
+                name: elem.name.clone(),
+            })
+        }
+        crate::lang::model::InterpedValue::FuncApp(name, args) => {
+            let src = format!(
+                "({} {})",
+                name,
+                args.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")
+            );
+            let expr = lexpr::from_str(&src)
+                .map_err(|e| format!("failed to parse interpreted function value {src}: {e}"))?;
+            let models = models_by_name(problem);
+            let value = eval_model_term(problem, model_name, &expr, &[], &models)?;
+            ensure_model_value_sort(problem, model_name, value, &expected)
+        }
+    }
+}
+
+fn literal_to_model_value(lit: &Literal, expected_sort: &str) -> Result<ModelValue, String> {
+    let src = lit.to_string();
+    match expected_sort {
+        "Bool" if src == "true" => Ok(ModelValue::Bool(true)),
+        "Bool" if src == "false" => Ok(ModelValue::Bool(false)),
+        "Int" => src
+            .parse::<isize>()
+            .map(ModelValue::Int)
+            .map_err(|_| format!("expected Int literal, got {src}")),
+        _ => Err(format!("literal {src} is not a value of sort {expected_sort}")),
+    }
+}
+
+fn ensure_model_value_sort(
+    problem: &DelisProg,
+    model_name: &str,
+    value: ModelValue,
+    expected_sort: &str,
+) -> Result<ModelValue, String> {
+    let model = model_by_name(problem, model_name)?;
+    match expected_sort {
+        "Bool" if matches!(value, ModelValue::Bool(_)) => Ok(value),
+        "Int" if matches!(value, ModelValue::Int(_)) => Ok(value),
+        expected => {
+            let symbol = model_value_as_sort(model, &value, expected)?.ok_or_else(|| {
+                format!("value is outside sort {expected} in model {model_name}")
+            })?;
+            Ok(ModelValue::Univ {
+                sort: expected.to_string(),
+                name: symbol,
+            })
+        }
+    }
+}
+
+fn element_sorts(model: &crate::lang::model::Model, symbol: &str) -> Vec<String> {
+    model
+        .univ_defs
+        .iter()
+        .filter_map(|univ| {
+            univ.elems
+                .iter()
+                .any(|elem| elem.name == symbol)
+                .then(|| univ.sort.to_string())
+        })
+        .collect()
 }
 
 fn enumerate_exists_bindings(
@@ -472,6 +696,7 @@ fn enumerate_exists_bindings(
         .to_ref_vec()
         .ok_or_else(|| format!("exists bindings must be a list: {bindings}"))?;
     let mut domains = Vec::new();
+    let models = models_by_name(problem);
     for binding in binding_items {
         let item = binding
             .to_ref_vec()
@@ -488,11 +713,10 @@ fn enumerate_exists_bindings(
         let domain_items = domain
             .to_ref_vec()
             .ok_or_else(|| format!("exists domain must be a list: {domain}"))?;
-        let model_len = current_model_len(scalar_env)?;
         match domain_items.first().and_then(|v| v.as_symbol()) {
             Some("int-range") if domain_items.len() == 3 => {
-                let lo = eval_int(domain_items[1], scalar_env, model_len)?;
-                let hi = eval_int(domain_items[2], scalar_env, model_len)?;
+                let lo = eval_int(domain_items[1], scalar_env, &models)?;
+                let hi = eval_int(domain_items[2], scalar_env, &models)?;
                 if lo < 0 || hi < lo {
                     domains.push((name, Vec::new()));
                 } else {
@@ -504,18 +728,21 @@ fn enumerate_exists_bindings(
                     ));
                 }
             }
-            Some("domain") if domain_items.len() >= 2 => {
-                let model_name = model_name_expr(domain_items[1], scalar_env, model_len)?;
-                let model = model_by_name(problem, &model_name)?;
-                let (domain_syms, _id2sym, _sort) = get_universe_domain_and_map(model);
-                domains.push((
-                    name,
-                    domain_syms.into_iter().map(AspectValue::Symbol).collect(),
-                ));
+            Some("domain") if domain_items.len() == 2 => {
+                let (sort, _model_name, domain_syms) =
+                    sorted_model_domain_expr(domain_items[1], scalar_env, &models)?;
+                let values = domain_syms
+                    .into_iter()
+                    .map(|name| AspectValue::Univ {
+                        sort: sort.clone(),
+                        name,
+                    })
+                    .collect();
+                domains.push((name, values));
             }
             _ => {
                 return Err(format!(
-                    "supported quantified domains are (int-range lo hi) and (domain model-expr): {domain}"
+                    "supported quantified domains are (int-range lo hi) and (domain (Sort model-expr)): {domain}"
                 ));
             }
         }
@@ -539,6 +766,7 @@ fn enumerate_exists_bindings(
 }
 
 fn semantic_call_aspect(
+    problem: &DelisProg,
     aspect_expr: &Value,
     relation: &str,
     current_aspect: &AspectKey,
@@ -567,10 +795,11 @@ fn semantic_call_aspect(
     }
     let mut model = None;
     let mut fields = Vec::new();
-    let model_len = current_model_len(scalar_env)?;
+    let models = models_by_name(problem);
     let mut field_idx = 0usize;
     for arg in items.iter().skip(1) {
-        let value = value_expr(arg, scalar_env, model_len)?;
+        let value =
+            raw_value_expr(arg, scalar_env).or_else(|_| value_expr(arg, scalar_env, &models))?;
         if let AspectValue::Model(model_name) = value {
             model = Some(model_name);
             continue;
@@ -580,7 +809,7 @@ fn semantic_call_aspect(
                 "too many scalar fields in aspect expression {aspect_expr}"
             ));
         };
-        fields.push((field_name.clone(), value.display()));
+        fields.push((field_name.clone(), value));
         field_idx += 1;
     }
     if field_idx != current_aspect.fields.len() {
@@ -599,11 +828,11 @@ fn semantic_call_aspect(
 pub fn eval_sygus_int(
     term: &SyGuSTerm,
     env: &[(String, AspectValue)],
-    model_len: usize,
+    models: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<isize, String> {
     let expr = lexpr::from_str(&term.to_string())
         .map_err(|e| format!("failed to parse integer aspect expression {term}: {e}"))?;
-    eval_int(&expr, env, model_len)
+    eval_int(&expr, env, models)
 }
 fn lookup<'a>(env: &'a [(String, AspectValue)], name: &str) -> Option<&'a AspectValue> {
     env.iter()
@@ -613,7 +842,7 @@ fn lookup<'a>(env: &'a [(String, AspectValue)], name: &str) -> Option<&'a Aspect
 pub fn eval_bool(
     expr: &Value,
     env: &[(String, AspectValue)],
-    model_len: usize,
+    models: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<bool, String> {
     if let Some(symbol) = expr.as_symbol() {
         return match symbol {
@@ -631,22 +860,19 @@ pub fn eval_bool(
         ));
     };
     match op {
-        "and" => {
-            list[1..].iter().try_fold(
-                true,
-                |acc, expr| Ok(acc && eval_bool(expr, env, model_len)?),
-            )
-        }
-        "or" => list[1..].iter().try_fold(false, |acc, expr| {
-            Ok(acc || eval_bool(expr, env, model_len)?)
-        }),
-        "not" if list.len() == 2 => Ok(!eval_bool(list[1], env, model_len)?),
+        "and" => list[1..]
+            .iter()
+            .try_fold(true, |acc, expr| Ok(acc && eval_bool(expr, env, models)?)),
+        "or" => list[1..]
+            .iter()
+            .try_fold(false, |acc, expr| Ok(acc || eval_bool(expr, env, models)?)),
+        "not" if list.len() == 2 => Ok(!eval_bool(list[1], env, models)?),
         "=" | "<" | "<=" => {
             if list.len() != 3 {
                 return Err(format!("{op} expects two arguments, got {expr}"));
             }
-            let lhs = eval_int(list[1], env, model_len)?;
-            let rhs = eval_int(list[2], env, model_len)?;
+            let lhs = eval_int(list[1], env, models)?;
+            let rhs = eval_int(list[2], env, models)?;
             match op {
                 "=" => Ok(lhs == rhs),
                 "<" => Ok(lhs < rhs),
@@ -675,18 +901,16 @@ fn eval_semantic_bool(
     if list.len() != 3 {
         return Err(format!("{op} expects two arguments, got {expr}"));
     }
-    let model_len = current_model_len(env)?;
+    let models = models_by_name(problem);
     match op {
         "=" => {
-            let lhs =
-                resolve_model_value(problem, model_name, &value_expr(list[1], env, model_len)?)?;
-            let rhs =
-                resolve_model_value(problem, model_name, &value_expr(list[2], env, model_len)?)?;
+            let lhs = eval_model_term(problem, model_name, list[1], env, &models)?;
+            let rhs = eval_model_term(problem, model_name, list[2], env, &models)?;
             Ok(lhs == rhs)
         }
         "<" | "<=" => {
-            let lhs = eval_int(list[1], env, model_len)?;
-            let rhs = eval_int(list[2], env, model_len)?;
+            let lhs = eval_int(list[1], env, &models)?;
+            let rhs = eval_int(list[2], env, &models)?;
             match op {
                 "<" => Ok(lhs < rhs),
                 "<=" => Ok(lhs <= rhs),
@@ -702,7 +926,7 @@ fn eval_semantic_bool(
 fn eval_int(
     expr: &Value,
     env: &[(String, AspectValue)],
-    model_len: usize,
+    models: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<isize, String> {
     if let Some(value) = expr.as_i64() {
         return Ok(value as isize);
@@ -731,19 +955,19 @@ fn eval_int(
     match op {
         "+" => list[1..]
             .iter()
-            .try_fold(0, |acc, expr| Ok(acc + eval_int(expr, env, model_len)?)),
-        "-" if list.len() == 2 => Ok(-eval_int(list[1], env, model_len)?),
+            .try_fold(0, |acc, expr| Ok(acc + eval_int(expr, env, models)?)),
+        "-" if list.len() == 2 => Ok(-eval_int(list[1], env, models)?),
         "-" => {
             let Some((first, rest)) = list[1..].split_first() else {
                 return Err(format!("- expects at least one argument, got {expr}"));
             };
-            let init = eval_int(first, env, model_len)?;
+            let init = eval_int(first, env, models)?;
             rest.iter()
-                .try_fold(init, |acc, expr| Ok(acc - eval_int(expr, env, model_len)?))
+                .try_fold(init, |acc, expr| Ok(acc - eval_int(expr, env, models)?))
         }
         "len" if list.len() == 2 => {
-            model_name_expr(list[1], env, model_len)?;
-            Ok(model_len as isize)
+            let (_sort, _model_name, domain) = sorted_model_domain_expr(list[1], env, models)?;
+            Ok(domain.len() as isize)
         }
         _ => Err(format!("unsupported integer operator {op} in {expr}")),
     }

@@ -49,19 +49,19 @@ SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
 MatchInterp = { "(" ~ #DelisTkMatch="match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
 MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
 UnivDef = { "(" ~ #DelisTkDefUniv="define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-UnivElem = @{ "$" ~ ASCII_ALPHANUMERIC+ }
+UnivElem = @{ Symbol }
 
 // Define values that can be interpreted
 InterpedValue = {
-  UnivElem 
-| Literal
+  Literal
+| UnivElem
 | "(" ~ Identifier ~ SyGuSTerm+ ~ ")"
 }
 
 // Pattern definition (simplified to match SMT-LIB2 style)
 Pattern = { 
-  UnivElem | Symbol | "_" |           // Simple pattern elements
-  "(" ~ (UnivElem | Symbol | "_")+ ~ ")"  // Compound pattern in parentheses
+  "_" | UnivElem | Symbol |           // Simple pattern elements
+  "(" ~ ("_" | UnivElem | Symbol)+ ~ ")"  // Compound pattern in parentheses
 }
 
 DelisReservedCmd = { 

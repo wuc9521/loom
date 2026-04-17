@@ -1,42 +1,23 @@
 use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem};
 use std::collections::HashMap;
 
-pub fn build_symbol_map(domain_syms: &[String]) -> (HashMap<String, usize>, Vec<String>) {
-    let mut map = HashMap::new();
-    let mut rev = vec![];
-    for (i, sym) in domain_syms.iter().enumerate() {
-        map.insert(sym.clone(), i);
-        rev.push(sym.clone());
-    }
-    (map, rev)
-}
-
-pub fn pattern_match(tuple: &Vec<usize>, pat: &Pattern, id2sym: &Vec<String>) -> bool {
+pub fn pattern_match_symbols(tuple: &[String], pat: &Pattern) -> bool {
     if pat.elements.len() != tuple.len() {
         return false;
     }
-    for (i, elem) in pat.elements.iter().enumerate() {
+    for (value, elem) in tuple.iter().zip(pat.elements.iter()) {
         match elem {
-            PatternElem::UnivElem(e) => {
-                if let Some(sym) = id2sym.get(tuple[i]) {
-                    if &e.name != sym {
-                        return false;
-                    }
-                } else {
-                    return false;
-                }
-            }
-            PatternElem::Wildcard | PatternElem::Var(_) => {}
+            PatternElem::UnivElem(e) if &e.name != value => return false,
+            PatternElem::UnivElem(_) | PatternElem::Wildcard | PatternElem::Var(_) => {}
         }
     }
     true
 }
 
-pub fn eval<'a>(
+pub fn eval_symbols<'a>(
     func_name: &str,
-    args: &[usize],
+    args: &[String],
     func_interps: &'a [FuncInterp],
-    id2sym: &Vec<String>,
 ) -> Option<&'a InterpedValue> {
     if args.is_empty() {
         for interp in func_interps {
@@ -52,7 +33,7 @@ pub fn eval<'a>(
             if name == func_name {
                 for case in cases {
                     if let Some(pat) = &case.pattern {
-                        if pattern_match(&args.to_vec(), pat, id2sym) {
+                        if pattern_match_symbols(args, pat) {
                             return Some(&case.value);
                         }
                     }
@@ -74,19 +55,33 @@ pub fn eval<'a>(
     None
 }
 
-pub fn get_universe_domain_and_map(model: &Model) -> (Vec<String>, Vec<String>, String) {
-    let universe_sort = model.univ_defs.get(0).map(|u| u.sort.to_string()).unwrap();
-    let mut domain_syms = vec![];
+pub fn get_domain_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
+    let mut domain_syms = Vec::new();
     for univ in &model.univ_defs {
-        if univ.sort.to_string() == universe_sort {
-            for elem in &univ.elems {
-                domain_syms.push(elem.name.clone());
-            }
+        if univ.sort.to_string() == sort {
+            domain_syms.extend(univ.elems.iter().map(|elem| elem.name.clone()));
         }
     }
+    if domain_syms.is_empty() {
+        return None;
+    }
     domain_syms.sort();
-    let (_sym2id, id2sym) = build_symbol_map(&domain_syms);
-    (domain_syms, id2sym, universe_sort)
+    Some(domain_syms)
+}
+
+pub fn element_belongs_to_sort(model: &Model, sort: &str, elem: &str) -> bool {
+    get_domain_for_sort(model, sort)
+        .map(|domain| domain.iter().any(|candidate| candidate == elem))
+        .unwrap_or(false)
+}
+
+pub fn max_domain_len(model: &Model) -> usize {
+    model
+        .univ_defs
+        .iter()
+        .map(|univ| univ.elems.len())
+        .max()
+        .unwrap_or(0)
 }
 
 pub fn collect_loaded_models<'a>(

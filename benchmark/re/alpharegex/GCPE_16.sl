@@ -62,17 +62,17 @@
 
 (synth-fun r () RegLan)
 
-(constraint (RegLan.Sem r (ReAsp p_ 0 (len p_))))
-(constraint (RegLan.Sem r (ReAsp p_0 0 (len p_0))))
-(constraint (RegLan.Sem r (ReAsp p11 0 (len p11))))
-(constraint (RegLan.Sem r (ReAsp p__0 0 (len p__0))))
-(constraint (RegLan.Sem r (ReAsp p_11 0 (len p_11))))
-(constraint (RegLan.Sem r (ReAsp p___0 0 (len p___0))))
-(constraint (RegLan.Sem r (ReAsp p__11 0 (len p__11))))
-(constraint (RegLan.Sem r (ReAsp p___11 0 (len p___11))))
+(constraint (RegLan.Sem r (ReAsp p_ 0 (len (Pos p_)))))
+(constraint (RegLan.Sem r (ReAsp p_0 0 (len (Pos p_0)))))
+(constraint (RegLan.Sem r (ReAsp p11 0 (len (Pos p11)))))
+(constraint (RegLan.Sem r (ReAsp p__0 0 (len (Pos p__0)))))
+(constraint (RegLan.Sem r (ReAsp p_11 0 (len (Pos p_11)))))
+(constraint (RegLan.Sem r (ReAsp p___0 0 (len (Pos p___0)))))
+(constraint (RegLan.Sem r (ReAsp p__11 0 (len (Pos p__11)))))
+(constraint (RegLan.Sem r (ReAsp p___11 0 (len (Pos p___11)))))
 
-(constraint (not (RegLan.Sem r (ReAsp n01 0 (len n01)))))
-(constraint (not (RegLan.Sem r (ReAsp n?01 0 (len n?01)))))
-(constraint (not (RegLan.Sem r (ReAsp n??01 0 (len n??01)))))
+(constraint (not (RegLan.Sem r (ReAsp n01 0 (len (Pos n01))))))
+(constraint (not (RegLan.Sem r (ReAsp n?01 0 (len (Pos n?01))))))
+(constraint (not (RegLan.Sem r (ReAsp n??01 0 (len (Pos n??01))))))
 
 (check-synth)

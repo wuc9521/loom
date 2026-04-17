@@ -43,11 +43,11 @@
   ((Ltl.Sem (phi LTL) (asp LtlAsp)))
   ((match phi
      ((p) (p (pos asp)))
-     ((ltl.not x) (dual (Ltl.Sem x asp)))
+     ((ltl.not x) (not (Ltl.Sem x asp)))
      ((ltl.and x y) (and (Ltl.Sem x asp) (Ltl.Sem y asp)))
      ((ltl.or x y) (or (Ltl.Sem x asp) (Ltl.Sem y asp)))
      ((ltl.next x)
-      (exists ((next (domain (model asp))))
+      (exists ((next (domain (U (model asp)))))
         (and (Next (pos asp) next)
              (Ltl.Sem x (LtlAsp (model asp) next))))))))
 

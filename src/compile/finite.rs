@@ -7,7 +7,7 @@ use crate::{
         },
     },
     lang::{
-        eval::{collect_loaded_models, get_universe_domain_and_map},
+        eval::{collect_loaded_models, get_domain_for_sort, max_domain_len},
         model::Model,
     },
     parser::{DelisCmd, DelisProg},
@@ -90,12 +90,14 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     let mut bit_by_aspect = HashMap::new();
     for relation in &semantic_relations {
         for model in &loaded_models {
-            for assignment in enumerate_aspects(aspect_space, model.name.as_str(), model)? {
+            for assignment in
+                enumerate_aspects(aspect_space, model.name.as_str(), model, &models_by_name)?
+            {
                 let bit = bit_mappings.len();
                 let fields = assignment
                     .iter()
                     .filter(|(_, value)| !matches!(value, AspectValue::Model(_)))
-                    .map(|(name, value)| (name.clone(), value.display()))
+                    .map(|(name, value)| (name.clone(), value.clone()))
                     .collect::<Vec<_>>();
                 let aspect = AspectKey {
                     relation: relation.clone(),
@@ -218,7 +220,7 @@ fn parse_aspect_term(
     term: &SyGuSTerm,
     aspect_space: &FiniteSpace,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
-) -> Result<(String, Vec<(String, String)>), String> {
+) -> Result<(String, Vec<(String, AspectValue)>), String> {
     let SyGuSTerm::Application(cons, args) = term else {
         return Err(format!(
             "semantic constraint aspect must be an application, got {term}"
@@ -251,15 +253,14 @@ fn parse_aspect_term(
     let model = models_by_name
         .get(&model_name)
         .ok_or_else(|| format!("constraint references unknown model {model_name}"))?;
-    let (domain, _id2sym, universe_sort) = get_universe_domain_and_map(model);
-    let model_len = domain.len();
+    let universe_sorts = model_universe_sorts(model);
 
     let mut assignment = Vec::new();
     for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
         let value = match &field.domain {
             FieldDomain::Sort(sort) if sort == "Model" => AspectValue::Model(arg.to_string()),
             FieldDomain::Sort(sort) if sort == "Int" => {
-                let value = eval_sygus_int(arg, &assignment, model_len)?;
+                let value = eval_sygus_int(arg, &assignment, models_by_name)?;
                 if value < 0 {
                     return Err(format!(
                         "aspect field {} must be non-negative, got {value}",
@@ -268,20 +269,25 @@ fn parse_aspect_term(
                 }
                 AspectValue::Int(value as usize)
             }
-            FieldDomain::Sort(sort) if sort == &universe_sort => {
+            FieldDomain::Sort(sort) if get_domain_for_sort(model, sort).is_some() => {
+                let domain = get_domain_for_sort(model, sort).unwrap();
                 let value = arg.to_string();
                 if !domain.contains(&value) {
                     return Err(format!(
                         "aspect field {} expected an element of universe sort {} but got {value}",
-                        field.name, universe_sort
+                        field.name, sort
                     ));
                 }
-                AspectValue::Symbol(value)
+                AspectValue::Univ {
+                    sort: sort.clone(),
+                    name: value,
+                }
             }
             FieldDomain::Sort(sort) => {
                 return Err(format!(
-                    "unsupported finite field sort {sort} for field {}; use Model, Int, the model universe sort {universe_sort}, or (enum ...)",
-                    field.name
+                    "unsupported finite field sort {sort} for field {}; use Model, Int, one of the model universe sorts ({}), or (enum ...)",
+                    field.name,
+                    universe_sorts.join(", ")
                 ));
             }
             FieldDomain::Enum(values) => {
@@ -299,7 +305,7 @@ fn parse_aspect_term(
         assignment.push((field.name.clone(), value));
     }
     if let Some(where_expr) = &aspect_space.where_expr {
-        if !eval_bool(where_expr, &assignment, model_len)? {
+        if !eval_bool(where_expr, &assignment, models_by_name)? {
             return Err(format!(
                 "constraint aspect is outside finite space {}: {}",
                 aspect_space.name, term
@@ -309,7 +315,7 @@ fn parse_aspect_term(
     let fields = assignment
         .iter()
         .filter(|(_, value)| !matches!(value, AspectValue::Model(_)))
-        .map(|(name, value)| (name.clone(), value.display()))
+        .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
     Ok((model_name, fields))
 }
@@ -394,9 +400,10 @@ fn enumerate_aspects(
     space: &FiniteSpace,
     model_name: &str,
     model: &crate::lang::model::Model,
+    models_by_name: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<Vec<Vec<(String, AspectValue)>>, String> {
-    let (domain_syms, _id2sym, universe_sort) = get_universe_domain_and_map(model);
-    let model_len = domain_syms.len();
+    let universe_sorts = model_universe_sorts(model);
+    let int_bound = max_domain_len(model);
     let domains = space
         .fields
         .iter()
@@ -406,17 +413,23 @@ fn enumerate_aspects(
                     vec![AspectValue::Model(model_name.to_string())]
                 }
                 FieldDomain::Sort(sort) if sort == "Int" => {
-                    (0..=model_len).map(AspectValue::Int).collect()
+                    (0..=int_bound).map(AspectValue::Int).collect()
                 }
-                FieldDomain::Sort(sort) if sort == &universe_sort => domain_syms
-                    .iter()
-                    .cloned()
-                    .map(AspectValue::Symbol)
-                    .collect(),
+                FieldDomain::Sort(sort) if get_domain_for_sort(model, sort).is_some() => {
+                    get_domain_for_sort(model, sort)
+                        .unwrap()
+                        .into_iter()
+                        .map(|name| AspectValue::Univ {
+                            sort: sort.clone(),
+                            name,
+                        })
+                        .collect()
+                }
                 FieldDomain::Sort(sort) => {
                     return Err(format!(
-                        "unsupported finite field sort {sort} for field {}; use Model, Int, the model universe sort {universe_sort}, or (enum ...)",
-                        field.name
+                        "unsupported finite field sort {sort} for field {}; use Model, Int, one of the model universe sorts ({}), or (enum ...)",
+                        field.name,
+                        universe_sorts.join(", ")
                     ));
                 }
                 FieldDomain::Enum(values) => {
@@ -439,7 +452,7 @@ fn enumerate_aspects(
             .map(|((name, _), value)| (name.clone(), value.clone()))
             .collect::<Vec<_>>();
         let keep = match &space.where_expr {
-            Some(expr) => eval_bool(expr, &assignment, model_len)?,
+            Some(expr) => eval_bool(expr, &assignment, models_by_name)?,
             None => true,
         };
         if keep {
@@ -447,6 +460,14 @@ fn enumerate_aspects(
         }
     }
     Ok(assignments)
+}
+
+fn model_universe_sorts(model: &crate::lang::model::Model) -> Vec<String> {
+    model
+        .univ_defs
+        .iter()
+        .map(|univ| univ.sort.to_string())
+        .collect()
 }
 
 fn semantic_relation_name(body: &[String]) -> Result<String, String> {

@@ -44,12 +44,7 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     if summary.needs_saturation {
         program.rules = saturate(&program.rules);
     }
-    crate::backends::sygus::bv::compile_one_way(
-        &program,
-        &synth_name(problem)?,
-        grammar,
-        optimize,
-    )
+    crate::backends::sygus::bv::compile_one_way(&program, &synth_name(problem)?, grammar, optimize)
         .into_iter()
         .map(Ok)
         .collect()
@@ -180,8 +175,8 @@ fn compile_chc(
             );
             emit_dnf_rules(&mut program.rules, head.clone(), dnf.clone());
             if matches!(dual_rules, DualRules::Emit) {
-                if let Some((dual_head, dual_dnf)) = dualize_dnf(head, &dnf) {
-                    emit_dnf_rules(&mut program.rules, dual_head, dual_dnf);
+                if let Some((not_head, dual_dnf)) = dualize_dnf(head, &dnf) {
+                    emit_dnf_rules(&mut program.rules, not_head, dual_dnf);
                 }
             }
         }
