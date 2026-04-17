@@ -87,6 +87,14 @@ impl TermSignature {
             .collect()
     }
 
+    pub fn start_sort(&self) -> &str {
+        &self.start_sort
+    }
+
+    pub fn grammar_symbol_for_sort(&self, sort_name: &str) -> String {
+        self.grammar_symbol(sort_name)
+    }
+
     pub fn all_match_vars(&self, cases: &HashMap<String, SemCase>) -> Vec<String> {
         let mut vars = std::collections::BTreeSet::new();
         for case in cases.values() {
@@ -217,11 +225,7 @@ pub fn parse_semantic_cases(problem: &DelisProg) -> Result<HashMap<String, SemCa
         .into_iter()
         .next()
         .ok_or_else(|| "SyGuS compilation requires define-semantics".to_string())?;
-    let body_src = semantics
-        .body
-        .get(1)
-        .ok_or_else(|| "define-semantics expects a match body".to_string())?;
-    let body = lexpr::from_str(body_src)
+    let body = lexpr::from_str(&semantics.body)
         .map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
     let outer = body
         .to_ref_vec()

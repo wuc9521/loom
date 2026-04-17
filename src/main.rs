@@ -150,6 +150,23 @@ fn decode_sygus_output(delis_file: &DelisProg, output: &str) -> Result<String, i
 }
 
 fn solve_with_backends(delis_file: &DelisProg, args: &CLI) -> Result<(), io::Error> {
+    if compile::uses_semantic_domains(delis_file)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+    {
+        let sygus_text = cmds_to_text(
+            &compile::to_sygus(delis_file, args.optimize)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
+        );
+        println!(
+            "{}",
+            decode_sygus_output(
+                delis_file,
+                &run_sygus_solver(&args.sygus_solver_config(), &sygus_text)?
+            )?
+        );
+        return Ok(());
+    }
+
     let chc_program =
         compile::to_chc_ast(delis_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));

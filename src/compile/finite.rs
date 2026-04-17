@@ -2,8 +2,9 @@ use crate::{
     compile::{
         expr::{eval_bool, eval_sygus_int},
         types::{
-            AspectKey, AspectValue, BitMapping, ConstraintBit, Encoding, FieldDecl, FieldDomain,
-            FiniteSpace, SemanticConstraint,
+            AspectKey, AspectValue, BitMapping, ConstraintBit, DomainBit, Encoding, FieldDecl,
+            FieldDomain, FiniteSpace, SemanticConstraint, SemanticDomain, SemanticKind,
+            SemanticProgram, SemanticSpec,
         },
     },
     lang::{
@@ -18,6 +19,82 @@ use std::collections::HashMap;
 use sygus_parser::SyGuSTerm;
 
 pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
+    let program = compile_semantic_program(problem)?;
+
+    let bool_domains = program
+        .domains
+        .iter()
+        .filter(|domain| domain.kind == SemanticKind::Bool)
+        .collect::<Vec<_>>();
+    let mut bit_mappings = Vec::new();
+    let mut bit_by_aspect = HashMap::new();
+    for domain in bool_domains {
+        for domain_bit in &domain.bits {
+            let bit = bit_mappings.len();
+            bit_by_aspect.insert(domain_bit.aspect.clone(), bit);
+            bit_mappings.push(BitMapping {
+                bit,
+                aspect: domain_bit.aspect.clone(),
+            });
+        }
+    }
+
+    let kind_by_relation = program
+        .domains
+        .iter()
+        .map(|domain| (domain.relation.clone(), domain.kind.clone()))
+        .collect::<HashMap<_, _>>();
+    let constraint_bits = program
+        .constraints
+        .iter()
+        .map(|constraint| {
+            if kind_by_relation.get(&constraint.relation) != Some(&SemanticKind::Bool) {
+                return Err(format!(
+                    "top-level constraint {} must target Bool-returning semantics",
+                    constraint.relation
+                ));
+            }
+            let key = AspectKey {
+                relation: constraint.relation.clone(),
+                model: constraint.model.clone(),
+                fields: constraint.fields.clone(),
+            };
+            let bit = bit_by_aspect.get(&key).copied().ok_or_else(|| {
+                format!(
+                    "constraint aspect does not belong to finite space: {}({}; {})",
+                    key.relation,
+                    key.model,
+                    key.display_fields()
+                )
+            })?;
+            Ok(ConstraintBit {
+                relation: constraint.relation.clone(),
+                model: constraint.model.clone(),
+                expected: constraint.expected,
+                bit,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(Encoding {
+        finite_spaces: program
+            .finite_spaces
+            .iter()
+            .map(|space| space.name.clone())
+            .collect(),
+        semantic_relations: program
+            .semantics
+            .iter()
+            .map(|semantics| semantics.relation.clone())
+            .collect(),
+        semantic_domains: program.domains,
+        bit_mappings,
+        constraint_bits,
+        needs_saturation: program.needs_saturation,
+    })
+}
+
+pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, String> {
     let finite_cmds = problem
         .cmds
         .iter()
@@ -42,27 +119,26 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     if finite_cmds.is_empty() {
         return Err("compilation requires at least one define-finite".to_string());
     }
-    if finite_cmds.len() != 1 {
-        return Err(format!(
-            "compilation currently supports exactly one define-finite aspect space, got {}",
-            finite_cmds.len()
-        ));
-    }
     if semantics.is_empty() {
         return Err("compilation requires at least one define-semantics".to_string());
     }
-    if semantics.len() != 1 {
-        return Err(format!(
-            "compilation currently supports exactly one define-semantics declaration, got {}",
-            semantics.len()
-        ));
-    }
 
-    let semantic_relations = semantics
+    let semantic_specs = semantics
         .iter()
-        .map(|cmd| semantic_relation_name(&cmd.body))
+        .map(|cmd| parse_semantic_spec(cmd))
         .collect::<Result<Vec<_>, _>>()?;
-
+    let spaces_by_name = finite_spaces
+        .iter()
+        .map(|space| (space.name.clone(), space))
+        .collect::<HashMap<_, _>>();
+    for spec in &semantic_specs {
+        if !spaces_by_name.contains_key(&spec.aspect_space) {
+            return Err(format!(
+                "semantics {} references unknown finite aspect space {}",
+                spec.relation, spec.aspect_space
+            ));
+        }
+    }
     let models_by_name = problem
         .cmds
         .iter()
@@ -71,11 +147,8 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
             _ => None,
         })
         .collect::<HashMap<_, _>>();
-    let aspect_space = finite_spaces
-        .first()
-        .ok_or_else(|| "compilation requires a finite aspect space".to_string())?;
     let semantic_constraints =
-        collect_semantic_constraints(problem, &semantic_relations, aspect_space, &models_by_name)?;
+        collect_semantic_constraints(problem, &semantic_specs, &spaces_by_name, &models_by_name)?;
     let mut model_names = Vec::new();
     for constraint in &semantic_constraints {
         if models_by_name.contains_key(&constraint.model)
@@ -86,71 +159,73 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     }
     let loaded_models = collect_loaded_models(&model_names, &models_by_name);
 
-    let mut bit_mappings = Vec::new();
-    let mut bit_by_aspect = HashMap::new();
-    for relation in &semantic_relations {
+    let mut domains = Vec::new();
+    for spec in &semantic_specs {
+        let aspect_space = spaces_by_name
+            .get(&spec.aspect_space)
+            .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
+        let mut bits = Vec::new();
         for model in &loaded_models {
             for assignment in
                 enumerate_aspects(aspect_space, model.name.as_str(), model, &models_by_name)?
             {
-                let bit = bit_mappings.len();
                 let fields = assignment
                     .iter()
                     .filter(|(_, value)| !matches!(value, AspectValue::Model(_)))
                     .map(|(name, value)| (name.clone(), value.clone()))
                     .collect::<Vec<_>>();
                 let aspect = AspectKey {
-                    relation: relation.clone(),
+                    relation: spec.relation.clone(),
                     model: model.name.clone(),
                     fields,
                 };
-                bit_by_aspect.insert(aspect.clone(), bit);
-                bit_mappings.push(BitMapping { bit, aspect });
+                match &spec.return_kind {
+                    SemanticKind::Bool => {
+                        bits.push(DomainBit {
+                            bit: bits.len(),
+                            aspect,
+                            value: None,
+                        });
+                    }
+                    SemanticKind::FiniteValue { sort } => {
+                        let values = get_domain_for_sort(model, sort).ok_or_else(|| {
+                            format!(
+                                "model {} has no universe for return sort {} of semantics {}",
+                                model.name, sort, spec.relation
+                            )
+                        })?;
+                        for name in values {
+                            bits.push(DomainBit {
+                                bit: bits.len(),
+                                aspect: aspect.clone(),
+                                value: Some(AspectValue::Univ {
+                                    sort: sort.clone(),
+                                    name,
+                                }),
+                            });
+                        }
+                    }
+                }
             }
         }
+        domains.push(SemanticDomain {
+            relation: spec.relation.clone(),
+            term_sort: spec.term_sort.clone(),
+            aspect_space: spec.aspect_space.clone(),
+            kind: spec.return_kind.clone(),
+            bits,
+        });
     }
-    let constraint_bits = semantic_constraints
-        .iter()
-        .map(|constraint| {
-            let key = AspectKey {
-                relation: constraint.relation.clone(),
-                model: constraint.model.clone(),
-                fields: constraint.fields.clone(),
-            };
-            let bit = bit_by_aspect.get(&key).copied().ok_or_else(|| {
-                format!(
-                    "constraint aspect does not belong to finite space: {}({}; {})",
-                    key.relation,
-                    key.model,
-                    key.display_fields()
-                )
-            })?;
-            Ok(ConstraintBit {
-                relation: constraint.relation.clone(),
-                model: constraint.model.clone(),
-                expected: constraint.expected,
-                bit,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
 
-    let needs_saturation = semantics
+    let needs_saturation = semantic_specs
         .iter()
-        .flat_map(|cmd| cmd.body.iter())
-        .map(|fragment| lexpr::from_str(fragment))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("failed to parse define-semantics body for navigation: {e}"))?
-        .iter()
-        .any(contains_parent_navigation);
+        .any(|spec| contains_parent_navigation(&spec.body));
 
-    Ok(Encoding {
-        finite_spaces: finite_spaces
-            .iter()
-            .map(|space| space.name.clone())
-            .collect(),
-        semantic_relations,
-        bit_mappings,
-        constraint_bits,
+    Ok(SemanticProgram {
+        finite_spaces,
+        semantics: semantic_specs,
+        domains,
+        constraints: semantic_constraints,
         needs_saturation,
     })
 }
@@ -165,17 +240,21 @@ fn contains_parent_navigation(expr: &Value) -> bool {
 
 fn collect_semantic_constraints(
     problem: &DelisProg,
-    semantic_relations: &[String],
-    aspect_space: &FiniteSpace,
+    semantic_specs: &[SemanticSpec],
+    spaces_by_name: &HashMap<String, &FiniteSpace>,
     models_by_name: &HashMap<String, &Model>,
 ) -> Result<Vec<SemanticConstraint>, String> {
+    let semantics_by_relation = semantic_specs
+        .iter()
+        .map(|spec| (spec.relation.clone(), spec))
+        .collect::<HashMap<_, _>>();
     let mut constraints = Vec::new();
     for cmd in &problem.cmds {
         let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
             continue;
         };
         if let Some(constraint) =
-            parse_semantic_constraint(term, semantic_relations, aspect_space, models_by_name)?
+            parse_semantic_constraint(term, &semantics_by_relation, spaces_by_name, models_by_name)?
         {
             constraints.push(constraint);
         }
@@ -185,8 +264,8 @@ fn collect_semantic_constraints(
 
 fn parse_semantic_constraint(
     term: &SyGuSTerm,
-    semantic_relations: &[String],
-    aspect_space: &FiniteSpace,
+    semantics_by_relation: &HashMap<String, &SemanticSpec>,
+    spaces_by_name: &HashMap<String, &FiniteSpace>,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<Option<SemanticConstraint>, String> {
     let (expected, term) = match term {
@@ -199,14 +278,17 @@ fn parse_semantic_constraint(
         return Ok(None);
     };
     let relation = rel.to_string();
-    if !semantic_relations.contains(&relation) {
+    let Some(spec) = semantics_by_relation.get(&relation) else {
         return Ok(None);
-    }
+    };
     let Some(aspect_term) = args.last() else {
         return Err(format!(
             "semantic constraint {relation} is missing an aspect argument"
         ));
     };
+    let aspect_space = spaces_by_name
+        .get(&spec.aspect_space)
+        .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
     let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name)?;
     Ok(Some(SemanticConstraint {
         relation,
@@ -470,18 +552,68 @@ fn model_universe_sorts(model: &crate::lang::model::Model) -> Vec<String> {
         .collect()
 }
 
-fn semantic_relation_name(body: &[String]) -> Result<String, String> {
-    let Some(header) = body.first() else {
-        return Err("define-semantics expects a relation header".to_string());
+fn parse_semantic_spec(cmd: &crate::parser::ast::Semantics) -> Result<SemanticSpec, String> {
+    let header = lexpr::from_str(&cmd.header)
+        .map_err(|e| format!("failed to parse define-semantics header: {e}"))?;
+    let outer = header
+        .to_ref_vec()
+        .ok_or_else(|| format!("define-semantics header must be a list: {}", cmd.header))?;
+    let signature = match outer.as_slice() {
+        [single] => single,
+        _ => &header,
     };
-    let text = header.trim();
-    if let Some(name) = text
-        .strip_prefix("((")
-        .and_then(|rest| rest.split_whitespace().next())
-    {
-        return Ok(name.trim_end_matches(')').to_string());
+    let items = signature
+        .to_ref_vec()
+        .ok_or_else(|| format!("define-semantics signature must be a list: {signature}"))?;
+    let relation = items
+        .first()
+        .and_then(|value| value.as_symbol())
+        .ok_or_else(|| format!("define-semantics signature is missing relation: {signature}"))?
+        .to_string();
+    let [term_arg, aspect_arg] = items
+        .get(1..)
+        .ok_or_else(|| format!("define-semantics signature is malformed: {signature}"))?
+    else {
+        return Err(format!(
+            "define-semantics signature must have term and aspect arguments: {signature}"
+        ));
+    };
+    let term_items = term_arg
+        .to_ref_vec()
+        .ok_or_else(|| format!("term argument must be sorted: {term_arg}"))?;
+    let aspect_items = aspect_arg
+        .to_ref_vec()
+        .ok_or_else(|| format!("aspect argument must be sorted: {aspect_arg}"))?;
+    if term_items.len() != 2 || aspect_items.len() != 2 {
+        return Err(format!(
+            "define-semantics arguments must have shape (name Sort): {signature}"
+        ));
     }
-    Err(format!(
-        "could not extract semantic relation name from define-semantics header: {text}"
-    ))
+    let term_sort = term_items[1]
+        .as_symbol()
+        .ok_or_else(|| format!("term argument sort must be a symbol: {}", term_items[1]))?
+        .to_string();
+    let aspect_space = aspect_items[1]
+        .as_symbol()
+        .ok_or_else(|| format!("aspect argument sort must be a symbol: {}", aspect_items[1]))?
+        .to_string();
+    let body = lexpr::from_str(&cmd.body)
+        .map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
+    let return_sort = cmd
+        .return_sort
+        .as_ref()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "Bool".to_string());
+    let return_kind = if return_sort == "Bool" {
+        SemanticKind::Bool
+    } else {
+        SemanticKind::FiniteValue { sort: return_sort }
+    };
+    Ok(SemanticSpec {
+        relation,
+        term_sort,
+        aspect_space,
+        return_kind,
+        body,
+    })
 }

@@ -7,8 +7,11 @@ use crate::parser::{DelisCmd, DelisProg};
 use std::collections::HashMap;
 use sygus_parser::{Sort, SortDecl, SyGuSCmd};
 
+mod bv;
+mod chc;
 mod expr;
 mod finite;
+mod semantic;
 mod syntax;
 mod types;
 
@@ -25,6 +28,15 @@ struct StatePredicates {
 }
 
 pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
+    let semantic_program = finite::compile_semantic_program(problem)?;
+    if semantic_program
+        .domains
+        .iter()
+        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool))
+    {
+        return bv::compile(problem, semantic_program, optimize);
+    }
+
     let summary = compile(problem)?;
     if summary.bit_mappings.is_empty() {
         return Err("SyGuS compilation requires at least one semantic aspect bit".to_string());
@@ -50,7 +62,24 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         .collect()
 }
 
+pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
+    let semantic_program = finite::compile_semantic_program(problem)?;
+    Ok(semantic_program
+        .domains
+        .iter()
+        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool)))
+}
+
 pub fn to_chc_ast(problem: &DelisProg) -> Result<HornProg, String> {
+    let semantic_program = finite::compile_semantic_program(problem)?;
+    if semantic_program
+        .domains
+        .iter()
+        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool))
+    {
+        return chc::compile(problem, semantic_program);
+    }
+
     let summary = compile(problem)?;
     compile_chc(problem, &summary, DualRules::Emit)
 }

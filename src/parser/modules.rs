@@ -122,7 +122,10 @@ fn validate_provides(path: &Path, source: &ModuleSource) -> Result<(), io::Error
     let prog = parse(&source.body, None).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("failed to parse module {} while checking provide: {e}", path.display()),
+            format!(
+                "failed to parse module {} while checking provide: {e}",
+                path.display()
+            ),
         )
     })?;
     let defined = defined_names(&prog.cmds);
@@ -173,7 +176,7 @@ fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
                 names.insert(aspect.name.clone());
             }
             DelisCmd::Semantics(semantics) => {
-                if let Some(name) = semantics_name(semantics.body.first()) {
+                if let Some(name) = semantics_name(Some(&semantics.header)) {
                     names.insert(name);
                 }
             }
@@ -380,6 +383,8 @@ mod tests {
         .unwrap();
 
         let err = load_module_file(dir.join("bad.sl")).unwrap_err();
-        assert!(err.to_string().contains("provides undefined name(s): missing"));
+        assert!(err
+            .to_string()
+            .contains("provides undefined name(s): missing"));
     }
 }

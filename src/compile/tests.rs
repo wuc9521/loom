@@ -88,6 +88,32 @@ fn finite_aspect_fields_are_not_named_primitives() {
 }
 
 #[test]
+fn enum_aspect_symbols_compare_as_finite_values() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(define-model w
+  (define-univ Pos ($0)))
+(declare-term-types ((Root 0)) (((leaf))))
+(define-finite Asp
+  (record (model Model) (mode (enum base reset))))
+(define-semantics
+  ((Root.Sem (r Root) (asp Asp)))
+  ((match r
+     ((leaf) (= (mode asp) base)))))
+(synth-fun r () Root)
+(constraint (Root.Sem r (Asp w base)))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("enum aspect equality should compile");
+
+    assert!(!sygus.is_empty());
+}
+
+#[test]
 fn parses_direct_semantic_constraints() {
     let problem = parse(
         r#"
@@ -360,6 +386,120 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 }
 
 #[test]
+fn builds_separate_bool_and_finite_value_semantic_domains() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m
+  (define-univ U ($0 $1)))
+(declare-term-types
+ ((Formula 0) (TermU 0))
+ (((pred TermU))
+  ((var.x))))
+(define-finite EnvAsp
+  (record (model Model) (x U)))
+(define-semantics
+  ((TermU.Sem (t TermU) (asp EnvAsp)))
+   :returns U
+  ((match t
+     ((var.x) (x asp)))))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((pred t) true))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (EnvAsp m $0)))
+(check-synth)
+"#,
+    );
+
+    let summary = compile(&problem).expect("mixed semantic domains should compile");
+
+    let term_domain = summary
+        .semantic_domains
+        .iter()
+        .find(|domain| domain.relation == "TermU.Sem")
+        .expect("term semantic domain should exist");
+    assert_eq!(
+        term_domain.kind,
+        crate::compile::types::SemanticKind::FiniteValue {
+            sort: "U".to_string()
+        }
+    );
+    assert_eq!(term_domain.bits.len(), 4);
+    assert_eq!(
+        term_domain
+            .bits
+            .iter()
+            .filter(|bit| bit.value.is_some())
+            .count(),
+        4
+    );
+
+    let formula_domain = summary
+        .semantic_domains
+        .iter()
+        .find(|domain| domain.relation == "Formula.Sem")
+        .expect("formula semantic domain should exist");
+    assert_eq!(
+        formula_domain.kind,
+        crate::compile::types::SemanticKind::Bool
+    );
+    assert_eq!(formula_domain.bits.len(), 2);
+    assert_eq!(summary.bit_mappings.len(), 2);
+}
+
+#[test]
+fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(declare-fun R (U U) Bool)
+(define-model m
+  (define-univ U ($0 $1))
+  (interp-fun R (match ((($0 $1) true) ((_ _) false)))))
+(declare-term-types
+ ((Formula 0) (TermU 0))
+ (((atom TermU TermU)
+   (exists.x Formula))
+  ((x)
+   (c))))
+(define-finite EnvAsp
+  (record (model Model) (xv U)))
+(define-semantics
+  ((TermU.Sem (t TermU) (asp EnvAsp)))
+  :returns U
+  ((match t
+     ((x) (xv asp))
+     ((c) $1))))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((atom a b) (R (TermU.Sem a asp) (TermU.Sem b asp)))
+     ((exists.x body)
+      (exists ((v (domain (U (model asp)))))
+        (Formula.Sem body (EnvAsp (model asp) v)))))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (EnvAsp m $0)))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("mixed semantic BV should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
+    assert!(output.contains("(TermU (_ BitVec 4)"));
+    assert!(!output.contains("(and ((_ extract"));
+}
+
+#[test]
 fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
     let problem = parse(
         r#"
@@ -387,7 +527,7 @@ fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
 }
 
 #[test]
-fn rejects_multiple_finite_aspect_spaces() {
+fn allows_multiple_finite_aspect_spaces() {
     let problem = parse(
         r#"
 (set-logic ALL)
@@ -404,13 +544,15 @@ fn rejects_multiple_finite_aspect_spaces() {
 "#,
     );
 
-    let err = compile(&problem).expect_err("multiple aspect spaces are not supported");
+    let summary = compile(&problem).expect("multiple aspect spaces should be summarized");
 
-    assert!(err.contains("exactly one define-finite"));
+    assert_eq!(summary.finite_spaces, vec!["FirstAsp", "SecondAsp"]);
+    assert_eq!(summary.semantic_domains.len(), 1);
+    assert_eq!(summary.semantic_domains[0].aspect_space, "FirstAsp");
 }
 
 #[test]
-fn rejects_multiple_define_semantics_declarations() {
+fn allows_multiple_define_semantics_declarations() {
     let problem = parse(
         r#"
 (set-logic ALL)
@@ -429,9 +571,10 @@ fn rejects_multiple_define_semantics_declarations() {
 "#,
     );
 
-    let err = compile(&problem).expect_err("multiple define-semantics should be rejected");
+    let summary = compile(&problem).expect("multiple semantics should be summarized");
 
-    assert!(err.contains("exactly one define-semantics"));
+    assert_eq!(summary.semantic_relations, vec!["Regex.Sem", "Regex.Other"]);
+    assert_eq!(summary.semantic_domains.len(), 2);
 }
 
 #[test]

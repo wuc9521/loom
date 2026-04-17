@@ -34,9 +34,11 @@ DefineSemantics = {
   "("
   ~ #DelisTkDefineSemantics="define-semantics"
   ~ SemanticsHeader
+  ~ ReturnsClause?
   ~ SemanticsBody
   ~ ")"
 }
+ReturnsClause = { ":returns" ~ Sort }
 SemanticsHeader = { "(" ~ "(" ~ Symbol ~ SortedVar+ ~ ")" ~ ")" }
 SemanticsBody = { "(" ~ SemanticsMatch ~ ")" }
 SemanticsMatch = { "(" ~ #DelisTkMatchSemantics="match" ~ Symbol ~ SemanticsMatchCase+ ~ ")" }

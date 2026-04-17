@@ -192,15 +192,56 @@ impl FiniteAspect {
 }
 
 #[derive(Clone, Debug, Display)]
-#[display(fmt = "(define-semantics{})", "format_sexpr_body(body)")]
+#[display(
+    fmt = "(define-semantics{}{}{})",
+    "format_sexpr_body(&[header.clone()])",
+    "return_sort.as_ref().map(|sort| format!(\" :returns {sort}\")).unwrap_or_default()",
+    "format_sexpr_body(&[body.clone()])"
+)]
 pub struct Semantics {
-    pub body: Vec<String>,
+    pub header: String,
+    pub body: String,
+    pub return_sort: Option<Sort>,
 }
 
 impl Semantics {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+        let mut header = None;
+        let mut body = None;
+        let mut return_sort = None;
+        for item in pair.into_inner() {
+            match item.as_rule() {
+                Rule::SemanticsHeader => header = Some(item.as_str().to_string()),
+                Rule::ReturnsClause => {
+                    let sort = item.into_inner().next().ok_or_else(|| {
+                        DelisParseError::InvalidSyntax(
+                            "define-semantics :returns expects a sort".to_string(),
+                        )
+                    })?;
+                    return_sort = Some(
+                        Sort::from_str(sort.as_str())
+                            .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?,
+                    );
+                }
+                Rule::SemanticsBody => body = Some(item.as_str().to_string()),
+                _ => {
+                    return Err(DelisParseError::InvalidSyntax(format!(
+                        "Unexpected define-semantics item: {:?}",
+                        item.as_str()
+                    )));
+                }
+            }
+        }
         Ok(Self {
-            body: pair.into_inner().map(|p| p.as_str().to_string()).collect(),
+            header: header.ok_or_else(|| {
+                DelisParseError::InvalidSyntax(
+                    "define-semantics expects a relation header".to_string(),
+                )
+            })?,
+            body: body.ok_or_else(|| {
+                DelisParseError::InvalidSyntax("define-semantics expects a match body".to_string())
+            })?,
+            return_sort,
         })
     }
 }
@@ -416,9 +457,29 @@ mod tests {
 
         match cmd {
             DelisCmd::Semantics(cmd) => {
-                assert_eq!(cmd.body.len(), 2);
-                assert_eq!(cmd.body[0], "((Regex.Sem (r Regex) (asp ReAsp)))");
-                assert_eq!(cmd.body[1], "((match r ((a) true)))");
+                assert_eq!(cmd.header, "((Regex.Sem (r Regex) (asp ReAsp)))");
+                assert_eq!(cmd.body, "((match r ((a) true)))");
+                assert_eq!(cmd.return_sort, None);
+            }
+            other => panic!("expected define-semantics, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_define_semantics_returns() {
+        let cmd = parse_command(
+            "(define-semantics ((Term.Sem (t Term) (asp EnvAsp))) :returns U ((match t ((x) (x asp)))))",
+            None,
+        )
+        .expect("define-semantics :returns should parse");
+
+        match cmd {
+            DelisCmd::Semantics(cmd) => {
+                assert_eq!(cmd.header, "((Term.Sem (t Term) (asp EnvAsp)))");
+                assert_eq!(
+                    cmd.return_sort.as_ref().map(ToString::to_string),
+                    Some("U".to_string())
+                );
             }
             other => panic!("expected define-semantics, got {other:?}"),
         }

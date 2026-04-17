@@ -419,6 +419,39 @@ fn raw_value_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<AspectV
     Err(format!("expected finite value expression, got {expr}"))
 }
 
+fn enum_value_expr(
+    expr: &Value,
+    env: &[(String, AspectValue)],
+) -> Option<Result<AspectValue, String>> {
+    if let Some(value) = aspect_projection(expr, env) {
+        return match value {
+            Ok(value @ AspectValue::Symbol(_)) => Some(Ok(value)),
+            Ok(_) => None,
+            Err(err) => Some(Err(err)),
+        };
+    }
+    if let Some(symbol) = expr.as_symbol() {
+        if let Some(value @ AspectValue::Symbol(_)) = lookup(env, symbol) {
+            return Some(Ok(value.clone()));
+        }
+    }
+    None
+}
+
+fn eval_enum_equality(
+    lhs: &Value,
+    rhs: &Value,
+    env: &[(String, AspectValue)],
+) -> Result<Option<bool>, String> {
+    if let Some(lhs_value) = enum_value_expr(lhs, env) {
+        return Ok(Some(lhs_value? == raw_value_expr(rhs, env)?));
+    }
+    if let Some(rhs_value) = enum_value_expr(rhs, env) {
+        return Ok(Some(raw_value_expr(lhs, env)? == rhs_value?));
+    }
+    Ok(None)
+}
+
 fn value_expr(
     expr: &Value,
     env: &[(String, AspectValue)],
@@ -490,7 +523,14 @@ fn eval_model_symbol(
     }
     if let Some(sig) = func_sig(problem, symbol) {
         if sig.arg_sorts.is_empty() {
-            return eval_model_application(problem, model_name, symbol, &[], env, &models_by_name(problem));
+            return eval_model_application(
+                problem,
+                model_name,
+                symbol,
+                &[],
+                env,
+                &models_by_name(problem),
+            );
         }
     }
     let model = model_by_name(problem, model_name)?;
@@ -542,8 +582,9 @@ fn eval_model_application(
         };
         arg_symbols.push(arg_symbol);
     }
-    let value = eval_symbols(func, &arg_symbols, &model.func_interps)
-        .ok_or_else(|| format!("model {model_name} has no interpretation for {func}{arg_symbols:?}"))?;
+    let value = eval_symbols(func, &arg_symbols, &model.func_interps).ok_or_else(|| {
+        format!("model {model_name} has no interpretation for {func}{arg_symbols:?}")
+    })?;
     interped_value_to_model_value(problem, model_name, value, &sig.ret_sort)
 }
 
@@ -628,7 +669,10 @@ fn interped_value_to_model_value(
             let src = format!(
                 "({} {})",
                 name,
-                args.iter().map(ToString::to_string).collect::<Vec<_>>().join(" ")
+                args.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" ")
             );
             let expr = lexpr::from_str(&src)
                 .map_err(|e| format!("failed to parse interpreted function value {src}: {e}"))?;
@@ -648,7 +692,9 @@ fn literal_to_model_value(lit: &Literal, expected_sort: &str) -> Result<ModelVal
             .parse::<isize>()
             .map(ModelValue::Int)
             .map_err(|_| format!("expected Int literal, got {src}")),
-        _ => Err(format!("literal {src} is not a value of sort {expected_sort}")),
+        _ => Err(format!(
+            "literal {src} is not a value of sort {expected_sort}"
+        )),
     }
 }
 
@@ -663,9 +709,8 @@ fn ensure_model_value_sort(
         "Bool" if matches!(value, ModelValue::Bool(_)) => Ok(value),
         "Int" if matches!(value, ModelValue::Int(_)) => Ok(value),
         expected => {
-            let symbol = model_value_as_sort(model, &value, expected)?.ok_or_else(|| {
-                format!("value is outside sort {expected} in model {model_name}")
-            })?;
+            let symbol = model_value_as_sort(model, &value, expected)?
+                .ok_or_else(|| format!("value is outside sort {expected} in model {model_name}"))?;
             Ok(ModelValue::Univ {
                 sort: expected.to_string(),
                 name: symbol,
@@ -904,6 +949,9 @@ fn eval_semantic_bool(
     let models = models_by_name(problem);
     match op {
         "=" => {
+            if let Some(value) = eval_enum_equality(list[1], list[2], env)? {
+                return Ok(value);
+            }
             let lhs = eval_model_term(problem, model_name, list[1], env, &models)?;
             let rhs = eval_model_term(problem, model_name, list[2], env, &models)?;
             Ok(lhs == rhs)

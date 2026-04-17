@@ -1013,17 +1013,9 @@ fn parse_aspect_fields(
 }
 
 fn parse_semantics(semantics: &crate::parser::ast::Semantics) -> Result<SemanticsDef, String> {
-    let header = semantics
-        .body
-        .first()
-        .ok_or_else(|| "define-semantics expects a header".to_string())?;
-    let body = semantics
-        .body
-        .get(1)
-        .ok_or_else(|| "define-semantics expects a match body".to_string())?;
-    let header = parse_semantics_header(header)?;
-    let body =
-        lexpr::from_str(body).map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
+    let header = parse_semantics_header(&semantics.header)?;
+    let body = lexpr::from_str(&semantics.body)
+        .map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
     let outer =
         list_items(&body).ok_or_else(|| format!("define-semantics body must be a list: {body}"))?;
     let match_expr = if outer.len() == 1 { outer[0] } else { &body };

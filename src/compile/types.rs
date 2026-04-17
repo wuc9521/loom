@@ -27,6 +27,7 @@ pub struct BitMapping {
 pub struct Encoding {
     pub finite_spaces: Vec<String>,
     pub semantic_relations: Vec<String>,
+    pub semantic_domains: Vec<SemanticDomain>,
     pub bit_mappings: Vec<BitMapping>,
     pub constraint_bits: Vec<ConstraintBit>,
     pub needs_saturation: bool,
@@ -38,6 +39,46 @@ pub struct ConstraintBit {
     pub model: String,
     pub expected: bool,
     pub bit: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticProgram {
+    pub finite_spaces: Vec<FiniteSpace>,
+    pub semantics: Vec<SemanticSpec>,
+    pub domains: Vec<SemanticDomain>,
+    pub constraints: Vec<SemanticConstraint>,
+    pub needs_saturation: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticSpec {
+    pub relation: String,
+    pub term_sort: String,
+    pub aspect_space: String,
+    pub return_kind: SemanticKind,
+    pub body: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SemanticKind {
+    Bool,
+    FiniteValue { sort: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticDomain {
+    pub relation: String,
+    pub term_sort: String,
+    pub aspect_space: String,
+    pub kind: SemanticKind,
+    pub bits: Vec<DomainBit>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DomainBit {
+    pub bit: usize,
+    pub aspect: AspectKey,
+    pub value: Option<AspectValue>,
 }
 
 impl Encoding {
@@ -52,6 +93,16 @@ impl Encoding {
             "; semantic-relations: {}",
             self.semantic_relations.join(", ")
         ));
+        for domain in &self.semantic_domains {
+            lines.push(format!(
+                "; semantic-domain {} term-sort={} aspect-space={} kind={:?} bits={}",
+                domain.relation,
+                domain.term_sort,
+                domain.aspect_space,
+                domain.kind,
+                domain.bits.len()
+            ));
+        }
         lines.push(format!("; needs-saturation: {}", self.needs_saturation));
         lines.push(format!("; bv-len: {}", self.bit_mappings.len()));
         for mapping in &self.bit_mappings {
