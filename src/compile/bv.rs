@@ -1,4 +1,5 @@
 use crate::{
+    backends::sygus::optim::{self, BitwiseExpr},
     compile::{
         semantic::{interped_bool, interped_value_matches, parse_cases, Case},
         syntax::{synth_name, TermConstructor, TermSignature},
@@ -58,12 +59,13 @@ struct NativeCompiler<'a> {
     domain_by_sort: HashMap<String, SemanticDomain>,
     cases: HashMap<String, HashMap<String, Case>>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
+    optimize: bool,
 }
 
 pub fn compile(
     problem: &DelisProg,
     program: SemanticProgram,
-    _optimize: bool,
+    optimize: bool,
 ) -> Result<Vec<SyGuSCmd>, String> {
     let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
         DelisCmd::TermTypes(cmd) => Some(cmd),
@@ -73,7 +75,7 @@ pub fn compile(
         return Err("SyGuS compilation requires declare-term-types".to_string());
     };
     let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    let mut compiler = NativeCompiler::new(problem, program, sig)?;
+    let mut compiler = NativeCompiler::new(problem, program, sig, optimize)?;
     compiler.compile()
 }
 
@@ -82,6 +84,7 @@ impl<'a> NativeCompiler<'a> {
         problem: &'a DelisProg,
         program: SemanticProgram,
         sig: TermSignature,
+        optimize: bool,
     ) -> Result<Self, String> {
         let models = problem
             .cmds
@@ -148,6 +151,7 @@ impl<'a> NativeCompiler<'a> {
             domain_by_sort,
             cases,
             bit_index,
+            optimize,
         })
     }
 
@@ -271,7 +275,7 @@ impl<'a> NativeCompiler<'a> {
                 .insert(var.clone(), ChildBinding { arg_idx: idx });
         }
 
-        let mut bits = Vec::new();
+        let mut bool_bits = Vec::new();
         for bit in &domain.bits {
             env.aspect.insert("asp".to_string(), bit.aspect.clone());
             let bool_expr = match (&domain.kind, &bit.value) {
@@ -286,20 +290,40 @@ impl<'a> NativeCompiler<'a> {
                     ));
                 }
             };
-            bits.push(match bool_expr {
-                BoolExpr::Const(value) => BitExpr::Const(value),
-                BoolExpr::Dynamic(term) => bool_to_bit(term),
-            });
+            bool_bits.push(bool_expr);
         }
 
         let mut builder = Cmd::define_fun(&cons.name);
+        let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
         for (idx, sort) in cons.arg_sorts.iter().enumerate() {
             let arg_domain = self.domain_for_sort(sort)?;
-            builder = builder.arg(&arg_name(idx), Sort::bitvec(arg_domain.bits.len().max(1)));
+            builder = builder.arg(&arg_names[idx], Sort::bitvec(arg_domain.bits.len().max(1)));
         }
+        let lift_bits = bool_bits
+            .iter()
+            .map(|expr| match expr {
+                BoolExpr::Const(value) => BitwiseExpr::Const(*value),
+                BoolExpr::Dynamic(term) => BitwiseExpr::Expr(term.clone()),
+            })
+            .collect::<Vec<_>>();
+        let body = (if self.optimize {
+            optim::try_lift_native_bv(&lift_bits, &arg_names)
+        } else {
+            None
+        })
+        .unwrap_or_else(|| {
+            let bits = bool_bits
+                .into_iter()
+                .map(|expr| match expr {
+                    BoolExpr::Const(value) => BitExpr::Const(value),
+                    BoolExpr::Dynamic(term) => bool_to_bit(term),
+                })
+                .collect::<Vec<_>>();
+            compact_bitvec(bits)
+        });
         Ok(builder
             .ret(Sort::bitvec(domain.bits.len().max(1)))
-            .body(compact_bitvec(bits))
+            .body(body)
             .build())
     }
 

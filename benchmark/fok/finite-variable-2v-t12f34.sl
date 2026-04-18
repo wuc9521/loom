@@ -73,6 +73,7 @@
 		(($5 $1) true)
 		(($5 $7) true)
 		(($6 $7) true)
+		(($7 $4) true)
 		(($7 $5) true)
 		(($7 $6) true)
 		((_ _) false)
@@ -111,15 +112,15 @@
    (fol.and Formula Formula)
    (fol.or Formula Formula)
    (fol.forall.x0.U Formula)
-   (fol.forall.x1.U Formula)
    (fol.exists.x0.U Formula)
+   (fol.forall.x1.U Formula)
    (fol.exists.x1.U Formula)
    (fol.eq.U TermU TermU)
    (E.atom TermU TermU))
-  ((term.x0)
-   (term.x1)
-   (term.s)
-   (term.t))))
+  ((x0)
+   (x1)
+   (s)
+   (t))))
 
 (define-finite FoAsp
   (record (model Model) (x0 U) (x1 U)))
@@ -128,10 +129,10 @@
   ((TermU.Sem (term TermU) (asp FoAsp)))
   :returns U
   ((match term
-     ((term.x0) (x0 asp))
-     ((term.x1) (x1 asp))
-     ((term.s) s)
-     ((term.t) t))))
+     ((x0) (x0 asp))
+     ((x1) (x1 asp))
+     ((s) s)
+     ((t) t))))
 
 (define-semantics
   ((FO.Sem (phi Formula) (asp FoAsp)))

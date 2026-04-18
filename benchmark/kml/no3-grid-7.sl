@@ -250,21 +250,7 @@
         (and (R (node asp) next)
              (Modal.Sem x (ModalAsp (model asp) next))))))))
 
-(synth-fun phi () Modal
-    ((Start Modal))
-    (
-        (Start Modal
-            (
-                a b c
-                (modal.not Start)
-                (modal.and Start Start)
-                (modal.or Start Start)
-                (modal.box Start)
-                (modal.dia Start)
-            )
-        )
-    )
-)
+(synth-fun phi () Modal)
 
 (constraint (Modal.Sem phi (ModalAsp Grid1 $0)))
 (constraint (Modal.Sem phi (ModalAsp Grid2 $0)))

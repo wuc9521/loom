@@ -178,11 +178,11 @@ fn solve_with_backends(delis_file: &DelisProg, args: &CLI) -> Result<(), io::Err
     let sygus_solver = args.sygus_solver_config();
     if args.linear {
         match run_chc_solver(&chc_solver, &chc_text)?.as_deref() {
-            Some("unsat") => {
+            Some("sat") => {
                 println!("unsat");
                 return Ok(());
             }
-            Some("sat") | None => {
+            Some("unsat") | None => {
                 println!(
                     "{}",
                     decode_sygus_output(
@@ -216,7 +216,7 @@ fn solve_parallel(
     loop {
         if chc.try_wait()?.is_some() {
             let chc_stdout = solver_stdout(chc)?;
-            if chc_result(&chc_stdout) == Some("unsat") {
+            if chc_result(&chc_stdout) == Some("sat") {
                 let _ = sygus.kill();
                 let _ = sygus.wait();
                 println!("unsat");

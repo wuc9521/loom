@@ -1,12 +1,45 @@
 use crate::backends::smt2::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm};
-use sygus_parser::{Bool, Literal, SExpr, SyGuSTerm, Term};
+use std::collections::BTreeSet;
+use sygus_parser::{Bool, Literal, SExpr, Sort, SortedVar, SyGuSTerm, Term};
 
-fn query() -> SExpr {
-    SExpr::Reserved("query".to_string())
+fn assert() -> SExpr {
+    SExpr::Reserved("assert".to_string())
 }
 
-fn rule() -> SExpr {
-    SExpr::Reserved("rule".to_string())
+fn check_sat() -> SExpr {
+    SExpr::Reserved("check-sat".to_string())
+}
+
+fn forall(vars: BTreeSet<String>, body: SyGuSTerm) -> SyGuSTerm {
+    if vars.is_empty() {
+        return body;
+    }
+    Term::forall(
+        vars.into_iter()
+            .map(|name| SortedVar {
+                name,
+                sort: Sort::from_name("Term"),
+            })
+            .collect(),
+        body,
+    )
+}
+
+fn collect_term_vars(term: &HornTerm, out: &mut BTreeSet<String>) {
+    match term {
+        HornTerm::Var(name) => {
+            out.insert(name.clone());
+        }
+        HornTerm::App { args, .. } => {
+            for arg in args {
+                collect_term_vars(arg, out);
+            }
+        }
+    }
+}
+
+fn collect_atom_vars(atom: &HornAtom, out: &mut BTreeSet<String>) {
+    collect_term_vars(&atom.arg, out);
 }
 
 impl HornAtom {
@@ -29,23 +62,29 @@ fn body_to_term(body_atoms: &[HornAtom]) -> Option<SyGuSTerm> {
 
 impl HornQuery {
     pub fn to_sexpr(&self) -> SExpr {
-        if let [atom] = self.body_atoms.as_slice() {
-            if matches!(&atom.arg, HornTerm::Var(_)) {
-                return SExpr::SExprList(vec![query(), SExpr::Symbol(atom.pred.clone())]);
-            }
-        }
         let body = body_to_term(&self.body_atoms).unwrap_or_else(|| Bool::true_());
-        SExpr::SExprList(vec![query(), body.to_sexpr()])
+        let mut vars = BTreeSet::new();
+        for atom in &self.body_atoms {
+            collect_atom_vars(atom, &mut vars);
+        }
+        let query = Bool::implies(body, Bool::false_());
+        SExpr::SExprList(vec![assert(), forall(vars, query).to_sexpr()])
     }
 }
 
 impl HornRule {
     pub fn to_sexpr(&self) -> SExpr {
         let head = self.head.to_term();
-        match body_to_term(&self.body_atoms) {
-            None => SExpr::SExprList(vec![rule(), head.to_sexpr()]),
-            Some(body) => SExpr::SExprList(vec![rule(), Bool::implies(body, head).to_sexpr()]),
+        let rule = match body_to_term(&self.body_atoms) {
+            None => head,
+            Some(body) => Bool::implies(body, head),
+        };
+        let mut vars = BTreeSet::new();
+        collect_atom_vars(&self.head, &mut vars);
+        for atom in &self.body_atoms {
+            collect_atom_vars(atom, &mut vars);
         }
+        SExpr::SExprList(vec![assert(), forall(vars, rule).to_sexpr()])
     }
 }
 
@@ -64,16 +103,21 @@ impl HornDecl {
             HornDecl::DeclareRel(name, args) => {
                 let args_list = SExpr::SExprList(args.iter().map(|s| s.to_sexpr()).collect());
                 SExpr::SExprList(vec![
-                    SExpr::Reserved("declare-rel".to_string()),
+                    SExpr::Reserved("declare-fun".to_string()),
                     SExpr::Symbol(name.to_string()),
                     args_list,
+                    Sort::bool().to_sexpr(),
                 ])
             }
-            HornDecl::DeclareVar(name, sort) => SExpr::SExprList(vec![
-                SExpr::Reserved("declare-var".to_string()),
-                SExpr::Symbol(name.to_string()),
-                sort.to_sexpr(),
-            ]),
+            HornDecl::DeclareVar(name, sort) => {
+                let args_list = SExpr::SExprList(Vec::new());
+                SExpr::SExprList(vec![
+                    SExpr::Reserved("declare-fun".to_string()),
+                    SExpr::Symbol(name.to_string()),
+                    args_list,
+                    sort.to_sexpr(),
+                ])
+            }
             HornDecl::DeclareConst(name, sort) => {
                 let args_list = SExpr::SExprList(Vec::new());
                 SExpr::SExprList(vec![
@@ -131,6 +175,9 @@ impl HornDecl {
 pub fn to_smt(program: &HornProg) -> Vec<SExpr> {
     let mut out = Vec::new();
     for decl in &program.decls {
+        if matches!(decl, HornDecl::DeclareVar(..)) {
+            continue;
+        }
         out.push(decl.to_sexpr());
     }
     for rule in &program.rules {
@@ -142,5 +189,6 @@ pub fn to_smt(program: &HornProg) -> Vec<SExpr> {
     for cmd in &program.tail {
         out.push(cmd.to_sexpr());
     }
+    out.push(SExpr::SExprList(vec![check_sat()]));
     out
 }
