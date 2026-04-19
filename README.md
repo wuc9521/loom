@@ -1,19 +1,14 @@
 # Delis
 
-Install dependencies `cvc5` and `z3` for the default solver setup.
+Install dependency `cvc5` for the default solver setup.
 
 - `cvc5` should be built from source code due to issue [#12375](https://github.com/cvc5/cvc5/issues/12375)
 
-By default, Delis runs CHC solving with `z3 -in` and SyGuS solving with `cvc5 --lang=sygus2`.
-These defaults can be overridden when another solver accepts the generated input:
-
-```bash
-$ delis --chc-solver horn-solver --chc-solver-arg -in \
-        --sygus-solver sygus-solver --sygus-solver-arg=--lang=sygus2 \
-        benchmark/delis/re/no10_alternating_short.dl
-```
-
-`--chc-solver-arg` and `--sygus-solver-arg` may be repeated. Supplying a solver command or any solver argument replaces that solver's default argument list.
+By default, Delis races the compiled CHC and SyGuS problems with `cvc5`.
+The first decisive backend result ends the run.
+When the semantic bit-vector encoding length is at least
+`--enum-trigger`, Delis runs SyGuS with `cvc5 --lang=sygus2 --sygus-enum=fast`.
+The default trigger is `256`.
 
 Usage
 
@@ -32,11 +27,8 @@ Options:
   -d, --dump-sygus              Translate to SyGuS BV and print to stdout
       --dump-chc                Translate to CHC (HORN) and print to stdout
       --dump-semgus             Translate to SemGuS and print to stdout
-      --linear                  Run CHC first and SyGuS second instead of running both solvers in parallel
-      --chc-solver <COMMAND>    CHC solver command. Defaults to `z3`
-      --chc-solver-arg <ARG>    CHC solver argument. May be repeated. Defaults to `-in` unless solver command or arguments are overridden
-      --sygus-solver <COMMAND>  SyGuS solver command. Defaults to `cvc5`
-      --sygus-solver-arg <ARG>  SyGuS solver argument. May be repeated. Defaults to `--lang=sygus2` unless solver command or arguments are overridden
+      --enum-trigger <ENUM_TRIGGER>
+                                  Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 256]
   -h, --help                    Print help
   -V, --version                 Print version
 ```

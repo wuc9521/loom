@@ -34,6 +34,7 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
     let summary = compile(&problem).expect("compilation should summarize");
 
     assert_eq!(summary.bit_mappings.len(), 16);
+    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 16);
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert_eq!(summary.constraint_bits[0].model, "w1");

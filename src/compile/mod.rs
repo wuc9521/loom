@@ -27,6 +27,18 @@ struct StatePredicates {
     negative: String,
 }
 
+pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
+    let semantic_program = finite::compile_semantic_program(problem)?;
+    if semantic_program
+        .domains
+        .iter()
+        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool))
+    {
+        return native_bv_sz(problem, &semantic_program);
+    }
+    compile(problem).map(|summary| summary.bit_mappings.len())
+}
+
 pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
     let semantic_program = finite::compile_semantic_program(problem)?;
     if semantic_program
@@ -36,7 +48,6 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     {
         return bv::compile(problem, semantic_program, optimize);
     }
-
     let summary = compile(problem)?;
     if summary.bit_mappings.is_empty() {
         return Err("SyGuS compilation requires at least one semantic aspect bit".to_string());
@@ -60,6 +71,26 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         .into_iter()
         .map(Ok)
         .collect()
+}
+
+fn native_bv_sz(
+    problem: &DelisProg,
+    semantic_program: &types::SemanticProgram,
+) -> Result<usize, String> {
+    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
+        DelisCmd::TermTypes(cmd) => Some(cmd),
+        _ => None,
+    });
+    let Some(declare_term_types) = declare_term_types else {
+        return Err("SyGuS compilation requires declare-term-types".to_string());
+    };
+    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
+    semantic_program
+        .domains
+        .iter()
+        .find(|domain| domain.term_sort == sig.start_sort())
+        .map(|domain| domain.bits.len().max(1))
+        .ok_or_else(|| format!("no semantic domain for term sort {}", sig.start_sort()))
 }
 
 pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
