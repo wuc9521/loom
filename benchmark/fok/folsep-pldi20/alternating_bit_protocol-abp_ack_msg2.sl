@@ -415,13 +415,14 @@
 
 (synth-fun phi () Formula)
 
-(constraint (FO.Sem phi (FoAsp P0 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0)))
-(constraint (not (FO.Sem phi (FoAsp N1 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0))))
-(constraint (FO.Sem phi (FoAsp P2 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0)))
-(constraint (not (FO.Sem phi (FoAsp N3 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0))))
-(constraint (not (FO.Sem phi (FoAsp N4 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0))))
-(constraint (FO.Sem phi (FoAsp P5 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0)))
-(constraint (FO.Sem phi (FoAsp P6 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0)))
-(constraint (FO.Sem phi (FoAsp P7 @abp.ack_msg_t_0 @abp.ack_msg_t_0 @uc_abp.data_msg_t_0 @uc_abp.data_msg_t_0 @abp.index_t_0 @abp.index_t_0 @uc_abp.value_0 @uc_abp.value_0)))
+(constraint (FO.Valid phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (FO.Sem phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N1 fol.bot fol.bot))))
+(constraint (FO.Sem phi (FoAsp P2 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N3 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N4 fol.bot fol.bot))))
+(constraint (FO.Sem phi (FoAsp P5 fol.bot fol.bot)))
+(constraint (FO.Sem phi (FoAsp P6 fol.bot fol.bot)))
+(constraint (FO.Sem phi (FoAsp P7 fol.bot fol.bot)))
 
 (check-synth)

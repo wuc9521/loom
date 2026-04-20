@@ -1008,13 +1008,14 @@
 
 (synth-fun phi () Formula)
 
-(constraint (FO.Sem phi (FoAsp P0 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0)))
-(constraint (not (FO.Sem phi (FoAsp N1 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0))))
-(constraint (not (FO.Sem phi (FoAsp N2 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0))))
-(constraint (not (FO.Sem phi (FoAsp N3 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0))))
-(constraint (not (FO.Sem phi (FoAsp N4 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0))))
-(constraint (FO.Sem phi (FoAsp P5 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0)))
-(constraint (not (FO.Sem phi (FoAsp N6 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0))))
-(constraint (not (FO.Sem phi (FoAsp N7 @uc_tlb.pageentry_0 @uc_tlb.pageentry_0 @uc_tlb.pmap_0 @uc_tlb.pmap_0 @tlb.processor_0 @tlb.processor_0))))
+(constraint (FO.Valid phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (FO.Sem phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N1 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N2 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N3 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N4 fol.bot fol.bot))))
+(constraint (FO.Sem phi (FoAsp P5 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N6 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N7 fol.bot fol.bot))))
 
 (check-synth)

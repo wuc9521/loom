@@ -134,10 +134,11 @@
 
 (synth-fun phi () Formula)
 
-(constraint (FO.Sem phi (FoAsp P0 @id_0 @id_0 @node_0 @node_0)))
-(constraint (not (FO.Sem phi (FoAsp N1 @id_0 @id_0 @node_0 @node_0))))
-(constraint (FO.Sem phi (FoAsp P2 @id_0 @id_0 @node_0 @node_0)))
-(constraint (not (FO.Sem phi (FoAsp N3 @id_0 @id_0 @node_0 @node_0))))
-(constraint (FO.Sem phi (FoAsp P4 @id_0 @id_0 @node_0 @node_0)))
+(constraint (FO.Valid phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (FO.Sem phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N1 fol.bot fol.bot))))
+(constraint (FO.Sem phi (FoAsp P2 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N3 fol.bot fol.bot))))
+(constraint (FO.Sem phi (FoAsp P4 fol.bot fol.bot)))
 
 (check-synth)

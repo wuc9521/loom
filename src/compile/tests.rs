@@ -501,6 +501,81 @@ fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
 }
 
 #[test]
+fn union_finite_fields_enumerate_bot_plus_model_domains() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m
+  (define-univ U ($0 $1)))
+(declare-term-types
+ ((Formula 0))
+ (((top))))
+(define-finite EnvAsp
+  (record (model Model) (x (union bot U)) (y (union bot U))))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((top) true))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (EnvAsp m bot bot)))
+(check-synth)
+"#,
+    );
+
+    let summary = compile(&problem).expect("union finite fields should compile");
+
+    assert_eq!(summary.bit_mappings.len(), 9);
+    assert_eq!(summary.constraint_bits[0].bit, 0);
+}
+
+#[test]
+fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m
+  (define-univ U ($0 $1)))
+(declare-term-types
+ ((Formula 0) (TermU 0))
+ (((top))
+  ((x))))
+(define-finite EnvAsp
+  (record (model Model) (xv (union bot U))))
+(define-semantics
+  ((TermU.Sem (t TermU) (asp EnvAsp)))
+  :returns U
+  ((match t
+     ((x) (xv asp)))))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((top) true))))
+(define-semantics
+  ((Formula.Valid (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((top) true))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (EnvAsp m bot)))
+(constraint (Formula.Valid phi (EnvAsp m bot)))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("multiple Formula domains should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(output.contains("(synth-fun phi () (_ BitVec 6)"));
+    assert!(output.contains("(constraint (= ((_ extract 0 0) phi) #b1))"));
+    assert!(output.contains("(constraint (= ((_ extract 3 3) phi) #b1))"));
+}
+
+#[test]
 fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
     let problem = parse(
         r#"

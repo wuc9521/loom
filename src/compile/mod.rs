@@ -85,12 +85,19 @@ fn native_bv_sz(
         return Err("SyGuS compilation requires declare-term-types".to_string());
     };
     let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    semantic_program
+    let width = semantic_program
         .domains
         .iter()
-        .find(|domain| domain.term_sort == sig.start_sort())
-        .map(|domain| domain.bits.len().max(1))
-        .ok_or_else(|| format!("no semantic domain for term sort {}", sig.start_sort()))
+        .filter(|domain| domain.term_sort == sig.start_sort())
+        .map(|domain| domain.bits.len())
+        .sum::<usize>();
+    if width == 0 {
+        return Err(format!(
+            "no semantic domain for term sort {}",
+            sig.start_sort()
+        ));
+    }
+    Ok(width)
 }
 
 pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {

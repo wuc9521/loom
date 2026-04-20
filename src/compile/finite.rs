@@ -383,6 +383,29 @@ fn parse_aspect_term(
                 }
                 AspectValue::Symbol(value)
             }
+            FieldDomain::Union { bot, sorts } => {
+                let value = arg.to_string();
+                if value == *bot {
+                    AspectValue::Symbol(value)
+                } else {
+                    let Some(sort) = sorts
+                        .iter()
+                        .find(|sort| {
+                            get_domain_for_sort(model, sort)
+                                .is_some_and(|domain| domain.contains(&value))
+                        })
+                        .cloned()
+                    else {
+                        return Err(format!(
+                            "aspect field {} expected {} or an element of one of ({}) but got {value}",
+                            field.name,
+                            bot,
+                            sorts.join(", ")
+                        ));
+                    };
+                    AspectValue::Univ { sort, name: value }
+                }
+            }
         };
         assignment.push((field.name.clone(), value));
     }
@@ -474,6 +497,26 @@ fn parse_field_domain(domain: &Value) -> Result<FieldDomain, String> {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(FieldDomain::Enum),
+        [op, bot, sorts @ ..] if op.as_symbol() == Some("union") => {
+            let bot = bot
+                .as_symbol()
+                .ok_or_else(|| format!("union bot value must be a symbol: {bot}"))?
+                .to_string();
+            let sorts = sorts
+                .iter()
+                .map(|sort| {
+                    sort.as_symbol()
+                        .map(str::to_string)
+                        .ok_or_else(|| format!("union sort must be a symbol: {sort}"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if sorts.is_empty() {
+                return Err(format!(
+                    "union field domain must include at least one sort: {domain}"
+                ));
+            }
+            Ok(FieldDomain::Union { bot, sorts })
+        }
         _ => Err(format!("unsupported record field domain {domain}")),
     }
 }
@@ -516,6 +559,23 @@ fn enumerate_aspects(
                 }
                 FieldDomain::Enum(values) => {
                     values.iter().cloned().map(AspectValue::Symbol).collect()
+                }
+                FieldDomain::Union { bot, sorts } => {
+                    let mut values = vec![AspectValue::Symbol(bot.clone())];
+                    for sort in sorts {
+                        let Some(domain) = get_domain_for_sort(model, sort) else {
+                            return Err(format!(
+                                "unsupported finite field union sort {sort} for field {}; use model universe sorts ({})",
+                                field.name,
+                                universe_sorts.join(", ")
+                            ));
+                        };
+                        values.extend(domain.into_iter().map(|name| AspectValue::Univ {
+                            sort: sort.clone(),
+                            name,
+                        }));
+                    }
+                    values
                 }
             };
             Ok((field.name.clone(), values))

@@ -52,33 +52,39 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
     let chc_tx = tx.clone();
     let chc_file = delis_file.clone();
-    thread::spawn(move || {
-        let result = (|| {
-            let chc_program = compile::to_chc_ast(&chc_file)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));
-            run_chc_solver(&chc_solver_config(), &chc_text)
-        })();
-        let _ = chc_tx.send(BackendResult::Chc(result));
-    });
+    thread::Builder::new()
+        .name("chc-backend".to_string())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let result = (|| {
+                let chc_program = compile::to_chc_ast(&chc_file)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));
+                run_chc_solver(&chc_solver_config(), &chc_text)
+            })();
+            let _ = chc_tx.send(BackendResult::Chc(result));
+        })?;
 
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
     let optimize = args.optimize;
     let enum_trigger = args.enum_trigger;
-    thread::spawn(move || {
-        let result = (|| {
-            let bv_sz =
-                compile::bv_sz(&sygus_file).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let sygus_cmds = compile::to_sygus(&sygus_file, optimize)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let sygus_text = cmds_to_text(&sygus_cmds);
-            let sygus_solver = cvc5_config(bv_sz, enum_trigger);
-            let output = run_sygus_solver(&sygus_solver, &sygus_text)?;
-            decode_cvc5_response(&sygus_file, &output)
-        })();
-        let _ = sygus_tx.send(BackendResult::Sygus(result));
-    });
+    thread::Builder::new()
+        .name("sygus-backend".to_string())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            let result = (|| {
+                let bv_sz = compile::bv_sz(&sygus_file)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let sygus_cmds = compile::to_sygus(&sygus_file, optimize)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let sygus_text = cmds_to_text(&sygus_cmds);
+                let sygus_solver = cvc5_config(bv_sz, enum_trigger);
+                let output = run_sygus_solver(&sygus_solver, &sygus_text)?;
+                decode_cvc5_response(&sygus_file, &output)
+            })();
+            let _ = sygus_tx.send(BackendResult::Sygus(result));
+        })?;
 
     drop(tx);
     let mut pending = 2;
@@ -258,7 +264,7 @@ pub struct CLI {
     dump_semgus: bool,
 
     /// Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value.
-    #[arg(long = "enum-trigger", default_value_t = 256)]
+    #[arg(long = "enum-trigger", default_value_t = 512)]
     enum_trigger: usize,
 }
 

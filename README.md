@@ -1,9 +1,6 @@
 # Delis
 
-Install dependency `cvc5` for the default solver setup.
-
-- `cvc5` should be built from source code due to issue [#12375](https://github.com/cvc5/cvc5/issues/12375)
-
+Install dependency `cvc5` and `z3` for the default solver setup.
 By default, Delis races the compiled CHC and SyGuS problems with `cvc5`.
 The first decisive backend result ends the run.
 When the semantic bit-vector encoding length is at least
@@ -13,7 +10,7 @@ The default trigger is `256`.
 Usage
 
 ```
-(base) *[main][~/Codes/Rust/delis]$ ./target/release/delis --help                                                    
+$ ./target/release/delis --help                                                    
 Parse and analyze your custom language files
 
 Usage: delis [OPTIONS] [FILE]
@@ -28,7 +25,7 @@ Options:
       --dump-chc                Translate to CHC (HORN) and print to stdout
       --dump-semgus             Translate to SemGuS and print to stdout
       --enum-trigger <ENUM_TRIGGER>
-                                  Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 256]
+                                  Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 512]
   -h, --help                    Print help
   -V, --version                 Print version
 ```
@@ -36,9 +33,9 @@ Options:
 Demo
 
 ```bash
-$ cargo build --release
-$ ./target/release/delis benchmark/delis/re/no10_alternating_short.dl 
+time delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl 
 (
-(define-fun regex () RegLan (re.union a (re.union b (re.union (re.++ a b) (re.++ b (re.++ a (re.* b)))))))
+(define-fun phi () Formula (fol.forall.x0.abp.ack_msg_t (fol.or (fol.eq.abp.ack_msg_t fol.var.x0.abp.ack_msg_t fol.var.x1.abp.ack_msg_t) (fol.forall.x1.abp.ack_msg_t (fol.atom.abp.ack_msg.le fol.var.x0.abp.ack_msg_t fol.var.x1.abp.ack_msg_t)))))
 )
+delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl  0.14s user 0.02s system 129% cpu 0.123 total
 ```

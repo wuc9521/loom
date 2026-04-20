@@ -264,10 +264,11 @@
 
 (synth-fun phi () Formula)
 
-(constraint (FO.Sem phi (FoAsp P0 @uc_inst_0 @uc_inst_0 @node_0 @node_0 @quorum_0 @quorum_0 @round_0 @round_0 @uc_value_0 @uc_value_0 @votemap_0 @votemap_0)))
-(constraint (not (FO.Sem phi (FoAsp N1 @uc_inst_0 @uc_inst_0 @node_0 @node_0 @quorum_0 @quorum_0 @round_0 @round_0 @uc_value_0 @uc_value_0 @votemap_0 @votemap_0))))
-(constraint (not (FO.Sem phi (FoAsp N2 @uc_inst_0 @uc_inst_0 @node_0 @node_0 @quorum_0 @quorum_0 @round_0 @round_0 @uc_value_0 @uc_value_0 @votemap_0 @votemap_0))))
-(constraint (not (FO.Sem phi (FoAsp N3 @uc_inst_0 @uc_inst_0 @node_0 @node_0 @quorum_0 @quorum_0 @round_0 @round_0 @uc_value_0 @uc_value_0 @votemap_0 @votemap_0))))
-(constraint (FO.Sem phi (FoAsp P4 @uc_inst_0 @uc_inst_0 @node_0 @node_0 @quorum_0 @quorum_0 @round_0 @round_0 @uc_value_0 @uc_value_0 @votemap_0 @votemap_0)))
+(constraint (FO.Valid phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (FO.Sem phi (FoAsp P0 fol.bot fol.bot)))
+(constraint (not (FO.Sem phi (FoAsp N1 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N2 fol.bot fol.bot))))
+(constraint (not (FO.Sem phi (FoAsp N3 fol.bot fol.bot))))
+(constraint (FO.Sem phi (FoAsp P4 fol.bot fol.bot)))
 
 (check-synth)

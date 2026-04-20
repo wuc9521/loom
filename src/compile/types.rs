@@ -140,13 +140,14 @@ pub struct FieldDecl {
 pub enum FieldDomain {
     Sort(String),
     Enum(Vec<String>),
+    Union { bot: String, sorts: Vec<String> },
 }
 
 impl FieldDomain {
     pub fn as_sort(&self) -> Option<&str> {
         match self {
             FieldDomain::Sort(sort) => Some(sort),
-            FieldDomain::Enum(_) => None,
+            FieldDomain::Enum(_) | FieldDomain::Union { .. } => None,
         }
     }
 }

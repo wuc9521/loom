@@ -10,7 +10,7 @@ use crate::{
     },
     lang::{
         eval::{eval_symbols, get_domain_for_sort},
-        model::Model,
+        model::{InterpedValue, Model},
         signature::FuncSig,
     },
     parser::{DelisCmd, DelisProg},
@@ -56,7 +56,7 @@ struct NativeCompiler<'a> {
     spaces: HashMap<String, FiniteSpace>,
     specs: HashMap<String, SemanticSpec>,
     domains_by_relation: HashMap<String, SemanticDomain>,
-    domain_by_sort: HashMap<String, SemanticDomain>,
+    domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
     cases: HashMap<String, HashMap<String, Case>>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
     optimize: bool,
@@ -117,26 +117,32 @@ impl<'a> NativeCompiler<'a> {
             .iter()
             .map(|domain| (domain.relation.clone(), domain.clone()))
             .collect::<HashMap<_, _>>();
-        let domain_by_sort = program
-            .domains
-            .iter()
-            .map(|domain| (domain.term_sort.clone(), domain.clone()))
-            .collect::<HashMap<_, _>>();
+        let mut domains_by_sort: HashMap<String, Vec<SemanticDomain>> = HashMap::new();
+        for domain in &program.domains {
+            domains_by_sort
+                .entry(domain.term_sort.clone())
+                .or_default()
+                .push(domain.clone());
+        }
         let mut cases = HashMap::new();
         for spec in &program.semantics {
             cases.insert(spec.relation.clone(), parse_cases(&spec.body)?);
         }
         let mut bit_index = HashMap::new();
-        for domain in &program.domains {
-            for bit in &domain.bits {
-                bit_index.insert(
-                    (
-                        domain.relation.clone(),
-                        bit.aspect.clone(),
-                        bit.value.clone(),
-                    ),
-                    bit.bit,
-                );
+        for domains in domains_by_sort.values() {
+            let mut offset = 0;
+            for domain in domains {
+                for bit in &domain.bits {
+                    bit_index.insert(
+                        (
+                            domain.relation.clone(),
+                            bit.aspect.clone(),
+                            bit.value.clone(),
+                        ),
+                        offset + bit.bit,
+                    );
+                }
+                offset += domain.bits.len();
             }
         }
         Ok(Self {
@@ -148,7 +154,7 @@ impl<'a> NativeCompiler<'a> {
             spaces,
             specs,
             domains_by_relation,
-            domain_by_sort,
+            domains_by_sort,
             cases,
             bit_index,
             optimize,
@@ -161,10 +167,9 @@ impl<'a> NativeCompiler<'a> {
         for cons in &self.sig.constructors {
             cmds.push(self.constructor_fun(cons)?);
         }
-        let start_domain = self.domain_for_sort(self.sig.start_sort())?;
         cmds.push(
             Cmd::synth_fun(&synth_name(self.problem)?)
-                .ret(Sort::bitvec(start_domain.bits.len().max(1)))
+                .ret(Sort::bitvec(self.sort_width(self.sig.start_sort())?))
                 .grammar(grammar)
                 .build(),
         );
@@ -209,10 +214,9 @@ impl<'a> NativeCompiler<'a> {
             .sort_decls
             .iter()
             .map(|sort_decl| {
-                let domain = self.domain_for_sort(&sort_decl.symbol)?;
                 Ok(SortedVar {
                     name: self.sig.grammar_symbol_for_sort(&sort_decl.symbol),
-                    sort: Sort::bitvec(domain.bits.len().max(1)),
+                    sort: Sort::bitvec(self.sort_width(&sort_decl.symbol)?),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -221,7 +225,6 @@ impl<'a> NativeCompiler<'a> {
             .iter()
             .zip(decl.term_type_decls.iter())
             .map(|(sort_decl, term_type_decl)| {
-                let domain = self.domain_for_sort(&sort_decl.symbol)?;
                 let symbol = self.sig.grammar_symbol_for_sort(&sort_decl.symbol);
                 let terms = term_type_decl
                     .constructors
@@ -238,7 +241,7 @@ impl<'a> NativeCompiler<'a> {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(GroupedRuleList {
                     symbol,
-                    sort: Sort::bitvec(domain.bits.len().max(1)),
+                    sort: Sort::bitvec(self.sort_width(&sort_decl.symbol)?),
                     terms,
                 })
             })
@@ -250,54 +253,54 @@ impl<'a> NativeCompiler<'a> {
     }
 
     fn constructor_fun(&self, cons: &TermConstructor) -> Result<SyGuSCmd, String> {
-        let domain = self.domain_for_sort(&cons.result_sort)?;
-        let spec = self.spec_for_relation(&domain.relation)?;
-        let cases = self.cases.get(&spec.relation).ok_or_else(|| {
-            format!(
-                "missing parsed semantic cases for relation {}",
-                spec.relation
-            )
-        })?;
-        let case = cases
-            .get(&cons.name)
-            .ok_or_else(|| format!("missing semantic case for constructor {}", cons.name))?;
-        if case.vars.len() != cons.arg_sorts.len() {
-            return Err(format!(
-                "match case for constructor {} binds {} variables, expected {}",
-                cons.name,
-                case.vars.len(),
-                cons.arg_sorts.len()
-            ));
-        }
-        let mut env = Env::default();
-        for (idx, var) in case.vars.iter().enumerate() {
-            env.children
-                .insert(var.clone(), ChildBinding { arg_idx: idx });
-        }
-
         let mut bool_bits = Vec::new();
-        for bit in &domain.bits {
-            env.aspect.insert("asp".to_string(), bit.aspect.clone());
-            let bool_expr = match (&domain.kind, &bit.value) {
-                (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
-                (SemanticKind::FiniteValue { sort: _ }, Some(value)) => {
-                    self.eval_finite_eq(&case.body, value, &env)?
-                }
-                _ => {
-                    return Err(format!(
-                        "malformed semantic domain bit {} for {}",
-                        bit.bit, domain.relation
-                    ));
-                }
-            };
-            bool_bits.push(bool_expr);
+        for domain in self.domains_for_sort(&cons.result_sort)? {
+            let spec = self.spec_for_relation(&domain.relation)?;
+            let cases = self.cases.get(&spec.relation).ok_or_else(|| {
+                format!(
+                    "missing parsed semantic cases for relation {}",
+                    spec.relation
+                )
+            })?;
+            let case = cases
+                .get(&cons.name)
+                .ok_or_else(|| format!("missing semantic case for constructor {}", cons.name))?;
+            if case.vars.len() != cons.arg_sorts.len() {
+                return Err(format!(
+                    "match case for constructor {} in {} binds {} variables, expected {}",
+                    cons.name,
+                    spec.relation,
+                    case.vars.len(),
+                    cons.arg_sorts.len()
+                ));
+            }
+            let mut env = Env::default();
+            for (idx, var) in case.vars.iter().enumerate() {
+                env.children
+                    .insert(var.clone(), ChildBinding { arg_idx: idx });
+            }
+            for bit in &domain.bits {
+                env.aspect.insert("asp".to_string(), bit.aspect.clone());
+                let bool_expr = match (&domain.kind, &bit.value) {
+                    (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
+                    (SemanticKind::FiniteValue { sort: _ }, Some(value)) => {
+                        self.eval_finite_eq(&case.body, value, &env)?
+                    }
+                    _ => {
+                        return Err(format!(
+                            "malformed semantic domain bit {} for {}",
+                            bit.bit, domain.relation
+                        ));
+                    }
+                };
+                bool_bits.push(bool_expr);
+            }
         }
 
         let mut builder = Cmd::define_fun(&cons.name);
         let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
         for (idx, sort) in cons.arg_sorts.iter().enumerate() {
-            let arg_domain = self.domain_for_sort(sort)?;
-            builder = builder.arg(&arg_names[idx], Sort::bitvec(arg_domain.bits.len().max(1)));
+            builder = builder.arg(&arg_names[idx], Sort::bitvec(self.sort_width(sort)?));
         }
         let lift_bits = bool_bits
             .iter()
@@ -322,7 +325,7 @@ impl<'a> NativeCompiler<'a> {
             compact_bitvec(bits)
         });
         Ok(builder
-            .ret(Sort::bitvec(domain.bits.len().max(1)))
+            .ret(Sort::bitvec(self.sort_width(&cons.result_sort)?))
             .body(body)
             .build())
     }
@@ -764,7 +767,7 @@ impl<'a> NativeCompiler<'a> {
                     model = Some(self.eval_model_name(arg, env)?);
                 }
                 FieldDomain::Sort(sort) => {
-                    let value = self.eval_value(arg, env)?;
+                    let value = self.eval_value_for_sort(arg, sort, env)?;
                     match &value {
                         AspectValue::Univ { sort: actual, .. } if actual == sort => {}
                         AspectValue::Int(_) if sort == "Int" => {}
@@ -790,6 +793,23 @@ impl<'a> NativeCompiler<'a> {
                     }
                     fields.push((field.name.clone(), value));
                 }
+                FieldDomain::Union { bot, sorts } => {
+                    let value = self.eval_value(arg, env)?;
+                    match &value {
+                        AspectValue::Symbol(symbol) if symbol == bot => {}
+                        AspectValue::Univ { sort, .. } if sorts.contains(sort) => {}
+                        _ => {
+                            return Err(format!(
+                                "aspect field {} expected {} or one of ({}) but got {}",
+                                field.name,
+                                bot,
+                                sorts.join(" "),
+                                value.display()
+                            ));
+                        }
+                    }
+                    fields.push((field.name.clone(), value));
+                }
             }
         }
         Ok(AspectKey {
@@ -804,6 +824,18 @@ impl<'a> NativeCompiler<'a> {
             if let Some(value) = env.values.get(symbol) {
                 return Ok(value.clone());
             }
+            if let Ok(model) = self.current_model(env) {
+                if let Some(model_ref) = self.models.get(&model) {
+                    for univ in &model_ref.univ_defs {
+                        if univ.elems.iter().any(|elem| elem.name == symbol) {
+                            return Ok(AspectValue::Univ {
+                                sort: univ.sort.to_string(),
+                                name: symbol.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
             return Ok(AspectValue::Symbol(symbol.to_string()));
         }
         let items = expr
@@ -815,19 +847,77 @@ impl<'a> NativeCompiler<'a> {
             .ok_or_else(|| format!("value expression operator must be a symbol: {expr}"))?;
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
-                let aspect = env
-                    .aspect
-                    .get(aspect_arg)
-                    .ok_or_else(|| format!("unknown aspect variable {aspect_arg}"))?;
-                if op == "model" {
-                    return Ok(AspectValue::Model(aspect.model.clone()));
-                }
-                if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
-                    return Ok(value.clone());
+                if let Some(aspect) = env.aspect.get(aspect_arg) {
+                    if op == "model" {
+                        return Ok(AspectValue::Model(aspect.model.clone()));
+                    }
+                    if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
+                        return Ok(value.clone());
+                    }
                 }
             }
         }
+        if self.func_sigs.contains_key(op) {
+            return self.eval_model_value_call(op, &items[1..], env);
+        }
         Err(format!("unsupported value expression: {expr}"))
+    }
+
+    fn eval_model_value_call(
+        &self,
+        func: &str,
+        args: &[&Value],
+        env: &Env,
+    ) -> Result<AspectValue, String> {
+        let sig = self.func_sigs.get(func).unwrap();
+        if sig.arg_sorts.len() != args.len() {
+            return Err(format!(
+                "function {func} expects {} arguments, got {}",
+                sig.arg_sorts.len(),
+                args.len()
+            ));
+        }
+        let arg_names = args
+            .iter()
+            .map(|arg| self.eval_value(arg, env).map(|value| value.display()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let model = self.current_model(env)?;
+        let model_ref = self
+            .models
+            .get(&model)
+            .ok_or_else(|| format!("unknown model {model}"))?;
+        let value = eval_symbols(func, &arg_names, &model_ref.func_interps).ok_or_else(|| {
+            format!(
+                "model {model} has no value for {func}({})",
+                arg_names.join(" ")
+            )
+        })?;
+        interped_aspect_value(&sig.ret_sort.to_string(), value)
+    }
+
+    fn eval_value_for_sort(
+        &self,
+        expr: &Value,
+        sort: &str,
+        env: &Env,
+    ) -> Result<AspectValue, String> {
+        let value = self.eval_value(expr, env)?;
+        if matches!(&value, AspectValue::Symbol(_)) {
+            let model = self.current_model(env)?;
+            let model_ref = self
+                .models
+                .get(&model)
+                .ok_or_else(|| format!("unknown model {model}"))?;
+            if get_domain_for_sort(model_ref, sort)
+                .is_some_and(|domain| domain.contains(&value.display()))
+            {
+                return Ok(AspectValue::Univ {
+                    sort: sort.to_string(),
+                    name: value.display(),
+                });
+            }
+        }
+        Ok(value)
     }
 
     fn eval_model_name(&self, expr: &Value, env: &Env) -> Result<String, String> {
@@ -856,6 +946,17 @@ impl<'a> NativeCompiler<'a> {
         }
         let items = expr.to_ref_vec()?;
         let op = items.first()?.as_symbol()?;
+        if items.len() == 2 {
+            if let Some(aspect_arg) = items[1].as_symbol() {
+                if let Some(aspect) = env.aspect.get(aspect_arg) {
+                    if let Some((_, AspectValue::Univ { sort, .. })) =
+                        aspect.fields.iter().find(|(name, _)| name == op)
+                    {
+                        return Some(sort.clone());
+                    }
+                }
+            }
+        }
         if let Some(domain) = self.domains_by_relation.get(op) {
             if let SemanticKind::FiniteValue { sort } = &domain.kind {
                 return Some(sort.clone());
@@ -864,10 +965,20 @@ impl<'a> NativeCompiler<'a> {
         self.func_sigs.get(op).map(|sig| sig.ret_sort.to_string())
     }
 
-    fn domain_for_sort(&self, sort: &str) -> Result<&SemanticDomain, String> {
-        self.domain_by_sort
+    fn domains_for_sort(&self, sort: &str) -> Result<&[SemanticDomain], String> {
+        self.domains_by_sort
             .get(sort)
+            .map(Vec::as_slice)
             .ok_or_else(|| format!("no semantic domain for term sort {sort}"))
+    }
+
+    fn sort_width(&self, sort: &str) -> Result<usize, String> {
+        Ok(self
+            .domains_for_sort(sort)?
+            .iter()
+            .map(|domain| domain.bits.len())
+            .sum::<usize>()
+            .max(1))
     }
 
     fn domain_for_relation(&self, relation: &str) -> Result<&SemanticDomain, String> {
@@ -964,6 +1075,24 @@ fn bool_literal(term: &SyGuSTerm) -> Option<bool> {
     match term {
         SyGuSTerm::Literal(Literal::Bool(value)) => Some(*value),
         _ => None,
+    }
+}
+
+fn interped_aspect_value(sort: &str, value: &InterpedValue) -> Result<AspectValue, String> {
+    match value {
+        InterpedValue::UnivElem(elem) => Ok(AspectValue::Univ {
+            sort: sort.to_string(),
+            name: elem.name.clone(),
+        }),
+        InterpedValue::Literal(lit) if sort == "Int" => lit
+            .to_string()
+            .parse::<usize>()
+            .map(AspectValue::Int)
+            .map_err(|_| format!("expected Int value, got {lit}")),
+        InterpedValue::Literal(lit) => Ok(AspectValue::Symbol(lit.to_string())),
+        InterpedValue::FuncApp(..) => {
+            Err(format!("nested interpreted value {value} is unsupported"))
+        }
     }
 }
 

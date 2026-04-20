@@ -13,7 +13,7 @@ use crate::{
     },
     lang::{
         eval::{eval_symbols, get_domain_for_sort},
-        model::Model,
+        model::{InterpedValue, Model},
         signature::FuncSig,
     },
     parser::{DelisCmd, DelisProg},
@@ -847,7 +847,7 @@ impl<'a> NativeCompiler<'a> {
                     model = Some(self.eval_model_name(arg, env)?);
                 }
                 FieldDomain::Sort(sort) => {
-                    let value = self.eval_value(arg, env)?;
+                    let value = self.eval_value_for_sort(arg, sort, env)?;
                     match &value {
                         AspectValue::Univ { sort: actual, .. } if actual == sort => {}
                         AspectValue::Int(_) if sort == "Int" => {}
@@ -870,6 +870,23 @@ impl<'a> NativeCompiler<'a> {
                             field.name,
                             values.join(" ")
                         ));
+                    }
+                    fields.push((field.name.clone(), value));
+                }
+                FieldDomain::Union { bot, sorts } => {
+                    let value = self.eval_value(arg, env)?;
+                    match &value {
+                        AspectValue::Symbol(symbol) if symbol == bot => {}
+                        AspectValue::Univ { sort, .. } if sorts.contains(sort) => {}
+                        _ => {
+                            return Err(format!(
+                                "aspect field {} expected {} or one of ({}) but got {}",
+                                field.name,
+                                bot,
+                                sorts.join(" "),
+                                value.display()
+                            ));
+                        }
                     }
                     fields.push((field.name.clone(), value));
                 }
@@ -898,19 +915,77 @@ impl<'a> NativeCompiler<'a> {
             .ok_or_else(|| format!("value expression operator must be a symbol: {expr}"))?;
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
-                let aspect = env
-                    .aspect
-                    .get(aspect_arg)
-                    .ok_or_else(|| format!("unknown aspect variable {aspect_arg}"))?;
-                if op == "model" {
-                    return Ok(AspectValue::Model(aspect.model.clone()));
-                }
-                if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
-                    return Ok(value.clone());
+                if let Some(aspect) = env.aspect.get(aspect_arg) {
+                    if op == "model" {
+                        return Ok(AspectValue::Model(aspect.model.clone()));
+                    }
+                    if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
+                        return Ok(value.clone());
+                    }
                 }
             }
         }
+        if self.func_sigs.contains_key(op) {
+            return self.eval_model_value_call(op, &items[1..], env);
+        }
         Err(format!("unsupported value expression: {expr}"))
+    }
+
+    fn eval_model_value_call(
+        &self,
+        func: &str,
+        args: &[&Value],
+        env: &Env,
+    ) -> Result<AspectValue, String> {
+        let sig = self.func_sigs.get(func).unwrap();
+        if sig.arg_sorts.len() != args.len() {
+            return Err(format!(
+                "function {func} expects {} arguments, got {}",
+                sig.arg_sorts.len(),
+                args.len()
+            ));
+        }
+        let arg_names = args
+            .iter()
+            .map(|arg| self.eval_value(arg, env).map(|value| value.display()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let model = self.current_model(env)?;
+        let model_ref = self
+            .models
+            .get(&model)
+            .ok_or_else(|| format!("unknown model {model}"))?;
+        let value = eval_symbols(func, &arg_names, &model_ref.func_interps).ok_or_else(|| {
+            format!(
+                "model {model} has no value for {func}({})",
+                arg_names.join(" ")
+            )
+        })?;
+        interped_aspect_value(&sig.ret_sort.to_string(), value)
+    }
+
+    fn eval_value_for_sort(
+        &self,
+        expr: &Value,
+        sort: &str,
+        env: &Env,
+    ) -> Result<AspectValue, String> {
+        let value = self.eval_value(expr, env)?;
+        if matches!(&value, AspectValue::Symbol(_)) {
+            let model = self.current_model(env)?;
+            let model_ref = self
+                .models
+                .get(&model)
+                .ok_or_else(|| format!("unknown model {model}"))?;
+            if get_domain_for_sort(model_ref, sort)
+                .is_some_and(|domain| domain.contains(&value.display()))
+            {
+                return Ok(AspectValue::Univ {
+                    sort: sort.to_string(),
+                    name: value.display(),
+                });
+            }
+        }
+        Ok(value)
     }
 
     fn eval_model_name(&self, expr: &Value, env: &Env) -> Result<String, String> {
@@ -964,6 +1039,17 @@ impl<'a> NativeCompiler<'a> {
         }
         let items = expr.to_ref_vec()?;
         let op = items.first()?.as_symbol()?;
+        if items.len() == 2 {
+            if let Some(aspect_arg) = items[1].as_symbol() {
+                if let Some(aspect) = env.aspect.get(aspect_arg) {
+                    if let Some((_, AspectValue::Univ { sort, .. })) =
+                        aspect.fields.iter().find(|(name, _)| name == op)
+                    {
+                        return Some(sort.clone());
+                    }
+                }
+            }
+        }
         if let Some(domain) = self.domains_by_relation.get(op) {
             if let SemanticKind::FiniteValue { sort } = &domain.kind {
                 return Some(sort.clone());
@@ -1056,5 +1142,23 @@ fn pred_name(pred: &Pred, neg: bool) -> String {
         pred.dual().name()
     } else {
         pred.name()
+    }
+}
+
+fn interped_aspect_value(sort: &str, value: &InterpedValue) -> Result<AspectValue, String> {
+    match value {
+        InterpedValue::UnivElem(elem) => Ok(AspectValue::Univ {
+            sort: sort.to_string(),
+            name: elem.name.clone(),
+        }),
+        InterpedValue::Literal(lit) if sort == "Int" => lit
+            .to_string()
+            .parse::<usize>()
+            .map(AspectValue::Int)
+            .map_err(|_| format!("expected Int value, got {lit}")),
+        InterpedValue::Literal(lit) => Ok(AspectValue::Symbol(lit.to_string())),
+        InterpedValue::FuncApp(..) => {
+            Err(format!("nested interpreted value {value} is unsupported"))
+        }
     }
 }

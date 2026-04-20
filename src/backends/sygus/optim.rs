@@ -159,6 +159,21 @@ fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
     Term::lit(Literal::BinConst(bitstring))
 }
 
+fn bitvec_literal_to_lsb(term: &SyGuSTerm) -> Option<Vec<bool>> {
+    let SyGuSTerm::Literal(Literal::BinConst(bitstring)) = term else {
+        return None;
+    };
+    bitstring
+        .chars()
+        .rev()
+        .map(|ch| match ch {
+            '0' => Some(false),
+            '1' => Some(true),
+            _ => None,
+        })
+        .collect()
+}
+
 fn uniform_bv_const(width: usize, value: bool) -> SyGuSTerm {
     if value {
         Term::bconst_ones(width)
@@ -169,6 +184,21 @@ fn uniform_bv_const(width: usize, value: bool) -> SyGuSTerm {
 
 fn arg_term(arg_names: &[String], idx: usize) -> Option<SyGuSTerm> {
     Some(Term::var(arg_names.get(idx)?))
+}
+
+fn arg_slice(
+    arg_names: &[String],
+    idx: usize,
+    low: usize,
+    width: usize,
+    total_width: usize,
+) -> Option<SyGuSTerm> {
+    let arg = arg_term(arg_names, idx)?;
+    if low == 0 && width == total_width {
+        Some(arg)
+    } else {
+        Some(BitVec::extract(low + width - 1, low, arg))
+    }
 }
 
 fn fold_bitwise(
@@ -218,6 +248,52 @@ fn formula_to_native_bv(
                 .map(|child| match child {
                     BitFormula::Var(BitRef { arg_idx, bit_idx }) if *bit_idx == 0 => {
                         arg_term(arg_names, *arg_idx)
+                    }
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(fold_bitwise(args, BitVec::bvor, false))
+        }
+        _ => None,
+    }
+}
+
+fn formula_to_native_bv_segment(
+    formula: &BitFormula,
+    arg_names: &[String],
+    low: usize,
+    width: usize,
+    total_width: usize,
+) -> Option<SyGuSTerm> {
+    match formula {
+        BitFormula::Const(value) => Some(uniform_bv_const(width, *value)),
+        BitFormula::Var(BitRef { arg_idx, bit_idx }) if *bit_idx == 0 => {
+            arg_slice(arg_names, *arg_idx, low, width, total_width)
+        }
+        BitFormula::Not(inner) => match inner.as_ref() {
+            BitFormula::Var(BitRef { arg_idx, bit_idx }) if *bit_idx == 0 => Some(BitVec::bvnot(
+                arg_slice(arg_names, *arg_idx, low, width, total_width)?,
+            )),
+            _ => None,
+        },
+        BitFormula::And(children) => {
+            let args = children
+                .iter()
+                .map(|child| match child {
+                    BitFormula::Var(BitRef { arg_idx, bit_idx }) if *bit_idx == 0 => {
+                        arg_slice(arg_names, *arg_idx, low, width, total_width)
+                    }
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(fold_bitwise(args, BitVec::bvand, true))
+        }
+        BitFormula::Or(children) => {
+            let args = children
+                .iter()
+                .map(|child| match child {
+                    BitFormula::Var(BitRef { arg_idx, bit_idx }) if *bit_idx == 0 => {
+                        arg_slice(arg_names, *arg_idx, low, width, total_width)
                     }
                     _ => None,
                 })
@@ -292,6 +368,61 @@ fn formulas_to_cvc5_concat(formulas: &[BitFormula], arg_names: &[String]) -> Opt
     concat_chunks(&chunks, arg_names)
 }
 
+fn push_concat_term(terms: &mut Vec<SyGuSTerm>, term: SyGuSTerm) {
+    let Some(bits) = bitvec_literal_to_lsb(&term) else {
+        terms.push(term);
+        return;
+    };
+    match terms
+        .last_mut()
+        .and_then(|term| bitvec_literal_to_lsb(term))
+    {
+        Some(mut prev_bits) => {
+            prev_bits.extend(bits);
+            *terms.last_mut().unwrap() = bitvec_literal_from_lsb(&prev_bits);
+        }
+        None => terms.push(term),
+    }
+}
+
+fn terms_to_concat_lsb_first(terms: impl IntoIterator<Item = SyGuSTerm>) -> Option<SyGuSTerm> {
+    let terms = terms.into_iter().fold(Vec::new(), |mut acc, term| {
+        push_concat_term(&mut acc, term);
+        acc
+    });
+    let mut body = terms.first()?.clone();
+    for term in terms.iter().skip(1) {
+        body = BitVec::concat(term.clone(), body);
+    }
+    Some(body)
+}
+
+fn formulas_to_segmented_native_bv(
+    formulas: &[BitFormula],
+    arg_names: &[String],
+) -> Option<SyGuSTerm> {
+    let mut terms = Vec::new();
+    let mut start = 0;
+    while start < formulas.len() {
+        let first = normalize_formula(shift_formula_refs(&formulas[start], start)?);
+        let mut end = start + 1;
+        while end < formulas.len()
+            && normalize_formula(shift_formula_refs(&formulas[end], end)?) == first
+        {
+            end += 1;
+        }
+        terms.push(formula_to_native_bv_segment(
+            &first,
+            arg_names,
+            start,
+            end - start,
+            formulas.len(),
+        )?);
+        start = end;
+    }
+    terms_to_concat_lsb_first(terms)
+}
+
 fn shift_formula_refs(formula: &BitFormula, expected_idx: usize) -> Option<BitFormula> {
     match formula {
         BitFormula::Const(value) => Some(BitFormula::Const(*value)),
@@ -362,7 +493,8 @@ pub fn try_lift_native_bv(
         }
     }
 
-    formulas_to_cvc5_concat(&formulas, arg_names)
+    formulas_to_segmented_native_bv(&formulas, arg_names)
+        .or_else(|| formulas_to_cvc5_concat(&formulas, arg_names))
 }
 
 #[cfg(test)]
@@ -409,14 +541,54 @@ mod tests {
     }
 
     #[test]
-    fn leaves_negative_bit_tests_to_fallback() {
+    fn segments_mixed_positional_patterns() {
         let bits = vec![
             BitwiseExpr::Expr(bit_eq("arg0", 0, true)),
             BitwiseExpr::Expr(bit_eq("arg0", 1, false)),
             BitwiseExpr::Const(true),
         ];
 
-        assert!(try_lift_native_bv(&bits, &[String::from("arg0")]).is_none());
+        assert_eq!(
+            lift(bits, &["arg0"]),
+            "(concat #b1 (concat (bvnot ((_ extract 1 1) arg0)) ((_ extract 0 0) arg0)))"
+        );
+    }
+
+    #[test]
+    fn folds_segmented_constants_into_one_literal() {
+        let bits = vec![
+            BitwiseExpr::Const(false),
+            BitwiseExpr::Const(false),
+            BitwiseExpr::Const(false),
+            BitwiseExpr::Const(true),
+            BitwiseExpr::Const(true),
+            BitwiseExpr::Const(false),
+            BitwiseExpr::Const(false),
+        ];
+
+        assert_eq!(lift(bits, &["arg0"]), "#b0011000");
+    }
+
+    #[test]
+    fn lifts_distinct_semantic_slices() {
+        let sem_bits = (0..3).map(|idx| {
+            BitwiseExpr::Expr(Term::app(
+                "or",
+                vec![bit_eq("arg0", idx, true), bit_eq("arg1", idx, true)],
+            ))
+        });
+        let valid_bits = (3..6).map(|idx| {
+            BitwiseExpr::Expr(Term::app(
+                "and",
+                vec![bit_eq("arg0", idx, true), bit_eq("arg1", idx, true)],
+            ))
+        });
+        let bits = sem_bits.chain(valid_bits).collect();
+
+        assert_eq!(
+            lift(bits, &["arg0", "arg1"]),
+            "(concat (bvand ((_ extract 5 3) arg0) ((_ extract 5 3) arg1)) (bvor ((_ extract 2 0) arg0) ((_ extract 2 0) arg1)))"
+        );
     }
 
     #[test]
