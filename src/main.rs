@@ -50,19 +50,16 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     }
     let (tx, rx) = mpsc::channel();
 
-    let chc_tx = tx.clone();
-    let chc_file = delis_file.clone();
+    let closure_tx = tx.clone();
+    let closure_file = delis_file.clone();
+    let closure_optimize = args.optimize;
     thread::Builder::new()
-        .name("chc-backend".to_string())
+        .name("closure-backend".to_string())
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
-            let result = (|| {
-                let chc_program = compile::to_chc_ast(&chc_file)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));
-                run_chc_check_solver(&chc_config(), &chc_text)
-            })();
-            let _ = chc_tx.send(BackendResult::Chc(result));
+            let result = compile::solve_by_closure(&closure_file, closure_optimize)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+            let _ = closure_tx.send(BackendResult::Closure(result));
         })?;
 
     let sygus_tx = tx.clone();
@@ -95,12 +92,12 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         pending -= 1;
         match result {
-            BackendResult::Chc(Ok(Some(output))) | BackendResult::Sygus(Ok(output)) => {
+            BackendResult::Closure(Ok(Some(output))) | BackendResult::Sygus(Ok(output)) => {
                 println!("{output}");
                 return Ok(());
             }
-            BackendResult::Chc(Ok(None)) => {}
-            BackendResult::Chc(Err(e)) | BackendResult::Sygus(Err(e)) => {
+            BackendResult::Closure(Ok(None)) => {}
+            BackendResult::Closure(Err(e)) | BackendResult::Sygus(Err(e)) => {
                 first_error.get_or_insert(e);
             }
         }
@@ -108,7 +105,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     Err(first_error.unwrap_or_else(|| {
         io::Error::new(
             io::ErrorKind::Other,
-            "neither CHC nor SyGuS backend produced a result",
+            "neither closure nor SyGuS backend produced a result",
         )
     }))
 }
@@ -123,15 +120,8 @@ fn cmds_to_text(cmds: &[impl ToString]) -> String {
 type Solver = (String, Vec<String>);
 
 enum BackendResult {
-    Chc(Result<Option<String>, io::Error>),
+    Closure(Result<Option<String>, io::Error>),
     Sygus(Result<String, io::Error>),
-}
-
-fn chc_config() -> Solver {
-    (
-        "z3".to_string(),
-        vec!["-in".to_string(), "-smt2".to_string()],
-    )
 }
 
 fn sygus_config(bv_sz: usize, enum_trigger: usize) -> Solver {
@@ -158,21 +148,6 @@ fn spawn_solver(solver: &Solver, input: &str) -> Result<Child, io::Error> {
 fn solver_stdout(child: Child) -> Result<String, io::Error> {
     let output = child.wait_with_output()?;
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-fn chc_result(stdout: &str) -> Option<&str> {
-    stdout
-        .lines()
-        .map(str::trim)
-        .find(|line| *line == "sat" || *line == "unsat")
-}
-
-fn run_chc_check_solver(solver: &Solver, chc_text: &str) -> Result<Option<String>, io::Error> {
-    let child = spawn_solver(solver, chc_text)?;
-    Ok(match chc_result(&solver_stdout(child)?) {
-        Some("sat") => Some("unsat".to_string()),
-        _ => None,
-    })
 }
 
 fn run_sygus_solver(solver: &Solver, sygus_text: &str) -> Result<String, io::Error> {

@@ -9,6 +9,7 @@ use sygus_parser::{Sort, SortDecl, SyGuSCmd};
 
 mod bv;
 mod chc;
+mod closure;
 mod expr;
 mod finite;
 mod native;
@@ -20,6 +21,10 @@ use expr::eval_constructor_case;
 pub use finite::compile;
 use syntax::{parse_semantic_cases, state_name, synth_name, term_sort, TermSignature};
 pub use types::{AspectKey, BitMapping, ConstraintBit, Encoding};
+
+pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
+    closure::solve(problem, optimize)
+}
 
 #[derive(Clone, Debug)]
 struct StatePredicates {

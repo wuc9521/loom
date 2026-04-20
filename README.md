@@ -5,7 +5,7 @@ By default, Delis races the compiled CHC and SyGuS problems with `cvc5`.
 The first decisive backend result ends the run.
 When the semantic bit-vector encoding length is at least
 `--enum-trigger`, Delis runs SyGuS with `cvc5 --lang=sygus2 --sygus-enum=fast`.
-The default trigger is `256`.
+The default trigger is `512`.
 
 Usage
 

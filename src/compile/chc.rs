@@ -27,6 +27,8 @@ struct Env {
     aspect: HashMap<String, AspectKey>,
     values: HashMap<String, AspectValue>,
     children: HashMap<String, ChildBinding>,
+    current_sort: Option<String>,
+    current_term: Option<HornTerm>,
 }
 
 impl EnvView for Env {
@@ -153,6 +155,8 @@ impl<'a> NativeCompiler<'a> {
                 case.vars.iter().map(HornTerm::var).collect::<Vec<_>>(),
             );
             let mut env = Env::default();
+            env.current_sort = Some(cons.result_sort.clone());
+            env.current_term = Some(head_term.clone());
             for var in &case.vars {
                 env.children.insert(
                     var.clone(),
@@ -377,10 +381,13 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let term = self.child_term(args[0], env)?;
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let pred = self.pred_for(relation, &aspect, None)?;
-        Ok(vec![vec![PredAtom::new(pred, term)]])
+        Ok(self
+            .child_terms(args[0], env)?
+            .into_iter()
+            .map(|term| vec![PredAtom::new(pred.clone(), term)])
+            .collect())
     }
 
     fn eval_semantic_bool_call_neg(
@@ -392,10 +399,13 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let term = self.child_term(args[0], env)?;
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let pred = self.pred_for(relation, &aspect, None)?.dual();
-        Ok(vec![vec![PredAtom::new(pred, term)]])
+        Ok(self
+            .child_terms(args[0], env)?
+            .into_iter()
+            .map(|term| vec![PredAtom::new(pred.clone(), term)])
+            .collect())
     }
 
     fn eval_model_bool_call(
@@ -618,10 +628,13 @@ impl<'a> NativeCompiler<'a> {
             }
         }
         if self.ctx.has_relation(op) {
-            let term = self.child_term(items[1], env)?;
             let aspect = self.ctx.eval_aspect(items[2], op, env)?;
             let pred = self.pred_for(op, &aspect, Some(target))?.dual();
-            return Ok(vec![vec![PredAtom::new(pred, term)]]);
+            return Ok(self
+                .child_terms(items[1], env)?
+                .into_iter()
+                .map(|term| vec![PredAtom::new(pred.clone(), term)])
+                .collect());
         }
         if self.ctx.has_func(op) {
             return self.eval_model_finite_call_neq(op, &items[1..], target, env);
@@ -639,10 +652,13 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let term = self.child_term(args[0], env)?;
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let pred = self.pred_for(relation, &aspect, Some(target))?;
-        Ok(vec![vec![PredAtom::new(pred, term)]])
+        Ok(self
+            .child_terms(args[0], env)?
+            .into_iter()
+            .map(|term| vec![PredAtom::new(pred.clone(), term)])
+            .collect())
     }
 
     fn eval_model_finite_call_eq(
@@ -717,14 +733,39 @@ impl<'a> NativeCompiler<'a> {
         Ok(out)
     }
 
-    fn child_term(&self, expr: &Value, env: &Env) -> Result<HornTerm, String> {
-        let child = expr
-            .as_symbol()
+    fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<HornTerm>, String> {
+        if let Some(child) = expr.as_symbol() {
+            let term = env
+                .children
+                .get(child)
+                .map(|binding| binding.term.clone())
+                .ok_or_else(|| format!("unknown semantic child variable {child}"))?;
+            return Ok(vec![term]);
+        }
+        let items = expr
+            .to_ref_vec()
             .ok_or_else(|| format!("semantic call term must be a child variable: {expr}"))?;
-        env.children
-            .get(child)
-            .map(|binding| binding.term.clone())
-            .ok_or_else(|| format!("unknown semantic child variable {child}"))
+        match items.as_slice() {
+            [op, inner] if op.as_symbol() == Some("parent") => {
+                if inner.as_symbol().is_none() {
+                    return Err(format!(
+                        "parent navigation target must be a symbol naming the current term: {expr}"
+                    ));
+                }
+                let sort = env
+                    .current_sort
+                    .as_deref()
+                    .ok_or_else(|| "missing current sort for parent navigation".to_string())?;
+                let term = env
+                    .current_term
+                    .clone()
+                    .ok_or_else(|| "missing current term for parent navigation".to_string())?;
+                Ok(self.sig.parent_contexts(sort, term))
+            }
+            _ => Err(format!(
+                "unsupported semantic call term navigation: {expr}"
+            )),
+        }
     }
 
     fn all_case_vars(&self) -> Vec<String> {

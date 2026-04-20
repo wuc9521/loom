@@ -1,0 +1,2200 @@
+(require "../theories/ltl-3.sl")
+
+(define-model P0
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P1
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P2
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P3
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P4
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P5
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P6
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P7
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P8
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P9
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P10
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P11
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P12
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P13
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P14
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P15
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P16
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P17
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    ((_) false)
+  )))
+)
+
+(define-model P18
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+)
+
+(define-model P19
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    ((_) false)
+  )))
+)
+
+(define-model P20
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P21
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P22
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P23
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P24
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P25
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    ((_) false)
+  )))
+)
+
+(define-model P26
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P27
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P28
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P29
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P30
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P31
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P32
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P33
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P34
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P35
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P36
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P37
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model P38
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P39
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P40
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P41
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P42
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P43
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P44
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P45
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P46
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model P47
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P48
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model P49
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N0
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N1
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N2
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    ((_) false)
+  )))
+)
+
+(define-model N3
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N4
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N5
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N6
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N7
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N8
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N9
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N10
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N11
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model N12
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N13
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N14
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N15
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+)
+
+(define-model N16
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N17
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N18
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N19
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N20
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N21
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N22
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+)
+
+(define-model N23
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N24
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N25
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N26
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N27
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N28
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N29
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N30
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N31
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N32
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N33
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N34
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    ((_) false)
+  )))
+)
+
+(define-model N35
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model N36
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N37
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N38
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N39
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N40
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N41
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N42
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N43
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model N44
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N45
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N46
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($0) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model N47
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N48
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    ((_) false)
+  )))
+)
+
+(define-model N49
+  (define-univ Pos ($0 $1 $2 $3 $4))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p1 (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun p2 (match (
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(synth-fun phi () LTL)
+
+(constraint (Ltl.Sem phi (LtlAsp P0 0)))
+(constraint (Ltl.Sem phi (LtlAsp P1 0)))
+(constraint (Ltl.Sem phi (LtlAsp P2 0)))
+(constraint (Ltl.Sem phi (LtlAsp P3 0)))
+(constraint (Ltl.Sem phi (LtlAsp P4 0)))
+(constraint (Ltl.Sem phi (LtlAsp P5 0)))
+(constraint (Ltl.Sem phi (LtlAsp P6 0)))
+(constraint (Ltl.Sem phi (LtlAsp P7 0)))
+(constraint (Ltl.Sem phi (LtlAsp P8 0)))
+(constraint (Ltl.Sem phi (LtlAsp P9 0)))
+(constraint (Ltl.Sem phi (LtlAsp P10 0)))
+(constraint (Ltl.Sem phi (LtlAsp P11 0)))
+(constraint (Ltl.Sem phi (LtlAsp P12 0)))
+(constraint (Ltl.Sem phi (LtlAsp P13 0)))
+(constraint (Ltl.Sem phi (LtlAsp P14 0)))
+(constraint (Ltl.Sem phi (LtlAsp P15 0)))
+(constraint (Ltl.Sem phi (LtlAsp P16 0)))
+(constraint (Ltl.Sem phi (LtlAsp P17 0)))
+(constraint (Ltl.Sem phi (LtlAsp P18 0)))
+(constraint (Ltl.Sem phi (LtlAsp P19 0)))
+(constraint (Ltl.Sem phi (LtlAsp P20 0)))
+(constraint (Ltl.Sem phi (LtlAsp P21 0)))
+(constraint (Ltl.Sem phi (LtlAsp P22 0)))
+(constraint (Ltl.Sem phi (LtlAsp P23 0)))
+(constraint (Ltl.Sem phi (LtlAsp P24 0)))
+(constraint (Ltl.Sem phi (LtlAsp P25 0)))
+(constraint (Ltl.Sem phi (LtlAsp P26 0)))
+(constraint (Ltl.Sem phi (LtlAsp P27 0)))
+(constraint (Ltl.Sem phi (LtlAsp P28 0)))
+(constraint (Ltl.Sem phi (LtlAsp P29 0)))
+(constraint (Ltl.Sem phi (LtlAsp P30 0)))
+(constraint (Ltl.Sem phi (LtlAsp P31 0)))
+(constraint (Ltl.Sem phi (LtlAsp P32 0)))
+(constraint (Ltl.Sem phi (LtlAsp P33 0)))
+(constraint (Ltl.Sem phi (LtlAsp P34 0)))
+(constraint (Ltl.Sem phi (LtlAsp P35 0)))
+(constraint (Ltl.Sem phi (LtlAsp P36 0)))
+(constraint (Ltl.Sem phi (LtlAsp P37 0)))
+(constraint (Ltl.Sem phi (LtlAsp P38 0)))
+(constraint (Ltl.Sem phi (LtlAsp P39 0)))
+(constraint (Ltl.Sem phi (LtlAsp P40 0)))
+(constraint (Ltl.Sem phi (LtlAsp P41 0)))
+(constraint (Ltl.Sem phi (LtlAsp P42 0)))
+(constraint (Ltl.Sem phi (LtlAsp P43 0)))
+(constraint (Ltl.Sem phi (LtlAsp P44 0)))
+(constraint (Ltl.Sem phi (LtlAsp P45 0)))
+(constraint (Ltl.Sem phi (LtlAsp P46 0)))
+(constraint (Ltl.Sem phi (LtlAsp P47 0)))
+(constraint (Ltl.Sem phi (LtlAsp P48 0)))
+(constraint (Ltl.Sem phi (LtlAsp P49 0)))
+(constraint (not (Ltl.Sem phi (LtlAsp N0 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N1 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N2 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N3 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N4 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N5 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N6 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N7 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N8 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N9 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N10 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N11 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N12 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N13 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N14 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N15 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N16 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N17 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N18 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N19 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N20 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N21 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N22 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N23 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N24 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N25 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N26 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N27 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N28 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N29 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N30 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N31 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N32 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N33 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N34 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N35 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N36 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N37 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N38 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N39 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N40 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N41 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N42 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N43 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N44 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N45 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N46 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N47 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N48 0))))
+(constraint (not (Ltl.Sem phi (LtlAsp N49 0))))
+
+(check-synth)

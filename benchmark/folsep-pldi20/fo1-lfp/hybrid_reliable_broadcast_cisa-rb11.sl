@@ -1,0 +1,23 @@
+(require "theories/hybrid_reliable_broadcast_cisa-ad5dfe37.sl")
+(require "../common/models/hybrid_reliable_broadcast_cisa-rb11.sl")
+
+(synth-fun phi () Formula0)
+
+(constraint (FO.Sem0 phi (FoAsp0 P0)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N1))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N2))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N3))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N4))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N5))))
+(constraint (FO.Sem0 phi (FoAsp0 P6)))
+(constraint (FO.Sem0 phi (FoAsp0 P7)))
+(constraint (FO.Sem0 phi (FoAsp0 P8)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N9))))
+(constraint (FO.Sem0 phi (FoAsp0 P10)))
+(constraint (FO.Sem0 phi (FoAsp0 P11)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N12))))
+(constraint (FO.Sem0 phi (FoAsp0 P13)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N14))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N15))))
+
+(check-synth)

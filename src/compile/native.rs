@@ -278,6 +278,12 @@ impl<'a> SemanticContext<'a> {
     }
 
     pub fn eval_value(&self, expr: &Value, env: &impl EnvView) -> Result<AspectValue, String> {
+        if let Some(value) = expr.as_i64() {
+            if value < 0 {
+                return Err(format!("negative integer aspect value {value} is unsupported"));
+            }
+            return Ok(AspectValue::Int(value as usize));
+        }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values().get(symbol) {
                 return Ok(value.clone());
@@ -318,7 +324,61 @@ impl<'a> SemanticContext<'a> {
         if self.func_sigs.contains_key(op) {
             return self.eval_model_value_call(op, &items[1..], env);
         }
+        match op {
+            "+" => {
+                let mut total: isize = 0;
+                for item in &items[1..] {
+                    total += self.eval_int(item, env)?;
+                }
+                if total < 0 {
+                    return Err(format!("negative integer aspect value {total} is unsupported"));
+                }
+                return Ok(AspectValue::Int(total as usize));
+            }
+            "-" if items.len() >= 2 => {
+                let mut values = items[1..].iter();
+                let first = values
+                    .next()
+                    .ok_or_else(|| format!("- expects at least one argument: {expr}"))?;
+                let mut total = self.eval_int(first, env)?;
+                if items.len() == 2 {
+                    total = -total;
+                } else {
+                    for item in values {
+                        total -= self.eval_int(item, env)?;
+                    }
+                }
+                if total < 0 {
+                    return Err(format!("negative integer aspect value {total} is unsupported"));
+                }
+                return Ok(AspectValue::Int(total as usize));
+            }
+            "len" if items.len() == 2 => {
+                let domain = items[1]
+                    .to_ref_vec()
+                    .ok_or_else(|| format!("len expects (Sort model), got {}", items[1]))?;
+                let [sort_expr, model_expr] = domain.as_slice() else {
+                    return Err(format!("len expects (Sort model), got {}", items[1]));
+                };
+                let sort = sort_expr
+                    .as_symbol()
+                    .ok_or_else(|| format!("len sort must be a symbol: {sort_expr}"))?;
+                let model = self.eval_model_name(model_expr, env)?;
+                let model_ref = self.model(&model)?;
+                let values = get_domain_for_sort(model_ref, sort)
+                    .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+                return Ok(AspectValue::Int(values.len()));
+            }
+            _ => {}
+        }
         Err(format!("unsupported value expression: {expr}"))
+    }
+
+    fn eval_int(&self, expr: &Value, env: &impl EnvView) -> Result<isize, String> {
+        match self.eval_value(expr, env)? {
+            AspectValue::Int(value) => Ok(value as isize),
+            other => Err(format!("expected Int value, got {}", other.display())),
+        }
     }
 
     pub fn eval_model_value_call(
