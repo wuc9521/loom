@@ -1,0 +1,21 @@
+(require "theories/ticket_nested-ab5662a6.sl")
+(require "../common/models/ticket_nested-ticket_protocol9.sl")
+
+(synth-fun phi () Formula0)
+
+(constraint (FO.Sem0 phi (FoAsp0 P0)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N1))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N2))))
+(constraint (FO.Sem0 phi (FoAsp0 P3)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N4))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N5))))
+(constraint (FO.Sem0 phi (FoAsp0 P6)))
+(constraint (FO.Sem0 phi (FoAsp0 P7)))
+(constraint (not (FO.Sem0 phi (FoAsp0 N8))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N9))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N10))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N11))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N12))))
+(constraint (not (FO.Sem0 phi (FoAsp0 N13))))
+
+(check-synth)

@@ -576,6 +576,49 @@ fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
 }
 
 #[test]
+fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m
+  (define-univ U ($0)))
+(declare-term-types
+ ((Formula 0) (TermU 0))
+ (((top))
+  ((x))))
+(define-finite EnvAsp
+  (record (model Model) (xv (union bot U))))
+(define-semantics
+  ((TermU.Sem (t TermU) (asp EnvAsp)))
+  :returns U
+  ((match t
+     ((x) (xv asp)))))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((top) true))))
+(define-semantics
+  ((Formula.Valid (phi Formula) (asp EnvAsp)))
+  ((match phi
+     ((top) true))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (EnvAsp m bot)))
+(constraint (Formula.Valid phi (EnvAsp m bot)))
+(check-synth)
+"#,
+    );
+
+    let chc = to_chc_ast(&problem).expect("multiple Formula CHC domains should compile");
+    let output = crate::backends::smt2::emit::to_fixedpoint_query_text(&chc, "Goal");
+
+    assert!(output.contains("(rule (qFormula.Sem.m.xv.bot top))"));
+    assert!(output.contains("(rule (qFormula.Valid.m.xv.bot top))"));
+    assert!(output
+        .contains("(=> (and (qFormula.Sem.m.xv.bot r) (qFormula.Valid.m.xv.bot r)) (Goal r))"));
+}
+
+#[test]
 fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
     let problem = parse(
         r#"

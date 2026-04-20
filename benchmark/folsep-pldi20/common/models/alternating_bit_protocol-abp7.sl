@@ -1,0 +1,656 @@
+(require "../signatures/alternating_bit_protocol-232f7bb5.sl")
+(provide P0 N1 P2 P3 P4 N5 P6 P7 P8 P9 P10 P11 P12)
+
+(define-model P0
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (false))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (true))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model N1
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((@abp.data_msg_t_0) true)
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P2
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (true))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P3
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (false))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P4
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((@abp.data_msg_t_0) true)
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model N5
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0 @abp.data_msg_t_1))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((@abp.data_msg_t_1) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_1 @abp.data_msg_t_1) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((@abp.data_msg_t_0) true)
+    ((@abp.data_msg_t_1) true)
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P6
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (false))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (true))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P7
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((@abp.data_msg_t_0) true)
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (false))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (true))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P8
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (true))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P9
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (false))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P10
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((@abp.data_msg_t_0) true)
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (false))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P11
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((@abp.data_msg_t_0) true)
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (true))
+  (interp-fun abp.sender_scheduled (false))
+)
+
+(define-model P12
+  (define-univ abp.ack_msg_t (@uc_abp.ack_msg_t_0))
+  (define-univ abp.data_msg_t (@abp.data_msg_t_0))
+  (define-univ abp.index_t (@abp.index_t_0))
+  (define-univ abp.value (@uc_abp.value_0))
+  (interp-fun abp.bot (@uc_abp.value_0))
+  (interp-fun abp.index.zero (@abp.index_t_0))
+  (interp-fun abp.receiver_i (@abp.index_t_0))
+  (interp-fun abp.sender_gen_i (@abp.index_t_0))
+  (interp-fun abp.sender_i (@abp.index_t_0))
+  (interp-fun abp.tp1.sk0 (@abp.index_t_0))
+  (interp-fun abp.d (match (
+    ((@abp.data_msg_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.receiver_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.sender_array (match (
+    ((@abp.index_t_0) @uc_abp.value_0)
+    ((_) @uc_abp.value_0)
+  )))
+  (interp-fun abp.abit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.ack_msg.le (match (
+    ((_ _) false)
+  )))
+  (interp-fun abp.ack_received (false))
+  (interp-fun abp.ack_sent (false))
+  (interp-fun abp.data_msg.le (match (
+    ((@abp.data_msg_t_0 @abp.data_msg_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.data_received (false))
+  (interp-fun abp.data_sent (false))
+  (interp-fun abp.dbit (match (
+    ((_) false)
+  )))
+  (interp-fun abp.index.le (match (
+    ((@abp.index_t_0 @abp.index_t_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun abp.receiver_bit (true))
+  (interp-fun abp.receiver_scheduled (false))
+  (interp-fun abp.sender_bit (false))
+  (interp-fun abp.sender_scheduled (false))
+)

@@ -86,6 +86,14 @@ impl HornRule {
         }
         SExpr::SExprList(vec![assert(), forall(vars, rule).to_sexpr()])
     }
+
+    fn to_fixedpoint_string(&self) -> String {
+        let head = self.head.to_term();
+        match body_to_term(&self.body_atoms) {
+            None => format!("(rule {head})"),
+            Some(body) => format!("(rule {})", Bool::implies(body, head)),
+        }
+    }
 }
 
 impl HornDecl {
@@ -191,4 +199,31 @@ pub fn to_smt(program: &HornProg) -> Vec<SExpr> {
     }
     out.push(SExpr::SExprList(vec![check_sat()]));
     out
+}
+
+fn decl_to_fixedpoint_string(decl: &HornDecl) -> String {
+    match decl {
+        HornDecl::DeclareRel(name, args) => {
+            let args = args
+                .iter()
+                .map(|sort| sort.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("(declare-rel {name} ({args}))")
+        }
+        HornDecl::DeclareVar(name, sort) => format!("(declare-var {name} {sort})"),
+        _ => decl.to_sexpr().to_string(),
+    }
+}
+
+pub fn to_fixedpoint_query_text(program: &HornProg, relation: &str) -> String {
+    let mut out = Vec::new();
+    for decl in &program.decls {
+        out.push(decl_to_fixedpoint_string(decl));
+    }
+    for rule in &program.rules {
+        out.push(rule.to_fixedpoint_string());
+    }
+    out.push(format!("(query {relation} :print-answer true)"));
+    out.join("\n")
 }

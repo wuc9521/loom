@@ -11,6 +11,7 @@ mod bv;
 mod chc;
 mod expr;
 mod finite;
+mod native;
 mod semantic;
 mod syntax;
 mod types;

@@ -1,0 +1,128 @@
+(require "../signatures/toy_lock_inv-4805fc37.sl")
+(provide P0 N1 P2 N3 P4)
+
+(define-model P0
+  (define-univ epoch (@epoch_0))
+  (define-univ node (@node_0))
+  (interp-fun zero (@epoch_0))
+  (interp-fun ep (match (
+    ((@node_0) @epoch_0)
+    ((_) @epoch_0)
+  )))
+  (interp-fun held (match (
+    ((@node_0) true)
+    ((_) false)
+  )))
+  (interp-fun le (match (
+    ((@epoch_0 @epoch_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun locked (match (
+    ((_ _) false)
+  )))
+  (interp-fun transfer (match (
+    ((_ _) false)
+  )))
+)
+
+(define-model N1
+  (define-univ epoch (@epoch_0))
+  (define-univ node (@node_0 @node_1))
+  (interp-fun zero (@epoch_0))
+  (interp-fun ep (match (
+    ((@node_0) @epoch_0)
+    ((@node_1) @epoch_0)
+    ((_) @epoch_0)
+  )))
+  (interp-fun held (match (
+    ((@node_0) true)
+    ((@node_1) true)
+    ((_) false)
+  )))
+  (interp-fun le (match (
+    ((@epoch_0 @epoch_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun locked (match (
+    ((_ _) false)
+  )))
+  (interp-fun transfer (match (
+    ((_ _) false)
+  )))
+)
+
+(define-model P2
+  (define-univ epoch (@epoch_0))
+  (define-univ node (@node_0 @node_1))
+  (interp-fun zero (@epoch_0))
+  (interp-fun ep (match (
+    ((@node_0) @epoch_0)
+    ((@node_1) @epoch_0)
+    ((_) @epoch_0)
+  )))
+  (interp-fun held (match (
+    ((_) false)
+  )))
+  (interp-fun le (match (
+    ((@epoch_0 @epoch_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun locked (match (
+    ((_ _) false)
+  )))
+  (interp-fun transfer (match (
+    ((_ _) false)
+  )))
+)
+
+(define-model N3
+  (define-univ epoch (@epoch_0))
+  (define-univ node (@node_0 @node_1))
+  (interp-fun zero (@epoch_0))
+  (interp-fun ep (match (
+    ((@node_0) @epoch_0)
+    ((@node_1) @epoch_0)
+    ((_) @epoch_0)
+  )))
+  (interp-fun held (match (
+    ((@node_1) true)
+    ((_) false)
+  )))
+  (interp-fun le (match (
+    ((@epoch_0 @epoch_0) true)
+    ((_ _) false)
+  )))
+  (interp-fun locked (match (
+    ((_ _) false)
+  )))
+  (interp-fun transfer (match (
+    ((_ _) false)
+  )))
+)
+
+(define-model P4
+  (define-univ epoch (@epoch_0 @epoch_1))
+  (define-univ node (@node_0 @node_1))
+  (interp-fun zero (@epoch_0))
+  (interp-fun ep (match (
+    ((@node_0) @epoch_1)
+    ((@node_1) @epoch_0)
+    ((_) @epoch_0)
+  )))
+  (interp-fun held (match (
+    ((@node_0) true)
+    ((_) false)
+  )))
+  (interp-fun le (match (
+    ((@epoch_0 @epoch_0) true)
+    ((@epoch_0 @epoch_1) true)
+    ((@epoch_1 @epoch_1) true)
+    ((_ _) false)
+  )))
+  (interp-fun locked (match (
+    ((_ _) false)
+  )))
+  (interp-fun transfer (match (
+    ((_ _) false)
+  )))
+)

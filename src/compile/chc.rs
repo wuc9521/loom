@@ -4,18 +4,12 @@ use crate::{
         pred::{dnf_and, dnf_false, dnf_or, dnf_true, emit_dnf_rules, Pred, PredAtom, PredDnf},
     },
     compile::{
-        semantic::{interped_bool, interped_value_matches, parse_cases, Case},
+        native::{EnvView, SemanticContext},
+        semantic::{interped_bool, interped_value_matches},
         syntax::{state_name, term_sort, TermConstructor, TermSignature},
-        types::{
-            AspectKey, AspectValue, FieldDomain, FiniteSpace, SemanticDomain, SemanticKind,
-            SemanticProgram, SemanticSpec,
-        },
+        types::{AspectKey, AspectValue, SemanticDomain, SemanticKind, SemanticProgram},
     },
-    lang::{
-        eval::{eval_symbols, get_domain_for_sort},
-        model::{InterpedValue, Model},
-        signature::FuncSig,
-    },
+    lang::eval::{eval_symbols, get_domain_for_sort},
     parser::{DelisCmd, DelisProg},
 };
 use itertools::Itertools;
@@ -35,6 +29,16 @@ struct Env {
     children: HashMap<String, ChildBinding>,
 }
 
+impl EnvView for Env {
+    fn aspects(&self) -> &HashMap<String, AspectKey> {
+        &self.aspect
+    }
+
+    fn values(&self) -> &HashMap<String, AspectValue> {
+        &self.values
+    }
+}
+
 pub fn compile(problem: &DelisProg, program: SemanticProgram) -> Result<HornProg, String> {
     let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
         DelisCmd::TermTypes(cmd) => Some(cmd),
@@ -50,13 +54,7 @@ pub fn compile(problem: &DelisProg, program: SemanticProgram) -> Result<HornProg
 struct NativeCompiler<'a> {
     program: SemanticProgram,
     sig: TermSignature,
-    models: HashMap<String, &'a Model>,
-    func_sigs: HashMap<String, FuncSig>,
-    spaces: HashMap<String, FiniteSpace>,
-    specs: HashMap<String, SemanticSpec>,
-    domains_by_relation: HashMap<String, SemanticDomain>,
-    domain_by_sort: HashMap<String, SemanticDomain>,
-    cases: HashMap<String, HashMap<String, Case>>,
+    ctx: SemanticContext<'a>,
     predicates: HashMap<(String, AspectKey, Option<AspectValue>), Pred>,
 }
 
@@ -66,46 +64,7 @@ impl<'a> NativeCompiler<'a> {
         program: SemanticProgram,
         sig: TermSignature,
     ) -> Result<Self, String> {
-        let models = problem
-            .cmds
-            .iter()
-            .filter_map(|cmd| match cmd {
-                DelisCmd::DefineModel(model) => Some((model.name.clone(), model)),
-                _ => None,
-            })
-            .collect::<HashMap<_, _>>();
-        let func_sigs = problem
-            .cmds
-            .iter()
-            .filter_map(|cmd| match cmd {
-                DelisCmd::DeclareFunc(sig) => Some((sig.name.clone(), sig.clone())),
-                _ => None,
-            })
-            .collect::<HashMap<_, _>>();
-        let spaces = program
-            .finite_spaces
-            .iter()
-            .map(|space| (space.name.clone(), space.clone()))
-            .collect::<HashMap<_, _>>();
-        let specs = program
-            .semantics
-            .iter()
-            .map(|spec| (spec.relation.clone(), spec.clone()))
-            .collect::<HashMap<_, _>>();
-        let domains_by_relation = program
-            .domains
-            .iter()
-            .map(|domain| (domain.relation.clone(), domain.clone()))
-            .collect::<HashMap<_, _>>();
-        let domain_by_sort = program
-            .domains
-            .iter()
-            .map(|domain| (domain.term_sort.clone(), domain.clone()))
-            .collect::<HashMap<_, _>>();
-        let mut cases = HashMap::new();
-        for spec in &program.semantics {
-            cases.insert(spec.relation.clone(), parse_cases(&spec.body)?);
-        }
+        let ctx = SemanticContext::new(problem, &program)?;
         let mut predicates = HashMap::new();
         for domain in &program.domains {
             for bit in &domain.bits {
@@ -123,13 +82,7 @@ impl<'a> NativeCompiler<'a> {
         Ok(Self {
             program,
             sig,
-            models,
-            func_sigs,
-            spaces,
-            specs,
-            domains_by_relation,
-            domain_by_sort,
-            cases,
+            ctx,
             predicates,
         })
     }
@@ -179,61 +132,63 @@ impl<'a> NativeCompiler<'a> {
         out: &mut HornProg,
         cons: &TermConstructor,
     ) -> Result<(), String> {
-        let domain = self.domain_for_sort(&cons.result_sort)?;
-        let spec = self.spec_for_relation(&domain.relation)?;
-        let case = self
-            .cases
-            .get(&spec.relation)
-            .and_then(|cases| cases.get(&cons.name))
-            .ok_or_else(|| format!("missing semantic case for constructor {}", cons.name))?;
-        if case.vars.len() != cons.arg_sorts.len() {
-            return Err(format!(
-                "match case for constructor {} binds {} variables, expected {}",
-                cons.name,
-                case.vars.len(),
-                cons.arg_sorts.len()
-            ));
-        }
-        let head_term = HornTerm::app(
-            &cons.name,
-            case.vars.iter().map(HornTerm::var).collect::<Vec<_>>(),
-        );
-        let mut env = Env::default();
-        for var in &case.vars {
-            env.children.insert(
-                var.clone(),
-                ChildBinding {
-                    term: HornTerm::var(var),
-                },
+        for domain in self.ctx.domains_for_sort(&cons.result_sort)? {
+            let spec = self.ctx.spec_for_relation(&domain.relation)?;
+            let case = self
+                .ctx
+                .cases()
+                .get(&spec.relation)
+                .and_then(|cases| cases.get(&cons.name))
+                .ok_or_else(|| format!("missing semantic case for constructor {}", cons.name))?;
+            if case.vars.len() != cons.arg_sorts.len() {
+                return Err(format!(
+                    "match case for constructor {} binds {} variables, expected {}",
+                    cons.name,
+                    case.vars.len(),
+                    cons.arg_sorts.len()
+                ));
+            }
+            let head_term = HornTerm::app(
+                &cons.name,
+                case.vars.iter().map(HornTerm::var).collect::<Vec<_>>(),
             );
-        }
-        for bit in &domain.bits {
-            env.aspect.insert("asp".to_string(), bit.aspect.clone());
-            let dnf = match (&domain.kind, &bit.value) {
-                (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
-                (SemanticKind::FiniteValue { .. }, Some(value)) => {
-                    self.eval_finite_eq(&case.body, value, &env)?
-                }
-                _ => {
-                    return Err(format!(
-                        "malformed semantic domain bit {} for {}",
-                        bit.bit, domain.relation
-                    ));
-                }
-            };
-            let not_dnf = match (&domain.kind, &bit.value) {
-                (SemanticKind::Bool, None) => self.eval_bool_neg(&case.body, &env)?,
-                (SemanticKind::FiniteValue { .. }, Some(value)) => {
-                    self.eval_finite_neq(&case.body, value, &env)?
-                }
-                _ => unreachable!(),
-            };
-            let head = PredAtom::new(
-                self.pred_for(&domain.relation, &bit.aspect, bit.value.as_ref())?,
-                head_term.clone(),
-            );
-            emit_dnf_rules(&mut out.rules, head.clone(), dnf.clone());
-            emit_dnf_rules(&mut out.rules, head.dual(), not_dnf);
+            let mut env = Env::default();
+            for var in &case.vars {
+                env.children.insert(
+                    var.clone(),
+                    ChildBinding {
+                        term: HornTerm::var(var),
+                    },
+                );
+            }
+            for bit in &domain.bits {
+                env.aspect.insert("asp".to_string(), bit.aspect.clone());
+                let dnf = match (&domain.kind, &bit.value) {
+                    (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
+                    (SemanticKind::FiniteValue { .. }, Some(value)) => {
+                        self.eval_finite_eq(&case.body, value, &env)?
+                    }
+                    _ => {
+                        return Err(format!(
+                            "malformed semantic domain bit {} for {}",
+                            bit.bit, domain.relation
+                        ));
+                    }
+                };
+                let not_dnf = match (&domain.kind, &bit.value) {
+                    (SemanticKind::Bool, None) => self.eval_bool_neg(&case.body, &env)?,
+                    (SemanticKind::FiniteValue { .. }, Some(value)) => {
+                        self.eval_finite_neq(&case.body, value, &env)?
+                    }
+                    _ => unreachable!(),
+                };
+                let head = PredAtom::new(
+                    self.pred_for(&domain.relation, &bit.aspect, bit.value.as_ref())?,
+                    head_term.clone(),
+                );
+                emit_dnf_rules(&mut out.rules, head.clone(), dnf.clone());
+                emit_dnf_rules(&mut out.rules, head.dual(), not_dnf);
+            }
         }
         Ok(())
     }
@@ -241,7 +196,7 @@ impl<'a> NativeCompiler<'a> {
     fn emit_goal(&self, out: &mut HornProg) -> Result<(), String> {
         let mut body_atoms = Vec::new();
         for constraint in &self.program.constraints {
-            let domain = self.domain_for_relation(&constraint.relation)?;
+            let domain = self.ctx.domain_for_relation(&constraint.relation)?;
             if domain.kind != SemanticKind::Bool {
                 return Err(format!(
                     "top-level constraint {} must target Bool semantics",
@@ -302,10 +257,10 @@ impl<'a> NativeCompiler<'a> {
             "forall" | "exists" if items.len() == 3 => {
                 self.eval_quantifier(op, items[1], items[2], env)
             }
-            relation if self.domains_by_relation.contains_key(relation) => {
+            relation if self.ctx.has_relation(relation) => {
                 self.eval_semantic_bool_call(relation, &items[1..], env)
             }
-            func if self.func_sigs.contains_key(func) => {
+            func if self.ctx.has_func(func) => {
                 self.eval_model_bool_call(func, &items[1..], env, true)
             }
             _ => Err(format!("unsupported Bool expression: {expr}")),
@@ -342,10 +297,10 @@ impl<'a> NativeCompiler<'a> {
             "exists" if items.len() == 3 => {
                 self.eval_quantifier("forall-neg", items[1], items[2], env)
             }
-            relation if self.domains_by_relation.contains_key(relation) => {
+            relation if self.ctx.has_relation(relation) => {
                 self.eval_semantic_bool_call_neg(relation, &items[1..], env)
             }
-            func if self.func_sigs.contains_key(func) => {
+            func if self.ctx.has_func(func) => {
                 self.eval_model_bool_call(func, &items[1..], env, false)
             }
             _ => Err(format!("unsupported Bool expression: {expr}")),
@@ -379,11 +334,8 @@ impl<'a> NativeCompiler<'a> {
         let var = var
             .as_symbol()
             .ok_or_else(|| format!("quantifier variable must be a symbol: {var}"))?;
-        let (model, sort) = self.parse_domain_expr(domain_expr, env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
+        let (model, sort) = self.ctx.parse_domain_expr(domain_expr, env)?;
+        let model_ref = self.ctx.model(&model)?;
         let values = get_domain_for_sort(model_ref, &sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let conjunctive = op == "forall" || op == "forall-neg";
@@ -418,7 +370,7 @@ impl<'a> NativeCompiler<'a> {
         args: &[&Value],
         env: &Env,
     ) -> Result<PredDnf, String> {
-        let domain = self.domain_for_relation(relation)?;
+        let domain = self.ctx.domain_for_relation(relation)?;
         if domain.kind != SemanticKind::Bool {
             return Err(format!("{relation} does not return Bool"));
         }
@@ -426,7 +378,7 @@ impl<'a> NativeCompiler<'a> {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let term = self.child_term(args[0], env)?;
-        let aspect = self.eval_aspect(args[1], relation, env)?;
+        let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let pred = self.pred_for(relation, &aspect, None)?;
         Ok(vec![vec![PredAtom::new(pred, term)]])
     }
@@ -441,7 +393,7 @@ impl<'a> NativeCompiler<'a> {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let term = self.child_term(args[0], env)?;
-        let aspect = self.eval_aspect(args[1], relation, env)?;
+        let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let pred = self.pred_for(relation, &aspect, None)?.dual();
         Ok(vec![vec![PredAtom::new(pred, term)]])
     }
@@ -453,16 +405,13 @@ impl<'a> NativeCompiler<'a> {
         env: &Env,
         expected: bool,
     ) -> Result<PredDnf, String> {
-        let sig = self.func_sigs.get(func).unwrap();
+        let sig = self.ctx.func_sigs.get(func).unwrap();
         if sig.ret_sort.to_string() != "Bool" {
             return Err(format!("function {func} does not return Bool"));
         }
-        let model = self.current_model(env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
-        let domains = self.argument_domains(sig, model_ref)?;
+        let model = self.ctx.current_model(env)?;
+        let model_ref = self.ctx.model(&model)?;
+        let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut out = dnf_false();
         for tuple in domains
             .iter()
@@ -495,14 +444,12 @@ impl<'a> NativeCompiler<'a> {
         env: &Env,
     ) -> Result<PredDnf, String> {
         let sort = self
+            .ctx
             .infer_finite_sort(lhs, env)
-            .or_else(|| self.infer_finite_sort(rhs, env))
+            .or_else(|| self.ctx.infer_finite_sort(rhs, env))
             .ok_or_else(|| format!("cannot infer finite sort for equality (= {lhs} {rhs})"))?;
-        let model = self.current_model(env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
+        let model = self.ctx.current_model(env)?;
+        let model_ref = self.ctx.model(&model)?;
         let values = get_domain_for_sort(model_ref, &sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut out = dnf_false();
@@ -529,14 +476,12 @@ impl<'a> NativeCompiler<'a> {
         env: &Env,
     ) -> Result<PredDnf, String> {
         let sort = self
+            .ctx
             .infer_finite_sort(lhs, env)
-            .or_else(|| self.infer_finite_sort(rhs, env))
+            .or_else(|| self.ctx.infer_finite_sort(rhs, env))
             .ok_or_else(|| format!("cannot infer finite sort for inequality (= {lhs} {rhs})"))?;
-        let model = self.current_model(env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
+        let model = self.ctx.current_model(env)?;
+        let model_ref = self.ctx.model(&model)?;
         let values = get_domain_for_sort(model_ref, &sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut out = dnf_false();
@@ -579,11 +524,8 @@ impl<'a> NativeCompiler<'a> {
                     dnf_false()
                 });
             }
-            let model = self.current_model(env)?;
-            let model_ref = self
-                .models
-                .get(&model)
-                .ok_or_else(|| format!("unknown model {model}"))?;
+            let model = self.ctx.current_model(env)?;
+            let model_ref = self.ctx.model(&model)?;
             if let Some(value) = eval_symbols(symbol, &[], &model_ref.func_interps) {
                 return Ok(if interped_value_matches(value, target) {
                     dnf_true()
@@ -617,10 +559,10 @@ impl<'a> NativeCompiler<'a> {
                 }
             }
         }
-        if self.domains_by_relation.contains_key(op) {
+        if self.ctx.has_relation(op) {
             return self.eval_semantic_finite_call_eq(op, &items[1..], target, env);
         }
-        if self.func_sigs.contains_key(op) {
+        if self.ctx.has_func(op) {
             return self.eval_model_finite_call_eq(op, &items[1..], target, env);
         }
         Err(format!("unsupported finite expression: {expr}"))
@@ -640,11 +582,8 @@ impl<'a> NativeCompiler<'a> {
                     dnf_false()
                 });
             }
-            let model = self.current_model(env)?;
-            let model_ref = self
-                .models
-                .get(&model)
-                .ok_or_else(|| format!("unknown model {model}"))?;
+            let model = self.ctx.current_model(env)?;
+            let model_ref = self.ctx.model(&model)?;
             if let Some(value) = eval_symbols(symbol, &[], &model_ref.func_interps) {
                 return Ok(if !interped_value_matches(value, target) {
                     dnf_true()
@@ -678,13 +617,13 @@ impl<'a> NativeCompiler<'a> {
                 }
             }
         }
-        if self.domains_by_relation.contains_key(op) {
+        if self.ctx.has_relation(op) {
             let term = self.child_term(items[1], env)?;
-            let aspect = self.eval_aspect(items[2], op, env)?;
+            let aspect = self.ctx.eval_aspect(items[2], op, env)?;
             let pred = self.pred_for(op, &aspect, Some(target))?.dual();
             return Ok(vec![vec![PredAtom::new(pred, term)]]);
         }
-        if self.func_sigs.contains_key(op) {
+        if self.ctx.has_func(op) {
             return self.eval_model_finite_call_neq(op, &items[1..], target, env);
         }
         Err(format!("unsupported finite expression: {expr}"))
@@ -701,7 +640,7 @@ impl<'a> NativeCompiler<'a> {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let term = self.child_term(args[0], env)?;
-        let aspect = self.eval_aspect(args[1], relation, env)?;
+        let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let pred = self.pred_for(relation, &aspect, Some(target))?;
         Ok(vec![vec![PredAtom::new(pred, term)]])
     }
@@ -713,13 +652,10 @@ impl<'a> NativeCompiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<PredDnf, String> {
-        let sig = self.func_sigs.get(func).unwrap();
-        let model = self.current_model(env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
-        let domains = self.argument_domains(sig, model_ref)?;
+        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let model = self.ctx.current_model(env)?;
+        let model_ref = self.ctx.model(&model)?;
+        let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut out = dnf_false();
         for tuple in domains
             .iter()
@@ -752,13 +688,10 @@ impl<'a> NativeCompiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<PredDnf, String> {
-        let sig = self.func_sigs.get(func).unwrap();
-        let model = self.current_model(env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
-        let domains = self.argument_domains(sig, model_ref)?;
+        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let model = self.ctx.current_model(env)?;
+        let model_ref = self.ctx.model(&model)?;
+        let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut out = dnf_false();
         for tuple in domains
             .iter()
@@ -784,30 +717,6 @@ impl<'a> NativeCompiler<'a> {
         Ok(out)
     }
 
-    fn argument_domains(
-        &self,
-        sig: &FuncSig,
-        model: &Model,
-    ) -> Result<Vec<Vec<AspectValue>>, String> {
-        sig.arg_sorts
-            .iter()
-            .map(|sort| {
-                let sort = sort.to_string();
-                get_domain_for_sort(model, &sort)
-                    .ok_or_else(|| format!("model {} has no universe for sort {sort}", model.name))
-                    .map(|values| {
-                        values
-                            .into_iter()
-                            .map(|name| AspectValue::Univ {
-                                sort: sort.clone(),
-                                name,
-                            })
-                            .collect()
-                    })
-            })
-            .collect()
-    }
-
     fn child_term(&self, expr: &Value, env: &Env) -> Result<HornTerm, String> {
         let child = expr
             .as_symbol()
@@ -818,272 +727,14 @@ impl<'a> NativeCompiler<'a> {
             .ok_or_else(|| format!("unknown semantic child variable {child}"))
     }
 
-    fn eval_aspect(&self, expr: &Value, relation: &str, env: &Env) -> Result<AspectKey, String> {
-        if let Some(symbol) = expr.as_symbol() {
-            let aspect = env
-                .aspect
-                .get(symbol)
-                .ok_or_else(|| format!("unknown aspect variable {symbol}"))?;
-            let mut aspect = aspect.clone();
-            aspect.relation = relation.to_string();
-            return Ok(aspect);
-        }
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("aspect expression must be a list: {expr}"))?;
-        let cons = items
-            .first()
-            .and_then(|item| item.as_symbol())
-            .ok_or_else(|| format!("aspect constructor must be a symbol: {expr}"))?;
-        let space = self
-            .spaces
-            .get(cons)
-            .ok_or_else(|| format!("unknown aspect constructor {cons}"))?;
-        let mut model = None;
-        let mut fields = Vec::new();
-        for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
-            match &field.domain {
-                FieldDomain::Sort(sort) if sort == "Model" => {
-                    model = Some(self.eval_model_name(arg, env)?);
-                }
-                FieldDomain::Sort(sort) => {
-                    let value = self.eval_value_for_sort(arg, sort, env)?;
-                    match &value {
-                        AspectValue::Univ { sort: actual, .. } if actual == sort => {}
-                        AspectValue::Int(_) if sort == "Int" => {}
-                        _ => {
-                            return Err(format!(
-                                "aspect field {} expected sort {}, got {}",
-                                field.name,
-                                sort,
-                                value.display()
-                            ));
-                        }
-                    }
-                    fields.push((field.name.clone(), value));
-                }
-                FieldDomain::Enum(values) => {
-                    let value = self.eval_value(arg, env)?;
-                    if !values.contains(&value.display()) {
-                        return Err(format!(
-                            "aspect field {} expected one of ({})",
-                            field.name,
-                            values.join(" ")
-                        ));
-                    }
-                    fields.push((field.name.clone(), value));
-                }
-                FieldDomain::Union { bot, sorts } => {
-                    let value = self.eval_value(arg, env)?;
-                    match &value {
-                        AspectValue::Symbol(symbol) if symbol == bot => {}
-                        AspectValue::Univ { sort, .. } if sorts.contains(sort) => {}
-                        _ => {
-                            return Err(format!(
-                                "aspect field {} expected {} or one of ({}) but got {}",
-                                field.name,
-                                bot,
-                                sorts.join(" "),
-                                value.display()
-                            ));
-                        }
-                    }
-                    fields.push((field.name.clone(), value));
-                }
-            }
-        }
-        Ok(AspectKey {
-            relation: relation.to_string(),
-            model: model.ok_or_else(|| format!("aspect {cons} has no model field"))?,
-            fields,
-        })
-    }
-
-    fn eval_value(&self, expr: &Value, env: &Env) -> Result<AspectValue, String> {
-        if let Some(symbol) = expr.as_symbol() {
-            if let Some(value) = env.values.get(symbol) {
-                return Ok(value.clone());
-            }
-            return Ok(AspectValue::Symbol(symbol.to_string()));
-        }
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("value expression must be a symbol or list: {expr}"))?;
-        let op = items
-            .first()
-            .and_then(|item| item.as_symbol())
-            .ok_or_else(|| format!("value expression operator must be a symbol: {expr}"))?;
-        if items.len() == 2 {
-            if let Some(aspect_arg) = items[1].as_symbol() {
-                if let Some(aspect) = env.aspect.get(aspect_arg) {
-                    if op == "model" {
-                        return Ok(AspectValue::Model(aspect.model.clone()));
-                    }
-                    if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
-                        return Ok(value.clone());
-                    }
-                }
-            }
-        }
-        if self.func_sigs.contains_key(op) {
-            return self.eval_model_value_call(op, &items[1..], env);
-        }
-        Err(format!("unsupported value expression: {expr}"))
-    }
-
-    fn eval_model_value_call(
-        &self,
-        func: &str,
-        args: &[&Value],
-        env: &Env,
-    ) -> Result<AspectValue, String> {
-        let sig = self.func_sigs.get(func).unwrap();
-        if sig.arg_sorts.len() != args.len() {
-            return Err(format!(
-                "function {func} expects {} arguments, got {}",
-                sig.arg_sorts.len(),
-                args.len()
-            ));
-        }
-        let arg_names = args
-            .iter()
-            .map(|arg| self.eval_value(arg, env).map(|value| value.display()))
-            .collect::<Result<Vec<_>, _>>()?;
-        let model = self.current_model(env)?;
-        let model_ref = self
-            .models
-            .get(&model)
-            .ok_or_else(|| format!("unknown model {model}"))?;
-        let value = eval_symbols(func, &arg_names, &model_ref.func_interps).ok_or_else(|| {
-            format!(
-                "model {model} has no value for {func}({})",
-                arg_names.join(" ")
-            )
-        })?;
-        interped_aspect_value(&sig.ret_sort.to_string(), value)
-    }
-
-    fn eval_value_for_sort(
-        &self,
-        expr: &Value,
-        sort: &str,
-        env: &Env,
-    ) -> Result<AspectValue, String> {
-        let value = self.eval_value(expr, env)?;
-        if matches!(&value, AspectValue::Symbol(_)) {
-            let model = self.current_model(env)?;
-            let model_ref = self
-                .models
-                .get(&model)
-                .ok_or_else(|| format!("unknown model {model}"))?;
-            if get_domain_for_sort(model_ref, sort)
-                .is_some_and(|domain| domain.contains(&value.display()))
-            {
-                return Ok(AspectValue::Univ {
-                    sort: sort.to_string(),
-                    name: value.display(),
-                });
-            }
-        }
-        Ok(value)
-    }
-
-    fn eval_model_name(&self, expr: &Value, env: &Env) -> Result<String, String> {
-        match self.eval_value(expr, env)? {
-            AspectValue::Model(model) | AspectValue::Symbol(model) => Ok(model),
-            other => Err(format!("expected model value, got {}", other.display())),
-        }
-    }
-
-    fn parse_domain_expr(&self, expr: &Value, env: &Env) -> Result<(String, String), String> {
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("domain expression must be a list: {expr}"))?;
-        match items.as_slice() {
-            [domain, sort_app] if domain.as_symbol() == Some("domain") => {
-                let sort_items = sort_app.to_ref_vec().ok_or_else(|| {
-                    format!("domain argument must be a sort application: {sort_app}")
-                })?;
-                let [sort, model_expr] = sort_items.as_slice() else {
-                    return Err(format!(
-                        "domain argument must have shape (Sort model): {sort_app}"
-                    ));
-                };
-                let sort = sort
-                    .as_symbol()
-                    .ok_or_else(|| format!("domain sort must be a symbol: {sort}"))?
-                    .to_string();
-                let model = self.eval_model_name(model_expr, env)?;
-                Ok((model, sort))
-            }
-            _ => Err(format!("unsupported domain expression: {expr}")),
-        }
-    }
-
-    fn current_model(&self, env: &Env) -> Result<String, String> {
-        env.aspect
-            .get("asp")
-            .map(|aspect| aspect.model.clone())
-            .ok_or_else(|| "no current aspect in semantic environment".to_string())
-    }
-
-    fn infer_finite_sort(&self, expr: &Value, env: &Env) -> Option<String> {
-        if let Some(symbol) = expr.as_symbol() {
-            if let Some(AspectValue::Univ { sort, .. }) = env.values.get(symbol) {
-                return Some(sort.clone());
-            }
-            return self
-                .func_sigs
-                .get(symbol)
-                .map(|sig| sig.ret_sort.to_string());
-        }
-        let items = expr.to_ref_vec()?;
-        let op = items.first()?.as_symbol()?;
-        if items.len() == 2 {
-            if let Some(aspect_arg) = items[1].as_symbol() {
-                if let Some(aspect) = env.aspect.get(aspect_arg) {
-                    if let Some((_, AspectValue::Univ { sort, .. })) =
-                        aspect.fields.iter().find(|(name, _)| name == op)
-                    {
-                        return Some(sort.clone());
-                    }
-                }
-            }
-        }
-        if let Some(domain) = self.domains_by_relation.get(op) {
-            if let SemanticKind::FiniteValue { sort } = &domain.kind {
-                return Some(sort.clone());
-            }
-        }
-        self.func_sigs.get(op).map(|sig| sig.ret_sort.to_string())
-    }
-
     fn all_case_vars(&self) -> Vec<String> {
         let mut vars = BTreeSet::new();
-        for cases in self.cases.values() {
+        for cases in self.ctx.cases().values() {
             for case in cases.values() {
                 vars.extend(case.vars.iter().cloned());
             }
         }
         vars.into_iter().collect()
-    }
-
-    fn domain_for_sort(&self, sort: &str) -> Result<&SemanticDomain, String> {
-        self.domain_by_sort
-            .get(sort)
-            .ok_or_else(|| format!("no semantic domain for term sort {sort}"))
-    }
-
-    fn domain_for_relation(&self, relation: &str) -> Result<&SemanticDomain, String> {
-        self.domains_by_relation
-            .get(relation)
-            .ok_or_else(|| format!("no semantic domain for relation {relation}"))
-    }
-
-    fn spec_for_relation(&self, relation: &str) -> Result<&SemanticSpec, String> {
-        self.specs
-            .get(relation)
-            .ok_or_else(|| format!("no semantic spec for relation {relation}"))
     }
 
     fn pred_for(
@@ -1121,20 +772,7 @@ fn domain_state_name(
             state.push_str(&value.display());
         }
     }
-    sanitize_pred_part(&state)
-}
-
-fn sanitize_pred_part(input: &str) -> String {
-    input
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    state
 }
 
 fn pred_name(pred: &Pred, neg: bool) -> String {
@@ -1142,23 +780,5 @@ fn pred_name(pred: &Pred, neg: bool) -> String {
         pred.dual().name()
     } else {
         pred.name()
-    }
-}
-
-fn interped_aspect_value(sort: &str, value: &InterpedValue) -> Result<AspectValue, String> {
-    match value {
-        InterpedValue::UnivElem(elem) => Ok(AspectValue::Univ {
-            sort: sort.to_string(),
-            name: elem.name.clone(),
-        }),
-        InterpedValue::Literal(lit) if sort == "Int" => lit
-            .to_string()
-            .parse::<usize>()
-            .map(AspectValue::Int)
-            .map_err(|_| format!("expected Int value, got {lit}")),
-        InterpedValue::Literal(lit) => Ok(AspectValue::Symbol(lit.to_string())),
-        InterpedValue::FuncApp(..) => {
-            Err(format!("nested interpreted value {value} is unsupported"))
-        }
     }
 }

@@ -60,7 +60,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
                 let chc_program = compile::to_chc_ast(&chc_file)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 let chc_text = cmds_to_text(&smt2::emit::to_smt(&chc_program));
-                run_chc_solver(&chc_solver_config(), &chc_text)
+                run_chc_check_solver(&chc_config(), &chc_text)
             })();
             let _ = chc_tx.send(BackendResult::Chc(result));
         })?;
@@ -79,7 +79,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
                 let sygus_cmds = compile::to_sygus(&sygus_file, optimize)
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 let sygus_text = cmds_to_text(&sygus_cmds);
-                let sygus_solver = cvc5_config(bv_sz, enum_trigger);
+                let sygus_solver = sygus_config(bv_sz, enum_trigger);
                 let output = run_sygus_solver(&sygus_solver, &sygus_text)?;
                 decode_cvc5_response(&sygus_file, &output)
             })();
@@ -127,11 +127,14 @@ enum BackendResult {
     Sygus(Result<String, io::Error>),
 }
 
-fn chc_solver_config() -> Solver {
-    ("cvc5".to_string(), vec![])
+fn chc_config() -> Solver {
+    (
+        "z3".to_string(),
+        vec!["-in".to_string(), "-smt2".to_string()],
+    )
 }
 
-fn cvc5_config(bv_sz: usize, enum_trigger: usize) -> Solver {
+fn sygus_config(bv_sz: usize, enum_trigger: usize) -> Solver {
     let mut args = vec!["--lang=sygus2".to_string()];
     if bv_sz >= enum_trigger {
         args.push("--sygus-enum=fast".to_string());
@@ -164,7 +167,7 @@ fn chc_result(stdout: &str) -> Option<&str> {
         .find(|line| *line == "sat" || *line == "unsat")
 }
 
-fn run_chc_solver(solver: &Solver, chc_text: &str) -> Result<Option<String>, io::Error> {
+fn run_chc_check_solver(solver: &Solver, chc_text: &str) -> Result<Option<String>, io::Error> {
     let child = spawn_solver(solver, chc_text)?;
     Ok(match chc_result(&solver_stdout(child)?) {
         Some("sat") => Some("unsat".to_string()),
@@ -258,6 +261,14 @@ pub struct CLI {
     /// Translate to CHC (HORN) and print to stdout
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
+
+    /// Translate to Z3 fixedpoint CHC witness query and print to stdout
+    #[arg(long = "dump-chc-witness", default_value_t = false)]
+    dump_chc_witness: bool,
+
+    /// Solve using only the Z3 fixedpoint CHC witness path
+    #[arg(long = "chc-witness", default_value_t = false)]
+    chc_witness: bool,
 
     /// Translate to SemGuS and print to stdout
     #[arg(long = "dump-semgus", default_value_t = false)]
