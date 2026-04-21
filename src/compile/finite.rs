@@ -8,7 +8,7 @@ use crate::{
         },
     },
     lang::{
-        eval::{collect_loaded_models, get_domain_for_sort, max_domain_len},
+        eval::{collect_loaded_models, max_domain_len},
         model::Model,
     },
     parser::{DelisCmd, DelisProg},
@@ -17,6 +17,8 @@ use itertools::Itertools;
 use lexpr::Value;
 use std::collections::HashMap;
 use sygus_parser::SyGuSTerm;
+
+type AspectAssignment = Vec<(String, AspectValue)>;
 
 pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     let program = compile_semantic_program(problem)?;
@@ -150,14 +152,20 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
     let semantic_constraints =
         collect_semantic_constraints(problem, &semantic_specs, &spaces_by_name, &models_by_name)?;
     let mut model_names = Vec::new();
+    let mut seen_model_names = std::collections::HashSet::new();
     for constraint in &semantic_constraints {
         if models_by_name.contains_key(&constraint.model)
-            && !model_names.contains(&constraint.model)
+            && seen_model_names.insert(constraint.model.clone())
         {
             model_names.push(constraint.model.clone());
         }
     }
     let loaded_models = collect_loaded_models(&model_names, &models_by_name);
+    let model_domains = loaded_models
+        .iter()
+        .map(|model| (model.name.clone(), universe_domains(model)))
+        .collect::<HashMap<_, _>>();
+    let mut aspect_cache: HashMap<(String, String), Vec<AspectAssignment>> = HashMap::new();
 
     let mut domains = Vec::new();
     for spec in &semantic_specs {
@@ -166,9 +174,26 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
             .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
         let mut bits = Vec::new();
         for model in &loaded_models {
-            for assignment in
-                enumerate_aspects(aspect_space, model.name.as_str(), model, &models_by_name)?
-            {
+            let cache_key = (aspect_space.name.clone(), model.name.clone());
+            let assignments = if let Some(assignments) = aspect_cache.get(&cache_key) {
+                assignments
+            } else {
+                let model_domain_map = model_domains.get(&model.name).ok_or_else(|| {
+                    format!(
+                        "internal error: missing cached domains for model {}",
+                        model.name
+                    )
+                })?;
+                let assignments = enumerate_aspects(
+                    aspect_space,
+                    model.name.as_str(),
+                    model,
+                    &models_by_name,
+                    model_domain_map,
+                )?;
+                aspect_cache.entry(cache_key).or_insert(assignments)
+            };
+            for assignment in assignments {
                 let fields = assignment
                     .iter()
                     .filter(|(_, value)| !matches!(value, AspectValue::Model(_)))
@@ -188,19 +213,22 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
                         });
                     }
                     SemanticKind::FiniteValue { sort } => {
-                        let values = get_domain_for_sort(model, sort).ok_or_else(|| {
-                            format!(
-                                "model {} has no universe for return sort {} of semantics {}",
-                                model.name, sort, spec.relation
-                            )
-                        })?;
+                        let values = model_domains
+                            .get(&model.name)
+                            .and_then(|domains| domains.get(sort))
+                            .ok_or_else(|| {
+                                format!(
+                                    "model {} has no universe for return sort {} of semantics {}",
+                                    model.name, sort, spec.relation
+                                )
+                            })?;
                         for name in values {
                             bits.push(DomainBit {
                                 bit: bits.len(),
                                 aspect: aspect.clone(),
                                 value: Some(AspectValue::Univ {
                                     sort: sort.clone(),
-                                    name,
+                                    name: name.clone(),
                                 }),
                             });
                         }
@@ -336,6 +364,7 @@ fn parse_aspect_term(
         .get(&model_name)
         .ok_or_else(|| format!("constraint references unknown model {model_name}"))?;
     let universe_sorts = model_universe_sorts(model);
+    let domains = universe_domains(model);
 
     let mut assignment = Vec::new();
     for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
@@ -351,8 +380,8 @@ fn parse_aspect_term(
                 }
                 AspectValue::Int(value as usize)
             }
-            FieldDomain::Sort(sort) if get_domain_for_sort(model, sort).is_some() => {
-                let domain = get_domain_for_sort(model, sort).ok_or_else(|| {
+            FieldDomain::Sort(sort) if domains.contains_key(sort) => {
+                let domain = domains.get(sort).ok_or_else(|| {
                     format!(
                         "universe sort {sort} not found while evaluating aspect {}",
                         field.name
@@ -396,7 +425,8 @@ fn parse_aspect_term(
                     let Some(sort) = sorts
                         .iter()
                         .find(|sort| {
-                            get_domain_for_sort(model, sort)
+                            domains
+                                .get(*sort)
                                 .is_some_and(|domain| domain.contains(&value))
                         })
                         .cloned()
@@ -531,7 +561,8 @@ fn enumerate_aspects(
     model_name: &str,
     model: &crate::lang::model::Model,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
-) -> Result<Vec<Vec<(String, AspectValue)>>, String> {
+    domains_by_sort: &HashMap<String, Vec<String>>,
+) -> Result<Vec<AspectAssignment>, String> {
     let universe_sorts = model_universe_sorts(model);
     let int_bound = max_domain_len(model);
     let domains = space
@@ -545,15 +576,17 @@ fn enumerate_aspects(
                 FieldDomain::Sort(sort) if sort == "Int" => {
                     (0..=int_bound).map(AspectValue::Int).collect()
                 }
-                FieldDomain::Sort(sort) if get_domain_for_sort(model, sort).is_some() => {
-                    get_domain_for_sort(model, sort)
+                FieldDomain::Sort(sort) if domains_by_sort.contains_key(sort) => {
+                    domains_by_sort
+                        .get(sort)
                         .ok_or_else(|| {
                             format!(
                                 "universe sort {sort} not found while enumerating finite space {}",
                                 space.name
                             )
                         })?
-                        .into_iter()
+                        .iter()
+                        .cloned()
                         .map(|name| AspectValue::Univ {
                             sort: sort.clone(),
                             name,
@@ -573,14 +606,14 @@ fn enumerate_aspects(
                 FieldDomain::Union { bot, sorts } => {
                     let mut values = vec![AspectValue::Symbol(bot.clone())];
                     for sort in sorts {
-                        let Some(domain) = get_domain_for_sort(model, sort) else {
+                        let Some(domain) = domains_by_sort.get(sort) else {
                             return Err(format!(
                                 "unsupported finite field union sort {sort} for field {}; use model universe sorts ({})",
                                 field.name,
                                 universe_sorts.join(", ")
                             ));
                         };
-                        values.extend(domain.into_iter().map(|name| AspectValue::Univ {
+                        values.extend(domain.iter().cloned().map(|name| AspectValue::Univ {
                             sort: sort.clone(),
                             name,
                         }));
@@ -612,6 +645,19 @@ fn enumerate_aspects(
         }
     }
     Ok(assignments)
+}
+
+fn universe_domains(model: &crate::lang::model::Model) -> HashMap<String, Vec<String>> {
+    model
+        .univ_defs
+        .iter()
+        .map(|univ| {
+            (
+                univ.sort.to_string(),
+                univ.elems.iter().map(|elem| elem.name.clone()).collect(),
+            )
+        })
+        .collect()
 }
 
 fn model_universe_sorts(model: &crate::lang::model::Model) -> Vec<String> {

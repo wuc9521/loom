@@ -11,7 +11,7 @@ use crate::{
 };
 use itertools::Itertools;
 use lexpr::Value;
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 use sygus_parser::{
     BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar, SyGuSCmd,
     SyGuSGTerm, SyGuSTerm, Term,
@@ -57,6 +57,8 @@ struct NativeCompiler<'a> {
     sig: TermSignature,
     ctx: SemanticContext<'a>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
+    ground_model_eval:
+        RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
     optimize: bool,
 }
 
@@ -107,6 +109,7 @@ impl<'a> NativeCompiler<'a> {
             sig,
             ctx,
             bit_index,
+            ground_model_eval: RefCell::new(HashMap::new()),
             optimize,
         })
     }
@@ -459,6 +462,10 @@ impl<'a> NativeCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
+        if let Some(arg_names) = self.ground_arg_names(args, env) {
+            let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
+            return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
+        }
         let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut disjuncts = Vec::new();
         for tuple in domains
@@ -680,6 +687,14 @@ impl<'a> NativeCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
+        if let Some(arg_names) = self.ground_arg_names(args, env) {
+            let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
+            return Ok(BoolExpr::Const(
+                value
+                    .as_ref()
+                    .is_some_and(|value| interped_value_matches(value, target)),
+            ));
+        }
         let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut disjuncts = Vec::new();
         for tuple in domains
@@ -737,6 +752,35 @@ impl<'a> NativeCompiler<'a> {
                         .unwrap_or_default()
                 )
             })
+    }
+
+    fn ground_arg_names(&self, args: &[&Value], env: &Env) -> Option<Vec<String>> {
+        args.iter()
+            .map(|arg| {
+                self.ctx
+                    .eval_value(arg, env)
+                    .ok()
+                    .map(|value| value.display())
+            })
+            .collect()
+    }
+
+    fn ground_model_value(
+        &self,
+        func: &str,
+        model: &str,
+        arg_names: &[String],
+        func_interps: &[crate::lang::model::FuncInterp],
+    ) -> Option<crate::lang::model::InterpedValue> {
+        let key = (func.to_string(), model.to_string(), arg_names.to_vec());
+        if let Some(value) = self.ground_model_eval.borrow().get(&key) {
+            return value.clone();
+        }
+        let value = eval_symbols(func, arg_names, func_interps).cloned();
+        self.ground_model_eval
+            .borrow_mut()
+            .insert(key, value.clone());
+        value
     }
 }
 
