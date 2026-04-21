@@ -34,7 +34,12 @@ impl Model {
 
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
-        let name = inner_pairs.next().unwrap().as_str();
+        let name = inner_pairs
+            .next()
+            .ok_or_else(|| {
+                DelisParseError::InvalidSyntax("define-model expects a model name".to_string())
+            })?
+            .as_str();
         let mut model = Self::new(name);
         for item_pair in inner_pairs {
             match item_pair.as_rule() {
@@ -47,15 +52,10 @@ impl Model {
                     model.func_interps.push(func_interp);
                 }
                 _ => {
-                    eprintln!(
-                        "[DEBUG] Unmatched rule: {:?}, content: {}",
-                        item_pair.as_rule(),
-                        item_pair.as_str()
-                    );
-                    Err(DelisParseError::UnsupportedFeature(format!(
+                    return Err(DelisParseError::UnsupportedFeature(format!(
                         "Unsupported feature in model definition: {}",
                         item_pair.as_str()
-                    )))?;
+                    )));
                 }
             }
         }
@@ -106,17 +106,23 @@ impl DefineUniv {
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
-        let sort = Sort::from_str(inner_pairs.next().unwrap().as_str()).unwrap();
+        let sort = inner_pairs
+            .next()
+            .ok_or_else(|| DelisParseError::InvalidSyntax("define-univ expects a sort".to_string()))
+            .and_then(|p| {
+                Sort::from_str(p.as_str())
+                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))
+            })?;
         let mut elems = Vec::new();
-        while let Some(elem_pair) = inner_pairs.next() {
+        for elem_pair in inner_pairs {
             if elem_pair.as_rule() == Rule::UnivElem {
                 let elem = UnivElem::parse(elem_pair)?;
                 elems.push(elem);
             } else {
-                Err(DelisParseError::InvalidSyntax(format!(
+                return Err(DelisParseError::InvalidSyntax(format!(
                     "Invalid element in universe definition: {}",
                     elem_pair.as_str()
-                )))?;
+                )));
             }
         }
         Ok(Self::new(sort, elems))
@@ -175,24 +181,33 @@ impl FuncInterp {
     }
     pub fn arity(&self) -> usize {
         match self {
-            FuncInterp::MatchInterp(_, cases) => cases.get(0).map_or(0, |case| {
+            FuncInterp::MatchInterp(_, cases) => cases.first().map_or(0, |case| {
                 case.pattern.as_ref().map_or(0, |p| p.elements.len())
             }),
             FuncInterp::SimpleInterp(_, _) => 0,
         }
     }
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
-        let mut inner_pairs = pair.clone().into_inner();
-        let name = inner_pairs.next().unwrap().as_str();
+        let mut inner_pairs = pair.into_inner();
+        let name = inner_pairs
+            .next()
+            .ok_or_else(|| {
+                DelisParseError::InvalidSyntax("interp-fun expects a function name".to_string())
+            })?
+            .as_str()
+            .to_string();
         let mut cases = Vec::new();
-        let interp_pair = inner_pairs.next().unwrap();
+        let interp_pair = inner_pairs.next().ok_or_else(|| {
+            DelisParseError::InvalidSyntax(
+                "interp-fun expects a simple value or a match block".to_string(),
+            )
+        })?;
         match interp_pair.as_rule() {
             Rule::SimpleInterp => {
                 let interped_value = InterpedValue::parse(interp_pair)?;
-                return Ok(Self::SimpleInterp(name.to_string(), interped_value));
+                Ok(Self::SimpleInterp(name, interped_value))
             }
             Rule::MatchInterp => {
-                // Get all match cases directly from the inner elements of MatchInterp
                 let match_cases = interp_pair.into_inner();
 
                 for case_pair in match_cases {
@@ -206,14 +221,12 @@ impl FuncInterp {
                         )));
                     }
                 }
-                return Ok(Self::MatchInterp(name.to_string(), cases));
+                Ok(Self::MatchInterp(name, cases))
             }
-            _ => {
-                return Err(DelisParseError::UnsupportedFeature(format!(
-                    "Unsupported feature in function interpretation: {}",
-                    pair.as_str()
-                )));
-            }
+            _ => Err(DelisParseError::UnsupportedFeature(format!(
+                "Unsupported feature in function interpretation: {}",
+                interp_pair.as_str()
+            ))),
         }
     }
 }
@@ -248,20 +261,32 @@ pub enum InterpedValue {
 
 impl InterpedValue {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
-        let mut pair = pair.into_inner().next().unwrap();
+        let mut pair = pair.into_inner().next().ok_or_else(|| {
+            DelisParseError::InvalidSyntax("missing interpreted value".to_string())
+        })?;
         if pair.as_rule() == Rule::InterpedValue {
-            pair = pair.into_inner().next().unwrap();
+            pair = pair.into_inner().next().ok_or_else(|| {
+                DelisParseError::InvalidSyntax("missing interpreted inner value".to_string())
+            })?;
         }
         match pair.as_rule() {
             Rule::UnivElem => Ok(Self::UnivElem(UnivElem::from_str(pair.as_str())?)),
             Rule::Literal => Ok(Self::Literal(Literal::from_str(pair.as_str()))),
             _ => {
                 let mut children = pair.into_inner();
-                let func_name = children.next().unwrap().as_str().to_string();
+                let func_name = children
+                    .next()
+                    .ok_or_else(|| {
+                        DelisParseError::InvalidSyntax(
+                            "function application expects a function symbol".to_string(),
+                        )
+                    })?
+                    .as_str()
+                    .to_string();
                 let args = children
                     .map(|p| SyGuSTerm::from_str(p.as_str()))
                     .collect::<Result<_, _>>()
-                    .unwrap();
+                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
                 Ok(Self::FuncApp(func_name, args))
             }
         }
@@ -285,9 +310,11 @@ impl MatchCase {
     // InterpedCase =    "(" ~ Pattern? ~ InterpedValue ~ ")"
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner_pairs = pair.into_inner();
-        // inner_pairs.next(); // skip the opening parenthesis
-        let pattern = inner_pairs.next().map(|p| Pattern::parse(p).unwrap());
-        let interped_value = InterpedValue::parse(inner_pairs.next().unwrap())?;
+        let interped_pair = inner_pairs.next_back().ok_or_else(|| {
+            DelisParseError::InvalidSyntax("match case expects an interpreted value".to_string())
+        })?;
+        let pattern = inner_pairs.next().map(Pattern::parse).transpose()?;
+        let interped_value = InterpedValue::parse(interped_pair)?;
         Ok(Self {
             pattern,
             value: interped_value,
@@ -322,11 +349,11 @@ impl Pattern {
         let elements = pair
             .into_inner()
             .map(|elem| match elem.as_rule() {
-                Rule::UnivElem => PatternElem::UnivElem(UnivElem::parse(elem).unwrap()),
-                Rule::Symbol => PatternElem::Var(elem.as_str().to_string()),
-                _ => PatternElem::Wildcard,
+                Rule::UnivElem => UnivElem::parse(elem).map(PatternElem::UnivElem),
+                Rule::Symbol => Ok(PatternElem::Var(elem.as_str().to_string())),
+                _ => Ok(PatternElem::Wildcard),
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self::new(elements))
     }

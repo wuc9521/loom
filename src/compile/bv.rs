@@ -375,7 +375,11 @@ impl<'a> NativeCompiler<'a> {
         }
     }
 
-    fn quantifier_values(&self, domain_expr: &Value, env: &Env) -> Result<Vec<AspectValue>, String> {
+    fn quantifier_values(
+        &self,
+        domain_expr: &Value,
+        env: &Env,
+    ) -> Result<Vec<AspectValue>, String> {
         let items = domain_expr
             .to_ref_vec()
             .ok_or_else(|| format!("unsupported domain expression: {domain_expr}"))?;
@@ -438,7 +442,11 @@ impl<'a> NativeCompiler<'a> {
         args: &[&Value],
         env: &Env,
     ) -> Result<BoolExpr, String> {
-        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let sig = self
+            .ctx
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
         if sig.ret_sort.to_string() != "Bool" {
             return Err(format!("function {func} does not return Bool"));
         }
@@ -510,8 +518,12 @@ impl<'a> NativeCompiler<'a> {
     }
 
     fn eval_equality(&self, lhs: &Value, rhs: &Value, env: &Env) -> Result<BoolExpr, String> {
-        if let (Ok(lhs_value), Ok(rhs_value)) = (self.ctx.eval_value(lhs, env), self.ctx.eval_value(rhs, env)) {
-            return Ok(BoolExpr::Const(self.values_equal(&lhs_value, &rhs_value, env)?));
+        if let (Ok(lhs_value), Ok(rhs_value)) =
+            (self.ctx.eval_value(lhs, env), self.ctx.eval_value(rhs, env))
+        {
+            return Ok(BoolExpr::Const(
+                self.values_equal(&lhs_value, &rhs_value, env)?,
+            ));
         }
         if self.eval_int_expr(lhs, env).is_ok() && self.eval_int_expr(rhs, env).is_ok() {
             return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
@@ -545,11 +557,15 @@ impl<'a> NativeCompiler<'a> {
         env: &Env,
     ) -> Result<BoolExpr, String> {
         if let Ok(value) = self.ctx.eval_value(expr, env) {
-            return Ok(BoolExpr::Const(self.values_match_target(&value, target, env)?));
+            return Ok(BoolExpr::Const(
+                self.values_match_target(&value, target, env)?,
+            ));
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
-                return Ok(BoolExpr::Const(self.values_match_target(value, target, env)?));
+                return Ok(BoolExpr::Const(
+                    self.values_match_target(value, target, env)?,
+                ));
             }
             if let Some(matches) = self.ctx.constant_value_matches(symbol, target, env)? {
                 return Ok(BoolExpr::Const(matches));
@@ -650,7 +666,11 @@ impl<'a> NativeCompiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<BoolExpr, String> {
-        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let sig = self
+            .ctx
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
         if sig.arg_sorts.len() != args.len() {
             return Err(format!(
                 "function {func} expects {} arguments, got {}",

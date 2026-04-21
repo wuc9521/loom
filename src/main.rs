@@ -15,10 +15,9 @@ use std::{
 use sygus_parser::{Sort, SyGuSCmd, SyGuSFile};
 
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
-    if args.dump_chc || args.dump_sygus || args.dump_semgus {
+    if args.dump_chc || args.dump_sygus {
         if args.dump_chc {
-            let program = compile::to_chc_ast(delis_file)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let program = compile::to_chc_ast(delis_file).map_err(io::Error::other)?;
             println!(
                 "{}",
                 smt2::emit::to_smt(&program)
@@ -29,21 +28,13 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             );
         }
         if args.dump_sygus {
-            let cmds = compile::to_sygus(delis_file, args.optimize)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            let cmds = compile::to_sygus(delis_file, args.optimize).map_err(io::Error::other)?;
             println!(
                 "{}",
                 cmds.iter()
                     .map(|cmd| cmd.to_string())
                     .collect::<Vec<_>>()
                     .join("\n")
-            );
-        }
-        if args.dump_semgus {
-            println!(
-                "{}",
-                delis::backends::semgus::compile(delis_file)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
             );
         }
         return Ok(());
@@ -53,12 +44,13 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let closure_tx = tx.clone();
     let closure_file = delis_file.clone();
     let closure_optimize = args.optimize;
+    const CLOSURE_STACK_BYTES: usize = 64 * 1024 * 1024;
     thread::Builder::new()
         .name("closure-backend".to_string())
-        .stack_size(64 * 1024 * 1024)
+        .stack_size(CLOSURE_STACK_BYTES)
         .spawn(move || {
             let result = compile::solve_by_closure(&closure_file, closure_optimize)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+                .map_err(io::Error::other);
             let _ = closure_tx.send(BackendResult::Closure(result));
         })?;
 
@@ -66,15 +58,15 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let sygus_file = delis_file.clone();
     let optimize = args.optimize;
     let enum_trigger = args.enum_trigger;
+    const SYGUS_STACK_BYTES: usize = 16 * 1024 * 1024;
     thread::Builder::new()
         .name("sygus-backend".to_string())
-        .stack_size(16 * 1024 * 1024)
+        .stack_size(SYGUS_STACK_BYTES)
         .spawn(move || {
             let result = (|| {
-                let bv_sz = compile::bv_sz(&sygus_file)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                let sygus_cmds = compile::to_sygus(&sygus_file, optimize)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let bv_sz = compile::bv_sz(&sygus_file).map_err(io::Error::other)?;
+                let sygus_cmds =
+                    compile::to_sygus(&sygus_file, optimize).map_err(io::Error::other)?;
                 let sygus_text = cmds_to_text(&sygus_cmds);
                 let sygus_solver = sygus_config(bv_sz, enum_trigger);
                 let output = run_sygus_solver(&sygus_solver, &sygus_text)?;
@@ -87,9 +79,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let mut pending = 2;
     let mut first_error = None;
     while pending > 0 {
-        let result = rx
-            .recv()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let result = rx.recv().map_err(io::Error::other)?;
         pending -= 1;
         match result {
             BackendResult::Closure(Ok(Some(output))) | BackendResult::Sygus(Ok(output)) => {
@@ -102,12 +92,8 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             }
         }
     }
-    Err(first_error.unwrap_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "neither closure nor SyGuS backend produced a result",
-        )
-    }))
+    Err(first_error
+        .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
 
 fn cmds_to_text(cmds: &[impl ToString]) -> String {
@@ -145,14 +131,24 @@ fn spawn_solver(solver: &Solver, input: &str) -> Result<Child, io::Error> {
     Ok(child)
 }
 
-fn solver_stdout(child: Child) -> Result<String, io::Error> {
+fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
     let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let message = stderr.trim();
+        let detail = if message.is_empty() {
+            format!("{solver} exited with status {}", output.status)
+        } else {
+            format!("{solver} failed: {message}")
+        };
+        return Err(io::Error::other(detail));
+    }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn run_sygus_solver(solver: &Solver, sygus_text: &str) -> Result<String, io::Error> {
     let child = spawn_solver(solver, sygus_text)?;
-    Ok(solver_stdout(child)?.trim().to_string())
+    Ok(solver_stdout(child, &solver.0)?.trim().to_string())
 }
 
 fn synth_signature(
@@ -167,7 +163,7 @@ fn synth_signature(
             }
             _ => None,
         })
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "missing synth-fun command"))
+        .ok_or_else(|| io::Error::other("missing synth-fun command"))
 }
 
 fn decode_cvc5_response(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
@@ -245,10 +241,6 @@ pub struct CLI {
     #[arg(long = "chc-witness", default_value_t = false)]
     chc_witness: bool,
 
-    /// Translate to SemGuS and print to stdout
-    #[arg(long = "dump-semgus", default_value_t = false)]
-    dump_semgus: bool,
-
     /// Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value.
     #[arg(long = "enum-trigger", default_value_t = 512)]
     enum_trigger: usize,
@@ -314,10 +306,7 @@ fn main() -> Result<(), io::Error> {
             }
             Err(e) => {
                 eprintln!("parse error: {}", e);
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("parse error: {}", e),
-                ));
+                return Err(io::Error::other(format!("parse error: {}", e)));
             }
         }
     }

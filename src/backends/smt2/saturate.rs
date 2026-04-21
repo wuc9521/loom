@@ -248,8 +248,10 @@ mod tests {
             "P",
             HornTerm::app("f", vec![HornTerm::var("a"), HornTerm::var("b")]),
         );
-        let pattern = constructor_atom(&pattern_atom).unwrap();
-        let candidate = constructor_atom(&candidate_atom).unwrap();
+        let pattern =
+            constructor_atom(&pattern_atom).expect("pattern atom should be a constructor app");
+        let candidate =
+            constructor_atom(&candidate_atom).expect("candidate atom should be a constructor app");
 
         assert!(match_constructor_atom(pattern, candidate).is_none());
     }
@@ -275,10 +277,11 @@ mod tests {
         };
 
         let subst = match_constructor_atom(
-            push_head(&push_rule).unwrap(),
-            constructor_atom(&pop_rule.body_atoms[0]).unwrap(),
+            push_head(&push_rule).expect("push rule head should be a constructor app"),
+            constructor_atom(&pop_rule.body_atoms[0])
+                .expect("pop body atom should be a constructor app"),
         )
-        .unwrap();
+        .expect("constructor matching should succeed for this test");
         let resolved = resolve_pop_clause(&pop_rule, 0, &push_rule, &subst);
 
         assert_eq!(resolved.head, atom("R", HornTerm::var("a")));

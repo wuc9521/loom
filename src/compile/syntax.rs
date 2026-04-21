@@ -3,11 +3,11 @@ use crate::{
     compile::AspectKey,
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
+use std::collections::HashMap;
 use sygus_parser::{
     DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSCmd, SyGuSGTerm,
     SyGuSTerm,
 };
-use std::collections::HashMap;
 
 pub fn synth_name(problem: &DelisProg) -> Result<String, String> {
     problem

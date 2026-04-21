@@ -344,7 +344,7 @@ mod tests {
     fn temp_dir() -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock should be after Unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("delis-module-test-{stamp}"))
     }
@@ -352,19 +352,19 @@ mod tests {
     #[test]
     fn expands_required_modules_before_local_body() {
         let dir = temp_dir();
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).expect("should create temporary test directory");
         fs::write(
             dir.join("base.sl"),
             "(provide Pos zero)\n(declare-sort Pos 0)\n(declare-fun zero (Pos) Bool)\n",
         )
-        .unwrap();
+        .expect("should write base module");
         fs::write(
             dir.join("main.sl"),
             "(require \"base.sl\")\n(declare-fun local (Pos) Bool)\n",
         )
-        .unwrap();
+        .expect("should write main module");
 
-        let expanded = load_module_file(dir.join("main.sl")).unwrap();
+        let expanded = load_module_file(dir.join("main.sl")).expect("module expansion should work");
         assert!(expanded.contains("(declare-sort Pos 0)"));
         assert!(expanded.contains("(declare-fun zero (Pos) Bool)"));
         assert!(expanded.contains("(declare-fun local (Pos) Bool)"));
@@ -375,14 +375,15 @@ mod tests {
     #[test]
     fn rejects_provide_of_undefined_name() {
         let dir = temp_dir();
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).expect("should create temporary test directory");
         fs::write(
             dir.join("bad.sl"),
             "(provide missing)\n(declare-sort Pos 0)\n",
         )
-        .unwrap();
+        .expect("should write malformed module");
 
-        let err = load_module_file(dir.join("bad.sl")).unwrap_err();
+        let err = load_module_file(dir.join("bad.sl"))
+            .expect_err("module expansion should fail for undefined provide");
         assert!(err
             .to_string()
             .contains("provides undefined name(s): missing"));

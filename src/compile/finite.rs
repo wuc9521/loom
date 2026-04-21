@@ -352,7 +352,12 @@ fn parse_aspect_term(
                 AspectValue::Int(value as usize)
             }
             FieldDomain::Sort(sort) if get_domain_for_sort(model, sort).is_some() => {
-                let domain = get_domain_for_sort(model, sort).unwrap();
+                let domain = get_domain_for_sort(model, sort).ok_or_else(|| {
+                    format!(
+                        "universe sort {sort} not found while evaluating aspect {}",
+                        field.name
+                    )
+                })?;
                 let value = arg.to_string();
                 if !domain.contains(&value) {
                     return Err(format!(
@@ -542,7 +547,12 @@ fn enumerate_aspects(
                 }
                 FieldDomain::Sort(sort) if get_domain_for_sort(model, sort).is_some() => {
                     get_domain_for_sort(model, sort)
-                        .unwrap()
+                        .ok_or_else(|| {
+                            format!(
+                                "universe sort {sort} not found while enumerating finite space {}",
+                                space.name
+                            )
+                        })?
                         .into_iter()
                         .map(|name| AspectValue::Univ {
                             sort: sort.clone(),

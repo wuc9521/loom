@@ -210,7 +210,13 @@ fn fold_bitwise(
     match terms.len() {
         0 => BitVec::const_(identity as u64, 1),
         1 => terms.remove(0),
-        _ => terms.into_iter().reduce(op).unwrap(),
+        _ => {
+            let mut iter = terms.into_iter();
+            let first = iter
+                .next()
+                .expect("fold_bitwise called with len >= 2 must have a first term");
+            iter.fold(first, op)
+        }
     }
 }
 
@@ -379,7 +385,11 @@ fn push_concat_term(terms: &mut Vec<SyGuSTerm>, term: SyGuSTerm) {
     {
         Some(mut prev_bits) => {
             prev_bits.extend(bits);
-            *terms.last_mut().unwrap() = bitvec_literal_from_lsb(&prev_bits);
+            if let Some(last) = terms.last_mut() {
+                *last = bitvec_literal_from_lsb(&prev_bits);
+            } else {
+                terms.push(bitvec_literal_from_lsb(&prev_bits));
+            }
         }
         None => terms.push(term),
     }
@@ -513,7 +523,7 @@ mod tests {
             &bits,
             &args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
         )
-        .unwrap()
+        .expect("test helper expects native BV lifting to succeed")
         .to_string()
     }
 

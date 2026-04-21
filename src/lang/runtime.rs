@@ -83,19 +83,9 @@ impl Session {
     }
     pub fn handle_command(&mut self, cmd: &DelisCmd) -> Option<DelisCmd> {
         match cmd {
-            DelisCmd::As(SyGuSCmd::SetLogic(_)) => {
-                return Some(cmd.clone());
-            }
             DelisCmd::DeclareFunc(sig) => {
                 self.runtime
                     .insert(sig.name.clone(), Symbol::Func(sig.clone()));
-                return Some(cmd.clone());
-            }
-            DelisCmd::TermTypes(_) => {
-                return Some(cmd.clone());
-            }
-            DelisCmd::FiniteAspect(_) | DelisCmd::Semantics(_) => {
-                return Some(cmd.clone());
             }
             DelisCmd::DefineModel(model) => {
                 self.runtime
@@ -104,11 +94,13 @@ impl Session {
                     self.runtime
                         .insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
                 }
-                return Some(cmd.clone());
             }
-            _ => {
-                return Some(cmd.clone());
-            }
+            DelisCmd::As(SyGuSCmd::SetLogic(_))
+            | DelisCmd::TermTypes(_)
+            | DelisCmd::FiniteAspect(_)
+            | DelisCmd::Semantics(_)
+            | DelisCmd::As(_) => {}
         }
+        Some(cmd.clone())
     }
 }

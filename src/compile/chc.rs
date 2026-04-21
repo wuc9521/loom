@@ -125,10 +125,8 @@ impl<'a> ChcCompiler<'a> {
                     } else {
                         Sort::from_name(&domain.term_sort)
                     };
-                    out.decls.push(HornDecl::DeclareRel(
-                        name.clone(),
-                        vec![declared_sort],
-                    ));
+                    out.decls
+                        .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
                     out.register_predicate(
                         name,
                         state.clone(),
@@ -229,7 +227,10 @@ impl<'a> ChcCompiler<'a> {
             }
         }
         if !matched {
-            return Err(format!("missing semantic case for constructor {}", cons.name));
+            return Err(format!(
+                "missing semantic case for constructor {}",
+                cons.name
+            ));
         }
         Ok(())
     }
@@ -304,9 +305,7 @@ impl<'a> ChcCompiler<'a> {
             }),
             "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env, true),
             "<" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, IntCmp::Lt),
-            "<=" if items.len() == 3 => {
-                self.eval_int_compare(items[1], items[2], env, IntCmp::Le)
-            }
+            "<=" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, IntCmp::Le),
             "forall" | "exists" if items.len() == 3 => {
                 self.eval_quantifier(op, items[1], items[2], env)
             }
@@ -345,9 +344,7 @@ impl<'a> ChcCompiler<'a> {
             }),
             "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env, false),
             "<" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, IntCmp::Ge),
-            "<=" if items.len() == 3 => {
-                self.eval_int_compare(items[1], items[2], env, IntCmp::Gt)
-            }
+            "<=" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, IntCmp::Gt),
             "forall" if items.len() == 3 => {
                 self.eval_quantifier("exists-neg", items[1], items[2], env)
             }
@@ -475,7 +472,9 @@ impl<'a> ChcCompiler<'a> {
         env: &Env,
         expected: bool,
     ) -> Result<PredDnf, String> {
-        if self.ctx.infer_finite_sort(lhs, env).is_some() || self.ctx.infer_finite_sort(rhs, env).is_some() {
+        if self.ctx.infer_finite_sort(lhs, env).is_some()
+            || self.ctx.infer_finite_sort(rhs, env).is_some()
+        {
             if expected {
                 self.eval_finite_terms_equal(lhs, rhs, env)
             } else {
@@ -578,7 +577,11 @@ impl<'a> ChcCompiler<'a> {
         env: &Env,
         expected: bool,
     ) -> Result<PredDnf, String> {
-        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let sig = self
+            .ctx
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
         if sig.ret_sort.to_string() != "Bool" {
             return Err(format!("function {func} does not return Bool"));
         }
@@ -861,7 +864,11 @@ impl<'a> ChcCompiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<PredDnf, String> {
-        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let sig = self
+            .ctx
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         let domains = self.ctx.argument_domains(sig, model_ref)?;
@@ -897,7 +904,11 @@ impl<'a> ChcCompiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<PredDnf, String> {
-        let sig = self.ctx.func_sigs.get(func).unwrap();
+        let sig = self
+            .ctx
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         let domains = self.ctx.argument_domains(sig, model_ref)?;
@@ -929,10 +940,9 @@ impl<'a> ChcCompiler<'a> {
     fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<HornTerm>, String> {
         if let Some(child) = expr.as_symbol() {
             if env.current_var.as_deref() == Some(child) {
-                let term = env
-                    .current_term
-                    .clone()
-                    .ok_or_else(|| "missing current term for recursive semantic call".to_string())?;
+                let term = env.current_term.clone().ok_or_else(|| {
+                    "missing current term for recursive semantic call".to_string()
+                })?;
                 return Ok(vec![term]);
             }
             let term = env
@@ -962,9 +972,7 @@ impl<'a> ChcCompiler<'a> {
                     .ok_or_else(|| "missing current term for parent navigation".to_string())?;
                 Ok(self.sig.parent_contexts(sort, term))
             }
-            _ => Err(format!(
-                "unsupported semantic call term navigation: {expr}"
-            )),
+            _ => Err(format!("unsupported semantic call term navigation: {expr}")),
         }
     }
 

@@ -16,10 +16,7 @@ fn forall(vars: BTreeMap<String, Sort>, body: SyGuSTerm) -> SyGuSTerm {
     }
     Term::forall(
         vars.into_iter()
-            .map(|(name, sort)| SortedVar {
-                name,
-                sort,
-            })
+            .map(|(name, sort)| SortedVar { name, sort })
             .collect(),
         body,
     )
@@ -137,7 +134,7 @@ impl HornQuery {
         predicate_sorts: &HashMap<String, Sort>,
         constructors: &HashMap<String, (Sort, Vec<Sort>)>,
     ) -> SExpr {
-        let body = body_to_term(&self.body_atoms).unwrap_or_else(|| Bool::true_());
+        let body = body_to_term(&self.body_atoms).unwrap_or_else(Bool::true_);
         let mut vars = BTreeMap::new();
         for atom in &self.body_atoms {
             infer_atom_var_sorts(atom, predicate_sorts, constructors, &mut vars)

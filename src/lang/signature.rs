@@ -1,7 +1,6 @@
-use crate::parser::Rule;
-use pest::iterators::Pair;
-pub type Error = pest::error::Error<Rule>;
+use crate::parser::{DelisParseError, Rule};
 use derive_more::Display;
+use pest::iterators::Pair;
 use sygus_parser::Sort;
 
 #[derive(Clone, Debug, Display, PartialEq)]
@@ -19,18 +18,26 @@ pub struct FuncSig {
 }
 
 impl FuncSig {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, Error> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner = pair.into_inner();
-        let func_name = inner.next().unwrap().as_str().to_string();
+        let func_name = inner
+            .next()
+            .ok_or_else(|| {
+                DelisParseError::InvalidSyntax("declare-fun expects a function name".to_string())
+            })?
+            .as_str()
+            .to_string();
         let mut sort_list: Vec<Sort> = Vec::new();
-        while let Some(sort) = inner.next() {
+        for sort in inner {
             if sort.as_rule() == Rule::Sort {
-                let sort = Sort::from_str(sort.as_str()).unwrap();
+                let sort = Sort::from_str(sort.as_str())
+                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
                 sort_list.push(sort);
             }
         }
-        // the last one is the return type
-        let ret_sort = sort_list.pop().unwrap();
+        let ret_sort = sort_list.pop().ok_or_else(|| {
+            DelisParseError::InvalidSyntax("declare-fun expects a return sort".to_string())
+        })?;
         Ok(FuncSig {
             name: func_name,
             arg_sorts: sort_list,

@@ -23,7 +23,6 @@ Options:
   -v, --verbose                 Enable verbose output
   -d, --dump-sygus              Translate to SyGuS BV and print to stdout
       --dump-chc                Translate to CHC (HORN) and print to stdout
-      --dump-semgus             Translate to SemGuS and print to stdout
       --enum-trigger <ENUM_TRIGGER>
                                   Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 512]
   -h, --help                    Print help

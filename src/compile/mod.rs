@@ -1,7 +1,7 @@
-use lexpr::Value;
 use crate::backends::smt2::ast::HornProg;
 use crate::backends::smt2::saturate::saturate;
 use crate::parser::{DelisCmd, DelisProg};
+use lexpr::Value;
 use sygus_parser::{Sort, SyGuSCmd};
 
 mod bv;
@@ -15,8 +15,8 @@ mod syntax;
 mod types;
 
 pub use finite::compile;
-pub use syntax::{TermConstructor, TermSignature};
 use syntax::synth_name;
+pub use syntax::{TermConstructor, TermSignature};
 pub use types::{AspectKey, BitMapping, ConstraintBit, Encoding};
 
 pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
@@ -94,19 +94,16 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         Some(layouts),
         optimize,
     )
-        .into_iter()
-        .map(Ok)
-        .collect()
+    .into_iter()
+    .map(Ok)
+    .collect()
 }
 
 fn complete_layouts(
     sig: &TermSignature,
     program: &types::SemanticProgram,
     mut layouts: std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>,
-) -> Result<
-    std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>,
-    String,
-> {
+) -> Result<std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>, String> {
     let fallback_template = if layouts.len() == 1 {
         layouts.values().next().cloned()
     } else {
@@ -178,13 +175,10 @@ fn supports_native_sygus(program: &types::SemanticProgram) -> bool {
     if program.needs_saturation {
         return false;
     }
-    !program
-        .semantics
-        .iter()
-        .any(|spec| {
-            contains_unsupported_native_feature(&spec.body)
-                || contains_current_term_recursion(&spec.relation, &spec.body)
-        })
+    !program.semantics.iter().any(|spec| {
+        contains_unsupported_native_feature(&spec.body)
+            || contains_current_term_recursion(&spec.relation, &spec.body)
+    })
 }
 
 fn contains_unsupported_native_feature(expr: &Value) -> bool {
@@ -205,9 +199,9 @@ fn contains_current_term_recursion(relation: &str, body: &Value) -> bool {
     let Ok(cases) = semantic::parse_cases(body) else {
         return true;
     };
-    cases.values().any(|case| {
-        contains_self_call(relation, &case.self_var, &case.body)
-    })
+    cases
+        .values()
+        .any(|case| contains_self_call(relation, &case.self_var, &case.body))
 }
 
 fn contains_self_call(relation: &str, self_var: &str, expr: &Value) -> bool {
@@ -219,7 +213,9 @@ fn contains_self_call(relation: &str, self_var: &str, expr: &Value) -> bool {
     {
         return true;
     }
-    items.iter().any(|item| contains_self_call(relation, self_var, item))
+    items
+        .iter()
+        .any(|item| contains_self_call(relation, self_var, item))
 }
 
 pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {

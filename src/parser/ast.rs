@@ -193,10 +193,10 @@ impl FiniteAspect {
 
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(define-semantics{}{}{})",
-    "format_sexpr_body(&[header.clone()])",
+    fmt = "(define-semantics {}{}{})",
+    "format_sexpr_body(std::slice::from_ref(&header))",
     "return_sort.as_ref().map(|sort| format!(\" :returns {sort}\")).unwrap_or_default()",
-    "format_sexpr_body(&[body.clone()])"
+    "format_sexpr_body(std::slice::from_ref(&body))"
 )]
 pub struct Semantics {
     pub header: String,
@@ -286,65 +286,81 @@ impl DelisProg {
     }
 }
 
+impl Default for DelisProg {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn update_runtime(runtime: &mut Option<&mut Runtime>, cmd: &DelisCmd) {
+    let Some(runtime) = runtime.as_deref_mut() else {
+        return;
+    };
+    match cmd {
+        DelisCmd::DeclareFunc(sig) => {
+            runtime.insert(sig.name.clone(), Symbol::Func(sig.clone()));
+        }
+        DelisCmd::DefineModel(model) => {
+            runtime.insert(model.name.clone(), Symbol::Model(model.clone()));
+            for univ in &model.univ_defs {
+                runtime.insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_delis_cmd_pair(cmd: Pair<'_, Rule>) -> Result<DelisCmd, DelisParseError> {
+    match cmd.as_rule() {
+        Rule::SyGuSCmd => {
+            let cmd_str = cmd.as_str();
+            let sygus_cmd = SyGuSCmd::from_str(cmd_str)
+                .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
+            Ok(DelisCmd::As(sygus_cmd))
+        }
+        Rule::DeclareTermTypes => {
+            let decl = TermTypes::parse(cmd)?;
+            Ok(DelisCmd::TermTypes(decl))
+        }
+        Rule::DefineFinite => {
+            let decl = FiniteAspect::parse(cmd)?;
+            Ok(DelisCmd::FiniteAspect(decl))
+        }
+        Rule::DefineSemantics => {
+            let decl = Semantics::parse(cmd)?;
+            Ok(DelisCmd::Semantics(decl))
+        }
+        Rule::FuncDecl => {
+            let sig = FuncSig::parse(cmd)?;
+            Ok(DelisCmd::DeclareFunc(sig))
+        }
+        Rule::ModelDef => {
+            let model = Model::parse(cmd)?;
+            Ok(DelisCmd::DefineModel(model))
+        }
+        _ => Err(DelisParseError::InvalidSyntax(format!(
+            "Invalid command: {:?}",
+            cmd.as_str()
+        ))),
+    }
+}
+
 pub fn parse(
     content: &str,
     mut runtime: Option<&mut Runtime>,
 ) -> Result<DelisProg, DelisParseError> {
-    let [file]: [_; 1] = DelisParser::parse(Rule::DelisProg, content)?
-        .collect_vec()
-        .try_into()
-        .unwrap();
+    let mut parsed = DelisParser::parse(Rule::DelisProg, content)?;
+    let file = parsed.next().ok_or_else(|| {
+        DelisParseError::InvalidSyntax("parser returned empty Delis program".to_string())
+    })?;
     let mut ls_file = DelisProg::new();
-    // first scan: record set-logic
-    let mut cmds_raw = vec![];
-    for cmd in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {
-        let [cmd, ..]: [_; 1] = cmd.clone().into_inner().collect_vec().try_into().unwrap();
-        cmds_raw.push(cmd);
-    }
-    // second scan: process commands
-    for cmd in cmds_raw {
-        match cmd.as_rule() {
-            Rule::SyGuSCmd => {
-                let cmd_str = cmd.as_str();
-                let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
-                ls_file.push(DelisCmd::As(sygus_cmd));
-            }
-            Rule::DeclareTermTypes => {
-                let decl = TermTypes::parse(cmd.clone())?;
-                ls_file.push(DelisCmd::TermTypes(decl));
-            }
-            Rule::DefineFinite => {
-                let decl = FiniteAspect::parse(cmd.clone())?;
-                ls_file.push(DelisCmd::FiniteAspect(decl));
-            }
-            Rule::DefineSemantics => {
-                let decl = Semantics::parse(cmd.clone())?;
-                ls_file.push(DelisCmd::Semantics(decl));
-            }
-            Rule::FuncDecl => {
-                let sig = FuncSig::parse(cmd.clone()).unwrap();
-                if let Some(ref mut runtime) = runtime {
-                    runtime.insert(sig.name.clone(), Symbol::Func(sig.clone()));
-                }
-                ls_file.push(DelisCmd::DeclareFunc(sig));
-            }
-            Rule::ModelDef => {
-                let model = Model::parse(cmd.clone()).unwrap();
-                if let Some(ref mut runtime) = runtime {
-                    runtime.insert(model.name.clone(), Symbol::Model(model.clone()));
-                    for univ in &model.univ_defs {
-                        runtime.insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
-                    }
-                }
-                ls_file.push(DelisCmd::DefineModel(model));
-            }
-            _ => {
-                Err(DelisParseError::InvalidSyntax(format!(
-                    "Invalid command: {:?}",
-                    cmd.as_str()
-                )))?;
-            }
-        }
+    for wrapper in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {
+        let cmd = wrapper.into_inner().next().ok_or_else(|| {
+            DelisParseError::InvalidSyntax("empty command wrapper in DelisProg".to_string())
+        })?;
+        let parsed_cmd = parse_delis_cmd_pair(cmd)?;
+        update_runtime(&mut runtime, &parsed_cmd);
+        ls_file.push(parsed_cmd);
     }
     Ok(ls_file)
 }
@@ -361,46 +377,9 @@ pub fn parse_command(
         .into_inner()
         .next()
         .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
-    match cmd.as_rule() {
-        Rule::SyGuSCmd => {
-            let cmd_str = cmd.as_str();
-            let sygus_cmd = SyGuSCmd::from_str(cmd_str).unwrap();
-            Ok(DelisCmd::As(sygus_cmd))
-        }
-        Rule::DeclareTermTypes => {
-            let decl = TermTypes::parse(cmd)?;
-            Ok(DelisCmd::TermTypes(decl))
-        }
-        Rule::DefineFinite => {
-            let decl = FiniteAspect::parse(cmd)?;
-            Ok(DelisCmd::FiniteAspect(decl))
-        }
-        Rule::DefineSemantics => {
-            let decl = Semantics::parse(cmd)?;
-            Ok(DelisCmd::Semantics(decl))
-        }
-        Rule::FuncDecl => {
-            let sig = FuncSig::parse(cmd.clone()).unwrap();
-            if let Some(ref mut runtime) = runtime {
-                runtime.insert(sig.name.clone(), Symbol::Func(sig.clone()));
-            }
-            Ok(DelisCmd::DeclareFunc(sig))
-        }
-        Rule::ModelDef => {
-            let model = Model::parse(cmd.clone()).unwrap();
-            if let Some(ref mut runtime) = runtime {
-                runtime.insert(model.name.clone(), Symbol::Model(model.clone()));
-                for univ in &model.univ_defs {
-                    runtime.insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
-                }
-            }
-            Ok(DelisCmd::DefineModel(model))
-        }
-        _ => Err(DelisParseError::InvalidSyntax(format!(
-            "Invalid command: {:?}",
-            cmd.as_str()
-        ))),
-    }
+    let parsed_cmd = parse_delis_cmd_pair(cmd)?;
+    update_runtime(&mut runtime, &parsed_cmd);
+    Ok(parsed_cmd)
 }
 
 pub fn parse_commands(

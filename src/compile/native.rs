@@ -305,10 +305,10 @@ impl<'a> SemanticContext<'a> {
                     }
                     if let Some(sig) = self.func_sigs.get(symbol) {
                         if sig.arg_sorts.is_empty() {
-                            let value =
-                                eval_symbols(symbol, &[], &model_ref.func_interps).ok_or_else(
-                                    || format!("model {model} has no value for {symbol}"),
-                                )?;
+                            let value = eval_symbols(symbol, &[], &model_ref.func_interps)
+                                .ok_or_else(|| {
+                                    format!("model {model} has no value for {symbol}")
+                                })?;
                             return interped_aspect_value(&sig.ret_sort.to_string(), value);
                         }
                     }
@@ -418,7 +418,10 @@ impl<'a> SemanticContext<'a> {
         args: &[&Value],
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
-        let sig = self.func_sigs.get(func).unwrap();
+        let sig = self
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
         if sig.arg_sorts.len() != args.len() {
             return Err(format!(
                 "function {func} expects {} arguments, got {}",
