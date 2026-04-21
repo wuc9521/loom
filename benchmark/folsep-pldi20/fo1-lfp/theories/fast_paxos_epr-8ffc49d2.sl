@@ -156,23 +156,23 @@
 
 (define-finite FoAsp.x0.c_quorum (record (model Model) (x0 c_quorum)))
 
-(define-finite FoAsp.x0.c_quorum.lfp (record (model Model) (x0 c_quorum) (fuel Int)) :where (<= fuel (len (c_quorum model))))
+(define-finite FoAsp.x0.c_quorum.lfp (record (model Model) (x0 c_quorum) (fuel Int)) :where (<= fuel (size (c_quorum model))))
 
 (define-finite FoAsp.x0.f_quorum (record (model Model) (x0 f_quorum)))
 
-(define-finite FoAsp.x0.f_quorum.lfp (record (model Model) (x0 f_quorum) (fuel Int)) :where (<= fuel (len (f_quorum model))))
+(define-finite FoAsp.x0.f_quorum.lfp (record (model Model) (x0 f_quorum) (fuel Int)) :where (<= fuel (size (f_quorum model))))
 
 (define-finite FoAsp.x0.node (record (model Model) (x0 node)))
 
-(define-finite FoAsp.x0.node.lfp (record (model Model) (x0 node) (fuel Int)) :where (<= fuel (len (node model))))
+(define-finite FoAsp.x0.node.lfp (record (model Model) (x0 node) (fuel Int)) :where (<= fuel (size (node model))))
 
 (define-finite FoAsp.x0.round (record (model Model) (x0 round)))
 
-(define-finite FoAsp.x0.round.lfp (record (model Model) (x0 round) (fuel Int)) :where (<= fuel (len (round model))))
+(define-finite FoAsp.x0.round.lfp (record (model Model) (x0 round) (fuel Int)) :where (<= fuel (size (round model))))
 
 (define-finite FoAsp.x0.value (record (model Model) (x0 value)))
 
-(define-finite FoAsp.x0.value.lfp (record (model Model) (x0 value) (fuel Int)) :where (<= fuel (len (value model))))
+(define-finite FoAsp.x0.value.lfp (record (model Model) (x0 value) (fuel Int)) :where (<= fuel (size (value model))))
 
 (define-semantics
   ((Term.0.round.Sem (term Term.0.round) (asp FoAsp0)))
@@ -300,7 +300,7 @@
      ((fol.ctx-x0-c_quorum.and p q) (and (FO.x0.c_quorum.Sem p asp) (FO.x0.c_quorum.Sem q asp)))
      ((fol.ctx-x0-c_quorum.or p q) (or (FO.x0.c_quorum.Sem p asp) (FO.x0.c_quorum.Sem q asp)))
      ((fol.ctx-x0-c_quorum.lfp p)
-      (FO.x0.c_quorum.LfpSem p (FoAsp.x0.c_quorum.lfp (model asp) (x0 asp) (len (c_quorum (model asp))))))
+      (FO.x0.c_quorum.LfpSem p (FoAsp.x0.c_quorum.lfp (model asp) (x0 asp) (size (c_quorum (model asp))))))
      ((fol.ctx-x0-c_quorum.atom.rec a0) false)
      ((fol.ctx-x0-c_quorum.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -351,7 +351,7 @@
      ((fol.ctx-x0-f_quorum.and p q) (and (FO.x0.f_quorum.Sem p asp) (FO.x0.f_quorum.Sem q asp)))
      ((fol.ctx-x0-f_quorum.or p q) (or (FO.x0.f_quorum.Sem p asp) (FO.x0.f_quorum.Sem q asp)))
      ((fol.ctx-x0-f_quorum.lfp p)
-      (FO.x0.f_quorum.LfpSem p (FoAsp.x0.f_quorum.lfp (model asp) (x0 asp) (len (f_quorum (model asp))))))
+      (FO.x0.f_quorum.LfpSem p (FoAsp.x0.f_quorum.lfp (model asp) (x0 asp) (size (f_quorum (model asp))))))
      ((fol.ctx-x0-f_quorum.atom.rec a0) false)
      ((fol.ctx-x0-f_quorum.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -402,7 +402,7 @@
      ((fol.ctx-x0-node.and p q) (and (FO.x0.node.Sem p asp) (FO.x0.node.Sem q asp)))
      ((fol.ctx-x0-node.or p q) (or (FO.x0.node.Sem p asp) (FO.x0.node.Sem q asp)))
      ((fol.ctx-x0-node.lfp p)
-      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (len (node (model asp))))))
+      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (size (node (model asp))))))
      ((fol.ctx-x0-node.atom.rec a0) false)
      ((fol.ctx-x0-node.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -455,7 +455,7 @@
      ((fol.ctx-x0-round.and p q) (and (FO.x0.round.Sem p asp) (FO.x0.round.Sem q asp)))
      ((fol.ctx-x0-round.or p q) (or (FO.x0.round.Sem p asp) (FO.x0.round.Sem q asp)))
      ((fol.ctx-x0-round.lfp p)
-      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (len (round (model asp))))))
+      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (size (round (model asp))))))
      ((fol.ctx-x0-round.atom.rec a0) false)
      ((fol.ctx-x0-round.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -504,7 +504,7 @@
      ((fol.ctx-x0-value.and p q) (and (FO.x0.value.Sem p asp) (FO.x0.value.Sem q asp)))
      ((fol.ctx-x0-value.or p q) (or (FO.x0.value.Sem p asp) (FO.x0.value.Sem q asp)))
      ((fol.ctx-x0-value.lfp p)
-      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (len (value (model asp))))))
+      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (size (value (model asp))))))
      ((fol.ctx-x0-value.atom.rec a0) false)
      ((fol.ctx-x0-value.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -562,7 +562,7 @@
                (Term.x0.c_quorum.c_quorum.Sem a0 (FoAsp.x0.c_quorum (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-c_quorum.lfp p)
-      (FO.x0.c_quorum.LfpSem p (FoAsp.x0.c_quorum.lfp (model asp) (x0 asp) (len (c_quorum (model asp))))))
+      (FO.x0.c_quorum.LfpSem p (FoAsp.x0.c_quorum.lfp (model asp) (x0 asp) (size (c_quorum (model asp))))))
      ((fol.ctx-x0-c_quorum.atom.rec a0) false)
      ((fol.ctx-x0-c_quorum.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -647,7 +647,7 @@
                (Term.x0.f_quorum.f_quorum.Sem a0 (FoAsp.x0.f_quorum (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-f_quorum.lfp p)
-      (FO.x0.f_quorum.LfpSem p (FoAsp.x0.f_quorum.lfp (model asp) (x0 asp) (len (f_quorum (model asp))))))
+      (FO.x0.f_quorum.LfpSem p (FoAsp.x0.f_quorum.lfp (model asp) (x0 asp) (size (f_quorum (model asp))))))
      ((fol.ctx-x0-f_quorum.atom.rec a0) false)
      ((fol.ctx-x0-f_quorum.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -732,7 +732,7 @@
                (Term.x0.node.node.Sem a0 (FoAsp.x0.node (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-node.lfp p)
-      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (len (node (model asp))))))
+      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (size (node (model asp))))))
      ((fol.ctx-x0-node.atom.rec a0) false)
      ((fol.ctx-x0-node.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -821,7 +821,7 @@
                (Term.x0.round.round.Sem a0 (FoAsp.x0.round (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-round.lfp p)
-      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (len (round (model asp))))))
+      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (size (round (model asp))))))
      ((fol.ctx-x0-round.atom.rec a0) false)
      ((fol.ctx-x0-round.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))
@@ -903,7 +903,7 @@
                (Term.x0.value.value.Sem a0 (FoAsp.x0.value (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-value.lfp p)
-      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (len (value (model asp))))))
+      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (size (value (model asp))))))
      ((fol.ctx-x0-value.atom.rec a0) false)
      ((fol.ctx-x0-value.forall.x0.c_quorum p)
       (forall ((v (domain (c_quorum (model asp)))))

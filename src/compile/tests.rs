@@ -20,13 +20,13 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-finite ReAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp ReAsp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w1 0 (len (Pos w1)))))
-(constraint (not (Regex.Sem r (ReAsp w5 0 (len (Pos w5))))))
+(constraint (Regex.Sem r (ReAsp w1 0 (size (Pos w1)))))
+(constraint (not (Regex.Sem r (ReAsp w5 0 (size (Pos w5))))))
 (check-synth)
 "#,
     );
@@ -58,12 +58,12 @@ fn finite_aspect_fields_are_not_named_primitives() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-finite Span
   (record (m Model) (left Int) (right Int))
-  :where (and (<= 0 left) (<= left right) (<= right (len (Pos m)))))
+  :where (and (<= 0 left) (<= left right) (<= right (size (Pos m)))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp Span)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (Span w 0 (len (Pos w)))))
+(constraint (Regex.Sem r (Span w 0 (size (Pos w)))))
 (check-synth)
 "#,
     );
@@ -130,13 +130,13 @@ fn parses_direct_semantic_constraints() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-finite ReAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp ReAsp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w1 0 (len (Pos w1)))))
-(constraint (not (Regex.Sem r (ReAsp w5 0 (len (Pos w5))))))
+(constraint (Regex.Sem r (ReAsp w1 0 (size (Pos w1)))))
+(constraint (not (Regex.Sem r (ReAsp w5 0 (size (Pos w5))))))
 (check-synth)
 "#,
     );
@@ -174,7 +174,7 @@ fn semantic_predicates_use_aspect_projection() {
 (declare-term-types ((Regex 0)) (((a) (b) (re.++ Regex Regex))))
 (define-finite ReAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp ReAsp)))
   ((match r
@@ -185,8 +185,8 @@ fn semantic_predicates_use_aspect_projection() {
     (and (Regex.Sem x (ReAsp (model asp) (i asp) k))
          (Regex.Sem y (ReAsp (model asp) k (j asp)))))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w1 0 (len (Pos w1)))))
-(constraint (not (Regex.Sem r (ReAsp w5 0 (len (Pos w5))))))
+(constraint (Regex.Sem r (ReAsp w1 0 (size (Pos w1)))))
+(constraint (not (Regex.Sem r (ReAsp w5 0 (size (Pos w5))))))
 (check-synth)
 "#,
     );
@@ -218,12 +218,12 @@ fn detects_two_way_navigation() {
 (declare-term-types ((Root 0)) (((cfg.top.S Root Root))))
 (define-finite CfgAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
   ((Cfg.Sem (r Root) (asp CfgAsp)))
   ((match r ((cfg.top.S x y) (Cfg.Sem (parent r) asp)))))
 (synth-fun r () Root)
-(constraint (Cfg.Sem r (CfgAsp w1 0 (len (Pos w1)))))
+(constraint (Cfg.Sem r (CfgAsp w1 0 (size (Pos w1)))))
 (check-synth)
 "#,
     );
@@ -495,8 +495,8 @@ fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
         .collect::<Vec<_>>()
         .join("\n");
 
+    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 2);
     assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
-    assert!(output.contains("(TermU (_ BitVec 4)"));
     assert!(!output.contains("(and ((_ extract"));
 }
 
@@ -570,9 +570,69 @@ fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
         .collect::<Vec<_>>()
         .join("\n");
 
+    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 6);
     assert!(output.contains("(synth-fun phi () (_ BitVec 6)"));
-    assert!(output.contains("(constraint (= ((_ extract 0 0) phi) #b1))"));
-    assert!(output.contains("(constraint (= ((_ extract 3 3) phi) #b1))"));
+    assert_eq!(output.matches("(constraint ").count(), 2);
+}
+
+#[test]
+fn sygus_unified_backend_supports_parent_with_finite_valued_semantics() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m
+  (define-univ U ($0 $1)))
+(declare-term-types
+ ((Root 0) (Root.x0 0) (TermU.x0 0))
+ (((wrap Root.x0))
+  ((lfp Root.x0)
+   (rec TermU.x0)
+   (ok))
+  ((var))))
+(define-finite Asp
+  (record (model Model) (x0 U) (fuel Int))
+  :where (<= fuel (size (U model))))
+(define-semantics
+  ((TermU.x0.Sem (t TermU.x0) (asp Asp)))
+  :returns U
+  ((match t
+     ((var) (x0 asp)))))
+(define-semantics
+  ((Root.Sem (r Root) (asp Asp)))
+  ((match r
+     ((wrap body) (Root.x0.Sem body asp)))))
+(define-semantics
+  ((Root.x0.Sem (r Root.x0) (asp Asp)))
+  ((match r
+     ((ok) true)
+     ((lfp body)
+      (Root.x0.Sem body (Asp (model asp) (x0 asp) (size (U (model asp))))))
+     ((rec next)
+      (and (< 0 (fuel asp))
+           (Root.x0.FindLfp (parent r)
+             (Asp (model asp) (TermU.x0.Sem next asp) (- (fuel asp) 1))))))))
+(define-semantics
+  ((Root.x0.FindLfp (r Root.x0) (asp Asp)))
+  ((match r
+     ((ok) (Root.x0.FindLfp (parent r) asp))
+     ((rec next) (Root.x0.FindLfp (parent r) asp))
+     ((lfp body) (Root.x0.Sem body asp)))))
+(synth-fun phi () Root)
+(constraint (Root.Sem phi (Asp m $0 0)))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("parent + finite-valued semantics should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(output.contains("(synth-fun phi () (_ BitVec "));
+    assert!(output.contains("(check-synth)"));
 }
 
 #[test]
@@ -709,13 +769,13 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-finite ReAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp ReAsp)))
   ((match r
      ((a) (Regex.Sem r (WrongAsp (model asp) (i asp) (j asp)))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w 0 (len (Pos w)))))
+(constraint (Regex.Sem r (ReAsp w 0 (size (Pos w)))))
 (check-synth)
 "#,
     );
@@ -738,13 +798,13 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-finite ReAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp ReAsp)))
   ((match r
      ((a) (Regex.Sem r (ReAsp (model asp) (i asp)))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w 0 (len (Pos w)))))
+(constraint (Regex.Sem r (ReAsp w 0 (size (Pos w)))))
 (check-synth)
 "#,
     );

@@ -184,10 +184,3 @@ pub struct SemanticConstraint {
     pub fields: Vec<(String, AspectValue)>,
     pub expected: bool,
 }
-
-#[derive(Debug, Clone)]
-pub struct SemCase {
-    pub self_var: String,
-    pub vars: Vec<String>,
-    pub body: Value,
-}

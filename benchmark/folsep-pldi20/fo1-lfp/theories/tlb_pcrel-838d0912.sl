@@ -233,15 +233,15 @@
 
 (define-finite FoAsp.x0.tlb.pageentry (record (model Model) (x0 tlb.pageentry)))
 
-(define-finite FoAsp.x0.tlb.pageentry.lfp (record (model Model) (x0 tlb.pageentry) (fuel Int)) :where (<= fuel (len (tlb.pageentry model))))
+(define-finite FoAsp.x0.tlb.pageentry.lfp (record (model Model) (x0 tlb.pageentry) (fuel Int)) :where (<= fuel (size (tlb.pageentry model))))
 
 (define-finite FoAsp.x0.tlb.pmap (record (model Model) (x0 tlb.pmap)))
 
-(define-finite FoAsp.x0.tlb.pmap.lfp (record (model Model) (x0 tlb.pmap) (fuel Int)) :where (<= fuel (len (tlb.pmap model))))
+(define-finite FoAsp.x0.tlb.pmap.lfp (record (model Model) (x0 tlb.pmap) (fuel Int)) :where (<= fuel (size (tlb.pmap model))))
 
 (define-finite FoAsp.x0.tlb.processor (record (model Model) (x0 tlb.processor)))
 
-(define-finite FoAsp.x0.tlb.processor.lfp (record (model Model) (x0 tlb.processor) (fuel Int)) :where (<= fuel (len (tlb.processor model))))
+(define-finite FoAsp.x0.tlb.processor.lfp (record (model Model) (x0 tlb.processor) (fuel Int)) :where (<= fuel (size (tlb.processor model))))
 
 (define-semantics
   ((Term.0.tlb.pageentry.Sem (term Term.0.tlb.pageentry) (asp FoAsp0)))
@@ -422,7 +422,7 @@
      ((fol.ctx-x0-tlb.pageentry.and p q) (and (FO.x0.tlb.pageentry.Sem p asp) (FO.x0.tlb.pageentry.Sem q asp)))
      ((fol.ctx-x0-tlb.pageentry.or p q) (or (FO.x0.tlb.pageentry.Sem p asp) (FO.x0.tlb.pageentry.Sem q asp)))
      ((fol.ctx-x0-tlb.pageentry.lfp p)
-      (FO.x0.tlb.pageentry.LfpSem p (FoAsp.x0.tlb.pageentry.lfp (model asp) (x0 asp) (len (tlb.pageentry (model asp))))))
+      (FO.x0.tlb.pageentry.LfpSem p (FoAsp.x0.tlb.pageentry.lfp (model asp) (x0 asp) (size (tlb.pageentry (model asp))))))
      ((fol.ctx-x0-tlb.pageentry.atom.rec a0) false)
      ((fol.ctx-x0-tlb.pageentry.forall.x0.tlb.pageentry p)
       (forall ((v (domain (tlb.pageentry (model asp)))))
@@ -492,7 +492,7 @@
      ((fol.ctx-x0-tlb.pmap.and p q) (and (FO.x0.tlb.pmap.Sem p asp) (FO.x0.tlb.pmap.Sem q asp)))
      ((fol.ctx-x0-tlb.pmap.or p q) (or (FO.x0.tlb.pmap.Sem p asp) (FO.x0.tlb.pmap.Sem q asp)))
      ((fol.ctx-x0-tlb.pmap.lfp p)
-      (FO.x0.tlb.pmap.LfpSem p (FoAsp.x0.tlb.pmap.lfp (model asp) (x0 asp) (len (tlb.pmap (model asp))))))
+      (FO.x0.tlb.pmap.LfpSem p (FoAsp.x0.tlb.pmap.lfp (model asp) (x0 asp) (size (tlb.pmap (model asp))))))
      ((fol.ctx-x0-tlb.pmap.atom.rec a0) false)
      ((fol.ctx-x0-tlb.pmap.forall.x0.tlb.pageentry p)
       (forall ((v (domain (tlb.pageentry (model asp)))))
@@ -562,7 +562,7 @@
      ((fol.ctx-x0-tlb.processor.and p q) (and (FO.x0.tlb.processor.Sem p asp) (FO.x0.tlb.processor.Sem q asp)))
      ((fol.ctx-x0-tlb.processor.or p q) (or (FO.x0.tlb.processor.Sem p asp) (FO.x0.tlb.processor.Sem q asp)))
      ((fol.ctx-x0-tlb.processor.lfp p)
-      (FO.x0.tlb.processor.LfpSem p (FoAsp.x0.tlb.processor.lfp (model asp) (x0 asp) (len (tlb.processor (model asp))))))
+      (FO.x0.tlb.processor.LfpSem p (FoAsp.x0.tlb.processor.lfp (model asp) (x0 asp) (size (tlb.processor (model asp))))))
      ((fol.ctx-x0-tlb.processor.atom.rec a0) false)
      ((fol.ctx-x0-tlb.processor.forall.x0.tlb.pageentry p)
       (forall ((v (domain (tlb.pageentry (model asp)))))
@@ -638,7 +638,7 @@
                (Term.x0.tlb.pageentry.tlb.pageentry.Sem a0 (FoAsp.x0.tlb.pageentry (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-tlb.pageentry.lfp p)
-      (FO.x0.tlb.pageentry.LfpSem p (FoAsp.x0.tlb.pageentry.lfp (model asp) (x0 asp) (len (tlb.pageentry (model asp))))))
+      (FO.x0.tlb.pageentry.LfpSem p (FoAsp.x0.tlb.pageentry.lfp (model asp) (x0 asp) (size (tlb.pageentry (model asp))))))
      ((fol.ctx-x0-tlb.pageentry.atom.rec a0) false)
      ((fol.ctx-x0-tlb.pageentry.forall.x0.tlb.pageentry p)
       (forall ((v (domain (tlb.pageentry (model asp)))))
@@ -768,7 +768,7 @@
                (Term.x0.tlb.pmap.tlb.pmap.Sem a0 (FoAsp.x0.tlb.pmap (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-tlb.pmap.lfp p)
-      (FO.x0.tlb.pmap.LfpSem p (FoAsp.x0.tlb.pmap.lfp (model asp) (x0 asp) (len (tlb.pmap (model asp))))))
+      (FO.x0.tlb.pmap.LfpSem p (FoAsp.x0.tlb.pmap.lfp (model asp) (x0 asp) (size (tlb.pmap (model asp))))))
      ((fol.ctx-x0-tlb.pmap.atom.rec a0) false)
      ((fol.ctx-x0-tlb.pmap.forall.x0.tlb.pageentry p)
       (forall ((v (domain (tlb.pageentry (model asp)))))
@@ -898,7 +898,7 @@
                (Term.x0.tlb.processor.tlb.processor.Sem a0 (FoAsp.x0.tlb.processor (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-tlb.processor.lfp p)
-      (FO.x0.tlb.processor.LfpSem p (FoAsp.x0.tlb.processor.lfp (model asp) (x0 asp) (len (tlb.processor (model asp))))))
+      (FO.x0.tlb.processor.LfpSem p (FoAsp.x0.tlb.processor.lfp (model asp) (x0 asp) (size (tlb.processor (model asp))))))
      ((fol.ctx-x0-tlb.processor.atom.rec a0) false)
      ((fol.ctx-x0-tlb.processor.forall.x0.tlb.pageentry p)
       (forall ((v (domain (tlb.pageentry (model asp)))))

@@ -80,6 +80,7 @@ pub struct HornProg {
 pub struct PredicateInfo {
     pub state: String,
     pub polarity: PredicatePolarity,
+    pub sort: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,12 +95,14 @@ impl HornProg {
         name: impl Into<String>,
         state: impl Into<String>,
         polarity: PredicatePolarity,
+        sort: impl Into<String>,
     ) {
         self.predicates.insert(
             name.into(),
             PredicateInfo {
                 state: state.into(),
                 polarity,
+                sort: sort.into(),
             },
         );
     }

@@ -1,11 +1,8 @@
-use crate::backends::smt2::ast::{
-    HornAtom, HornDecl, HornProg, HornRule, HornTerm, PredicatePolarity,
-};
+use crate::backends::smt2::ast::{HornAtom, HornProg, HornRule, HornTerm, PredicatePolarity};
 use crate::backends::sygus::optim::{self, BitwiseExpr};
+use crate::compile::{TermConstructor, TermSignature};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use sygus_parser::{
-    BitVec, Bool, Cmd, DTConsDecl, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term,
-};
+use sygus_parser::{BitVec, Bool, Cmd, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum BitPolarity {
@@ -15,13 +12,13 @@ enum BitPolarity {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Obligation {
-    state_idx: usize,
+    bit_idx: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ChildRef {
     child_idx: usize,
-    state_idx: usize,
+    bit_idx: usize,
     polarity: BitPolarity,
 }
 
@@ -41,18 +38,48 @@ enum AtomRef {
     Current(Obligation),
 }
 
-fn pred_bit(program: &HornProg, pred: &str) -> Option<(String, BitPolarity)> {
+fn pred_bit<'a>(program: &'a HornProg, pred: &str) -> Option<(&'a str, &'a str, BitPolarity)> {
     let info = program.predicates.get(pred)?;
     let polarity = match info.polarity {
         PredicatePolarity::Positive => BitPolarity::One,
         PredicatePolarity::Negative => BitPolarity::Zero,
     };
-    Some((info.state.clone(), polarity))
+    Some((&info.state, &info.sort, polarity))
 }
 
-fn state_bit(states: &[String], state: &str, term: SyGuSTerm) -> SyGuSTerm {
-    let idx = states.iter().position(|s| s == state).unwrap();
-    BitVec::extract(idx, idx, term)
+#[derive(Clone, Debug)]
+pub struct SortLayout {
+    pub states: Vec<String>,
+    pub index: HashMap<String, usize>,
+}
+
+pub fn sort_widths(program: &HornProg) -> HashMap<String, usize> {
+    layouts_by_sort(program)
+        .into_iter()
+        .map(|(sort, layout)| (sort, layout.states.len().max(1)))
+        .collect()
+}
+
+pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
+    let mut states_by_sort: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for info in program.predicates.values() {
+        states_by_sort
+            .entry(info.sort.clone())
+            .or_default()
+            .insert(info.state.clone());
+    }
+    states_by_sort
+        .into_iter()
+        .map(|(sort, states)| {
+            let states = states.into_iter().collect::<Vec<_>>();
+            let index = states
+                .iter()
+                .enumerate()
+                .map(|(idx, state)| (state.clone(), idx))
+                .collect();
+            (sort, SortLayout { states, index })
+        })
+        .collect()
 }
 
 fn arg_name(idx: usize) -> String {
@@ -157,27 +184,47 @@ fn or_exprs(disjuncts: Vec<BoolExpr>) -> BoolExpr {
 fn classify_atom(
     atom: &HornAtom,
     head_arg: &HornTerm,
-    head_vars: &HashMap<String, usize>,
-    state_index: &HashMap<String, usize>,
+    head_vars: &HashMap<String, (usize, String)>,
+    result_sort: &str,
+    layouts: &HashMap<String, SortLayout>,
     program: &HornProg,
 ) -> Result<AtomRef, String> {
-    let (state, polarity) = pred_bit(program, &atom.pred)
+    let (state, sort, polarity) = pred_bit(program, &atom.pred)
         .ok_or_else(|| format!("missing predicate metadata for {}", atom.pred))?;
-    let state_idx = *state_index
-        .get(&state)
-        .ok_or_else(|| format!("unknown state {state}"))?;
     match &atom.arg {
         HornTerm::Var(var) => {
-            let child_idx = *head_vars
+            let (child_idx, child_sort) = head_vars
                 .get(var)
                 .ok_or_else(|| format!("body atom references non-child variable {var}"))?;
+            let layout = layouts
+                .get(child_sort)
+                .ok_or_else(|| format!("missing local state layout for sort {child_sort}"))?;
+            let bit_idx = *layout
+                .index
+                .get(state)
+                .ok_or_else(|| format!("state {state} does not belong to sort {child_sort}"))?;
             Ok(AtomRef::Child(ChildRef {
-                child_idx,
-                state_idx,
+                child_idx: *child_idx,
+                bit_idx,
                 polarity,
             }))
         }
-        arg if arg == head_arg => Ok(AtomRef::Current(Obligation { state_idx })),
+        arg if arg == head_arg => {
+            if sort != result_sort {
+                return Err(format!(
+                    "current-term atom for {} has sort {}, expected {}",
+                    atom.pred, sort, result_sort
+                ));
+            }
+            let layout = layouts
+                .get(result_sort)
+                .ok_or_else(|| format!("missing local state layout for sort {result_sort}"))?;
+            let bit_idx = *layout
+                .index
+                .get(state)
+                .ok_or_else(|| format!("state {state} does not belong to sort {result_sort}"))?;
+            Ok(AtomRef::Current(Obligation { bit_idx }))
+        }
         other => Err(format!(
             "unsupported recursive body atom target {}; expected a child variable or the current constructor term",
             other
@@ -187,24 +234,34 @@ fn classify_atom(
 
 fn build_constructor_plan(
     program: &HornProg,
-    states: &[String],
-    state_index: &HashMap<String, usize>,
-    cons: &DTConsDecl,
+    layouts: &HashMap<String, SortLayout>,
+    cons: &TermConstructor,
     rules: &[HornRule],
 ) -> Result<ConstructorPlan, String> {
     let mut plan = ConstructorPlan::default();
     for rule in rules {
-        let (head_state, head_polarity) = pred_bit(program, &rule.head.pred)
+        let (head_state, head_sort, head_polarity) = pred_bit(program, &rule.head.pred)
             .ok_or_else(|| format!("missing predicate metadata for {}", rule.head.pred))?;
         if head_polarity != BitPolarity::One {
             continue;
         }
-        let head_state_idx = *state_index
-            .get(&head_state)
-            .ok_or_else(|| format!("unknown state {head_state}"))?;
+        if head_sort != cons.result_sort
+            && !compatible_layouts(layouts, head_sort, &cons.result_sort)
+        {
+            continue;
+        }
+        let layout = layouts
+            .get(&cons.result_sort)
+            .ok_or_else(|| format!("missing local state layout for sort {}", cons.result_sort))?;
+        let head_bit_idx = *layout.index.get(head_state).ok_or_else(|| {
+            format!(
+                "unknown state {head_state} for constructor sort {}",
+                cons.result_sort
+            )
+        })?;
         let head_args = match &rule.head.arg {
             HornTerm::App { fun, args } if fun == &cons.name => args.as_slice(),
-            HornTerm::Var(name) if name == &cons.name && cons.args.is_empty() => &[],
+            HornTerm::Var(name) if name == &cons.name && cons.arg_sorts.is_empty() => &[],
             _ => continue,
         };
         let mut head_vars = HashMap::new();
@@ -215,7 +272,12 @@ fn build_constructor_plan(
                     cons.name, rule.head.arg
                 ));
             };
-            head_vars.insert(name.clone(), idx);
+            let arg_sort = cons
+                .arg_sorts
+                .get(idx)
+                .cloned()
+                .ok_or_else(|| format!("missing sort for argument {idx} of {}", cons.name))?;
+            head_vars.insert(name.clone(), (idx, arg_sort));
         }
 
         let mut clause = Clause {
@@ -223,7 +285,14 @@ fn build_constructor_plan(
             self_refs: Vec::new(),
         };
         for atom in &rule.body_atoms {
-            match classify_atom(atom, &rule.head.arg, &head_vars, state_index, program)? {
+            match classify_atom(
+                atom,
+                &rule.head.arg,
+                &head_vars,
+                &cons.result_sort,
+                layouts,
+                program,
+            )? {
                 AtomRef::Child(child) => clause.child_refs.push(child),
                 AtomRef::Current(obligation) => clause.self_refs.push(obligation),
             }
@@ -232,16 +301,16 @@ fn build_constructor_plan(
         clause.self_refs.sort();
         plan.obligations
             .entry(Obligation {
-                state_idx: head_state_idx,
+                bit_idx: head_bit_idx,
             })
             .or_default()
             .push(clause);
     }
 
-    for state_idx in 0..states.len() {
-        plan.obligations
-            .entry(Obligation { state_idx })
-            .or_default();
+    if let Some(layout) = layouts.get(&cons.result_sort) {
+        for bit_idx in 0..layout.states.len() {
+            plan.obligations.entry(Obligation { bit_idx }).or_default();
+        }
     }
 
     for clauses in plan.obligations.values_mut() {
@@ -250,6 +319,20 @@ fn build_constructor_plan(
     }
 
     Ok(plan)
+}
+
+fn compatible_layouts(
+    layouts: &HashMap<String, SortLayout>,
+    lhs_sort: &str,
+    rhs_sort: &str,
+) -> bool {
+    let Some(lhs) = layouts.get(lhs_sort) else {
+        return false;
+    };
+    let Some(rhs) = layouts.get(rhs_sort) else {
+        return false;
+    };
+    lhs.states == rhs.states
 }
 
 fn visit_obligation(
@@ -265,7 +348,7 @@ fn visit_obligation(
     if !visiting.insert(obligation) {
         return Err(format!(
             "recursive constructor obligations contain a cycle at state {}",
-            obligation.state_idx
+            obligation.bit_idx
         ));
     }
 
@@ -291,8 +374,8 @@ fn clause_expr(
     let mut conjuncts = Vec::new();
     for child in &clause.child_refs {
         let bit = BitVec::extract(
-            child.state_idx,
-            child.state_idx,
+            child.bit_idx,
+            child.bit_idx,
             Term::var(&arg_name(child.child_idx)),
         );
         let value = match child.polarity {
@@ -309,7 +392,7 @@ fn clause_expr(
         } else {
             return Err(format!(
                 "unresolved constructor obligation dependency for state {}",
-                dep.state_idx
+                dep.bit_idx
             ));
         }
     }
@@ -332,27 +415,21 @@ pub fn compile_one_way(
     program: &HornProg,
     synth_name: &str,
     grammar: GrammarDef,
+    sig: &TermSignature,
+    start_sort: &str,
+    layouts: Option<HashMap<String, SortLayout>>,
     optimize: bool,
 ) -> Vec<SyGuSCmd> {
     let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
 
-    let mut states = BTreeSet::new();
-    let mut constructors = Vec::new();
-    for info in program.predicates.values() {
-        states.insert(info.state.clone());
-    }
-    for decl in &program.decls {
-        if let HornDecl::DeclareDatatypes(_, decls) = decl {
-            constructors.extend(decls.iter().flatten().cloned());
-        }
-    }
-    let states = states.into_iter().collect::<Vec<_>>();
-    let state_index = states
-        .iter()
-        .enumerate()
-        .map(|(idx, state)| (state.clone(), idx))
-        .collect::<HashMap<_, _>>();
-    let bv_sort = Sort::bitvec(states.len().max(1));
+    let layouts = layouts.unwrap_or_else(|| layouts_by_sort(program));
+    let constructors = sig.constructors.clone();
+    let start_width = layouts
+        .get(start_sort)
+        .map(|layout| layout.states.len())
+        .unwrap_or(1)
+        .max(1);
+    let bv_sort = Sort::bitvec(start_width);
 
     let constructor_names = constructors
         .iter()
@@ -360,10 +437,11 @@ pub fn compile_one_way(
         .collect::<BTreeSet<_>>();
     let mut rules_by_constructor: BTreeMap<String, Vec<HornRule>> = BTreeMap::new();
     for rule in &program.rules {
-        let Some((head_state, head_polarity)) = pred_bit(program, &rule.head.pred) else {
+        let Some((head_state, _head_sort, head_polarity)) = pred_bit(program, &rule.head.pred)
+        else {
             continue;
         };
-        if head_polarity != BitPolarity::One || !state_index.contains_key(&head_state) {
+        if head_polarity != BitPolarity::One || head_state.is_empty() {
             continue;
         }
         match &rule.head.arg {
@@ -390,10 +468,9 @@ pub fn compile_one_way(
             .get(&cons.name)
             .cloned()
             .unwrap_or_default();
-        let plan = build_constructor_plan(program, &states, &state_index, cons, &rules)
-            .unwrap_or_else(|err| {
-                panic!("failed to build constructor plan for {}: {err}", cons.name)
-            });
+        let plan = build_constructor_plan(program, &layouts, cons, &rules).unwrap_or_else(|err| {
+            panic!("failed to build constructor plan for {}: {err}", cons.name)
+        });
 
         let mut order = Vec::new();
         let mut visiting = HashSet::new();
@@ -427,12 +504,13 @@ pub fn compile_one_way(
             }
         }
         if log::log_enabled!(log::Level::Debug) {
-            let entries = states
+            let entries = layouts[&cons.result_sort]
+                .states
                 .iter()
                 .enumerate()
-                .filter_map(|(state_idx, state)| {
+                .filter_map(|(bit_idx, state): (usize, &String)| {
                     const_helpers
-                        .get(&Obligation { state_idx })
+                        .get(&Obligation { bit_idx })
                         .map(|value| (state.clone(), *value))
                 })
                 .collect::<Vec<_>>();
@@ -440,7 +518,7 @@ pub fn compile_one_way(
                 "sygus constant obligations for {}: {}/{}",
                 cons.name,
                 entries.len(),
-                states.len()
+                layouts[&cons.result_sort].states.len()
             );
             entries
                 .iter()
@@ -448,17 +526,23 @@ pub fn compile_one_way(
         }
 
         let mut builder = Cmd::define_fun(&cons.name);
-        let arg_names = (0..cons.args.len()).map(arg_name).collect::<Vec<_>>();
-        for idx in 0..cons.args.len() {
-            builder = builder.arg(&arg_names[idx], bv_sort.clone());
+        let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
+        for (idx, arg_sort) in cons.arg_sorts.iter().enumerate() {
+            let width = layouts
+                .get(arg_sort)
+                .map(|layout| layout.states.len())
+                .unwrap_or(1)
+                .max(1);
+            builder = builder.arg(&arg_names[idx], Sort::bitvec(width));
         }
-        let bool_bits = states
+        let bool_bits = layouts[&cons.result_sort]
+            .states
             .iter()
             .enumerate()
-            .map(|(state_idx, state)| {
-                if let Some(value) = const_helpers.get(&Obligation { state_idx }) {
+            .map(|(bit_idx, state)| {
+                if let Some(value) = const_helpers.get(&Obligation { bit_idx }) {
                     BoolExpr::Const(*value)
-                } else if let Some(expr) = helper_exprs.get(&Obligation { state_idx }) {
+                } else if let Some(expr) = helper_exprs.get(&Obligation { bit_idx }) {
                     BoolExpr::Dynamic(expr.clone())
                 } else {
                     panic!(
@@ -490,7 +574,12 @@ pub fn compile_one_way(
                 .collect::<Vec<_>>();
             compact_bitvec(bits)
         });
-        constructor_cmds.push(builder.ret(bv_sort.clone()).body(body).build());
+        let result_width = layouts
+            .get(&cons.result_sort)
+            .map(|layout| layout.states.len())
+            .unwrap_or(1)
+            .max(1);
+        constructor_cmds.push(builder.ret(Sort::bitvec(result_width)).body(body).build());
     }
 
     cmds.extend(constructor_cmds);
@@ -505,12 +594,26 @@ pub fn compile_one_way(
     for rule in &program.rules {
         if rule.head.pred == "Goal" {
             for atom in &rule.body_atoms {
-                let Some((state, polarity)) = pred_bit(program, &atom.pred) else {
+                let Some((state, _sort, polarity)) = pred_bit(program, &atom.pred) else {
                     continue;
                 };
-                if !state_index.contains_key(&state) {
+                if atom.pred == "Goal" {
                     continue;
                 }
+                let Some(info) = program.predicates.get(&atom.pred) else {
+                    continue;
+                };
+                if info.sort != start_sort && !compatible_layouts(&layouts, &info.sort, start_sort)
+                {
+                    continue;
+                }
+                let Some(bit_idx) = layouts
+                    .get(start_sort)
+                    .and_then(|layout| layout.index.get(state))
+                    .copied()
+                else {
+                    continue;
+                };
                 let value = match polarity {
                     BitPolarity::One => 1,
                     BitPolarity::Zero => 0,
@@ -518,7 +621,7 @@ pub fn compile_one_way(
                 cmds.push(
                     Cmd::constraint()
                         .body(Bool::eq(
-                            state_bit(&states, &state, Term::var(synth_name)),
+                            BitVec::extract(bit_idx, bit_idx, Term::var(synth_name)),
                             BitVec::const_(value, 1),
                         ))
                         .build(),

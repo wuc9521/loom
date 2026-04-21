@@ -1,9 +1,9 @@
 use crate::{
     compile::{
-        semantic::{interped_value_matches, parse_cases, Case},
+        semantic::{parse_cases, Case},
         types::{
-            AspectKey, AspectValue, FieldDomain, FiniteSpace, SemanticDomain, SemanticKind,
-            SemanticProgram, SemanticSpec,
+            AspectKey, AspectValue, FiniteSpace, SemanticDomain, SemanticKind, SemanticProgram,
+            SemanticSpec,
         },
     },
     lang::{
@@ -111,6 +111,12 @@ impl<'a> SemanticContext<'a> {
             .ok_or_else(|| format!("no semantic domain for relation {relation}"))
     }
 
+    pub fn aspect_space(&self, name: &str) -> Result<&FiniteSpace, String> {
+        self.spaces
+            .get(name)
+            .ok_or_else(|| format!("unknown aspect space {name}"))
+    }
+
     pub fn spec_for_relation(&self, relation: &str) -> Result<&SemanticSpec, String> {
         self.specs
             .get(relation)
@@ -199,6 +205,8 @@ impl<'a> SemanticContext<'a> {
             aspect.relation = relation.to_string();
             return Ok(aspect);
         }
+        let domain = self.domain_for_relation(relation)?;
+        let space = self.aspect_space(&domain.aspect_space)?;
         let items = expr
             .to_ref_vec()
             .ok_or_else(|| format!("aspect expression must be a list: {expr}"))?;
@@ -206,25 +214,25 @@ impl<'a> SemanticContext<'a> {
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("aspect constructor must be a symbol: {expr}"))?;
-        let space = self
-            .spaces
-            .get(cons)
-            .ok_or_else(|| format!("unknown aspect constructor {cons}"))?;
+        if cons != space.name {
+            return Err(format!("aspect constructor must be {}", space.name));
+        }
         if items.len() - 1 != space.fields.len() {
             return Err(format!(
-                "aspect constructor {cons} expects {} fields, got {}",
-                space.fields.len(),
-                items.len() - 1
+                "aspect constructor {} provides {} scalar fields, expected {}",
+                cons,
+                items.len().saturating_sub(2),
+                space.fields.len().saturating_sub(1)
             ));
         }
         let mut model = None;
         let mut fields = Vec::new();
         for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
             match &field.domain {
-                FieldDomain::Sort(sort) if sort == "Model" => {
+                crate::compile::types::FieldDomain::Sort(sort) if sort == "Model" => {
                     model = Some(self.eval_model_name(arg, env)?);
                 }
-                FieldDomain::Sort(sort) => {
+                crate::compile::types::FieldDomain::Sort(sort) => {
                     let value = self.eval_value_for_sort(arg, sort, env)?;
                     match &value {
                         AspectValue::Univ { sort: actual, .. } if actual == sort => {}
@@ -240,7 +248,7 @@ impl<'a> SemanticContext<'a> {
                     }
                     fields.push((field.name.clone(), value));
                 }
-                FieldDomain::Enum(values) => {
+                crate::compile::types::FieldDomain::Enum(values) => {
                     let value = self.eval_value(arg, env)?;
                     if !values.contains(&value.display()) {
                         return Err(format!(
@@ -251,7 +259,7 @@ impl<'a> SemanticContext<'a> {
                     }
                     fields.push((field.name.clone(), value));
                 }
-                FieldDomain::Union { bot, sorts } => {
+                crate::compile::types::FieldDomain::Union { bot, sorts } => {
                     let value = self.eval_value(arg, env)?;
                     match &value {
                         AspectValue::Symbol(symbol) if symbol == bot => {}
@@ -279,10 +287,7 @@ impl<'a> SemanticContext<'a> {
 
     pub fn eval_value(&self, expr: &Value, env: &impl EnvView) -> Result<AspectValue, String> {
         if let Some(value) = expr.as_i64() {
-            if value < 0 {
-                return Err(format!("negative integer aspect value {value} is unsupported"));
-            }
-            return Ok(AspectValue::Int(value as usize));
+            return self.nonnegative_int_value(value as isize);
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values().get(symbol) {
@@ -296,6 +301,15 @@ impl<'a> SemanticContext<'a> {
                                 sort: univ.sort.to_string(),
                                 name: symbol.to_string(),
                             });
+                        }
+                    }
+                    if let Some(sig) = self.func_sigs.get(symbol) {
+                        if sig.arg_sorts.is_empty() {
+                            let value =
+                                eval_symbols(symbol, &[], &model_ref.func_interps).ok_or_else(
+                                    || format!("model {model} has no value for {symbol}"),
+                                )?;
+                            return interped_aspect_value(&sig.ret_sort.to_string(), value);
                         }
                     }
                 }
@@ -325,60 +339,77 @@ impl<'a> SemanticContext<'a> {
             return self.eval_model_value_call(op, &items[1..], env);
         }
         match op {
-            "+" => {
-                let mut total: isize = 0;
-                for item in &items[1..] {
-                    total += self.eval_int(item, env)?;
-                }
-                if total < 0 {
-                    return Err(format!("negative integer aspect value {total} is unsupported"));
-                }
-                return Ok(AspectValue::Int(total as usize));
-            }
-            "-" if items.len() >= 2 => {
-                let mut values = items[1..].iter();
-                let first = values
-                    .next()
-                    .ok_or_else(|| format!("- expects at least one argument: {expr}"))?;
-                let mut total = self.eval_int(first, env)?;
-                if items.len() == 2 {
-                    total = -total;
-                } else {
-                    for item in values {
-                        total -= self.eval_int(item, env)?;
-                    }
-                }
-                if total < 0 {
-                    return Err(format!("negative integer aspect value {total} is unsupported"));
-                }
-                return Ok(AspectValue::Int(total as usize));
-            }
-            "len" if items.len() == 2 => {
-                let domain = items[1]
-                    .to_ref_vec()
-                    .ok_or_else(|| format!("len expects (Sort model), got {}", items[1]))?;
-                let [sort_expr, model_expr] = domain.as_slice() else {
-                    return Err(format!("len expects (Sort model), got {}", items[1]));
-                };
-                let sort = sort_expr
-                    .as_symbol()
-                    .ok_or_else(|| format!("len sort must be a symbol: {sort_expr}"))?;
-                let model = self.eval_model_name(model_expr, env)?;
-                let model_ref = self.model(&model)?;
-                let values = get_domain_for_sort(model_ref, sort)
-                    .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
-                return Ok(AspectValue::Int(values.len()));
+            "+" | "-" | "size" => {
+                return self.nonnegative_int_value(self.eval_int_expr(expr, env)?);
             }
             _ => {}
         }
         Err(format!("unsupported value expression: {expr}"))
     }
 
-    fn eval_int(&self, expr: &Value, env: &impl EnvView) -> Result<isize, String> {
-        match self.eval_value(expr, env)? {
-            AspectValue::Int(value) => Ok(value as isize),
-            other => Err(format!("expected Int value, got {}", other.display())),
+    pub fn eval_int_expr(&self, expr: &Value, env: &impl EnvView) -> Result<isize, String> {
+        if let Some(value) = expr.as_i64() {
+            return Ok(value as isize);
         }
+        let Some(items) = expr.to_ref_vec() else {
+            return match self.eval_value(expr, env)? {
+                AspectValue::Int(value) => Ok(value as isize),
+                other => Err(format!("expected Int value, got {}", other.display())),
+            };
+        };
+        let op = items
+            .first()
+            .and_then(|item| item.as_symbol())
+            .ok_or_else(|| format!("Int expression operator must be a symbol: {expr}"))?;
+        match op {
+            "+" => items[1..]
+                .iter()
+                .try_fold(0isize, |acc, item| Ok(acc + self.eval_int_expr(item, env)?)),
+            "-" if items.len() >= 2 => {
+                let mut values = items[1..].iter();
+                let first = values
+                    .next()
+                    .ok_or_else(|| format!("- expects at least one argument: {expr}"))?;
+                let mut total = self.eval_int_expr(first, env)?;
+                if items.len() == 2 {
+                    total = -total;
+                } else {
+                    for item in values {
+                        total -= self.eval_int_expr(item, env)?;
+                    }
+                }
+                Ok(total)
+            }
+            "size" if items.len() == 2 => {
+                let domain = items[1]
+                    .to_ref_vec()
+                    .ok_or_else(|| format!("size expects (Sort model), got {}", items[1]))?;
+                let [sort_expr, model_expr] = domain.as_slice() else {
+                    return Err(format!("size expects (Sort model), got {}", items[1]));
+                };
+                let sort = sort_expr
+                    .as_symbol()
+                    .ok_or_else(|| format!("size sort must be a symbol: {sort_expr}"))?;
+                let model = self.eval_model_name(model_expr, env)?;
+                let model_ref = self.model(&model)?;
+                let values = get_domain_for_sort(model_ref, sort)
+                    .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+                Ok(values.len() as isize)
+            }
+            _ => match self.eval_value(expr, env)? {
+                AspectValue::Int(value) => Ok(value as isize),
+                other => Err(format!("expected Int value, got {}", other.display())),
+            },
+        }
+    }
+
+    fn nonnegative_int_value(&self, value: isize) -> Result<AspectValue, String> {
+        if value < 0 {
+            return Err(format!(
+                "negative integer aspect value {value} is unsupported"
+            ));
+        }
+        Ok(AspectValue::Int(value as usize))
     }
 
     pub fn eval_model_value_call(
@@ -479,7 +510,7 @@ impl<'a> SemanticContext<'a> {
         let model = self.current_model(env)?;
         let model_ref = self.model(&model)?;
         Ok(eval_symbols(symbol, &[], &model_ref.func_interps)
-            .map(|value| interped_value_matches(value, target)))
+            .map(|value| crate::compile::semantic::interped_value_matches(value, target)))
     }
 }
 

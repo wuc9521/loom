@@ -49,7 +49,7 @@
 
 (define-finite FoAsp.x0.chord.node (record (model Model) (x0 chord.node)))
 
-(define-finite FoAsp.x0.chord.node.lfp (record (model Model) (x0 chord.node) (fuel Int)) :where (<= fuel (len (chord.node model))))
+(define-finite FoAsp.x0.chord.node.lfp (record (model Model) (x0 chord.node) (fuel Int)) :where (<= fuel (size (chord.node model))))
 
 (define-semantics
   ((Term.0.chord.node.Sem (term Term.0.chord.node) (asp FoAsp0)))
@@ -103,7 +103,7 @@
      ((fol.ctx-x0-chord.node.and p q) (and (FO.x0.chord.node.Sem p asp) (FO.x0.chord.node.Sem q asp)))
      ((fol.ctx-x0-chord.node.or p q) (or (FO.x0.chord.node.Sem p asp) (FO.x0.chord.node.Sem q asp)))
      ((fol.ctx-x0-chord.node.lfp p)
-      (FO.x0.chord.node.LfpSem p (FoAsp.x0.chord.node.lfp (model asp) (x0 asp) (len (chord.node (model asp))))))
+      (FO.x0.chord.node.LfpSem p (FoAsp.x0.chord.node.lfp (model asp) (x0 asp) (size (chord.node (model asp))))))
      ((fol.ctx-x0-chord.node.atom.rec a0) false)
      ((fol.ctx-x0-chord.node.forall.x0.chord.node p)
       (forall ((v (domain (chord.node (model asp)))))
@@ -140,7 +140,7 @@
                (Term.x0.chord.node.chord.node.Sem a0 (FoAsp.x0.chord.node (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-chord.node.lfp p)
-      (FO.x0.chord.node.LfpSem p (FoAsp.x0.chord.node.lfp (model asp) (x0 asp) (len (chord.node (model asp))))))
+      (FO.x0.chord.node.LfpSem p (FoAsp.x0.chord.node.lfp (model asp) (x0 asp) (size (chord.node (model asp))))))
      ((fol.ctx-x0-chord.node.atom.rec a0) false)
      ((fol.ctx-x0-chord.node.forall.x0.chord.node p)
       (forall ((v (domain (chord.node (model asp)))))

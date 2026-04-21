@@ -1,11 +1,8 @@
-use crate::backends::smt2::ast::{
-    HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm, PredicatePolarity,
-};
-use crate::backends::smt2::pred::{dualize_dnf, emit_dnf_rules, Pred, PredAtom};
+use lexpr::Value;
+use crate::backends::smt2::ast::HornProg;
 use crate::backends::smt2::saturate::saturate;
 use crate::parser::{DelisCmd, DelisProg};
-use std::collections::HashMap;
-use sygus_parser::{Sort, SortDecl, SyGuSCmd};
+use sygus_parser::{Sort, SyGuSCmd};
 
 mod bv;
 mod chc;
@@ -17,49 +14,17 @@ mod semantic;
 mod syntax;
 mod types;
 
-use expr::eval_constructor_case;
 pub use finite::compile;
-use syntax::{parse_semantic_cases, state_name, synth_name, term_sort, TermSignature};
+pub use syntax::{TermConstructor, TermSignature};
+use syntax::synth_name;
 pub use types::{AspectKey, BitMapping, ConstraintBit, Encoding};
 
 pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
     closure::solve(problem, optimize)
 }
 
-#[derive(Clone, Debug)]
-struct StatePredicates {
-    state: String,
-    positive: String,
-    negative: String,
-}
-
 pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
     let semantic_program = finite::compile_semantic_program(problem)?;
-    if semantic_program
-        .domains
-        .iter()
-        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool))
-    {
-        return native_bv_sz(problem, &semantic_program);
-    }
-    compile(problem).map(|summary| summary.bit_mappings.len())
-}
-
-pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
-    let semantic_program = finite::compile_semantic_program(problem)?;
-    if semantic_program
-        .domains
-        .iter()
-        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool))
-    {
-        return bv::compile(problem, semantic_program, optimize);
-    }
-    let summary = compile(problem)?;
-    if summary.bit_mappings.is_empty() {
-        return Err("SyGuS compilation requires at least one semantic aspect bit".to_string());
-    }
-
-    let bv_sort = Sort::bitvec(summary.bit_mappings.len());
     let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
         DelisCmd::TermTypes(cmd) => Some(cmd),
         _ => None,
@@ -68,42 +33,193 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         return Err("SyGuS compilation requires declare-term-types".to_string());
     };
     let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    let grammar = sig.bv_grammar(declare_term_types, &bv_sort)?;
-    let mut program = compile_chc(problem, &summary, DualRules::Omit)?;
-    if summary.needs_saturation {
+    if supports_native_sygus(&semantic_program) {
+        let width = semantic_program
+            .domains
+            .iter()
+            .filter(|domain| domain.term_sort == sig.start_sort())
+            .map(|domain| domain.bits.len())
+            .sum::<usize>();
+        if width == 0 {
+            return Err("SyGuS compilation requires at least one semantic state".to_string());
+        }
+        return Ok(width);
+    }
+    let program = to_chc_ast(problem)?;
+    let widths = complete_sort_widths(
+        &sig,
+        &semantic_program,
+        crate::backends::sygus::bv::sort_widths(&program),
+    )?;
+    let width = widths.get(sig.start_sort()).copied().unwrap_or(0);
+    if width == 0 {
+        return Err("SyGuS compilation requires at least one semantic state".to_string());
+    }
+    Ok(width)
+}
+
+pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
+    let semantic_program = finite::compile_semantic_program(problem)?;
+    if supports_native_sygus(&semantic_program) {
+        return bv::compile(problem, semantic_program, optimize);
+    }
+    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
+        DelisCmd::TermTypes(cmd) => Some(cmd),
+        _ => None,
+    });
+    let Some(declare_term_types) = declare_term_types else {
+        return Err("SyGuS compilation requires declare-term-types".to_string());
+    };
+    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
+    let mut program = to_chc_ast(problem)?;
+    if semantic_program.needs_saturation {
         program.rules = saturate(&program.rules);
     }
-    crate::backends::sygus::bv::compile_one_way(&program, &synth_name(problem)?, grammar, optimize)
+    let layouts = complete_layouts(
+        &sig,
+        &semantic_program,
+        crate::backends::sygus::bv::layouts_by_sort(&program),
+    )?;
+    let sort_widths = layouts
+        .iter()
+        .map(|(sort, layout)| (sort.clone(), Sort::bitvec(layout.states.len().max(1))))
+        .collect::<std::collections::HashMap<_, _>>();
+    let grammar = sig.bv_grammar_with_sorts(declare_term_types, &sort_widths)?;
+    crate::backends::sygus::bv::compile_one_way(
+        &program,
+        &synth_name(problem)?,
+        grammar,
+        &sig,
+        sig.start_sort(),
+        Some(layouts),
+        optimize,
+    )
         .into_iter()
         .map(Ok)
         .collect()
 }
 
-fn native_bv_sz(
-    problem: &DelisProg,
-    semantic_program: &types::SemanticProgram,
-) -> Result<usize, String> {
-    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
-        DelisCmd::TermTypes(cmd) => Some(cmd),
-        _ => None,
-    });
-    let Some(declare_term_types) = declare_term_types else {
-        return Err("SyGuS compilation requires declare-term-types".to_string());
+fn complete_layouts(
+    sig: &TermSignature,
+    program: &types::SemanticProgram,
+    mut layouts: std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>,
+) -> Result<
+    std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>,
+    String,
+> {
+    let fallback_template = if layouts.len() == 1 {
+        layouts.values().next().cloned()
+    } else {
+        None
     };
-    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    let width = semantic_program
-        .domains
+    let cons_sorts = sig
+        .constructors
         .iter()
-        .filter(|domain| domain.term_sort == sig.start_sort())
-        .map(|domain| domain.bits.len())
-        .sum::<usize>();
-    if width == 0 {
-        return Err(format!(
-            "no semantic domain for term sort {}",
-            sig.start_sort()
-        ));
+        .map(|cons| (cons.name.clone(), cons.result_sort.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    for spec in &program.semantics {
+        let Some(template) = layouts
+            .get(&spec.term_sort)
+            .cloned()
+            .or_else(|| fallback_template.clone())
+        else {
+            continue;
+        };
+        layouts
+            .entry(spec.term_sort.clone())
+            .or_insert_with(|| template.clone());
+        let cases = semantic::parse_cases(&spec.body)?;
+        for cons in cases.keys() {
+            if let Some(sort) = cons_sorts.get(cons) {
+                layouts
+                    .entry(sort.clone())
+                    .or_insert_with(|| template.clone());
+            }
+        }
     }
-    Ok(width)
+    Ok(layouts)
+}
+
+fn complete_sort_widths(
+    sig: &TermSignature,
+    program: &types::SemanticProgram,
+    widths: std::collections::HashMap<String, usize>,
+) -> Result<std::collections::HashMap<String, usize>, String> {
+    complete_layouts(
+        sig,
+        program,
+        widths
+            .into_iter()
+            .map(|(sort, width)| {
+                let states = (0..width)
+                    .map(|idx| format!("state#{idx}"))
+                    .collect::<Vec<_>>();
+                let index = states
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, state)| (state.clone(), idx))
+                    .collect::<std::collections::HashMap<_, _>>();
+                (
+                    sort,
+                    crate::backends::sygus::bv::SortLayout { states, index },
+                )
+            })
+            .collect(),
+    )
+    .map(|layouts| {
+        layouts
+            .into_iter()
+            .map(|(sort, layout)| (sort, layout.states.len()))
+            .collect()
+    })
+}
+
+fn supports_native_sygus(program: &types::SemanticProgram) -> bool {
+    if program.needs_saturation {
+        return false;
+    }
+    !program
+        .semantics
+        .iter()
+        .any(|spec| {
+            contains_unsupported_native_feature(&spec.body)
+                || contains_current_term_recursion(&spec.relation, &spec.body)
+        })
+}
+
+fn contains_unsupported_native_feature(expr: &Value) -> bool {
+    if let Some(items) = expr.to_ref_vec() {
+        if let Some(op) = items.first().and_then(|item| item.as_symbol()) {
+            if op == "parent" {
+                return true;
+            }
+        }
+        return items
+            .iter()
+            .any(|item| contains_unsupported_native_feature(item));
+    }
+    false
+}
+
+fn contains_current_term_recursion(relation: &str, body: &Value) -> bool {
+    let Ok(cases) = semantic::parse_cases(body) else {
+        return true;
+    };
+    cases.values().any(|case| {
+        contains_self_call(relation, &case.self_var, &case.body)
+    })
+}
+
+fn contains_self_call(relation: &str, self_var: &str, expr: &Value) -> bool {
+    let Some(items) = expr.to_ref_vec() else {
+        return false;
+    };
+    if items.first().and_then(|item| item.as_symbol()) == Some(relation)
+        && items.get(1).and_then(|item| item.as_symbol()) == Some(self_var)
+    {
+        return true;
+    }
+    items.iter().any(|item| contains_self_call(relation, self_var, item))
 }
 
 pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
@@ -116,185 +232,7 @@ pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
 
 pub fn to_chc_ast(problem: &DelisProg) -> Result<HornProg, String> {
     let semantic_program = finite::compile_semantic_program(problem)?;
-    if semantic_program
-        .domains
-        .iter()
-        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool))
-    {
-        return chc::compile(problem, semantic_program);
-    }
-
-    let summary = compile(problem)?;
-    compile_chc(problem, &summary, DualRules::Emit)
-}
-
-#[derive(Clone, Copy)]
-enum DualRules {
-    Emit,
-    Omit,
-}
-
-fn compile_chc(
-    file: &DelisProg,
-    summary: &Encoding,
-    dual_rules: DualRules,
-) -> Result<HornProg, String> {
-    let declare_term_types = file.cmds.iter().find_map(|cmd| match cmd {
-        DelisCmd::TermTypes(cmd) => Some(cmd),
-        _ => None,
-    });
-    let Some(declare_term_types) = declare_term_types else {
-        return Err("CHC compilation requires declare-term-types".to_string());
-    };
-    let cases = parse_semantic_cases(file)?;
-    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    let aspect_constructor = summary
-        .finite_spaces
-        .first()
-        .ok_or_else(|| "CHC compilation requires a finite aspect space".to_string())?;
-    let mut program = HornProg::default();
-    program.decls.push(HornDecl::SetLogic("HORN".to_string()));
-    program.decls.push(HornDecl::DeclareDatatypes(
-        vec![SortDecl {
-            symbol: "Term".to_string(),
-            arity: 0,
-        }],
-        vec![sig.datatype_constructors()],
-    ));
-    program
-        .decls
-        .push(HornDecl::DeclareVar("r".to_string(), term_sort()));
-    for var in sig.all_match_vars(&cases) {
-        program.decls.push(HornDecl::DeclareVar(var, term_sort()));
-    }
-    let state_preds = summary
-        .bit_mappings
-        .iter()
-        .map(|mapping| StatePredicates {
-            state: state_name(&mapping.aspect),
-            positive: format!("q{}", mapping.bit),
-            negative: format!("nq{}", mapping.bit),
-        })
-        .collect::<Vec<_>>();
-    let predicate_names = summary
-        .bit_mappings
-        .iter()
-        .map(|mapping| {
-            let preds = &state_preds[mapping.bit];
-            (
-                mapping.aspect.clone(),
-                (preds.positive.clone(), preds.negative.clone()),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    for preds in &state_preds {
-        rel_decl(&mut program, &preds.positive);
-        program.register_predicate(
-            preds.positive.clone(),
-            preds.state.clone(),
-            PredicatePolarity::Positive,
-        );
-        rel_decl(&mut program, &preds.negative);
-        program.register_predicate(
-            preds.negative.clone(),
-            preds.state.clone(),
-            PredicatePolarity::Negative,
-        );
-    }
-    rel_decl(&mut program, "Goal");
-
-    for cons in &sig.constructors {
-        let Some(case) = cases.get(&cons.name) else {
-            return Err(format!(
-                "missing define-semantics match case for constructor {}",
-                cons.name
-            ));
-        };
-        if case.vars.len() != cons.arg_sorts.len() {
-            return Err(format!(
-                "match case for constructor {} binds {} variables, expected {}",
-                cons.name,
-                case.vars.len(),
-                cons.arg_sorts.len()
-            ));
-        }
-        let head_arg = HornTerm::app(
-            &cons.name,
-            case.vars.iter().map(HornTerm::var).collect::<Vec<_>>(),
-        );
-        let child_vars = case
-            .vars
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>();
-        for mapping in &summary.bit_mappings {
-            let preds = &state_preds[mapping.bit];
-            let dnf = eval_constructor_case(
-                file,
-                &case.body,
-                &mapping.aspect,
-                aspect_constructor,
-                &predicate_names,
-                &summary.semantic_relations,
-                &child_vars,
-                &sig,
-                cons,
-                &head_arg,
-                &case.self_var,
-            )?;
-            let head = PredAtom::new(
-                Pred::new(preds.positive.clone(), preds.negative.clone()),
-                head_arg.clone(),
-            );
-            emit_dnf_rules(&mut program.rules, head.clone(), dnf.clone());
-            if matches!(dual_rules, DualRules::Emit) {
-                if let Some((not_head, dual_dnf)) = dualize_dnf(head, &dnf) {
-                    emit_dnf_rules(&mut program.rules, not_head, dual_dnf);
-                }
-            }
-        }
-    }
-
-    let goal_body = summary
-        .constraint_bits
-        .iter()
-        .map(|constraint| {
-            let aspect = summary
-                .bit_mappings
-                .iter()
-                .find(|mapping| mapping.bit == constraint.bit)
-                .map(|mapping| &state_preds[mapping.bit])
-                .ok_or_else(|| format!("constraint references unknown bit {}", constraint.bit))?;
-            Ok(HornAtom {
-                pred: if constraint.expected {
-                    aspect.positive.clone()
-                } else {
-                    aspect.negative.clone()
-                },
-                arg: HornTerm::var("r"),
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    program.rules.push(HornRule {
-        body_atoms: goal_body,
-        head: HornAtom {
-            pred: "Goal".to_string(),
-            arg: HornTerm::var("r"),
-        },
-    });
-    program.queries.push(HornQuery {
-        body_atoms: vec![HornAtom {
-            pred: "Goal".to_string(),
-            arg: HornTerm::var("r"),
-        }],
-    });
-    Ok(program)
-}
-
-fn rel_decl(program: &mut HornProg, name: impl Into<String>) {
-    program
-        .decls
-        .push(HornDecl::DeclareRel(name.into(), vec![term_sort()]));
+    chc::compile(problem, semantic_program)
 }
 
 #[cfg(test)]

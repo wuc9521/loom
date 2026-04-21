@@ -48,7 +48,7 @@
 ; `fuel` is the finite semantic aspect that approximates the least fixed point.
 (define-finite FO1L.Asp.x0.lfp
   (record (model Model) (x0 U) (fuel Int))
-  :where (<= fuel (len (U model))))
+  :where (<= fuel (size (U model))))
 
 (define-semantics
   ((FO1L.TermU.Sem (term FO1L.TermU) (asp FO1L.Asp)))
@@ -104,7 +104,7 @@
       (E (FO1L.TermU.x0.Sem lhs asp) (FO1L.TermU.x0.Sem rhs asp)))
      ((FO1L.ctx-x0.lfp psi)
       (FO1L.ctx-x0.LfpSem psi
-        (FO1L.Asp.x0.lfp (model asp) (x0 asp) (len (U (model asp))))))
+        (FO1L.Asp.x0.lfp (model asp) (x0 asp) (size (U (model asp))))))
      ((FO1L.ctx-x0.atom.rec a0) false))))
 
 (define-semantics
@@ -129,7 +129,7 @@
          (FO1L.TermU.x0.Sem rhs (FO1L.Asp.x0 (model asp) (x0 asp)))))
      ((FO1L.ctx-x0.lfp psi)
       (FO1L.ctx-x0.LfpSem psi
-        (FO1L.Asp.x0.lfp (model asp) (x0 asp) (len (U (model asp))))))
+        (FO1L.Asp.x0.lfp (model asp) (x0 asp) (size (U (model asp))))))
      ((FO1L.ctx-x0.atom.rec a0)
       (and (not (= (fuel asp) 0))
            (FO1L.ctx-x0.FindLfp (parent phi)

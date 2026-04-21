@@ -319,7 +319,11 @@ impl<'a> NativeCompiler<'a> {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(or_exprs(parts))
             }
-            "=" if items.len() == 3 => self.eval_finite_terms_equal(items[1], items[2], env),
+            "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env),
+            "<" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, |l, r| l < r),
+            "<=" if items.len() == 3 => {
+                self.eval_int_compare(items[1], items[2], env, |l, r| l <= r)
+            }
             "forall" | "exists" if items.len() == 3 => {
                 self.eval_quantifier(op, items[1], items[2], env)
             }
@@ -358,26 +362,45 @@ impl<'a> NativeCompiler<'a> {
         let var = var
             .as_symbol()
             .ok_or_else(|| format!("quantifier variable must be a symbol: {var}"))?;
-        let (model, sort) = self.ctx.parse_domain_expr(domain_expr, env)?;
-        let model_ref = self.ctx.model(&model)?;
-        let values = crate::lang::eval::get_domain_for_sort(model_ref, &sort)
-            .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut parts = Vec::new();
-        for value in values {
+        for value in self.quantifier_values(domain_expr, env)? {
             let mut next = env.clone();
-            next.values.insert(
-                var.to_string(),
-                AspectValue::Univ {
-                    sort: sort.clone(),
-                    name: value,
-                },
-            );
+            next.values.insert(var.to_string(), value);
             parts.push(self.eval_bool(body, &next)?);
         }
         match op {
             "forall" => Ok(and_exprs(parts)),
             "exists" => Ok(or_exprs(parts)),
             _ => unreachable!(),
+        }
+    }
+
+    fn quantifier_values(&self, domain_expr: &Value, env: &Env) -> Result<Vec<AspectValue>, String> {
+        let items = domain_expr
+            .to_ref_vec()
+            .ok_or_else(|| format!("unsupported domain expression: {domain_expr}"))?;
+        match items.first().and_then(|item| item.as_symbol()) {
+            Some("int-range") if items.len() == 3 => {
+                let lo = self.eval_int_expr(items[1], env)?;
+                let hi = self.eval_int_expr(items[2], env)?;
+                if lo < 0 || hi < lo {
+                    return Ok(Vec::new());
+                }
+                Ok((lo as usize..=hi as usize).map(AspectValue::Int).collect())
+            }
+            _ => {
+                let (model, sort) = self.ctx.parse_domain_expr(domain_expr, env)?;
+                let model_ref = self.ctx.model(&model)?;
+                let values = crate::lang::eval::get_domain_for_sort(model_ref, &sort)
+                    .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+                Ok(values
+                    .into_iter()
+                    .map(|name| AspectValue::Univ {
+                        sort: sort.clone(),
+                        name,
+                    })
+                    .collect())
+            }
         }
     }
 
@@ -486,15 +509,47 @@ impl<'a> NativeCompiler<'a> {
         Ok(or_exprs(disjuncts))
     }
 
+    fn eval_equality(&self, lhs: &Value, rhs: &Value, env: &Env) -> Result<BoolExpr, String> {
+        if let (Ok(lhs_value), Ok(rhs_value)) = (self.ctx.eval_value(lhs, env), self.ctx.eval_value(rhs, env)) {
+            return Ok(BoolExpr::Const(self.values_equal(&lhs_value, &rhs_value, env)?));
+        }
+        if self.eval_int_expr(lhs, env).is_ok() && self.eval_int_expr(rhs, env).is_ok() {
+            return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
+        }
+        self.eval_finite_terms_equal(lhs, rhs, env)
+    }
+
+    fn eval_int_compare<F>(
+        &self,
+        lhs: &Value,
+        rhs: &Value,
+        env: &Env,
+        cmp: F,
+    ) -> Result<BoolExpr, String>
+    where
+        F: FnOnce(isize, isize) -> bool,
+    {
+        let lhs = self.eval_int_expr(lhs, env)?;
+        let rhs = self.eval_int_expr(rhs, env)?;
+        Ok(BoolExpr::Const(cmp(lhs, rhs)))
+    }
+
+    fn eval_int_expr(&self, expr: &Value, env: &Env) -> Result<isize, String> {
+        self.ctx.eval_int_expr(expr, env)
+    }
+
     fn eval_finite_eq(
         &self,
         expr: &Value,
         target: &AspectValue,
         env: &Env,
     ) -> Result<BoolExpr, String> {
+        if let Ok(value) = self.ctx.eval_value(expr, env) {
+            return Ok(BoolExpr::Const(self.values_match_target(&value, target, env)?));
+        }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
-                return Ok(BoolExpr::Const(value == target));
+                return Ok(BoolExpr::Const(self.values_match_target(value, target, env)?));
             }
             if let Some(matches) = self.ctx.constant_value_matches(symbol, target, env)? {
                 return Ok(BoolExpr::Const(matches));
@@ -529,6 +584,34 @@ impl<'a> NativeCompiler<'a> {
             return self.eval_model_finite_call_eq(op, &items[1..], target, env);
         }
         Err(format!("unsupported finite expression: {expr}"))
+    }
+
+    fn values_equal(
+        &self,
+        lhs: &AspectValue,
+        rhs: &AspectValue,
+        env: &Env,
+    ) -> Result<bool, String> {
+        Ok(self.values_match_target(lhs, rhs, env)? && self.values_match_target(rhs, lhs, env)?)
+    }
+
+    fn values_match_target(
+        &self,
+        value: &AspectValue,
+        target: &AspectValue,
+        env: &Env,
+    ) -> Result<bool, String> {
+        match (value, target) {
+            (AspectValue::Int(idx), AspectValue::Univ { sort, name }) => {
+                let model = self.ctx.current_model(env)?;
+                let model_ref = self.ctx.model(&model)?;
+                let Some(domain) = crate::lang::eval::get_domain_for_sort(model_ref, sort) else {
+                    return Ok(false);
+                };
+                Ok(domain.get(*idx).is_some_and(|candidate| candidate == name))
+            }
+            _ => Ok(value == target),
+        }
     }
 
     fn eval_semantic_finite_call_eq(

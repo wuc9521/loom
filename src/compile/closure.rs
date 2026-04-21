@@ -202,7 +202,7 @@ impl<'a> ClosureSolver<'a> {
                 return Ok(self.define_fun(term));
             }
             if !changed {
-                return Ok("unsat".to_string());
+                return Ok("infeasible".to_string());
             }
         }
     }

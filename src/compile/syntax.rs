@@ -1,13 +1,13 @@
 use crate::{
     backends::smt2::ast::HornTerm,
-    compile::{types::SemCase, AspectKey},
+    compile::AspectKey,
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
-use std::collections::HashMap;
 use sygus_parser::{
     DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSCmd, SyGuSGTerm,
     SyGuSTerm,
 };
+use std::collections::HashMap;
 
 pub fn synth_name(problem: &DelisProg) -> Result<String, String> {
     problem
@@ -43,13 +43,16 @@ pub struct TermConstructor {
 #[derive(Debug, Clone)]
 pub struct TermSignature {
     pub constructors: Vec<TermConstructor>,
+    sort_order: Vec<String>,
     start_sort: String,
 }
 
 impl TermSignature {
     pub fn from_declare_term_types(decl: &TermTypes) -> Result<Self, String> {
         let mut constructors = Vec::new();
+        let mut sort_order = Vec::new();
         for (sort_decl, term_type_decl) in decl.sort_decls.iter().zip(&decl.term_type_decls) {
+            sort_order.push(sort_decl.symbol.clone());
             for cons in &term_type_decl.constructors {
                 constructors.push(TermConstructor {
                     name: cons.symbol.to_string(),
@@ -65,8 +68,43 @@ impl TermSignature {
             .ok_or_else(|| "declare-term-types is empty".to_string())?;
         Ok(Self {
             constructors,
+            sort_order,
             start_sort,
         })
+    }
+
+    pub fn datatype_decls(&self) -> (Vec<sygus_parser::SortDecl>, Vec<Vec<DTConsDecl>>) {
+        let sort_decls = self
+            .sort_order
+            .iter()
+            .map(|name| sygus_parser::SortDecl {
+                symbol: name.clone(),
+                arity: 0,
+            })
+            .collect::<Vec<_>>();
+        let decls = self
+            .sort_order
+            .iter()
+            .map(|result_sort| {
+                self.constructors
+                    .iter()
+                    .filter(|cons| &cons.result_sort == result_sort)
+                    .map(|cons| DTConsDecl {
+                        name: cons.name.clone(),
+                        args: cons
+                            .arg_sorts
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, sort)| SortedVar {
+                                name: format!("{}_arg{idx}", &cons.name),
+                                sort: Sort::from_name(sort),
+                            })
+                            .collect(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        (sort_decls, decls)
     }
 
     pub fn datatype_constructors(&self) -> Vec<DTConsDecl> {
@@ -78,34 +116,13 @@ impl TermSignature {
                     .arg_sorts
                     .iter()
                     .enumerate()
-                    .map(|(idx, _sort)| SortedVar {
+                    .map(|(idx, _)| SortedVar {
                         name: format!("{}_arg{idx}", &cons.name),
                         sort: term_sort(),
                     })
                     .collect(),
             })
             .collect()
-    }
-
-    pub fn start_sort(&self) -> &str {
-        &self.start_sort
-    }
-
-    pub fn grammar_symbol_for_sort(&self, sort_name: &str) -> String {
-        self.grammar_symbol(sort_name)
-    }
-
-    pub fn all_match_vars(&self, cases: &HashMap<String, SemCase>) -> Vec<String> {
-        let mut vars = std::collections::BTreeSet::new();
-        for case in cases.values() {
-            vars.extend(case.vars.iter().cloned());
-        }
-        for cons in &self.constructors {
-            for idx in 0..cons.arg_sorts.len() {
-                vars.insert(format!("__up{idx}"));
-            }
-        }
-        vars.into_iter().collect()
     }
 
     pub fn parent_contexts(&self, child_sort: &str, child: HornTerm) -> Vec<HornTerm> {
@@ -133,15 +150,25 @@ impl TermSignature {
         out
     }
 
-    pub fn bv_grammar(&self, decl: &TermTypes, bv_sort: &Sort) -> Result<GrammarDef, String> {
+    pub fn bv_grammar_with_sorts(
+        &self,
+        decl: &TermTypes,
+        sort_map: &HashMap<String, Sort>,
+    ) -> Result<GrammarDef, String> {
         let sorted_vars = decl
             .sort_decls
             .iter()
-            .map(|sort_decl| SortedVar {
-                name: self.grammar_symbol(&sort_decl.symbol),
-                sort: bv_sort.clone(),
+            .map(|sort_decl| {
+                let sort = sort_map
+                    .get(&sort_decl.symbol)
+                    .cloned()
+                    .ok_or_else(|| format!("missing BV sort for {}", sort_decl.symbol))?;
+                Ok::<SortedVar, String>(SortedVar {
+                    name: self.grammar_symbol(&sort_decl.symbol),
+                    sort,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         let grouped_rule_lists = decl
             .sort_decls
             .iter()
@@ -168,7 +195,10 @@ impl TermSignature {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(GroupedRuleList {
                     symbol,
-                    sort: bv_sort.clone(),
+                    sort: sort_map
+                        .get(&sort_decl.symbol)
+                        .cloned()
+                        .ok_or_else(|| format!("missing BV sort for {}", sort_decl.symbol))?,
                     terms,
                 })
             })
@@ -177,6 +207,19 @@ impl TermSignature {
             sorted_vars,
             grouped_rule_lists,
         })
+    }
+
+    pub fn bv_grammar(&self, decl: &TermTypes, bv_sort: &Sort) -> Result<GrammarDef, String> {
+        let sort_map = decl
+            .sort_decls
+            .iter()
+            .map(|sort_decl| (sort_decl.symbol.clone(), bv_sort.clone()))
+            .collect::<HashMap<_, _>>();
+        self.bv_grammar_with_sorts(decl, &sort_map)
+    }
+
+    pub fn grammar_symbol_for_sort(&self, sort_name: &str) -> String {
+        self.grammar_symbol(sort_name)
     }
 
     fn grammar_symbol(&self, sort_name: &str) -> String {
@@ -204,87 +247,8 @@ impl TermSignature {
                 .collect::<Result<Vec<_>, _>>()?,
         )))
     }
-}
 
-pub fn parse_semantic_cases(problem: &DelisProg) -> Result<HashMap<String, SemCase>, String> {
-    let semantics = problem
-        .cmds
-        .iter()
-        .filter_map(|cmd| match cmd {
-            DelisCmd::Semantics(cmd) => Some(cmd),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if semantics.len() != 1 {
-        return Err(format!(
-            "CHC compilation currently supports exactly one define-semantics declaration, got {}",
-            semantics.len()
-        ));
+    pub fn start_sort(&self) -> &str {
+        &self.start_sort
     }
-    let semantics = semantics
-        .into_iter()
-        .next()
-        .ok_or_else(|| "SyGuS compilation requires define-semantics".to_string())?;
-    let body = lexpr::from_str(&semantics.body)
-        .map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
-    let outer = body
-        .to_ref_vec()
-        .ok_or_else(|| format!("define-semantics body must be a list: {body}"))?;
-    let match_expr = match outer.as_slice() {
-        [single] => single,
-        _ => &body,
-    };
-    let items = match_expr
-        .to_ref_vec()
-        .ok_or_else(|| format!("define-semantics body must contain a match expression: {body}"))?;
-    if items.first().and_then(|v| v.as_symbol()) != Some("match") {
-        return Err(format!(
-            "define-semantics body must start with match: {body}"
-        ));
-    }
-    let self_var = items
-        .get(1)
-        .and_then(|v| v.as_symbol())
-        .ok_or_else(|| format!("match must bind a scrutinee variable: {body}"))?
-        .to_string();
-    let mut cases = HashMap::new();
-    for case in items.iter().skip(2) {
-        let case_items = case
-            .to_ref_vec()
-            .ok_or_else(|| format!("match case must be a list: {case}"))?;
-        if case_items.len() != 2 {
-            return Err(format!("match case must have pattern and body: {case}"));
-        }
-        let pattern = case_items[0]
-            .to_ref_vec()
-            .ok_or_else(|| format!("match pattern must be a list: {}", case_items[0]))?;
-        let cons = pattern
-            .first()
-            .and_then(|v| v.as_symbol())
-            .ok_or_else(|| {
-                format!(
-                    "match pattern constructor must be a symbol: {}",
-                    case_items[0]
-                )
-            })?
-            .to_string();
-        let vars = pattern
-            .iter()
-            .skip(1)
-            .map(|v| {
-                v.as_symbol()
-                    .map(str::to_string)
-                    .ok_or_else(|| format!("match pattern variable must be a symbol: {v}"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        cases.insert(
-            cons.clone(),
-            SemCase {
-                self_var: self_var.clone(),
-                vars,
-                body: case_items[1].clone(),
-            },
-        );
-    }
-    Ok(cases)
 }

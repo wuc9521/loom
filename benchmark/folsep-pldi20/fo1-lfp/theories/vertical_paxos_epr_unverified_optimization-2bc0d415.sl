@@ -171,23 +171,23 @@
 
 (define-finite FoAsp.x0.config (record (model Model) (x0 config)))
 
-(define-finite FoAsp.x0.config.lfp (record (model Model) (x0 config) (fuel Int)) :where (<= fuel (len (config model))))
+(define-finite FoAsp.x0.config.lfp (record (model Model) (x0 config) (fuel Int)) :where (<= fuel (size (config model))))
 
 (define-finite FoAsp.x0.node (record (model Model) (x0 node)))
 
-(define-finite FoAsp.x0.node.lfp (record (model Model) (x0 node) (fuel Int)) :where (<= fuel (len (node model))))
+(define-finite FoAsp.x0.node.lfp (record (model Model) (x0 node) (fuel Int)) :where (<= fuel (size (node model))))
 
 (define-finite FoAsp.x0.quorum (record (model Model) (x0 quorum)))
 
-(define-finite FoAsp.x0.quorum.lfp (record (model Model) (x0 quorum) (fuel Int)) :where (<= fuel (len (quorum model))))
+(define-finite FoAsp.x0.quorum.lfp (record (model Model) (x0 quorum) (fuel Int)) :where (<= fuel (size (quorum model))))
 
 (define-finite FoAsp.x0.round (record (model Model) (x0 round)))
 
-(define-finite FoAsp.x0.round.lfp (record (model Model) (x0 round) (fuel Int)) :where (<= fuel (len (round model))))
+(define-finite FoAsp.x0.round.lfp (record (model Model) (x0 round) (fuel Int)) :where (<= fuel (size (round model))))
 
 (define-finite FoAsp.x0.value (record (model Model) (x0 value)))
 
-(define-finite FoAsp.x0.value.lfp (record (model Model) (x0 value) (fuel Int)) :where (<= fuel (len (value model))))
+(define-finite FoAsp.x0.value.lfp (record (model Model) (x0 value) (fuel Int)) :where (<= fuel (size (value model))))
 
 (define-semantics
   ((Term.0.quorum.Sem (term Term.0.quorum) (asp FoAsp0)))
@@ -358,7 +358,7 @@
      ((fol.ctx-x0-config.and p q) (and (FO.x0.config.Sem p asp) (FO.x0.config.Sem q asp)))
      ((fol.ctx-x0-config.or p q) (or (FO.x0.config.Sem p asp) (FO.x0.config.Sem q asp)))
      ((fol.ctx-x0-config.lfp p)
-      (FO.x0.config.LfpSem p (FoAsp.x0.config.lfp (model asp) (x0 asp) (len (config (model asp))))))
+      (FO.x0.config.LfpSem p (FoAsp.x0.config.lfp (model asp) (x0 asp) (size (config (model asp))))))
      ((fol.ctx-x0-config.atom.rec a0) false)
      ((fol.ctx-x0-config.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -413,7 +413,7 @@
      ((fol.ctx-x0-node.and p q) (and (FO.x0.node.Sem p asp) (FO.x0.node.Sem q asp)))
      ((fol.ctx-x0-node.or p q) (or (FO.x0.node.Sem p asp) (FO.x0.node.Sem q asp)))
      ((fol.ctx-x0-node.lfp p)
-      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (len (node (model asp))))))
+      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (size (node (model asp))))))
      ((fol.ctx-x0-node.atom.rec a0) false)
      ((fol.ctx-x0-node.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -468,7 +468,7 @@
      ((fol.ctx-x0-quorum.and p q) (and (FO.x0.quorum.Sem p asp) (FO.x0.quorum.Sem q asp)))
      ((fol.ctx-x0-quorum.or p q) (or (FO.x0.quorum.Sem p asp) (FO.x0.quorum.Sem q asp)))
      ((fol.ctx-x0-quorum.lfp p)
-      (FO.x0.quorum.LfpSem p (FoAsp.x0.quorum.lfp (model asp) (x0 asp) (len (quorum (model asp))))))
+      (FO.x0.quorum.LfpSem p (FoAsp.x0.quorum.lfp (model asp) (x0 asp) (size (quorum (model asp))))))
      ((fol.ctx-x0-quorum.atom.rec a0) false)
      ((fol.ctx-x0-quorum.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -518,7 +518,7 @@
      ((fol.ctx-x0-round.and p q) (and (FO.x0.round.Sem p asp) (FO.x0.round.Sem q asp)))
      ((fol.ctx-x0-round.or p q) (or (FO.x0.round.Sem p asp) (FO.x0.round.Sem q asp)))
      ((fol.ctx-x0-round.lfp p)
-      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (len (round (model asp))))))
+      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (size (round (model asp))))))
      ((fol.ctx-x0-round.atom.rec a0) false)
      ((fol.ctx-x0-round.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -568,7 +568,7 @@
      ((fol.ctx-x0-value.and p q) (and (FO.x0.value.Sem p asp) (FO.x0.value.Sem q asp)))
      ((fol.ctx-x0-value.or p q) (or (FO.x0.value.Sem p asp) (FO.x0.value.Sem q asp)))
      ((fol.ctx-x0-value.lfp p)
-      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (len (value (model asp))))))
+      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (size (value (model asp))))))
      ((fol.ctx-x0-value.atom.rec a0) false)
      ((fol.ctx-x0-value.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -627,7 +627,7 @@
                (Term.x0.config.config.Sem a0 (FoAsp.x0.config (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-config.lfp p)
-      (FO.x0.config.LfpSem p (FoAsp.x0.config.lfp (model asp) (x0 asp) (len (config (model asp))))))
+      (FO.x0.config.LfpSem p (FoAsp.x0.config.lfp (model asp) (x0 asp) (size (config (model asp))))))
      ((fol.ctx-x0-config.atom.rec a0) false)
      ((fol.ctx-x0-config.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -719,7 +719,7 @@
                (Term.x0.node.node.Sem a0 (FoAsp.x0.node (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-node.lfp p)
-      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (len (node (model asp))))))
+      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (size (node (model asp))))))
      ((fol.ctx-x0-node.atom.rec a0) false)
      ((fol.ctx-x0-node.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -811,7 +811,7 @@
                (Term.x0.quorum.quorum.Sem a0 (FoAsp.x0.quorum (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-quorum.lfp p)
-      (FO.x0.quorum.LfpSem p (FoAsp.x0.quorum.lfp (model asp) (x0 asp) (len (quorum (model asp))))))
+      (FO.x0.quorum.LfpSem p (FoAsp.x0.quorum.lfp (model asp) (x0 asp) (size (quorum (model asp))))))
      ((fol.ctx-x0-quorum.atom.rec a0) false)
      ((fol.ctx-x0-quorum.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -894,7 +894,7 @@
                (Term.x0.round.round.Sem a0 (FoAsp.x0.round (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-round.lfp p)
-      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (len (round (model asp))))))
+      (FO.x0.round.LfpSem p (FoAsp.x0.round.lfp (model asp) (x0 asp) (size (round (model asp))))))
      ((fol.ctx-x0-round.atom.rec a0) false)
      ((fol.ctx-x0-round.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))
@@ -977,7 +977,7 @@
                (Term.x0.value.value.Sem a0 (FoAsp.x0.value (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-value.lfp p)
-      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (len (value (model asp))))))
+      (FO.x0.value.LfpSem p (FoAsp.x0.value.lfp (model asp) (x0 asp) (size (value (model asp))))))
      ((fol.ctx-x0-value.atom.rec a0) false)
      ((fol.ctx-x0-value.forall.x0.config p)
       (forall ((v (domain (config (model asp)))))

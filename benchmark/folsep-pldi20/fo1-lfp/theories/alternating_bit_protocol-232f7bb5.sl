@@ -187,19 +187,19 @@
 
 (define-finite FoAsp.x0.abp.ack_msg_t (record (model Model) (x0 abp.ack_msg_t)))
 
-(define-finite FoAsp.x0.abp.ack_msg_t.lfp (record (model Model) (x0 abp.ack_msg_t) (fuel Int)) :where (<= fuel (len (abp.ack_msg_t model))))
+(define-finite FoAsp.x0.abp.ack_msg_t.lfp (record (model Model) (x0 abp.ack_msg_t) (fuel Int)) :where (<= fuel (size (abp.ack_msg_t model))))
 
 (define-finite FoAsp.x0.abp.data_msg_t (record (model Model) (x0 abp.data_msg_t)))
 
-(define-finite FoAsp.x0.abp.data_msg_t.lfp (record (model Model) (x0 abp.data_msg_t) (fuel Int)) :where (<= fuel (len (abp.data_msg_t model))))
+(define-finite FoAsp.x0.abp.data_msg_t.lfp (record (model Model) (x0 abp.data_msg_t) (fuel Int)) :where (<= fuel (size (abp.data_msg_t model))))
 
 (define-finite FoAsp.x0.abp.index_t (record (model Model) (x0 abp.index_t)))
 
-(define-finite FoAsp.x0.abp.index_t.lfp (record (model Model) (x0 abp.index_t) (fuel Int)) :where (<= fuel (len (abp.index_t model))))
+(define-finite FoAsp.x0.abp.index_t.lfp (record (model Model) (x0 abp.index_t) (fuel Int)) :where (<= fuel (size (abp.index_t model))))
 
 (define-finite FoAsp.x0.abp.value (record (model Model) (x0 abp.value)))
 
-(define-finite FoAsp.x0.abp.value.lfp (record (model Model) (x0 abp.value) (fuel Int)) :where (<= fuel (len (abp.value model))))
+(define-finite FoAsp.x0.abp.value.lfp (record (model Model) (x0 abp.value) (fuel Int)) :where (<= fuel (size (abp.value model))))
 
 (define-semantics
   ((Term.0.abp.index_t.Sem (term Term.0.abp.index_t) (asp FoAsp0)))
@@ -374,7 +374,7 @@
      ((fol.ctx-x0-abp.ack_msg_t.and p q) (and (FO.x0.abp.ack_msg_t.Sem p asp) (FO.x0.abp.ack_msg_t.Sem q asp)))
      ((fol.ctx-x0-abp.ack_msg_t.or p q) (or (FO.x0.abp.ack_msg_t.Sem p asp) (FO.x0.abp.ack_msg_t.Sem q asp)))
      ((fol.ctx-x0-abp.ack_msg_t.lfp p)
-      (FO.x0.abp.ack_msg_t.LfpSem p (FoAsp.x0.abp.ack_msg_t.lfp (model asp) (x0 asp) (len (abp.ack_msg_t (model asp))))))
+      (FO.x0.abp.ack_msg_t.LfpSem p (FoAsp.x0.abp.ack_msg_t.lfp (model asp) (x0 asp) (size (abp.ack_msg_t (model asp))))))
      ((fol.ctx-x0-abp.ack_msg_t.atom.rec a0) false)
      ((fol.ctx-x0-abp.ack_msg_t.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -428,7 +428,7 @@
      ((fol.ctx-x0-abp.data_msg_t.and p q) (and (FO.x0.abp.data_msg_t.Sem p asp) (FO.x0.abp.data_msg_t.Sem q asp)))
      ((fol.ctx-x0-abp.data_msg_t.or p q) (or (FO.x0.abp.data_msg_t.Sem p asp) (FO.x0.abp.data_msg_t.Sem q asp)))
      ((fol.ctx-x0-abp.data_msg_t.lfp p)
-      (FO.x0.abp.data_msg_t.LfpSem p (FoAsp.x0.abp.data_msg_t.lfp (model asp) (x0 asp) (len (abp.data_msg_t (model asp))))))
+      (FO.x0.abp.data_msg_t.LfpSem p (FoAsp.x0.abp.data_msg_t.lfp (model asp) (x0 asp) (size (abp.data_msg_t (model asp))))))
      ((fol.ctx-x0-abp.data_msg_t.atom.rec a0) false)
      ((fol.ctx-x0-abp.data_msg_t.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -482,7 +482,7 @@
      ((fol.ctx-x0-abp.index_t.and p q) (and (FO.x0.abp.index_t.Sem p asp) (FO.x0.abp.index_t.Sem q asp)))
      ((fol.ctx-x0-abp.index_t.or p q) (or (FO.x0.abp.index_t.Sem p asp) (FO.x0.abp.index_t.Sem q asp)))
      ((fol.ctx-x0-abp.index_t.lfp p)
-      (FO.x0.abp.index_t.LfpSem p (FoAsp.x0.abp.index_t.lfp (model asp) (x0 asp) (len (abp.index_t (model asp))))))
+      (FO.x0.abp.index_t.LfpSem p (FoAsp.x0.abp.index_t.lfp (model asp) (x0 asp) (size (abp.index_t (model asp))))))
      ((fol.ctx-x0-abp.index_t.atom.rec a0) false)
      ((fol.ctx-x0-abp.index_t.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -532,7 +532,7 @@
      ((fol.ctx-x0-abp.value.and p q) (and (FO.x0.abp.value.Sem p asp) (FO.x0.abp.value.Sem q asp)))
      ((fol.ctx-x0-abp.value.or p q) (or (FO.x0.abp.value.Sem p asp) (FO.x0.abp.value.Sem q asp)))
      ((fol.ctx-x0-abp.value.lfp p)
-      (FO.x0.abp.value.LfpSem p (FoAsp.x0.abp.value.lfp (model asp) (x0 asp) (len (abp.value (model asp))))))
+      (FO.x0.abp.value.LfpSem p (FoAsp.x0.abp.value.lfp (model asp) (x0 asp) (size (abp.value (model asp))))))
      ((fol.ctx-x0-abp.value.atom.rec a0) false)
      ((fol.ctx-x0-abp.value.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -588,7 +588,7 @@
                (Term.x0.abp.ack_msg_t.abp.ack_msg_t.Sem a0 (FoAsp.x0.abp.ack_msg_t (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-abp.ack_msg_t.lfp p)
-      (FO.x0.abp.ack_msg_t.LfpSem p (FoAsp.x0.abp.ack_msg_t.lfp (model asp) (x0 asp) (len (abp.ack_msg_t (model asp))))))
+      (FO.x0.abp.ack_msg_t.LfpSem p (FoAsp.x0.abp.ack_msg_t.lfp (model asp) (x0 asp) (size (abp.ack_msg_t (model asp))))))
      ((fol.ctx-x0-abp.ack_msg_t.atom.rec a0) false)
      ((fol.ctx-x0-abp.ack_msg_t.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -682,7 +682,7 @@
                (Term.x0.abp.data_msg_t.abp.data_msg_t.Sem a0 (FoAsp.x0.abp.data_msg_t (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-abp.data_msg_t.lfp p)
-      (FO.x0.abp.data_msg_t.LfpSem p (FoAsp.x0.abp.data_msg_t.lfp (model asp) (x0 asp) (len (abp.data_msg_t (model asp))))))
+      (FO.x0.abp.data_msg_t.LfpSem p (FoAsp.x0.abp.data_msg_t.lfp (model asp) (x0 asp) (size (abp.data_msg_t (model asp))))))
      ((fol.ctx-x0-abp.data_msg_t.atom.rec a0) false)
      ((fol.ctx-x0-abp.data_msg_t.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -776,7 +776,7 @@
                (Term.x0.abp.index_t.abp.index_t.Sem a0 (FoAsp.x0.abp.index_t (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-abp.index_t.lfp p)
-      (FO.x0.abp.index_t.LfpSem p (FoAsp.x0.abp.index_t.lfp (model asp) (x0 asp) (len (abp.index_t (model asp))))))
+      (FO.x0.abp.index_t.LfpSem p (FoAsp.x0.abp.index_t.lfp (model asp) (x0 asp) (size (abp.index_t (model asp))))))
      ((fol.ctx-x0-abp.index_t.atom.rec a0) false)
      ((fol.ctx-x0-abp.index_t.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))
@@ -863,7 +863,7 @@
                (Term.x0.abp.value.abp.value.Sem a0 (FoAsp.x0.abp.value (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-abp.value.lfp p)
-      (FO.x0.abp.value.LfpSem p (FoAsp.x0.abp.value.lfp (model asp) (x0 asp) (len (abp.value (model asp))))))
+      (FO.x0.abp.value.LfpSem p (FoAsp.x0.abp.value.lfp (model asp) (x0 asp) (size (abp.value (model asp))))))
      ((fol.ctx-x0-abp.value.atom.rec a0) false)
      ((fol.ctx-x0-abp.value.forall.x0.abp.ack_msg_t p)
       (forall ((v (domain (abp.ack_msg_t (model asp)))))

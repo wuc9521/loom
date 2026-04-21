@@ -55,11 +55,11 @@
 
 (define-finite FoAsp.x0.epoch (record (model Model) (x0 epoch)))
 
-(define-finite FoAsp.x0.epoch.lfp (record (model Model) (x0 epoch) (fuel Int)) :where (<= fuel (len (epoch model))))
+(define-finite FoAsp.x0.epoch.lfp (record (model Model) (x0 epoch) (fuel Int)) :where (<= fuel (size (epoch model))))
 
 (define-finite FoAsp.x0.node (record (model Model) (x0 node)))
 
-(define-finite FoAsp.x0.node.lfp (record (model Model) (x0 node) (fuel Int)) :where (<= fuel (len (node model))))
+(define-finite FoAsp.x0.node.lfp (record (model Model) (x0 node) (fuel Int)) :where (<= fuel (size (node model))))
 
 (define-semantics
   ((Term.0.epoch.Sem (term Term.0.epoch) (asp FoAsp0)))
@@ -125,7 +125,7 @@
      ((fol.ctx-x0-epoch.and p q) (and (FO.x0.epoch.Sem p asp) (FO.x0.epoch.Sem q asp)))
      ((fol.ctx-x0-epoch.or p q) (or (FO.x0.epoch.Sem p asp) (FO.x0.epoch.Sem q asp)))
      ((fol.ctx-x0-epoch.lfp p)
-      (FO.x0.epoch.LfpSem p (FoAsp.x0.epoch.lfp (model asp) (x0 asp) (len (epoch (model asp))))))
+      (FO.x0.epoch.LfpSem p (FoAsp.x0.epoch.lfp (model asp) (x0 asp) (size (epoch (model asp))))))
      ((fol.ctx-x0-epoch.atom.rec a0) false)
      ((fol.ctx-x0-epoch.forall.x0.epoch p)
       (forall ((v (domain (epoch (model asp)))))
@@ -153,7 +153,7 @@
      ((fol.ctx-x0-node.and p q) (and (FO.x0.node.Sem p asp) (FO.x0.node.Sem q asp)))
      ((fol.ctx-x0-node.or p q) (or (FO.x0.node.Sem p asp) (FO.x0.node.Sem q asp)))
      ((fol.ctx-x0-node.lfp p)
-      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (len (node (model asp))))))
+      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (size (node (model asp))))))
      ((fol.ctx-x0-node.atom.rec a0) false)
      ((fol.ctx-x0-node.forall.x0.epoch p)
       (forall ((v (domain (epoch (model asp)))))
@@ -192,7 +192,7 @@
                (Term.x0.epoch.epoch.Sem a0 (FoAsp.x0.epoch (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-epoch.lfp p)
-      (FO.x0.epoch.LfpSem p (FoAsp.x0.epoch.lfp (model asp) (x0 asp) (len (epoch (model asp))))))
+      (FO.x0.epoch.LfpSem p (FoAsp.x0.epoch.lfp (model asp) (x0 asp) (size (epoch (model asp))))))
      ((fol.ctx-x0-epoch.atom.rec a0) false)
      ((fol.ctx-x0-epoch.forall.x0.epoch p)
       (forall ((v (domain (epoch (model asp)))))
@@ -244,7 +244,7 @@
                (Term.x0.node.node.Sem a0 (FoAsp.x0.node (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-node.lfp p)
-      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (len (node (model asp))))))
+      (FO.x0.node.LfpSem p (FoAsp.x0.node.lfp (model asp) (x0 asp) (size (node (model asp))))))
      ((fol.ctx-x0-node.atom.rec a0) false)
      ((fol.ctx-x0-node.forall.x0.epoch p)
       (forall ((v (domain (epoch (model asp)))))

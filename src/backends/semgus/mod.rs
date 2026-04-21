@@ -921,7 +921,7 @@ fn value_expr(
                 .collect::<Vec<_>>()
                 .join(" ")
         ),
-        "len" if items.len() == 2 => {
+        "size" if items.len() == 2 => {
             let Some(domain_items) = list_items(items[1]) else {
                 return expr.to_string();
             };

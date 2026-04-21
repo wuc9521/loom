@@ -83,11 +83,11 @@
 
 (define-finite FoAsp.x0.ticket_protocol.thread (record (model Model) (x0 ticket_protocol.thread)))
 
-(define-finite FoAsp.x0.ticket_protocol.thread.lfp (record (model Model) (x0 ticket_protocol.thread) (fuel Int)) :where (<= fuel (len (ticket_protocol.thread model))))
+(define-finite FoAsp.x0.ticket_protocol.thread.lfp (record (model Model) (x0 ticket_protocol.thread) (fuel Int)) :where (<= fuel (size (ticket_protocol.thread model))))
 
 (define-finite FoAsp.x0.ticket_protocol.ticket (record (model Model) (x0 ticket_protocol.ticket)))
 
-(define-finite FoAsp.x0.ticket_protocol.ticket.lfp (record (model Model) (x0 ticket_protocol.ticket) (fuel Int)) :where (<= fuel (len (ticket_protocol.ticket model))))
+(define-finite FoAsp.x0.ticket_protocol.ticket.lfp (record (model Model) (x0 ticket_protocol.ticket) (fuel Int)) :where (<= fuel (size (ticket_protocol.ticket model))))
 
 (define-semantics
   ((Term.0.ticket_protocol.thread.Sem (term Term.0.ticket_protocol.thread) (asp FoAsp0)))
@@ -184,7 +184,7 @@
      ((fol.ctx-x0-ticket_protocol.thread.and p q) (and (FO.x0.ticket_protocol.thread.Sem p asp) (FO.x0.ticket_protocol.thread.Sem q asp)))
      ((fol.ctx-x0-ticket_protocol.thread.or p q) (or (FO.x0.ticket_protocol.thread.Sem p asp) (FO.x0.ticket_protocol.thread.Sem q asp)))
      ((fol.ctx-x0-ticket_protocol.thread.lfp p)
-      (FO.x0.ticket_protocol.thread.LfpSem p (FoAsp.x0.ticket_protocol.thread.lfp (model asp) (x0 asp) (len (ticket_protocol.thread (model asp))))))
+      (FO.x0.ticket_protocol.thread.LfpSem p (FoAsp.x0.ticket_protocol.thread.lfp (model asp) (x0 asp) (size (ticket_protocol.thread (model asp))))))
      ((fol.ctx-x0-ticket_protocol.thread.atom.rec a0) false)
      ((fol.ctx-x0-ticket_protocol.thread.forall.x0.ticket_protocol.thread p)
       (forall ((v (domain (ticket_protocol.thread (model asp)))))
@@ -220,7 +220,7 @@
      ((fol.ctx-x0-ticket_protocol.ticket.and p q) (and (FO.x0.ticket_protocol.ticket.Sem p asp) (FO.x0.ticket_protocol.ticket.Sem q asp)))
      ((fol.ctx-x0-ticket_protocol.ticket.or p q) (or (FO.x0.ticket_protocol.ticket.Sem p asp) (FO.x0.ticket_protocol.ticket.Sem q asp)))
      ((fol.ctx-x0-ticket_protocol.ticket.lfp p)
-      (FO.x0.ticket_protocol.ticket.LfpSem p (FoAsp.x0.ticket_protocol.ticket.lfp (model asp) (x0 asp) (len (ticket_protocol.ticket (model asp))))))
+      (FO.x0.ticket_protocol.ticket.LfpSem p (FoAsp.x0.ticket_protocol.ticket.lfp (model asp) (x0 asp) (size (ticket_protocol.ticket (model asp))))))
      ((fol.ctx-x0-ticket_protocol.ticket.atom.rec a0) false)
      ((fol.ctx-x0-ticket_protocol.ticket.forall.x0.ticket_protocol.thread p)
       (forall ((v (domain (ticket_protocol.thread (model asp)))))
@@ -262,7 +262,7 @@
                (Term.x0.ticket_protocol.thread.ticket_protocol.thread.Sem a0 (FoAsp.x0.ticket_protocol.thread (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-ticket_protocol.thread.lfp p)
-      (FO.x0.ticket_protocol.thread.LfpSem p (FoAsp.x0.ticket_protocol.thread.lfp (model asp) (x0 asp) (len (ticket_protocol.thread (model asp))))))
+      (FO.x0.ticket_protocol.thread.LfpSem p (FoAsp.x0.ticket_protocol.thread.lfp (model asp) (x0 asp) (size (ticket_protocol.thread (model asp))))))
      ((fol.ctx-x0-ticket_protocol.thread.atom.rec a0) false)
      ((fol.ctx-x0-ticket_protocol.thread.forall.x0.ticket_protocol.thread p)
       (forall ((v (domain (ticket_protocol.thread (model asp)))))
@@ -329,7 +329,7 @@
                (Term.x0.ticket_protocol.ticket.ticket_protocol.ticket.Sem a0 (FoAsp.x0.ticket_protocol.ticket (model asp) (x0 asp)))
                (- (fuel asp) 1)))))
      ((fol.ctx-x0-ticket_protocol.ticket.lfp p)
-      (FO.x0.ticket_protocol.ticket.LfpSem p (FoAsp.x0.ticket_protocol.ticket.lfp (model asp) (x0 asp) (len (ticket_protocol.ticket (model asp))))))
+      (FO.x0.ticket_protocol.ticket.LfpSem p (FoAsp.x0.ticket_protocol.ticket.lfp (model asp) (x0 asp) (size (ticket_protocol.ticket (model asp))))))
      ((fol.ctx-x0-ticket_protocol.ticket.atom.rec a0) false)
      ((fol.ctx-x0-ticket_protocol.ticket.forall.x0.ticket_protocol.thread p)
       (forall ((v (domain (ticket_protocol.thread (model asp)))))

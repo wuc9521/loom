@@ -12,7 +12,7 @@
 
 (define-finite ReAsp                                             
   (record (model Model) (i Int) (j Int))                         
-  :where (and (<= 0 i) (<= i j) (<= j (len (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 
 (define-semantics
   ((RegLan.Sem (r RegLan) (asp ReAsp)))
@@ -49,7 +49,7 @@
 
 (synth-fun r () RegLan)
 
-(constraint (RegLan.Sem r (ReAsp p01 0 (len (Pos p01)))))
-(constraint (not (RegLan.Sem r (ReAsp n11 0 (len (Pos n11))))))
+(constraint (RegLan.Sem r (ReAsp p01 0 (size (Pos p01)))))
+(constraint (not (RegLan.Sem r (ReAsp n11 0 (size (Pos n11))))))
 
 (check-synth)

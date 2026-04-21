@@ -5,6 +5,7 @@ use sygus_parser::Literal;
 
 #[derive(Clone)]
 pub struct Case {
+    pub self_var: String,
     pub vars: Vec<String>,
     pub body: Value,
 }
@@ -25,6 +26,11 @@ pub fn parse_cases(body: &Value) -> Result<HashMap<String, Case>, String> {
             "define-semantics body must start with match: {body}"
         ));
     }
+    let self_var = items
+        .get(1)
+        .and_then(|v| v.as_symbol())
+        .ok_or_else(|| format!("match scrutinee must be a symbol: {match_expr}"))?
+        .to_string();
     let mut cases = HashMap::new();
     for case in items.iter().skip(2) {
         let case_items = case
@@ -53,6 +59,7 @@ pub fn parse_cases(body: &Value) -> Result<HashMap<String, Case>, String> {
         cases.insert(
             cons,
             Case {
+                self_var: self_var.clone(),
                 vars,
                 body: (*body).clone(),
             },
