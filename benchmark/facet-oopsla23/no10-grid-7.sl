@@ -1,13 +1,8 @@
 ;; ========== BENCHMARK 3: Grid Structures (10 models) ==========
 ;; Testing 2D grid-like structures with different connectivity patterns
-
+(require "./theories/main.sl")
 (set-logic ALL)
-(declare-sort U 0)
-(declare-fun I () U)
-(declare-fun R (U U) Bool)
-(declare-fun a (U) Bool)
-(declare-fun b (U) Bool)
-(declare-fun c (U) Bool)
+
 
 ;; Grid1: 3x3 grid with 4-connectivity
 (define-model Grid1
@@ -35,7 +30,7 @@
         (($0) true) (($2) true) (($6) true) (($8) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($1) true) (($3) true) (($5) true) (($7) true)
         ((_) false)
     )))
@@ -70,7 +65,7 @@
         (($0) true) (($4) true) (($5) true) (($9) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($1) true) (($3) true) (($6) true) (($8) true)
         ((_) false)
     )))
@@ -98,7 +93,7 @@
         (($0) true) (($3) true) (($6) true) (($9) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($1) true) (($4) true) (($7) true) (($10) true)
         ((_) false)
     )))
@@ -125,7 +120,7 @@
         (($1) true) (($4) true) (($7) true) (($10) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true) (($3) true) (($6) true) (($9) true)
         ((_) false)
     )))
@@ -152,7 +147,7 @@
         (($2) true) (($5) true) (($8) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true) (($1) true) (($9) true) (($10) true)
         ((_) false)
     )))
@@ -179,7 +174,7 @@
         (($0) true) (($5) true) (($10) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($2) true) (($4) true) (($6) true) (($8) true)
         ((_) false)
     )))
@@ -205,7 +200,7 @@
         (($1) true) (($6) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true) (($2) true) (($4) true) (($8) true) (($10) true)
         ((_) false)
     )))
@@ -215,40 +210,6 @@
     )))
     (interp-fun I ($0))
 )
-
-
-
-(declare-term-types
- ((Modal 0))
- (((a) (b) (c)
-   (modal.not Modal)
-   (modal.and Modal Modal)
-   (modal.or Modal Modal)
-   (modal.box Modal)
-   (modal.dia Modal))))
-
-
-(define-finite ModalAsp
-  (record (model Model) (node U))
-  :where true)
-
-(define-semantics
-  ((Modal.Sem (phi Modal) (asp ModalAsp)))
-  ((match phi
-     ((a) (a (node asp)))
-     ((b) (b (node asp)))
-     ((c) (c (node asp)))
-     ((modal.not x) (not (Modal.Sem x asp)))
-     ((modal.and x y) (and (Modal.Sem x asp) (Modal.Sem y asp)))
-     ((modal.or x y) (or (Modal.Sem x asp) (Modal.Sem y asp)))
-     ((modal.box x)
-      (forall ((next (domain (U (model asp)))))
-        (or (not (R (node asp) next))
-            (Modal.Sem x (ModalAsp (model asp) next)))))
-     ((modal.dia x)
-      (exists ((next (domain (U (model asp)))))
-        (and (R (node asp) next)
-             (Modal.Sem x (ModalAsp (model asp) next))))))))
 
 (synth-fun phi () Modal)
 

@@ -1,13 +1,7 @@
 ;; ========== BENCHMARK 2: Tree Structures (8 models) ==========
 ;; Testing binary tree and more complex tree structures
-
+(require "./theories/main.sl")
 (set-logic ALL)
-(declare-sort U 0)
-(declare-fun I () U)
-(declare-fun R (U U) Bool)
-(declare-fun a (U) Bool)
-(declare-fun b (U) Bool)
-(declare-fun c (U) Bool)
 
 ;; Tree1: Complete binary tree depth 3
 (define-model Tree1
@@ -25,7 +19,7 @@
         (($0) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($1) true)
         (($2) true)
         ((_) false)
@@ -57,7 +51,7 @@
         (($6) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true)
         (($4) true)
         ((_) false)
@@ -88,7 +82,7 @@
         (($7) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($1) true)
         (($5) true)
         ((_) false)
@@ -120,7 +114,7 @@
         (($6) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true)
         (($3) true)
         (($7) true)
@@ -155,7 +149,7 @@
         (($8) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($1) true)
         (($2) true)
         (($6) true)
@@ -189,7 +183,7 @@
         (($7) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true)
         (($1) true)
         (($8) true)
@@ -222,7 +216,7 @@
         (($6) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true)
         (($4) true)
         (($7) true)
@@ -256,7 +250,7 @@
         (($4) true)
         ((_) false)
     )))
-    (interp-fun b (match (
+    (interp-fun v (match (
         (($0) true)
         (($2) true)
         (($5) true)
@@ -273,53 +267,7 @@
 )
 
 
-(declare-term-types
- ((Modal 0))
- (((a) (b) (c)
-   (modal.not Modal)
-   (modal.and Modal Modal)
-   (modal.or Modal Modal)
-   (modal.box Modal)
-   (modal.dia Modal))))
-
-
-(define-finite ModalAsp
-  (record (model Model) (node U))
-  :where true)
-
-(define-semantics
-  ((Modal.Sem (phi Modal) (asp ModalAsp)))
-  ((match phi
-     ((a) (a (node asp)))
-     ((b) (b (node asp)))
-     ((c) (c (node asp)))
-     ((modal.not x) (not (Modal.Sem x asp)))
-     ((modal.and x y) (and (Modal.Sem x asp) (Modal.Sem y asp)))
-     ((modal.or x y) (or (Modal.Sem x asp) (Modal.Sem y asp)))
-     ((modal.box x)
-      (forall ((next (domain (U (model asp)))))
-        (or (not (R (node asp) next))
-            (Modal.Sem x (ModalAsp (model asp) next)))))
-     ((modal.dia x)
-      (exists ((next (domain (U (model asp)))))
-        (and (R (node asp) next)
-             (Modal.Sem x (ModalAsp (model asp) next))))))))
-
-(synth-fun phi2 () Modal
-    ((Start Modal))
-    (
-        (Start Modal
-            (
-                a b c
-                (modal.not Start)
-                (modal.and Start Start)
-                (modal.or Start Start)
-                (modal.box Start)
-                (modal.dia Start)
-            )
-        )
-    )
-)
+(synth-fun phi2 () Modal)
 
 (constraint (Modal.Sem phi2 (ModalAsp Tree1 $0)))
 (constraint (Modal.Sem phi2 (ModalAsp Tree2 $0)))

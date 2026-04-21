@@ -1,4 +1,5 @@
-(set-logic ALL) ;; propositional modal logic
+(provide Modal ModalAsp Modal.Sem U I R a c v K1 K2 K3 K4)
+
 (declare-sort U 0)
 (declare-fun I () U)
 (declare-fun R (U U) Bool)
@@ -6,12 +7,6 @@
 (declare-fun c (U) Bool)
 (declare-fun v (U) Bool)
 
-;; in PML, define-model requires users to define
-
-;; - a finite set of states S.
-;; - a set of initial states I ⊆ S.
-;; - a transition relation R ⊆ S × S such that R is left-total, i.e., ∀s ∈ S ∃s' ∈ S such that (s,s') ∈ R.
-;; - a labeling (or interpretation) function L: S → 2AP.
 
 (define-model K1 ;; Kripke Structure 1
     (define-univ U ($0 $1 $2 $3))
@@ -142,28 +137,3 @@
       (exists ((next (domain (U (model asp)))))
         (and (R (node asp) next)
              (Modal.Sem x (ModalAsp (model asp) next))))))))
-
-(synth-fun phi () Modal
-    ((Start Modal))
-	(
-		(Start Modal
-			(
-				a
-                		c
-                		v		
-				(modal.not Start)
-				(modal.and Start Start)
-				(modal.or Start Start)
-				(modal.box Start)
-				(modal.dia Start)
-			)
-		)
-	)
-)
-
-(constraint (Modal.Sem phi (ModalAsp K1 $0)))
-(constraint (not (Modal.Sem phi (ModalAsp K2 $0))))
-(constraint (not (Modal.Sem phi (ModalAsp K3 $0))))
-(constraint (Modal.Sem phi (ModalAsp K4 $0)))
-
-(check-synth)
