@@ -1,0 +1,1057 @@
+(require "../../signatures/deepregex/77.sl")
+(provide deepregex_77_P1 deepregex_77_P2 deepregex_77_P3 deepregex_77_P4 deepregex_77_P5 deepregex_77_P6 deepregex_77_P7 deepregex_77_N1 deepregex_77_N2 deepregex_77_N3 deepregex_77_N4 deepregex_77_N5 deepregex_77_N6 deepregex_77_N7)
+
+(define-model deepregex_77_P1
+  (define-univ Pos ($0 $1 $2 $3))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_P2
+  (define-univ Pos ($0 $1 $2 $3))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($3) true)
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_P3
+  (define-univ Pos ($0 $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    (($3) true)
+    (($7) true)
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    (($9) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    (($3) true)
+    (($7) true)
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    (($5) true)
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_P4
+  (define-univ Pos ($0 $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    (($4) true)
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($4) true)
+    (($6) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    (($3) true)
+    (($7) true)
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    (($9) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    (($3) true)
+    (($7) true)
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    (($5) true)
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($13) true)
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_P5
+  (define-univ Pos ($0 $1 $2))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($1) true)
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_P6
+  (define-univ Pos ($0 $1 $2))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($1) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_P7
+  (define-univ Pos ($0))
+  (interp-fun is.any (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N1
+  (define-univ Pos ($0 $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($7) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    (($5) true)
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($5) true)
+    (($7) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($5) true)
+    (($7) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($5) true)
+    (($7) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    (($4) true)
+    (($8) true)
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    (($10) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    (($4) true)
+    (($8) true)
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    (($6) true)
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N2
+  (define-univ Pos ())
+  (interp-fun is.any (match (
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N3
+  (define-univ Pos ($0 $1 $2 $3))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($0) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N4
+  (define-univ Pos ($0 $1 $2 $3))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($0) true)
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N5
+  (define-univ Pos ($0 $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11 $12 $13 $14 $15 $16 $17 $18 $19 $20 $21 $22 $23 $24))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    (($14) true)
+    (($15) true)
+    (($16) true)
+    (($17) true)
+    (($18) true)
+    (($19) true)
+    (($20) true)
+    (($21) true)
+    (($22) true)
+    (($23) true)
+    (($24) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    (($15) true)
+    (($16) true)
+    (($18) true)
+    (($19) true)
+    (($20) true)
+    (($21) true)
+    (($22) true)
+    (($23) true)
+    (($24) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    (($15) true)
+    (($16) true)
+    (($18) true)
+    (($19) true)
+    (($20) true)
+    (($21) true)
+    (($22) true)
+    (($23) true)
+    (($24) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    (($15) true)
+    (($16) true)
+    (($18) true)
+    (($19) true)
+    (($20) true)
+    (($21) true)
+    (($22) true)
+    (($23) true)
+    (($24) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($10) true)
+    (($11) true)
+    (($12) true)
+    (($13) true)
+    (($15) true)
+    (($16) true)
+    (($18) true)
+    (($19) true)
+    (($20) true)
+    (($21) true)
+    (($22) true)
+    (($23) true)
+    (($24) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    (($9) true)
+    (($14) true)
+    (($17) true)
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($3) true)
+    (($21) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    (($9) true)
+    (($14) true)
+    (($17) true)
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N6
+  (define-univ Pos ($0 $1 $2 $3 $4 $5 $6 $7 $8 $9 $10 $11))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($6) true)
+    (($7) true)
+    (($8) true)
+    (($9) true)
+    (($10) true)
+    (($11) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($6) true)
+    (($8) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($3) true)
+    (($4) true)
+    (($5) true)
+    ((_) false)
+  )))
+)
+
+(define-model deepregex_77_N7
+  (define-univ Pos ($0 $1 $2 $3))
+  (interp-fun is.any (match (
+    (($0) true)
+    (($1) true)
+    (($2) true)
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.digit (match (
+    ((_) false)
+  )))
+  (interp-fun is.lower (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.upper (match (
+    ((_) false)
+  )))
+  (interp-fun is.alpha (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.alnum (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.word (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.space (match (
+    ((_) false)
+  )))
+  (interp-fun is.hex (match (
+    (($3) true)
+    ((_) false)
+  )))
+  (interp-fun is.x20 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x21 (match (
+    (($0) true)
+    (($2) true)
+    ((_) false)
+  )))
+  (interp-fun is.x27 (match (
+    ((_) false)
+  )))
+  (interp-fun is.x40 (match (
+    (($1) true)
+    ((_) false)
+  )))
+)

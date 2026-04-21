@@ -1,0 +1,21 @@
+(require "../theories/deepregex/24.sl")
+(require "../../common/models/deepregex/24.sl")
+
+(synth-fun r () RegLan)
+
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P1 0 (size (Pos deepregex_24_P1)))))
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P2 0 (size (Pos deepregex_24_P2)))))
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P3 0 (size (Pos deepregex_24_P3)))))
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P4 0 (size (Pos deepregex_24_P4)))))
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P5 0 (size (Pos deepregex_24_P5)))))
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P6 0 (size (Pos deepregex_24_P6)))))
+(constraint (RegLan.Sem r (ReAsp deepregex_24_P7 0 (size (Pos deepregex_24_P7)))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N1 0 (size (Pos deepregex_24_N1))))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N2 0 (size (Pos deepregex_24_N2))))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N3 0 (size (Pos deepregex_24_N3))))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N4 0 (size (Pos deepregex_24_N4))))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N5 0 (size (Pos deepregex_24_N5))))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N6 0 (size (Pos deepregex_24_N6))))))
+(constraint (not (RegLan.Sem r (ReAsp deepregex_24_N7 0 (size (Pos deepregex_24_N7))))))
+
+(check-synth)

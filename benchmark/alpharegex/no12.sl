@@ -1,5 +1,5 @@
 (set-info :author "Chentian Wu")
-(require "./theories/main.sl")
+(require "../theories/main.sl")
 
 ; GCPE_12: at least three 0 symbols and an even number of 1 symbols.
 

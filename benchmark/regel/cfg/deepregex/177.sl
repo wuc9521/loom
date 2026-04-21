@@ -1,0 +1,22 @@
+(set-logic ALL)
+(require "../theories/deepregex/177.sl")
+(require "../../common/models/deepregex/177.sl")
+
+(synth-fun g () CFG)
+
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P1 0 (size (Pos deepregex_177_P1)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P2 0 (size (Pos deepregex_177_P2)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P3 0 (size (Pos deepregex_177_P3)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P4 0 (size (Pos deepregex_177_P4)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P5 0 (size (Pos deepregex_177_P5)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P6 0 (size (Pos deepregex_177_P6)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp deepregex_177_P7 0 (size (Pos deepregex_177_P7)) reset.S)))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N1 0 (size (Pos deepregex_177_N1)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N2 0 (size (Pos deepregex_177_N2)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N3 0 (size (Pos deepregex_177_N3)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N4 0 (size (Pos deepregex_177_N4)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N5 0 (size (Pos deepregex_177_N5)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N6 0 (size (Pos deepregex_177_N6)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp deepregex_177_N7 0 (size (Pos deepregex_177_N7)) reset.S))))
+
+(check-synth)
