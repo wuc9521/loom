@@ -429,12 +429,16 @@ impl<'a> SemanticContext<'a> {
                 args.len()
             ));
         }
-        let arg_names = args
-            .iter()
-            .map(|arg| self.eval_value(arg, env).map(|value| value.display()))
-            .collect::<Result<Vec<_>, _>>()?;
         let model = self.current_model(env)?;
         let model_ref = self.model(&model)?;
+        let arg_names = args
+            .iter()
+            .zip(sig.arg_sorts.iter())
+            .map(|(arg, sort)| {
+                self.eval_value_for_sort(arg, &sort.to_string(), env)
+                    .map(|value| value.display())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let value = eval_symbols(func, &arg_names, &model_ref.func_interps).ok_or_else(|| {
             format!(
                 "model {model} has no value for {func}({})",
@@ -451,6 +455,18 @@ impl<'a> SemanticContext<'a> {
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
         let value = self.eval_value(expr, env)?;
+        if let AspectValue::Int(idx) = &value {
+            let model = self.current_model(env)?;
+            let model_ref = self.model(&model)?;
+            if let Some(domain) = get_domain_for_sort(model_ref, sort) {
+                if let Some(name) = domain.get(*idx) {
+                    return Ok(AspectValue::Univ {
+                        sort: sort.to_string(),
+                        name: name.clone(),
+                    });
+                }
+            }
+        }
         if matches!(&value, AspectValue::Symbol(_)) {
             let model = self.current_model(env)?;
             let model_ref = self.model(&model)?;

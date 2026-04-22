@@ -61,8 +61,23 @@ pub fn sort_widths(program: &HornProg) -> HashMap<String, usize> {
 }
 
 pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
+    let mut live_preds = HashSet::new();
+    for rule in &program.rules {
+        live_preds.insert(rule.head.pred.clone());
+        for atom in &rule.body_atoms {
+            live_preds.insert(atom.pred.clone());
+        }
+    }
+    for query in &program.queries {
+        for atom in &query.body_atoms {
+            live_preds.insert(atom.pred.clone());
+        }
+    }
     let mut states_by_sort: HashMap<String, BTreeSet<String>> = HashMap::new();
-    for info in program.predicates.values() {
+    for (pred, info) in &program.predicates {
+        if !live_preds.contains(pred) {
+            continue;
+        }
         states_by_sort
             .entry(info.sort.clone())
             .or_default()
@@ -514,15 +529,12 @@ pub fn compile_one_way(
                         .map(|value| (state.clone(), *value))
                 })
                 .collect::<Vec<_>>();
-            log::debug!(
+            log::info!(
                 "sygus constant obligations for {}: {}/{}",
                 cons.name,
                 entries.len(),
                 layouts[&cons.result_sort].states.len()
             );
-            entries
-                .iter()
-                .for_each(|(state, value)| log::debug!("  {} = {}\n", state, value))
         }
 
         let mut builder = Cmd::define_fun(&cons.name);

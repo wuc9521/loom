@@ -4,6 +4,7 @@ use delis::{
     compile,
     lang::runtime::Session,
     parser::{load_module_file, parse_commands, DelisCmd, DelisProg},
+    process::{cleanup_children, register_pid, unregister_pid},
 };
 use std::{
     io::{self, Read, Write},
@@ -84,6 +85,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         match result {
             BackendResult::Closure(Ok(Some(output))) | BackendResult::Sygus(Ok(output)) => {
                 println!("{output}");
+                cleanup_children();
                 return Ok(());
             }
             BackendResult::Closure(Ok(None)) => {}
@@ -92,6 +94,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             }
         }
     }
+    cleanup_children();
     Err(first_error
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
@@ -125,6 +128,7 @@ fn spawn_solver(solver: &Solver, input: &str) -> Result<Child, io::Error> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    register_pid(child.id());
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(input.as_bytes())?;
     }
@@ -132,7 +136,10 @@ fn spawn_solver(solver: &Solver, input: &str) -> Result<Child, io::Error> {
 }
 
 fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
-    let output = child.wait_with_output()?;
+    let pid = child.id();
+    let output = child.wait_with_output();
+    unregister_pid(pid);
+    let output = output?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let message = stderr.trim();
@@ -278,6 +285,12 @@ fn main() -> Result<(), io::Error> {
             log::LevelFilter::Warn
         })
         .init();
+
+    ctrlc::set_handler(move || {
+        cleanup_children();
+        std::process::exit(130);
+    })
+    .expect("Error setting Ctrl-C handler");
 
     // Read input from stdin or file
     let input = if args.r#in {

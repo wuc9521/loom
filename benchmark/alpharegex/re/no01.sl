@@ -1,0 +1,21 @@
+(require "./theories/main.sl")
+(require "../common/models/no01.sl")
+
+(synth-fun r () RegLan)
+
+(constraint (RegLan.Sem r (ReAsp p0 0 (size (Pos p0)))))
+(constraint (RegLan.Sem r (ReAsp p01 0 (size (Pos p01)))))
+(constraint (RegLan.Sem r (ReAsp p00 0 (size (Pos p00)))))
+(constraint (RegLan.Sem r (ReAsp p011 0 (size (Pos p011)))))
+(constraint (RegLan.Sem r (ReAsp p000 0 (size (Pos p000)))))
+(constraint (RegLan.Sem r (ReAsp p010 0 (size (Pos p010)))))
+(constraint (RegLan.Sem r (ReAsp p001 0 (size (Pos p001)))))
+(constraint (not (RegLan.Sem r (ReAsp n1 0 (size (Pos n1))))))
+(constraint (not (RegLan.Sem r (ReAsp n11 0 (size (Pos n11))))))
+(constraint (not (RegLan.Sem r (ReAsp n10 0 (size (Pos n10))))))
+(constraint (not (RegLan.Sem r (ReAsp n111 0 (size (Pos n111))))))
+(constraint (not (RegLan.Sem r (ReAsp n100 0 (size (Pos n100))))))
+(constraint (not (RegLan.Sem r (ReAsp n110 0 (size (Pos n110))))))
+(constraint (not (RegLan.Sem r (ReAsp n101 0 (size (Pos n101))))))
+
+(check-synth)

@@ -5,18 +5,18 @@ use sygus_parser::{DTConsDecl, Identifier, Sort, SortDecl, SyGuSTerm};
 /// Minimal term representation for CHC: variables and constructor applications only.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Display)]
 pub enum HornTerm {
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Var(String),
     #[display(
-        fmt = "({} {})",
+        "({} {})",
         fun,
-        "args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")"
+        args.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" ")
     )]
     App { fun: String, args: Vec<HornTerm> },
 }
 
 #[derive(Debug, Clone, Display, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[display(fmt = "({} {})", pred, arg)]
+#[display("({} {})", pred, arg)]
 pub struct HornAtom {
     pub pred: String,
     pub arg: HornTerm,
@@ -24,8 +24,8 @@ pub struct HornAtom {
 
 #[derive(Debug, Clone, Display)]
 #[display(
-    fmt = "(rule (=> (and {}) {}))",
-    "body_atoms.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")",
+    "(rule (=> (and {}) {}))",
+    body_atoms.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" "),
     head
 )]
 pub struct HornRule {
@@ -35,8 +35,8 @@ pub struct HornRule {
 
 #[derive(Debug, Clone, Display)]
 #[display(
-    fmt = "(query (and {}))",
-    "body_atoms.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")"
+    "(query (and {}))",
+    body_atoms.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct HornQuery {
     pub body_atoms: Vec<HornAtom>,
@@ -44,26 +44,26 @@ pub struct HornQuery {
 
 #[derive(Debug, Clone, Display)]
 pub enum HornDecl {
-    #[display(fmt = "(set-logic {})", _0)]
+    #[display("(set-logic {})", _0)]
     SetLogic(String),
-    #[display(fmt = "(set-option {} {})", _0, _1)]
+    #[display("(set-option {} {})", _0, _1)]
     SetOption(String, SyGuSTerm), // Uses SyGuSTerm for literals etc.
     #[display(
-        fmt = "(declare-rel {} {})",
+        "(declare-rel {} {})",
         _0,
-        "_1.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(\" \")"
+        _1.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(" ")
     )]
     DeclareRel(String, Vec<Sort>),
-    #[display(fmt = "(declare-var {} {})", _0, _1)]
+    #[display("(declare-var {} {})", _0, _1)]
     DeclareVar(String, Sort),
-    #[display(fmt = "(declare-const {} {})", _0, _1)]
+    #[display("(declare-const {} {})", _0, _1)]
     DeclareConst(String, Sort),
-    #[display(fmt = "(declare-datatypes {} {})", 
-    "_0.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(\" \")",
-    "_1.iter().map(|d| d.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\" \")).collect::<Vec<_>>().join(\" \")")
+    #[display("(declare-datatypes {} {})", 
+    _0.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(" "),
+    _1.iter().map(|d| d.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join(" "))
     ]
     DeclareDatatypes(Vec<SortDecl>, Vec<Vec<DTConsDecl>>),
-    #[display(fmt = "get-proof")]
+    #[display("get-proof")]
     GetProof,
 }
 
@@ -105,6 +105,22 @@ impl HornProg {
                 sort: sort.into(),
             },
         );
+    }
+
+    pub fn live_predicates(&self) -> HashSet<String> {
+        let mut live = HashSet::new();
+        for rule in &self.rules {
+            live.insert(rule.head.pred.clone());
+            for atom in &rule.body_atoms {
+                live.insert(atom.pred.clone());
+            }
+        }
+        for query in &self.queries {
+            for atom in &query.body_atoms {
+                live.insert(atom.pred.clone());
+            }
+        }
+        live
     }
 }
 
@@ -178,4 +194,64 @@ impl HornRule {
         body.sort();
         (self.head.clone(), body)
     }
+
+    pub fn is_one_way_compatible(&self) -> bool {
+        match &self.head.arg {
+            HornTerm::Var(head_var) => self
+                .body_atoms
+                .iter()
+                .all(|atom| matches!(&atom.arg, HornTerm::Var(name) if name == head_var)),
+            HornTerm::App { args, .. } => {
+                let head_vars = args
+                    .iter()
+                    .map(|arg| match arg {
+                        HornTerm::Var(name) => Some(name.as_str()),
+                        HornTerm::App { .. } => None,
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let Some(head_vars) = head_vars else {
+                    return false;
+                };
+                self.body_atoms.iter().all(|atom| match &atom.arg {
+                    HornTerm::Var(name) => head_vars.iter().any(|head| *head == name),
+                    other => other == &self.head.arg,
+                })
+            }
+        }
+    }
+}
+
+pub fn predicate_count(rules: &[HornRule]) -> usize {
+    let mut preds = HashSet::new();
+    for rule in rules {
+        preds.insert(rule.head.pred.clone());
+        for atom in &rule.body_atoms {
+            preds.insert(atom.pred.clone());
+        }
+    }
+    preds.len()
+}
+
+pub fn remove_subsumed_rules(mut rules: Vec<HornRule>) -> Vec<HornRule> {
+    let mut keep = vec![true; rules.len()];
+    for i in 0..rules.len() {
+        if !keep[i] {
+            continue;
+        }
+        for j in 0..rules.len() {
+            if i == j || !keep[j] {
+                continue;
+            }
+            if rules[i].subsumes(&rules[j]) {
+                keep[j] = false;
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (rule, keep_rule) in rules.drain(..).zip(keep.into_iter()) {
+        if keep_rule {
+            out.push(rule);
+        }
+    }
+    out
 }

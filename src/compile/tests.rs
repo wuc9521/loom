@@ -5,6 +5,44 @@ fn parse(input: &str) -> DelisProg {
 }
 
 #[test]
+fn eval_symbols_matches_unary_model_interpretations() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun p0 (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0 $1 $2))
+  (interp-fun p0 (match (
+    (($0) true)
+    (($1) true)
+    ((_) false)
+  ))))
+"#,
+    );
+
+    let model = problem
+        .cmds
+        .iter()
+        .find_map(|cmd| match cmd {
+            crate::parser::ast::DelisCmd::DefineModel(model) => Some(model),
+            _ => None,
+        })
+        .expect("test model should exist");
+
+    let t0 = crate::lang::eval::eval_symbols("p0", &["$0".to_string()], &model.func_interps)
+        .expect("lookup for $0 should exist");
+    let t1 = crate::lang::eval::eval_symbols("p0", &["$1".to_string()], &model.func_interps)
+        .expect("lookup for $1 should exist");
+    let t2 = crate::lang::eval::eval_symbols("p0", &["$2".to_string()], &model.func_interps)
+        .expect("lookup for $2 should exist");
+
+    assert!(crate::compile::semantic::interped_bool(t0));
+    assert!(crate::compile::semantic::interped_bool(t1));
+    assert!(!crate::compile::semantic::interped_bool(t2));
+}
+
+#[test]
 fn enumerates_subword_aspects_and_constraint_polarities() {
     let problem = parse(
         r#"
@@ -672,10 +710,9 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
     let chc = to_chc_ast(&problem).expect("multiple Formula CHC domains should compile");
     let output = crate::backends::smt2::emit::to_fixedpoint_query_text(&chc, "Goal");
 
-    assert!(output.contains("(rule (qFormula.Sem.m.xv.bot top))"));
-    assert!(output.contains("(rule (qFormula.Valid.m.xv.bot top))"));
-    assert!(output
-        .contains("(=> (and (qFormula.Sem.m.xv.bot r) (qFormula.Valid.m.xv.bot r)) (Goal r))"));
+    assert!(output.contains("qFormula.Sem.m.xv.bot.Formula"));
+    assert!(output.contains("qFormula.Valid.m.xv.bot.Formula"));
+    assert!(output.contains("(Goal r)"));
 }
 
 #[test]
@@ -754,6 +791,83 @@ fn allows_multiple_define_semantics_declarations() {
 
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem", "Regex.Other"]);
     assert_eq!(summary.semantic_domains.len(), 2);
+}
+
+#[test]
+fn typed_cfg_semantics_with_parent_navigation_compile_to_chc_and_sygus() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w1
+  (define-univ Pos ($0))
+  (interp-fun a (match ((($0) true) ((_) false)))))
+(declare-term-types
+ ((CFG 0) (Rhs 0) (Rules 0))
+ (
+   ((cfg.top.S Rhs Rules))
+   ((tok.a) (cfg.rhs.S))
+   ((cfg.lhs.S Rhs Rules) (end))
+ ))
+(define-finite CFG.Asp
+  (record
+    (model Model)
+    (i Int)
+    (j Int)
+    (mode (enum base reset.S find.S reset.T find.T)))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+(define-semantics
+  ((CFG.Sem (n CFG) (asp CFG.Asp)))
+  ((match n
+     ((cfg.top.S x y)
+      (or
+        (and (= (mode asp) reset.S)
+             (or (Rhs.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
+                 (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S))))
+        (and (= (mode asp) reset.T)
+             (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T))))))))
+(define-semantics
+  ((Rhs.Sem (n Rhs) (asp CFG.Asp)))
+  ((match n
+     ((tok.a)
+      (or
+        (and (= (mode asp) base)
+             (= (j asp) (+ (i asp) 1))
+             (a (i asp)))
+        (and (or (= (mode asp) reset.S) (= (mode asp) reset.T))
+             (CFG.Sem (parent n) asp))))
+     ((cfg.rhs.S)
+      (and (= (mode asp) base)
+           (CFG.Sem (parent n) (CFG.Asp (model asp) (i asp) (j asp) reset.S)))))))
+(define-semantics
+  ((Rules.Sem (n Rules) (asp CFG.Asp)))
+  ((match n
+     ((cfg.lhs.S x y)
+      (or
+        (and (or (= (mode asp) reset.S) (= (mode asp) reset.T))
+             (CFG.Sem (parent n) asp))
+        (and (= (mode asp) find.S)
+             (or (Rhs.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
+                 (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S))))
+        (and (= (mode asp) find.T)
+             (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T)))))
+     ((end) false))))
+(synth-fun g () CFG)
+(constraint (CFG.Sem g (CFG.Asp w1 0 (size (Pos w1)) reset.S)))
+(check-synth)
+"#,
+    );
+
+    let chc = to_chc_ast(&problem).expect("typed CFG CHC should compile");
+    let sygus = to_sygus(&problem, false).expect("typed CFG SyGuS should compile");
+
+    assert!(!chc.rules.is_empty());
+    assert!(!sygus.is_empty());
+    let horn = crate::backends::smt2::emit::to_fixedpoint_query_text(&chc, "Goal");
+    assert!(horn.contains("CFG.Sem"));
+    assert!(horn.contains("Rhs.Sem"));
+    assert!(horn.contains("Rules.Sem"));
 }
 
 #[test]

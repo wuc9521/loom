@@ -6,9 +6,9 @@ use sygus_parser::Sort;
 #[derive(Clone, Debug, Display, PartialEq)]
 // FuncDecl = { "(" ~ "declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" }
 #[display(
-    fmt = "(declare-fun {} ({}) {})",
+    "(declare-fun {} ({}) {})",
     name,
-    "arg_sorts.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(\" \")",
+    arg_sorts.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(" "),
     ret_sort
 )]
 pub struct FuncSig {

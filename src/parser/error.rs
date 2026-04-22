@@ -2,13 +2,13 @@ use derive_more::Display;
 
 #[derive(Debug, Display)]
 pub enum DelisParseError {
-    #[display(fmt = "[ERROR] Pest parser error: {}", _0)]
+    #[display("[ERROR] Pest parser error: {}", _0)]
     PestError(Box<pest::error::Error<crate::parser::Rule>>),
 
-    #[display(fmt = "[ERROR] Invalid syntax: {}", _0)]
+    #[display("[ERROR] Invalid syntax: {}", _0)]
     InvalidSyntax(String),
 
-    #[display(fmt = "[ERROR] Unsupported feature: {}", _0)]
+    #[display("[ERROR] Unsupported feature: {}", _0)]
     UnsupportedFeature(String),
 }
 

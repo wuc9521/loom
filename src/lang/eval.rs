@@ -31,11 +31,6 @@ fn interp_cache() -> &'static Mutex<HashMap<SliceKey, FuncInterpCache>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn domain_cache() -> &'static Mutex<HashMap<usize, HashMap<String, Vec<String>>>> {
-    static CACHE: OnceLock<Mutex<HashMap<usize, HashMap<String, Vec<String>>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
 fn slice_key(func_interps: &[FuncInterp]) -> SliceKey {
     SliceKey {
         ptr: func_interps.as_ptr() as usize,
@@ -95,13 +90,7 @@ fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
 }
 
 fn cached_domain_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
-    let key = model as *const Model as usize;
-    let mut cache = domain_cache().lock().expect("domain cache poisoned");
-    cache
-        .entry(key)
-        .or_insert_with(|| build_model_domains(model))
-        .get(sort)
-        .cloned()
+    build_model_domains(model).get(sort).cloned()
 }
 
 pub fn pattern_match_symbols(tuple: &[String], pat: &Pattern) -> bool {

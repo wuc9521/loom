@@ -14,9 +14,20 @@ use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd};
 
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "({}{})",
+    "({}{})",
     symbol,
-    "if sorts.is_empty() { String::new() } else { format!(\" {}\", sorts.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(\" \")) }"
+    if sorts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " {}",
+            sorts
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+    }
 )]
 pub struct TermTypeConsDecl {
     pub symbol: Identifier,
@@ -49,8 +60,8 @@ impl TermTypeConsDecl {
 
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "({})",
-    "constructors.iter().map(|cons| cons.to_string()).collect::<Vec<_>>().join(\" \")"
+    "({})",
+    constructors.iter().map(|cons| cons.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct TermTypeDecl {
     pub constructors: Vec<TermTypeConsDecl>,
@@ -68,9 +79,9 @@ impl TermTypeDecl {
 
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(declare-term-types ({}) ({}))",
-    "sort_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(\" \")",
-    "term_type_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(\" \")"
+    "(declare-term-types ({}) ({}))",
+    sort_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(" "),
+    term_type_decls.iter().map(|decl| decl.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct TermTypes {
     pub sort_decls: Vec<SortDecl>,
@@ -143,7 +154,7 @@ fn format_sexpr_body(body: &[String]) -> String {
 }
 
 #[derive(Clone, Debug, Display)]
-#[display(fmt = "(define-finite {}{})", name, "format_sexpr_body(body)")]
+#[display("(define-finite {}{})", name, format_sexpr_body(body))]
 pub struct FiniteAspect {
     pub name: String,
     pub body: Vec<String>,
@@ -193,10 +204,13 @@ impl FiniteAspect {
 
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(define-semantics {}{}{})",
-    "format_sexpr_body(std::slice::from_ref(&header))",
-    "return_sort.as_ref().map(|sort| format!(\" :returns {sort}\")).unwrap_or_default()",
-    "format_sexpr_body(std::slice::from_ref(&body))"
+    "(define-semantics {}{}{})",
+    format_sexpr_body(std::slice::from_ref(&header)),
+    return_sort
+        .as_ref()
+        .map(|sort| format!(" :returns {sort}"))
+        .unwrap_or_default(),
+    format_sexpr_body(std::slice::from_ref(&body))
 )]
 pub struct Semantics {
     pub header: String,
@@ -248,30 +262,30 @@ impl Semantics {
 
 #[derive(Clone, Debug, Display)]
 pub enum DelisCmd {
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     As(SyGuSCmd), // as a sygus command.
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     TermTypes(TermTypes),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     FiniteAspect(FiniteAspect),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Semantics(Semantics),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     DeclareFunc(FuncSig),
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     DefineModel(Model),
 }
 
 #[derive(Debug, Display, Clone)]
 // display every cmd
 #[display(
-    fmt = "{}",
-    "cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(\"\n\")"
+    "{}",
+    cmds.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("\n")
 )]
 pub struct DelisProg {
     pub cmds: Vec<DelisCmd>,

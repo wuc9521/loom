@@ -6,7 +6,7 @@ use crate::{
     compile::{
         native::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
-        syntax::{state_name, term_sort, TermConstructor, TermSignature},
+        syntax::{state_name, TermConstructor, TermSignature},
         types::{
             AspectKey, AspectValue, FieldDecl, FieldDomain, SemanticDomain, SemanticKind,
             SemanticProgram,
@@ -18,11 +18,18 @@ use crate::{
 use itertools::Itertools;
 use lexpr::Value;
 use std::collections::HashMap;
-use sygus_parser::{Sort, SortDecl};
+use sygus_parser::Sort;
 
 #[derive(Clone)]
 struct ChildBinding {
     term: HornTerm,
+    sort: String,
+}
+
+#[derive(Clone)]
+struct TypedTerm {
+    term: HornTerm,
+    sort: String,
 }
 
 #[derive(Default, Clone)]
@@ -61,8 +68,8 @@ struct ChcCompiler<'a> {
     program: SemanticProgram,
     sig: TermSignature,
     ctx: SemanticContext<'a>,
-    predicates: HashMap<(String, AspectKey, Option<AspectValue>), Pred>,
-    monomorphic_terms: bool,
+    relation_sorts: HashMap<String, Vec<String>>,
+    predicates: HashMap<(String, String, AspectKey, Option<AspectValue>), Pred>,
 }
 
 impl<'a> ChcCompiler<'a> {
@@ -72,81 +79,88 @@ impl<'a> ChcCompiler<'a> {
         sig: TermSignature,
     ) -> Result<Self, String> {
         let ctx = SemanticContext::new(problem, &program)?;
+        let constructor_sorts = sig
+            .constructors
+            .iter()
+            .map(|cons| (cons.name.clone(), cons.result_sort.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut relation_sorts = HashMap::new();
+        for spec in &program.semantics {
+            let mut sorts = vec![spec.term_sort.clone()];
+            let cases = ctx
+                .cases()
+                .get(&spec.relation)
+                .ok_or_else(|| format!("missing parsed cases for relation {}", spec.relation))?;
+            for cons in cases.keys() {
+                let sort = constructor_sorts
+                    .get(cons)
+                    .ok_or_else(|| format!("unknown constructor {} in {}", cons, spec.relation))?;
+                if !sorts.contains(sort) {
+                    sorts.push(sort.clone());
+                }
+            }
+            relation_sorts.insert(spec.relation.clone(), sorts);
+        }
         let mut predicates = HashMap::new();
         for domain in &program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, &bit.aspect, bit.value.as_ref());
-                predicates.insert(
-                    (
-                        domain.relation.clone(),
-                        bit.aspect.clone(),
-                        bit.value.clone(),
-                    ),
-                    Pred::new(format!("q{}", state), format!("nq{}", state)),
-                );
+                for sort in relation_sorts
+                    .get(&domain.relation)
+                    .into_iter()
+                    .flatten()
+                {
+                    predicates.insert(
+                        (
+                            domain.relation.clone(),
+                            sort.clone(),
+                            bit.aspect.clone(),
+                            bit.value.clone(),
+                        ),
+                        Pred::new(
+                            format!("q{}.{}", state, sort),
+                            format!("nq{}.{}", state, sort),
+                        ),
+                    );
+                }
             }
         }
         Ok(Self {
             program,
             sig,
             ctx,
+            relation_sorts,
             predicates,
-            monomorphic_terms: false,
         })
     }
 
-    fn compile(mut self) -> Result<HornProg, String> {
-        self.monomorphic_terms = self.requires_monomorphic_terms()?;
+    fn compile(self) -> Result<HornProg, String> {
         let mut out = HornProg::default();
         out.decls.push(HornDecl::SetLogic("HORN".to_string()));
-        if self.monomorphic_terms {
-            out.decls.push(HornDecl::DeclareDatatypes(
-                vec![SortDecl {
-                    symbol: "Term".to_string(),
-                    arity: 0,
-                }],
-                vec![self.sig.datatype_constructors()],
-            ));
-        } else {
-            let (sorts, decls) = self.sig.datatype_decls();
-            out.decls.push(HornDecl::DeclareDatatypes(sorts, decls));
-        }
+        let (sorts, decls) = self.sig.datatype_decls();
+        out.decls.push(HornDecl::DeclareDatatypes(sorts, decls));
 
         for domain in &self.program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, &bit.aspect, bit.value.as_ref());
-                let pred = self.pred_for(&domain.relation, &bit.aspect, bit.value.as_ref())?;
-                for (name, polarity) in [
-                    (pred_name(&pred, false), PredicatePolarity::Positive),
-                    (pred_name(&pred, true), PredicatePolarity::Negative),
-                ] {
-                    let declared_sort = if self.monomorphic_terms {
-                        term_sort()
-                    } else {
-                        Sort::from_name(&domain.term_sort)
-                    };
-                    out.decls
-                        .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
-                    out.register_predicate(
-                        name,
-                        state.clone(),
-                        polarity,
-                        if self.monomorphic_terms {
-                            "Term".to_string()
-                        } else {
-                            domain.term_sort.clone()
-                        },
-                    );
+                for sort in self.relation_term_sorts(&domain.relation)? {
+                    let pred =
+                        self.pred_for(&domain.relation, sort, &bit.aspect, bit.value.as_ref())?;
+                    for (name, polarity) in [
+                        (pred_name(&pred, false), PredicatePolarity::Positive),
+                        (pred_name(&pred, true), PredicatePolarity::Negative),
+                    ] {
+                        let declared_sort = Sort::from_name(sort);
+                        out.decls
+                            .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
+                        out.register_predicate(name, state.clone(), polarity, sort.clone());
+                    }
                 }
             }
         }
         out.decls.push(HornDecl::DeclareRel(
             "Goal".to_string(),
-            vec![if self.monomorphic_terms {
-                term_sort()
-            } else {
-                Sort::from_name(self.sig.start_sort())
-            }],
+            vec![Sort::from_name(self.sig.start_sort())],
         ));
 
         for cons in &self.sig.constructors {
@@ -189,11 +203,12 @@ impl<'a> ChcCompiler<'a> {
             env.current_sort = Some(cons.result_sort.clone());
             env.current_var = Some(case.self_var.clone());
             env.current_term = Some(head_term.clone());
-            for var in &case.vars {
+            for (idx, var) in case.vars.iter().enumerate() {
                 env.children.insert(
                     var.clone(),
                     ChildBinding {
                         term: HornTerm::var(var),
+                        sort: cons.arg_sorts[idx].clone(),
                     },
                 );
             }
@@ -219,7 +234,12 @@ impl<'a> ChcCompiler<'a> {
                     _ => unreachable!(),
                 };
                 let head = PredAtom::new(
-                    self.pred_for(&domain.relation, &bit.aspect, bit.value.as_ref())?,
+                    self.pred_for(
+                        &domain.relation,
+                        &cons.result_sort,
+                        &bit.aspect,
+                        bit.value.as_ref(),
+                    )?,
                     head_term.clone(),
                 );
                 emit_dnf_rules(&mut out.rules, head.clone(), dnf.clone());
@@ -245,7 +265,7 @@ impl<'a> ChcCompiler<'a> {
                     constraint.relation
                 ));
             }
-            if !self.monomorphic_terms && domain.term_sort != self.sig.start_sort() {
+            if domain.term_sort != self.sig.start_sort() {
                 return Err(format!(
                     "constraint relation {} has term sort {}, expected start sort {}",
                     constraint.relation,
@@ -258,7 +278,7 @@ impl<'a> ChcCompiler<'a> {
                 model: constraint.model.clone(),
                 fields: constraint.fields.clone(),
             };
-            let pred = self.pred_for(&constraint.relation, &aspect, None)?;
+            let pred = self.pred_for(&constraint.relation, self.sig.start_sort(), &aspect, None)?;
             body_atoms.push(HornAtom {
                 pred: pred_name(&pred, !constraint.expected),
                 arg: HornTerm::var("r"),
@@ -408,30 +428,6 @@ impl<'a> ChcCompiler<'a> {
         Ok(out)
     }
 
-    fn requires_monomorphic_terms(&self) -> Result<bool, String> {
-        let cons_sort = self
-            .sig
-            .constructors
-            .iter()
-            .map(|cons| (cons.name.clone(), cons.result_sort.clone()))
-            .collect::<HashMap<_, _>>();
-        for domain in &self.program.domains {
-            let spec = self.ctx.spec_for_relation(&domain.relation)?;
-            let Some(cases) = self.ctx.cases().get(&spec.relation) else {
-                continue;
-            };
-            for cons_name in cases.keys() {
-                let Some(sort) = cons_sort.get(cons_name) else {
-                    continue;
-                };
-                if sort != &domain.term_sort {
-                    return Ok(true);
-                }
-            }
-        }
-        Ok(false)
-    }
-
     fn quantifier_values(
         &self,
         domain_expr: &Value,
@@ -528,15 +524,19 @@ impl<'a> ChcCompiler<'a> {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let terms = self.child_terms(args[0], env)?;
+        let allowed_sorts = self.relation_term_sorts(relation)?;
         let mut out = dnf_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
-            let pred = self.pred_for(relation, &aspect, None)?;
             for term in &terms {
+                if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
+                    continue;
+                }
+                let pred = self.pred_for(relation, &term.sort, &aspect, None)?;
                 out = dnf_or(
                     out,
                     dnf_and(
                         guard.clone(),
-                        vec![vec![PredAtom::new(pred.clone(), term.clone())]],
+                        vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
                     ),
                 );
             }
@@ -554,15 +554,19 @@ impl<'a> ChcCompiler<'a> {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let terms = self.child_terms(args[0], env)?;
+        let allowed_sorts = self.relation_term_sorts(relation)?;
         let mut out = dnf_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
-            let pred = self.pred_for(relation, &aspect, None)?.dual();
             for term in &terms {
+                if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
+                    continue;
+                }
+                let pred = self.pred_for(relation, &term.sort, &aspect, None)?.dual();
                 out = dnf_or(
                     out,
                     dnf_and(
                         guard.clone(),
-                        vec![vec![PredAtom::new(pred.clone(), term.clone())]],
+                        vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
                     ),
                 );
             }
@@ -809,15 +813,19 @@ impl<'a> ChcCompiler<'a> {
         }
         if self.ctx.has_relation(op) {
             let terms = self.child_terms(items[1], env)?;
+            let allowed_sorts = self.relation_term_sorts(op)?;
             let mut out = dnf_false();
             for (guard, aspect) in self.aspect_variants(items[2], op, env)? {
-                let pred = self.pred_for(op, &aspect, Some(target))?.dual();
                 for term in &terms {
+                    if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
+                        continue;
+                    }
+                    let pred = self.pred_for(op, &term.sort, &aspect, Some(target))?.dual();
                     out = dnf_or(
                         out,
                         dnf_and(
                             guard.clone(),
-                            vec![vec![PredAtom::new(pred.clone(), term.clone())]],
+                            vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
                         ),
                     );
                 }
@@ -841,15 +849,19 @@ impl<'a> ChcCompiler<'a> {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let terms = self.child_terms(args[0], env)?;
+        let allowed_sorts = self.relation_term_sorts(relation)?;
         let mut out = dnf_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
-            let pred = self.pred_for(relation, &aspect, Some(target))?;
             for term in &terms {
+                if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
+                    continue;
+                }
+                let pred = self.pred_for(relation, &term.sort, &aspect, Some(target))?;
                 out = dnf_or(
                     out,
                     dnf_and(
                         guard.clone(),
-                        vec![vec![PredAtom::new(pred.clone(), term.clone())]],
+                        vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
                     ),
                 );
             }
@@ -937,20 +949,27 @@ impl<'a> ChcCompiler<'a> {
         Ok(out)
     }
 
-    fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<HornTerm>, String> {
+    fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<TypedTerm>, String> {
         if let Some(child) = expr.as_symbol() {
             if env.current_var.as_deref() == Some(child) {
                 let term = env.current_term.clone().ok_or_else(|| {
                     "missing current term for recursive semantic call".to_string()
                 })?;
-                return Ok(vec![term]);
+                let sort = env
+                    .current_sort
+                    .clone()
+                    .ok_or_else(|| "missing current sort for recursive semantic call".to_string())?;
+                return Ok(vec![TypedTerm { term, sort }]);
             }
-            let term = env
+            let child = env
                 .children
                 .get(child)
-                .map(|binding| binding.term.clone())
+                .cloned()
                 .ok_or_else(|| format!("unknown semantic child variable {child}"))?;
-            return Ok(vec![term]);
+            return Ok(vec![TypedTerm {
+                term: child.term,
+                sort: child.sort,
+            }]);
         }
         let items = expr
             .to_ref_vec()
@@ -970,7 +989,16 @@ impl<'a> ChcCompiler<'a> {
                     .current_term
                     .clone()
                     .ok_or_else(|| "missing current term for parent navigation".to_string())?;
-                Ok(self.sig.parent_contexts(sort, term))
+                self.sig
+                    .parent_contexts(sort, term)
+                    .into_iter()
+                    .map(|term| {
+                        Ok(TypedTerm {
+                            sort: self.parent_result_sort(&term)?,
+                            term,
+                        })
+                    })
+                    .collect()
             }
             _ => Err(format!("unsupported semantic call term navigation: {expr}")),
         }
@@ -1162,16 +1190,23 @@ impl<'a> ChcCompiler<'a> {
     fn pred_for(
         &self,
         relation: &str,
+        sort: &str,
         aspect: &AspectKey,
         value: Option<&AspectValue>,
     ) -> Result<Pred, String> {
         self.predicates
-            .get(&(relation.to_string(), aspect.clone(), value.cloned()))
+            .get(&(
+                relation.to_string(),
+                sort.to_string(),
+                aspect.clone(),
+                value.cloned(),
+            ))
             .cloned()
             .ok_or_else(|| {
                 format!(
-                    "no predicate for {}({}; {}){}",
+                    "no predicate for {}:{}({}; {}){}",
                     relation,
+                    sort,
                     aspect.model,
                     aspect.display_fields(),
                     value
@@ -1179,6 +1214,25 @@ impl<'a> ChcCompiler<'a> {
                         .unwrap_or_default()
                 )
             })
+    }
+
+    fn relation_term_sorts(&self, relation: &str) -> Result<&[String], String> {
+        self.relation_sorts
+            .get(relation)
+            .map(Vec::as_slice)
+            .ok_or_else(|| format!("missing term sorts for relation {relation}"))
+    }
+
+    fn parent_result_sort(&self, term: &HornTerm) -> Result<String, String> {
+        let HornTerm::App { fun, .. } = term else {
+            return Err(format!("parent context must be a constructor application: {term}"));
+        };
+        self.sig
+            .constructors
+            .iter()
+            .find(|cons| cons.name == *fun)
+            .map(|cons| cons.result_sort.clone())
+            .ok_or_else(|| format!("unknown parent constructor {fun}"))
     }
 }
 

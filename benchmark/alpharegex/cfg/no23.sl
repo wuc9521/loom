@@ -1,0 +1,23 @@
+(set-logic ALL)
+(require "./theories/main.sl")
+(require "../common/models/no23.sl")
+
+(synth-fun g () CFG)
+
+(constraint (CFG.Sem g (CFG.Asp p0 0 (size (Pos p0)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p000 0 (size (Pos p000)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p1010 0 (size (Pos p1010)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p01010 0 (size (Pos p01010)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p1000100 0 (size (Pos p1000100)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p10010010001000 0 (size (Pos p10010010001000)) reset.S)))
+(constraint (not (CFG.Sem g (CFG.Asp n1 0 (size (Pos n1)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n1111 0 (size (Pos n1111)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n101 0 (size (Pos n101)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n0101 0 (size (Pos n0101)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n001 0 (size (Pos n001)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n01110 0 (size (Pos n01110)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n10 0 (size (Pos n10)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n110 0 (size (Pos n110)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n100 0 (size (Pos n100)) reset.S))))
+
+(check-synth)

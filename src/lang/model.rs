@@ -12,10 +12,10 @@ use sygus_parser::{Identifier, Literal, Sort, SyGuSTerm};
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
 #[display(
-    fmt = "(define-model {} {} {})",
+    "(define-model {} {} {})",
     name,
-    "univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(\" \")",
-    "func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(\" \")"
+    univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(" "),
+    func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct Model {
     pub name: String,
@@ -90,9 +90,9 @@ impl Model {
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
-    fmt = "(define-univ {} ({}))",
+    "(define-univ {} ({}))",
     sort,
-    "elems.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(\" \")"
+    elems.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct DefineUniv {
     pub sort: Sort,
@@ -136,7 +136,7 @@ impl DefineUniv {
 }
 
 #[derive(Clone, Debug, Display, PartialEq, Eq, Hash)]
-#[display(fmt = "{}", name)]
+#[display("{}", name)]
 pub struct UnivElem {
     pub name: String,
 }
@@ -159,12 +159,12 @@ impl UnivElem {
 #[derive(Clone, Debug, Display)]
 pub enum FuncInterp {
     #[display(
-        fmt = "(interp-fun {} (match ({})))",
+        "(interp-fun {} (match ({})))",
         _0,
-        "_1.iter().map(|c| format!(\"{}\", c)).collect::<Vec<_>>().join(\" \")"
+        _1.iter().map(|c| format!("{}", c)).collect::<Vec<_>>().join(" ")
     )]
     MatchInterp(String, Vec<MatchCase>),
-    #[display(fmt = "(interp-fun {} ({}))", _0, _1)]
+    #[display("(interp-fun {} ({}))", _0, _1)]
     SimpleInterp(String, InterpedValue),
 }
 // FuncInterp = { "(" ~ "interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
@@ -234,8 +234,8 @@ impl FuncInterp {
 // MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
 #[derive(Clone, Debug, Display, PartialEq)]
 #[display(
-    fmt = "({} {})",
-    "pattern.as_ref().map_or_else(|| \"_\".to_string(), |p| format!(\"{}\", p))",
+    "({} {})",
+    pattern.as_ref().map_or_else(|| "_".to_string(), |p| format!("{}", p)),
     value
 )]
 pub struct MatchCase {
@@ -245,16 +245,16 @@ pub struct MatchCase {
 
 #[derive(Clone, Debug, Display, PartialEq)]
 pub enum InterpedValue {
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     UnivElem(UnivElem), // elements from new-defined universes.
 
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Literal(Literal), // elements from existing sorts.
 
     #[display(
-        fmt = "({} {})",
+        "({} {})",
         _0,
-        "_1.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"
+        _1.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join(" ")
     )]
     FuncApp(String, Vec<SyGuSTerm>),
 }
@@ -324,18 +324,18 @@ impl MatchCase {
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 pub enum PatternElem {
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     UnivElem(UnivElem),
-    #[display(fmt = "{}", _0)]
+    #[display("{}", _0)]
     Var(String),
-    #[display(fmt = "_")]
+    #[display("_")]
     Wildcard,
 }
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
-    fmt = "({})",
-    "elements.iter().map(|e| format!(\"{}\", e)).collect::<Vec<_>>().join(\" \")"
+    "({})",
+    elements.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join(" ")
 )]
 pub struct Pattern {
     pub elements: Vec<PatternElem>,

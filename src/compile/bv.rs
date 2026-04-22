@@ -462,7 +462,7 @@ impl<'a> NativeCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        if let Some(arg_names) = self.ground_arg_names(args, env) {
+        if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
             let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
             return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
         }
@@ -687,7 +687,7 @@ impl<'a> NativeCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        if let Some(arg_names) = self.ground_arg_names(args, env) {
+        if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
             let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
             return Ok(BoolExpr::Const(
                 value
@@ -754,11 +754,17 @@ impl<'a> NativeCompiler<'a> {
             })
     }
 
-    fn ground_arg_names(&self, args: &[&Value], env: &Env) -> Option<Vec<String>> {
+    fn ground_arg_names(
+        &self,
+        sig: &crate::lang::signature::FuncSig,
+        args: &[&Value],
+        env: &Env,
+    ) -> Option<Vec<String>> {
         args.iter()
+            .zip(sig.arg_sorts.iter())
             .map(|arg| {
                 self.ctx
-                    .eval_value(arg, env)
+                    .eval_value_for_sort(arg.0, &arg.1.to_string(), env)
                     .ok()
                     .map(|value| value.display())
             })

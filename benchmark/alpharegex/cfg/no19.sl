@@ -1,0 +1,20 @@
+(set-logic ALL)
+(require "./theories/main.sl")
+(require "../common/models/no19.sl")
+
+(synth-fun g () CFG)
+
+(constraint (CFG.Sem g (CFG.Asp p_ 0 (size (Pos p_)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p__ 0 (size (Pos p__)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p0__ 0 (size (Pos p0__)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p_1_ 0 (size (Pos p_1_)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p__1 0 (size (Pos p__1)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p_101 0 (size (Pos p_101)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p0_01_ 0 (size (Pos p0_01_)) reset.S)))
+(constraint (CFG.Sem g (CFG.Asp p__1_1_1 0 (size (Pos p__1_1_1)) reset.S)))
+(constraint (not (CFG.Sem g (CFG.Asp n100 0 (size (Pos n100)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n?100 0 (size (Pos n?100)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n100? 0 (size (Pos n100?)) reset.S))))
+(constraint (not (CFG.Sem g (CFG.Asp n?100? 0 (size (Pos n?100?)) reset.S))))
+
+(check-synth)

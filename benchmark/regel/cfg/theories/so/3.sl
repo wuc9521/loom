@@ -1,4 +1,4 @@
-(provide CFG Rhs Rules CFG.Asp CFG.Sem cfg.top.S cfg.++ cfg.rhs.S cfg.rhs.T cfg.lhs.S cfg.lhs.T end tok.any tok.digit tok.lower tok.upper tok.alpha tok.alnum tok.word tok.space tok.hex tok.x20 tok.x26 tok.x28 tok.x29 tok.x2D tok.x2E tok.x7C)
+(provide CFG Rhs Rules CFG.Asp CFG.Sem Rhs.Sem Rules.Sem cfg.top.S cfg.++ cfg.rhs.S cfg.rhs.T cfg.lhs.S cfg.lhs.T end tok.any tok.digit tok.lower tok.upper tok.alpha tok.alnum tok.word tok.space tok.hex tok.x20 tok.x26 tok.x28 tok.x29 tok.x2D tok.x2E tok.x7C)
 (require "../../../common/signatures/so/3.sl")
 
 (declare-term-types
@@ -50,10 +50,14 @@
      ((cfg.top.S x y)
       (or
         (and (= (mode asp) reset.S)
-             (or (CFG.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
-                 (CFG.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S))))
+             (or (Rhs.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
+                 (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S))))
         (and (= (mode asp) reset.T)
-             (CFG.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T)))))
+             (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T))))))))
+
+(define-semantics
+  ((Rhs.Sem (n Rhs) (asp CFG.Asp)))
+  ((match n
 
      ((tok.any)
       (or
@@ -171,8 +175,8 @@
       (or
         (and (= (mode asp) base)
              (exists ((k (int-range (i asp) (j asp))))
-               (and (CFG.Sem x (CFG.Asp (model asp) (i asp) k base))
-                    (CFG.Sem y (CFG.Asp (model asp) k (j asp) base)))))
+               (and (Rhs.Sem x (CFG.Asp (model asp) (i asp) k base))
+                    (Rhs.Sem y (CFG.Asp (model asp) k (j asp) base)))))
         (and (or (= (mode asp) reset.S) (= (mode asp) reset.T))
              (CFG.Sem (parent n) asp))))
 
@@ -182,27 +186,31 @@
 
      ((cfg.rhs.T)
       (and (= (mode asp) base)
-           (CFG.Sem (parent n) (CFG.Asp (model asp) (i asp) (j asp) reset.T))))
+           (CFG.Sem (parent n) (CFG.Asp (model asp) (i asp) (j asp) reset.T)))))))
+
+(define-semantics
+  ((Rules.Sem (n Rules) (asp CFG.Asp)))
+  ((match n
 
      ((cfg.lhs.S x y)
       (or
         (and (or (= (mode asp) reset.S) (= (mode asp) reset.T))
              (CFG.Sem (parent n) asp))
         (and (= (mode asp) find.S)
-             (or (CFG.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
-                 (CFG.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S))))
+             (or (Rhs.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
+                 (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S))))
         (and (= (mode asp) find.T)
-             (CFG.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T)))))
+             (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T)))))
 
      ((cfg.lhs.T x y)
       (or
         (and (or (= (mode asp) reset.S) (= (mode asp) reset.T))
              (CFG.Sem (parent n) asp))
         (and (= (mode asp) find.T)
-             (or (CFG.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
-                 (CFG.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T))))
+             (or (Rhs.Sem x (CFG.Asp (model asp) (i asp) (j asp) base))
+                 (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T))))
         (and (= (mode asp) find.S)
-             (CFG.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S)))))
+             (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.S)))))
 
      ((end)
       false))))

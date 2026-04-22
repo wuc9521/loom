@@ -1,5 +1,5 @@
 use crate::backends::smt2::ast::HornProg;
-use crate::backends::smt2::saturate::saturate;
+use crate::backends::smt2::twa::saturate_program;
 use crate::parser::{DelisCmd, DelisProg};
 use lexpr::Value;
 use sygus_parser::{Sort, SyGuSCmd};
@@ -45,7 +45,10 @@ pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
         }
         return Ok(width);
     }
-    let program = to_chc_ast(problem)?;
+    let mut program = to_chc_ast(problem)?;
+    if semantic_program.needs_saturation {
+        program = saturate_program(&program, &sig)?;
+    }
     let widths = complete_sort_widths(
         &sig,
         &semantic_program,
@@ -73,7 +76,7 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     let sig = TermSignature::from_declare_term_types(declare_term_types)?;
     let mut program = to_chc_ast(problem)?;
     if semantic_program.needs_saturation {
-        program.rules = saturate(&program.rules);
+        program = saturate_program(&program, &sig)?;
     }
     let layouts = complete_layouts(
         &sig,
