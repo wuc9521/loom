@@ -1,7 +1,9 @@
 use crate::{compile, parser::DelisProg};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
-use sygus_parser::{GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSTerm};
+use sygus_parser::{
+    GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSFile, SyGuSTerm,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Bits(Vec<u64>);
@@ -125,6 +127,10 @@ struct DefineFun {
     width: usize,
 }
 
+struct EvalContext<'a> {
+    funcs: &'a HashMap<String, DefineFun>,
+}
+
 pub fn solve(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
     let start = Instant::now();
     let cmds = compile::to_sygus(problem, optimize)?;
@@ -133,6 +139,11 @@ pub fn solve(problem: &DelisProg, optimize: bool) -> Result<Option<String>, Stri
     let mut solver = ClosureSolver::new(problem, cmds)?;
     log::info!("closure: solver initialized in {:?}", start.elapsed());
     Ok(Some(solver.solve()?))
+}
+
+pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {
+    let verifier = ConstraintVerifier::new(cmds)?;
+    verifier.failing_constraint_indices(solution)
 }
 
 struct ClosureSolver<'a> {
@@ -268,7 +279,7 @@ impl<'a> ClosureSolver<'a> {
             ),
         );
         for constraint in &self.constraints {
-            if !self.eval_bool(constraint, &env)? {
+            if !self.evaluator().eval_bool(constraint, &env)? {
                 return Ok(false);
             }
         }
@@ -342,7 +353,7 @@ impl<'a> ClosureSolver<'a> {
         for (name, value) in func.args.iter().zip(args) {
             env.insert(name.clone(), EvalValue::Bv(value.bits.clone(), value.width));
         }
-        let bits = self.eval_bv(&func.body, &env, func.width)?;
+        let bits = self.evaluator().eval_bv(&func.body, &env, func.width)?;
         let term = if args.is_empty() {
             SyGuSTerm::Identifier(Identifier::Symbol(prod.ctor.clone()))
         } else {
@@ -453,7 +464,30 @@ impl<'a> ClosureSolver<'a> {
         }
         Ok(changed)
     }
+    
+    fn evaluator(&self) -> EvalContext<'_> {
+        EvalContext { funcs: &self.funcs }
+    }
+}
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum EvalValue {
+    Bool(bool),
+    Nat(usize),
+    Bv(Bits, usize),
+}
+
+impl EvalValue {
+    fn kind(&self) -> &'static str {
+        match self {
+            EvalValue::Bool(_) => "Bool",
+            EvalValue::Nat(_) => "Nat",
+            EvalValue::Bv(_, _) => "BitVec",
+        }
+    }
+}
+
+impl<'a> EvalContext<'a> {
     fn eval_bool(
         &self,
         term: &SyGuSTerm,
@@ -489,10 +523,17 @@ impl<'a> ClosureSolver<'a> {
         env: &HashMap<String, EvalValue>,
     ) -> Result<EvalValue, String> {
         match term {
-            SyGuSTerm::Identifier(Identifier::Symbol(name)) => env
-                .get(name)
-                .cloned()
-                .ok_or_else(|| format!("unknown identifier {name}")),
+            SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
+                if let Some(value) = env.get(name) {
+                    return Ok(value.clone());
+                }
+                if let Some(func) = self.funcs.get(name) {
+                    if func.args.is_empty() {
+                        return self.eval(&func.body, env);
+                    }
+                }
+                Err(format!("unknown identifier {name}"))
+            }
             SyGuSTerm::Identifier(other) => Err(format!("unsupported identifier {other}")),
             SyGuSTerm::Literal(Literal::Bool(value)) => Ok(EvalValue::Bool(*value)),
             SyGuSTerm::Literal(Literal::Numeral(value)) => Ok(EvalValue::Nat(*value)),
@@ -578,6 +619,21 @@ impl<'a> ClosureSolver<'a> {
                     let (bits, _) = self.eval_bv_value(&args[0], env)?;
                     return Ok(EvalValue::Bv(bits.extract(high, low), high - low + 1));
                 }
+                if let Some(func) = self.funcs.get(op) {
+                    if func.args.len() != args.len() {
+                        return Err(format!(
+                            "function {} expects {} args, got {}",
+                            op,
+                            func.args.len(),
+                            args.len()
+                        ));
+                    }
+                    let mut next = env.clone();
+                    for (name, arg) in func.args.iter().zip(args) {
+                        next.insert(name.clone(), self.eval(arg, env)?);
+                    }
+                    return self.eval(&func.body, &next);
+                }
                 Err(format!("unsupported SyGuS operator {id}"))
             }
         }
@@ -595,20 +651,67 @@ impl<'a> ClosureSolver<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum EvalValue {
-    Bool(bool),
-    Nat(usize),
-    Bv(Bits, usize),
+struct ConstraintVerifier {
+    synth_name: String,
+    synth_width: usize,
+    funcs: HashMap<String, DefineFun>,
+    constraints: Vec<SyGuSTerm>,
 }
 
-impl EvalValue {
-    fn kind(&self) -> &'static str {
-        match self {
-            EvalValue::Bool(_) => "Bool",
-            EvalValue::Nat(_) => "Nat",
-            EvalValue::Bv(_, _) => "BitVec",
+impl ConstraintVerifier {
+    fn new(cmds: &[SyGuSCmd]) -> Result<Self, String> {
+        let mut funcs = HashMap::new();
+        let mut synth = None;
+        let mut constraints = Vec::new();
+        for cmd in cmds {
+            match cmd {
+                SyGuSCmd::DefineFun(name, args, sort, body) => {
+                    let width = bv_width(sort)?;
+                    funcs.insert(
+                        name.clone(),
+                        DefineFun {
+                            args: args.iter().map(|arg| arg.name.clone()).collect(),
+                            body: body.clone(),
+                            width,
+                        },
+                    );
+                }
+                SyGuSCmd::SynthFun(name, _args, sort, _grammar) => {
+                    synth = Some((name.clone(), bv_width(sort)?));
+                }
+                SyGuSCmd::Constraint(term) => constraints.push(term.clone()),
+                _ => {}
+            }
         }
+        let (synth_name, synth_width) =
+            synth.ok_or_else(|| "missing synth-fun command".to_string())?;
+        Ok(Self {
+            synth_name,
+            synth_width,
+            funcs,
+            constraints,
+        })
+    }
+
+    fn failing_constraint_indices(&self, solution: &str) -> Result<Vec<usize>, String> {
+        let body = parse_solution_body(solution, &self.synth_name)?;
+        let bits = self.evaluator().eval_bv(&body, &HashMap::new(), self.synth_width)?;
+        let mut env = HashMap::new();
+        env.insert(
+            self.synth_name.clone(),
+            EvalValue::Bv(bits, self.synth_width),
+        );
+        let mut failing = Vec::new();
+        for (idx, constraint) in self.constraints.iter().enumerate() {
+            if !self.evaluator().eval_bool(constraint, &env)? {
+                failing.push(idx);
+            }
+        }
+        Ok(failing)
+    }
+
+    fn evaluator(&self) -> EvalContext<'_> {
+        EvalContext { funcs: &self.funcs }
     }
 }
 
@@ -760,4 +863,37 @@ fn extract_indices(id: &Identifier) -> Option<(usize, usize)> {
         Index::Symbol(_) => return None,
     };
     Some((high, low))
+}
+
+fn parse_solution_body(solution: &str, synth_name: &str) -> Result<SyGuSTerm, String> {
+    let trimmed = solution.trim();
+    let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    };
+    let file = SyGuSFile::from_str(content)
+        .map_err(|_| format!("failed to parse solver response: {trimmed}"))?;
+    let define_funs = file
+        .cmds
+        .into_iter()
+        .filter_map(|cmd| match cmd {
+            SyGuSCmd::DefineFun(name, _args, _sort, body) => Some((name, body)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if define_funs.is_empty() {
+        return Err("solver response did not contain a define-fun".to_string());
+    }
+    if let Some((_, body)) = define_funs
+        .iter()
+        .find_map(|(name, body)| (name == synth_name).then_some((name, body)))
+    {
+        return Ok(body.clone());
+    }
+    Ok(define_funs
+        .into_iter()
+        .next()
+        .map(|(_, body)| body)
+        .ok_or_else(|| "solver response did not contain a define-fun".to_string())?)
 }

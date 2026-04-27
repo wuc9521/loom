@@ -24,6 +24,10 @@ pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<St
     closure::solve(problem, optimize)
 }
 
+pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {
+    closure::failing_constraint_indices(cmds, solution)
+}
+
 pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
     let semantic_program = finite::compile_semantic_program(problem)?;
     let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
