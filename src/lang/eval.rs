@@ -83,9 +83,6 @@ fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
             .or_insert_with(Vec::new);
         entry.extend(univ.elems.iter().map(|elem| elem.name.clone()));
     }
-    for values in domains.values_mut() {
-        values.sort();
-    }
     domains
 }
 

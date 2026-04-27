@@ -54,7 +54,7 @@
         (Start RegLan
             (
                 re.allchar             ; any single character, including "_"
-                (re.? Start)         ; optional
+                (re.opt Start)         ; optional
                 (re.++ Start Start)    ; concat
                 (re.union Start Start) ; union
                 (re.* Start)           ; Kleene star

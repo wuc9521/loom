@@ -53,7 +53,7 @@
                 (str.to_re "0")        ; regex of string "0"
                 (str.to_re "1")        ; regex of string "1"
                 re.allchar             ; any single character, including "_"
-                (re.? Start)         ; optional
+                (re.opt Start)         ; optional
                 (re.++ Start Start)    ; concat
                 (re.union Start Start) ; union
                 (re.* Start)           ; Kleene star

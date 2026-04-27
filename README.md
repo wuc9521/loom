@@ -38,3 +38,11 @@ time delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl
 )
 delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl  0.14s user 0.02s system 129% cpu 0.123 total
 ```
+
+# TODO
+
+- [ ] CEGIS: randomly choose n models and verify on the rest.
+- [ ] `--dump-sygus`.
+- [ ] Implement String / Flash.
+- [ ] `DryadSynth` on old benchmarks.
+- [ ] CTL.

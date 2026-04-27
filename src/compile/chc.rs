@@ -1,7 +1,10 @@
 use crate::{
     backends::smt2::{
         ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm, PredicatePolarity},
-        pred::{dnf_and, dnf_false, dnf_or, dnf_true, emit_dnf_rules, Pred, PredAtom, PredDnf},
+        pred::{
+            formula_and, formula_atom, formula_false, formula_or, formula_true, Pred, PredAtom,
+            PredFormula,
+        },
     },
     compile::{
         native::{EnvView, SemanticContext},
@@ -17,7 +20,7 @@ use crate::{
 };
 use itertools::Itertools;
 use lexpr::Value;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use sygus_parser::Sort;
 
 #[derive(Clone)]
@@ -70,6 +73,7 @@ struct ChcCompiler<'a> {
     ctx: SemanticContext<'a>,
     relation_sorts: HashMap<String, Vec<String>>,
     predicates: HashMap<(String, String, AspectKey, Option<AspectValue>), Pred>,
+    next_helper_id: usize,
 }
 
 impl<'a> ChcCompiler<'a> {
@@ -131,10 +135,11 @@ impl<'a> ChcCompiler<'a> {
             ctx,
             relation_sorts,
             predicates,
+            next_helper_id: 0,
         })
     }
 
-    fn compile(self) -> Result<HornProg, String> {
+    fn compile(mut self) -> Result<HornProg, String> {
         let mut out = HornProg::default();
         out.decls.push(HornDecl::SetLogic("HORN".to_string()));
         let (sorts, decls) = self.sig.datatype_decls();
@@ -163,7 +168,8 @@ impl<'a> ChcCompiler<'a> {
             vec![Sort::from_name(self.sig.start_sort())],
         ));
 
-        for cons in &self.sig.constructors {
+        let constructors = self.sig.constructors.clone();
+        for cons in &constructors {
             self.emit_constructor_rules(&mut out, cons)?;
         }
         self.emit_goal(&mut out)?;
@@ -171,18 +177,23 @@ impl<'a> ChcCompiler<'a> {
     }
 
     fn emit_constructor_rules(
-        &self,
+        &mut self,
         out: &mut HornProg,
         cons: &TermConstructor,
     ) -> Result<(), String> {
+        let start = Instant::now();
+        let initial_rules = out.rules.len();
         let mut matched = false;
-        for domain in &self.program.domains {
-            let spec = self.ctx.spec_for_relation(&domain.relation)?;
+        let domains = self.program.domains.clone();
+        for domain in &domains {
+            let relation = domain.relation.clone();
+            let spec = self.ctx.spec_for_relation(&relation)?.clone();
             let Some(case) = self
                 .ctx
                 .cases()
                 .get(&spec.relation)
                 .and_then(|cases| cases.get(&cons.name))
+                .cloned()
             else {
                 continue;
             };
@@ -214,7 +225,7 @@ impl<'a> ChcCompiler<'a> {
             }
             for bit in &domain.bits {
                 env.aspect.insert("asp".to_string(), bit.aspect.clone());
-                let dnf = match (&domain.kind, &bit.value) {
+                let formula = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
                     (SemanticKind::FiniteValue { .. }, Some(value)) => {
                         self.eval_finite_eq(&case.body, value, &env)?
@@ -226,7 +237,7 @@ impl<'a> ChcCompiler<'a> {
                         ));
                     }
                 };
-                let not_dnf = match (&domain.kind, &bit.value) {
+                let neg_formula = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) => self.eval_bool_neg(&case.body, &env)?,
                     (SemanticKind::FiniteValue { .. }, Some(value)) => {
                         self.eval_finite_neq(&case.body, value, &env)?
@@ -242,8 +253,14 @@ impl<'a> ChcCompiler<'a> {
                     )?,
                     head_term.clone(),
                 );
-                emit_dnf_rules(&mut out.rules, head.clone(), dnf.clone());
-                emit_dnf_rules(&mut out.rules, head.dual(), not_dnf);
+                self.emit_formula_rules(out, head.clone(), formula, &cons.result_sort, &head_term)?;
+                self.emit_formula_rules(
+                    out,
+                    head.dual(),
+                    neg_formula,
+                    &cons.result_sort,
+                    &head_term,
+                )?;
             }
         }
         if !matched {
@@ -252,6 +269,12 @@ impl<'a> ChcCompiler<'a> {
                 cons.name
             ));
         }
+        log::info!(
+            "CHC constructor {} compiled in {:?} ({} rules)",
+            cons.name,
+            start.elapsed(),
+            out.rules.len().saturating_sub(initial_rules)
+        );
         Ok(())
     }
 
@@ -300,11 +323,82 @@ impl<'a> ChcCompiler<'a> {
         Ok(())
     }
 
-    fn eval_bool(&self, expr: &Value, env: &Env) -> Result<PredDnf, String> {
+    fn emit_formula_rules(
+        &mut self,
+        out: &mut HornProg,
+        head: PredAtom,
+        formula: PredFormula,
+        sort: &str,
+        current_term: &HornTerm,
+    ) -> Result<(), String> {
+        match formula {
+            PredFormula::True => {
+                out.rules.push(HornRule {
+                    body_atoms: Vec::new(),
+                    head: head.to_horn(),
+                });
+            }
+            PredFormula::False => {}
+            PredFormula::Atom(atom) => {
+                out.rules.push(HornRule {
+                    body_atoms: vec![atom.to_horn()],
+                    head: head.to_horn(),
+                });
+            }
+            PredFormula::Or(parts) => {
+                for part in parts {
+                    self.emit_formula_rules(out, head.clone(), part, sort, current_term)?;
+                }
+            }
+            PredFormula::And(parts) => {
+                let mut body_atoms = Vec::new();
+                for part in parts {
+                    match part {
+                        PredFormula::True => {}
+                        PredFormula::False => return Ok(()),
+                        PredFormula::Atom(atom) => body_atoms.push(atom.to_horn()),
+                        other => body_atoms.push(self.emit_helper_atom(out, other, sort, current_term)?),
+                    }
+                }
+                out.rules.push(HornRule {
+                    body_atoms,
+                    head: head.to_horn(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_helper_atom(
+        &mut self,
+        out: &mut HornProg,
+        formula: PredFormula,
+        sort: &str,
+        current_term: &HornTerm,
+    ) -> Result<HornAtom, String> {
+        let helper_name = format!("__chc.{}.{}", sort, self.next_helper_id);
+        self.next_helper_id += 1;
+        let helper_pred = Pred::new(helper_name.clone(), format!("n{helper_name}"));
+        out.decls.push(HornDecl::DeclareRel(
+            helper_name.clone(),
+            vec![Sort::from_name(sort)],
+        ));
+        out.register_predicate(
+            helper_name.clone(),
+            helper_name.clone(),
+            PredicatePolarity::Positive,
+            sort.to_string(),
+        );
+        let helper_head = PredAtom::new(helper_pred, current_term.clone());
+        self.emit_formula_rules(out, helper_head.clone(), formula, sort, current_term)?;
+        Ok(helper_head.to_horn())
+    }
+
+    fn eval_bool(&self, expr: &Value, env: &Env) -> Result<PredFormula, String> {
         if let Some(symbol) = expr.as_symbol() {
             return match symbol {
-                "true" => Ok(dnf_true()),
-                "false" => Ok(dnf_false()),
+                "true" => Ok(formula_true()),
+                "false" => Ok(formula_false()),
                 _ => Err(format!("expected Bool expression, got {expr}")),
             };
         }
@@ -317,11 +411,11 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
         match op {
             "not" if items.len() == 2 => self.eval_bool_neg(items[1], env),
-            "and" => items[1..].iter().try_fold(dnf_true(), |acc, item| {
-                Ok(dnf_and(acc, self.eval_bool(item, env)?))
+            "and" => items[1..].iter().try_fold(formula_true(), |acc, item| {
+                Ok(formula_and(acc, self.eval_bool(item, env)?))
             }),
-            "or" => items[1..].iter().try_fold(dnf_false(), |acc, item| {
-                Ok(dnf_or(acc, self.eval_bool(item, env)?))
+            "or" => items[1..].iter().try_fold(formula_false(), |acc, item| {
+                Ok(formula_or(acc, self.eval_bool(item, env)?))
             }),
             "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env, true),
             "<" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, IntCmp::Lt),
@@ -339,11 +433,11 @@ impl<'a> ChcCompiler<'a> {
         }
     }
 
-    fn eval_bool_neg(&self, expr: &Value, env: &Env) -> Result<PredDnf, String> {
+    fn eval_bool_neg(&self, expr: &Value, env: &Env) -> Result<PredFormula, String> {
         if let Some(symbol) = expr.as_symbol() {
             return match symbol {
-                "true" => Ok(dnf_false()),
-                "false" => Ok(dnf_true()),
+                "true" => Ok(formula_false()),
+                "false" => Ok(formula_true()),
                 _ => Err(format!("expected Bool expression, got {expr}")),
             };
         }
@@ -356,11 +450,11 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
         match op {
             "not" if items.len() == 2 => self.eval_bool(items[1], env),
-            "and" => items[1..].iter().try_fold(dnf_false(), |acc, item| {
-                Ok(dnf_or(acc, self.eval_bool_neg(item, env)?))
+            "and" => items[1..].iter().try_fold(formula_false(), |acc, item| {
+                Ok(formula_or(acc, self.eval_bool_neg(item, env)?))
             }),
-            "or" => items[1..].iter().try_fold(dnf_true(), |acc, item| {
-                Ok(dnf_and(acc, self.eval_bool_neg(item, env)?))
+            "or" => items[1..].iter().try_fold(formula_true(), |acc, item| {
+                Ok(formula_and(acc, self.eval_bool_neg(item, env)?))
             }),
             "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env, false),
             "<" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, IntCmp::Ge),
@@ -387,7 +481,7 @@ impl<'a> ChcCompiler<'a> {
         bindings: &Value,
         body: &Value,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let binding_list = bindings
             .to_ref_vec()
             .ok_or_else(|| format!("quantifier binding list must be a list: {bindings}"))?;
@@ -410,7 +504,11 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("quantifier variable must be a symbol: {var}"))?;
         let conjunctive = op == "forall" || op == "forall-neg";
         let neg_body = op == "forall-neg" || op == "exists-neg";
-        let mut out = if conjunctive { dnf_true() } else { dnf_false() };
+        let mut out = if conjunctive {
+            formula_true()
+        } else {
+            formula_false()
+        };
         for value in self.quantifier_values(domain_expr, env)? {
             let mut next = env.clone();
             next.values.insert(var.to_string(), value);
@@ -420,9 +518,9 @@ impl<'a> ChcCompiler<'a> {
                 self.eval_bool(body, &next)?
             };
             out = if conjunctive {
-                dnf_and(out, part)
+                formula_and(out, part)
             } else {
-                dnf_or(out, part)
+                formula_or(out, part)
             };
         }
         Ok(out)
@@ -467,7 +565,7 @@ impl<'a> ChcCompiler<'a> {
         rhs: &Value,
         env: &Env,
         expected: bool,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         if self.ctx.infer_finite_sort(lhs, env).is_some()
             || self.ctx.infer_finite_sort(rhs, env).is_some()
         {
@@ -481,14 +579,14 @@ impl<'a> ChcCompiler<'a> {
         {
             match (&lhs_value, &rhs_value) {
                 (AspectValue::Int(_), AspectValue::Int(_)) => {
-                    Ok(bool_dnf((lhs_value == rhs_value) == expected))
+                    Ok(bool_formula((lhs_value == rhs_value) == expected))
                 }
-                _ => Ok(bool_dnf((lhs_value == rhs_value) == expected)),
+                _ => Ok(bool_formula((lhs_value == rhs_value) == expected)),
             }
         } else {
             let lhs = self.eval_int(lhs, env)?;
             let rhs = self.eval_int(rhs, env)?;
-            Ok(bool_dnf((lhs == rhs) == expected))
+            Ok(bool_formula((lhs == rhs) == expected))
         }
     }
 
@@ -498,7 +596,7 @@ impl<'a> ChcCompiler<'a> {
         rhs: &Value,
         env: &Env,
         cmp: IntCmp,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let lhs = self.eval_int(lhs, env)?;
         let rhs = self.eval_int(rhs, env)?;
         let value = match cmp {
@@ -507,7 +605,7 @@ impl<'a> ChcCompiler<'a> {
             IntCmp::Gt => lhs > rhs,
             IntCmp::Ge => lhs >= rhs,
         };
-        Ok(bool_dnf(value))
+        Ok(bool_formula(value))
     }
 
     fn eval_semantic_bool_call(
@@ -515,7 +613,7 @@ impl<'a> ChcCompiler<'a> {
         relation: &str,
         args: &[&Value],
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let domain = self.ctx.domain_for_relation(relation)?;
         if domain.kind != SemanticKind::Bool {
             return Err(format!("{relation} does not return Bool"));
@@ -525,18 +623,18 @@ impl<'a> ChcCompiler<'a> {
         }
         let terms = self.child_terms(args[0], env)?;
         let allowed_sorts = self.relation_term_sorts(relation)?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
             for term in &terms {
                 if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
                     continue;
                 }
                 let pred = self.pred_for(relation, &term.sort, &aspect, None)?;
-                out = dnf_or(
+                out = formula_or(
                     out,
-                    dnf_and(
+                    formula_and(
                         guard.clone(),
-                        vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
+                        formula_atom(PredAtom::new(pred.clone(), term.term.clone())),
                     ),
                 );
             }
@@ -549,24 +647,24 @@ impl<'a> ChcCompiler<'a> {
         relation: &str,
         args: &[&Value],
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let terms = self.child_terms(args[0], env)?;
         let allowed_sorts = self.relation_term_sorts(relation)?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
             for term in &terms {
                 if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
                     continue;
                 }
                 let pred = self.pred_for(relation, &term.sort, &aspect, None)?.dual();
-                out = dnf_or(
+                out = formula_or(
                     out,
-                    dnf_and(
+                    formula_and(
                         guard.clone(),
-                        vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
+                        formula_atom(PredAtom::new(pred.clone(), term.term.clone())),
                     ),
                 );
             }
@@ -580,7 +678,7 @@ impl<'a> ChcCompiler<'a> {
         args: &[&Value],
         env: &Env,
         expected: bool,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let sig = self
             .ctx
             .func_sigs
@@ -592,7 +690,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         let domains = self.ctx.argument_domains(sig, model_ref)?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for tuple in domains
             .iter()
             .map(|values| values.iter())
@@ -608,11 +706,11 @@ impl<'a> ChcCompiler<'a> {
             if interped_bool(value) != expected {
                 continue;
             }
-            let mut conj = dnf_true();
+            let mut conj = formula_true();
             for (arg_expr, value) in args.iter().zip(tuple.iter()) {
-                conj = dnf_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
+                conj = formula_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
             }
-            out = dnf_or(out, conj);
+            out = formula_or(out, conj);
         }
         Ok(out)
     }
@@ -622,7 +720,7 @@ impl<'a> ChcCompiler<'a> {
         lhs: &Value,
         rhs: &Value,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let sort = self
             .ctx
             .infer_finite_sort(lhs, env)
@@ -632,15 +730,15 @@ impl<'a> ChcCompiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         let values = get_domain_for_sort(model_ref, &sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for name in values {
             let value = AspectValue::Univ {
                 sort: sort.clone(),
                 name,
             };
-            out = dnf_or(
+            out = formula_or(
                 out,
-                dnf_and(
+                formula_and(
                     self.eval_finite_eq(lhs, &value, env)?,
                     self.eval_finite_eq(rhs, &value, env)?,
                 ),
@@ -654,7 +752,7 @@ impl<'a> ChcCompiler<'a> {
         lhs: &Value,
         rhs: &Value,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let sort = self
             .ctx
             .infer_finite_sort(lhs, env)
@@ -664,7 +762,7 @@ impl<'a> ChcCompiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         let values = get_domain_for_sort(model_ref, &sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for lhs_name in &values {
             for rhs_name in &values {
                 if lhs_name == rhs_name {
@@ -678,9 +776,9 @@ impl<'a> ChcCompiler<'a> {
                     sort: sort.clone(),
                     name: rhs_name.clone(),
                 };
-                out = dnf_or(
+                out = formula_or(
                     out,
-                    dnf_and(
+                    formula_and(
                         self.eval_finite_eq(lhs, &lhs_value, env)?,
                         self.eval_finite_eq(rhs, &rhs_value, env)?,
                     ),
@@ -695,35 +793,35 @@ impl<'a> ChcCompiler<'a> {
         expr: &Value,
         target: &AspectValue,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         if let Ok(value) = self.ctx.eval_value(expr, env) {
             return Ok(if self.values_match_target(&value, target, env)? {
-                dnf_true()
+                formula_true()
             } else {
-                dnf_false()
+                formula_false()
             });
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
                 return Ok(if value == target {
-                    dnf_true()
+                    formula_true()
                 } else {
-                    dnf_false()
+                    formula_false()
                 });
             }
             let model = self.ctx.current_model(env)?;
             let model_ref = self.ctx.model(&model)?;
             if let Some(value) = eval_symbols(symbol, &[], &model_ref.func_interps) {
                 return Ok(if interped_value_matches(value, target) {
-                    dnf_true()
+                    formula_true()
                 } else {
-                    dnf_false()
+                    formula_false()
                 });
             }
             return Ok(if symbol == target.display() {
-                dnf_true()
+                formula_true()
             } else {
-                dnf_false()
+                formula_false()
             });
         }
         let items = expr
@@ -738,9 +836,9 @@ impl<'a> ChcCompiler<'a> {
                 if let Some(aspect) = env.aspect.get(aspect_arg) {
                     if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
                         return Ok(if value == target {
-                            dnf_true()
+                            formula_true()
                         } else {
-                            dnf_false()
+                            formula_false()
                         });
                     }
                 }
@@ -760,35 +858,35 @@ impl<'a> ChcCompiler<'a> {
         expr: &Value,
         target: &AspectValue,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         if let Ok(value) = self.ctx.eval_value(expr, env) {
             return Ok(if self.values_match_target(&value, target, env)? {
-                dnf_false()
+                formula_false()
             } else {
-                dnf_true()
+                formula_true()
             });
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
                 return Ok(if value != target {
-                    dnf_true()
+                    formula_true()
                 } else {
-                    dnf_false()
+                    formula_false()
                 });
             }
             let model = self.ctx.current_model(env)?;
             let model_ref = self.ctx.model(&model)?;
             if let Some(value) = eval_symbols(symbol, &[], &model_ref.func_interps) {
                 return Ok(if !interped_value_matches(value, target) {
-                    dnf_true()
+                    formula_true()
                 } else {
-                    dnf_false()
+                    formula_false()
                 });
             }
             return Ok(if symbol != target.display() {
-                dnf_true()
+                formula_true()
             } else {
-                dnf_false()
+                formula_false()
             });
         }
         let items = expr
@@ -803,9 +901,9 @@ impl<'a> ChcCompiler<'a> {
                 if let Some(aspect) = env.aspect.get(aspect_arg) {
                     if let Some((_, value)) = aspect.fields.iter().find(|(name, _)| name == op) {
                         return Ok(if value != target {
-                            dnf_true()
+                            formula_true()
                         } else {
-                            dnf_false()
+                            formula_false()
                         });
                     }
                 }
@@ -814,18 +912,18 @@ impl<'a> ChcCompiler<'a> {
         if self.ctx.has_relation(op) {
             let terms = self.child_terms(items[1], env)?;
             let allowed_sorts = self.relation_term_sorts(op)?;
-            let mut out = dnf_false();
+            let mut out = formula_false();
             for (guard, aspect) in self.aspect_variants(items[2], op, env)? {
                 for term in &terms {
                     if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
                         continue;
                     }
                     let pred = self.pred_for(op, &term.sort, &aspect, Some(target))?.dual();
-                    out = dnf_or(
+                    out = formula_or(
                         out,
-                        dnf_and(
+                        formula_and(
                             guard.clone(),
-                            vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
+                            formula_atom(PredAtom::new(pred.clone(), term.term.clone())),
                         ),
                     );
                 }
@@ -844,24 +942,24 @@ impl<'a> ChcCompiler<'a> {
         args: &[&Value],
         target: &AspectValue,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
         let terms = self.child_terms(args[0], env)?;
         let allowed_sorts = self.relation_term_sorts(relation)?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
             for term in &terms {
                 if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
                     continue;
                 }
                 let pred = self.pred_for(relation, &term.sort, &aspect, Some(target))?;
-                out = dnf_or(
+                out = formula_or(
                     out,
-                    dnf_and(
+                    formula_and(
                         guard.clone(),
-                        vec![vec![PredAtom::new(pred.clone(), term.term.clone())]],
+                        formula_atom(PredAtom::new(pred.clone(), term.term.clone())),
                     ),
                 );
             }
@@ -875,7 +973,7 @@ impl<'a> ChcCompiler<'a> {
         args: &[&Value],
         target: &AspectValue,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let sig = self
             .ctx
             .func_sigs
@@ -884,7 +982,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         let domains = self.ctx.argument_domains(sig, model_ref)?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for tuple in domains
             .iter()
             .map(|values| values.iter())
@@ -900,11 +998,11 @@ impl<'a> ChcCompiler<'a> {
             if !interped_value_matches(value, target) {
                 continue;
             }
-            let mut conj = dnf_true();
+            let mut conj = formula_true();
             for (arg_expr, value) in args.iter().zip(tuple.iter()) {
-                conj = dnf_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
+                conj = formula_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
             }
-            out = dnf_or(out, conj);
+            out = formula_or(out, conj);
         }
         Ok(out)
     }
@@ -915,7 +1013,7 @@ impl<'a> ChcCompiler<'a> {
         args: &[&Value],
         target: &AspectValue,
         env: &Env,
-    ) -> Result<PredDnf, String> {
+    ) -> Result<PredFormula, String> {
         let sig = self
             .ctx
             .func_sigs
@@ -924,7 +1022,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         let domains = self.ctx.argument_domains(sig, model_ref)?;
-        let mut out = dnf_false();
+        let mut out = formula_false();
         for tuple in domains
             .iter()
             .map(|values| values.iter())
@@ -940,11 +1038,11 @@ impl<'a> ChcCompiler<'a> {
             if interped_value_matches(value, target) {
                 continue;
             }
-            let mut conj = dnf_true();
+            let mut conj = formula_true();
             for (arg_expr, value) in args.iter().zip(tuple.iter()) {
-                conj = dnf_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
+                conj = formula_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
             }
-            out = dnf_or(out, conj);
+            out = formula_or(out, conj);
         }
         Ok(out)
     }
@@ -1009,7 +1107,7 @@ impl<'a> ChcCompiler<'a> {
         expr: &Value,
         relation: &str,
         env: &Env,
-    ) -> Result<Vec<(PredDnf, AspectKey)>, String> {
+    ) -> Result<Vec<(PredFormula, AspectKey)>, String> {
         if let Some(symbol) = expr.as_symbol() {
             let aspect = env
                 .aspect
@@ -1017,7 +1115,7 @@ impl<'a> ChcCompiler<'a> {
                 .ok_or_else(|| format!("unknown aspect variable {symbol}"))?;
             let mut aspect = aspect.clone();
             aspect.relation = relation.to_string();
-            return Ok(vec![(dnf_true(), aspect)]);
+            return Ok(vec![(formula_true(), aspect)]);
         }
         let domain = self.ctx.domain_for_relation(relation)?;
         let space = self.ctx.aspect_space(&domain.aspect_space)?;
@@ -1040,7 +1138,7 @@ impl<'a> ChcCompiler<'a> {
             ));
         }
 
-        let mut partials = vec![(dnf_true(), None, Vec::new())];
+        let mut partials = vec![(formula_true(), None, Vec::new())];
         for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
             let variants = self.aspect_field_variants(field, arg, env)?;
             let mut next = Vec::new();
@@ -1063,7 +1161,7 @@ impl<'a> ChcCompiler<'a> {
                             model0.clone()
                         }
                     };
-                    next.push((dnf_and(guard0.clone(), guard1.clone()), model, fields));
+                    next.push((formula_and(guard0.clone(), guard1.clone()), model, fields));
                 }
             }
             partials = next;
@@ -1089,15 +1187,15 @@ impl<'a> ChcCompiler<'a> {
         field: &FieldDecl,
         arg: &Value,
         env: &Env,
-    ) -> Result<Vec<(PredDnf, AspectValue)>, String> {
+    ) -> Result<Vec<(PredFormula, AspectValue)>, String> {
         match &field.domain {
             FieldDomain::Sort(sort) if sort == "Model" => Ok(vec![(
-                dnf_true(),
+                formula_true(),
                 AspectValue::Model(self.ctx.eval_model_name(arg, env)?),
             )]),
             FieldDomain::Sort(sort) => {
                 if let Ok(value) = self.ctx.eval_value_for_sort(arg, sort, env) {
-                    return Ok(vec![(dnf_true(), value)]);
+                    return Ok(vec![(formula_true(), value)]);
                 }
                 if sort == "Int" {
                     return Ok(Vec::new());
@@ -1107,7 +1205,7 @@ impl<'a> ChcCompiler<'a> {
             FieldDomain::Enum(values) => {
                 let value = self.ctx.eval_value(arg, env)?;
                 if values.contains(&value.display()) {
-                    Ok(vec![(dnf_true(), value)])
+                    Ok(vec![(formula_true(), value)])
                 } else {
                     Err(format!(
                         "aspect field {} expected one of ({})",
@@ -1124,10 +1222,10 @@ impl<'a> ChcCompiler<'a> {
                         _ => false,
                     };
                     if ok {
-                        return Ok(vec![(dnf_true(), value)]);
+                        return Ok(vec![(formula_true(), value)]);
                     }
                 }
-                let mut out = vec![(dnf_true(), AspectValue::Symbol(bot.clone()))];
+                let mut out = vec![(formula_true(), AspectValue::Symbol(bot.clone()))];
                 for sort in sorts {
                     out.extend(self.dynamic_value_variants(sort, arg, env)?);
                 }
@@ -1141,7 +1239,7 @@ impl<'a> ChcCompiler<'a> {
         sort: &str,
         expr: &Value,
         env: &Env,
-    ) -> Result<Vec<(PredDnf, AspectValue)>, String> {
+    ) -> Result<Vec<(PredFormula, AspectValue)>, String> {
         if self.ctx.infer_finite_sort(expr, env).as_deref() != Some(sort) {
             return Err(format!("unsupported value expression: {expr}"));
         }
@@ -1267,10 +1365,10 @@ enum IntCmp {
     Ge,
 }
 
-fn bool_dnf(value: bool) -> PredDnf {
+fn bool_formula(value: bool) -> PredFormula {
     if value {
-        dnf_true()
+        formula_true()
     } else {
-        dnf_false()
+        formula_false()
     }
 }

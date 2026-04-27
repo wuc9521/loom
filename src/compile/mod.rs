@@ -2,6 +2,7 @@ use crate::backends::smt2::ast::HornProg;
 use crate::backends::smt2::twa::saturate_program;
 use crate::parser::{DelisCmd, DelisProg};
 use lexpr::Value;
+use std::time::Instant;
 use sygus_parser::{Sort, SyGuSCmd};
 
 mod bv;
@@ -62,10 +63,20 @@ pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
 }
 
 pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
+    let semantic_start = Instant::now();
     let semantic_program = finite::compile_semantic_program(problem)?;
+    log::info!(
+        "compile_semantic_program completed in {:?}",
+        semantic_start.elapsed()
+    );
     if supports_native_sygus(&semantic_program) {
-        return bv::compile(problem, semantic_program, optimize);
+        log::info!("using native SyGuS BV lowering");
+        let native_start = Instant::now();
+        let result = bv::compile(problem, semantic_program, optimize);
+        log::info!("native SyGuS BV lowering completed in {:?}", native_start.elapsed());
+        return result;
     }
+    log::info!("using CHC-to-BV SyGuS lowering");
     let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
         DelisCmd::TermTypes(cmd) => Some(cmd),
         _ => None,
@@ -74,10 +85,12 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         return Err("SyGuS compilation requires declare-term-types".to_string());
     };
     let sig = TermSignature::from_declare_term_types(declare_term_types)?;
+    let chc_start = Instant::now();
     let mut program = to_chc_ast(problem)?;
     if semantic_program.needs_saturation {
         program = saturate_program(&program, &sig)?;
     }
+    log::info!("CHC lowering completed in {:?}", chc_start.elapsed());
     let layouts = complete_layouts(
         &sig,
         &semantic_program,
@@ -88,7 +101,8 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         .map(|(sort, layout)| (sort.clone(), Sort::bitvec(layout.states.len().max(1))))
         .collect::<std::collections::HashMap<_, _>>();
     let grammar = sig.bv_grammar_with_sorts(declare_term_types, &sort_widths)?;
-    crate::backends::sygus::bv::compile_one_way(
+    let bv_start = Instant::now();
+    let result = crate::backends::sygus::bv::compile_one_way(
         &program,
         &synth_name(problem)?,
         grammar,
@@ -99,7 +113,9 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     )
     .into_iter()
     .map(Ok)
-    .collect()
+    .collect();
+    log::info!("CHC BV emission completed in {:?}", bv_start.elapsed());
+    result
 }
 
 fn complete_layouts(

@@ -11,7 +11,7 @@ use crate::{
 };
 use itertools::Itertools;
 use lexpr::Value;
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, time::Instant};
 use sygus_parser::{
     BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar, SyGuSCmd,
     SyGuSGTerm, SyGuSTerm, Term,
@@ -116,9 +116,17 @@ impl<'a> NativeCompiler<'a> {
 
     fn compile(&mut self) -> Result<Vec<SyGuSCmd>, String> {
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
+        let grammar_start = Instant::now();
         let grammar = self.grammar()?;
+        log::info!("native grammar compilation completed in {:?}", grammar_start.elapsed());
         for cons in &self.sig.constructors {
+            let cons_start = Instant::now();
             cmds.push(self.constructor_fun(cons)?);
+            log::info!(
+                "native constructor {} compiled in {:?}",
+                cons.name,
+                cons_start.elapsed()
+            );
         }
         cmds.push(
             Cmd::synth_fun(&synth_name(self.problem)?)
