@@ -42,7 +42,7 @@ delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl  0.1
 # TODO
 
 - [ ] CEGIS: randomly choose n models and verify on the rest.
-- [ ] `--dump-sygus`.
+- [x] `--dump-sygus`.
 - [ ] Implement String / Flash.
 - [ ] `DryadSynth` on old benchmarks.
 - [ ] CTL.

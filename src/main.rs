@@ -7,7 +7,6 @@ use delis::{
     process::{cleanup_children, register_pid, unregister_pid},
 };
 use std::{
-    fmt::Display,
     io::{self, BufWriter, Read, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -37,7 +36,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             let write_start = Instant::now();
             let stdout = io::stdout();
             let mut stdout = BufWriter::new(stdout.lock());
-            write_cmds(&mut stdout, &cmds)?;
+            sygus_parser::writer::write_cmds(&mut stdout, &cmds)?;
             writeln!(stdout)?;
             stdout.flush()?;
             log::info!("write SyGuS completed in {:?}", write_start.elapsed());
@@ -71,7 +70,10 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             let result = (|| {
                 let step_start = Instant::now();
                 let bv_sz = compile::bv_sz(&sygus_file).map_err(io::Error::other)?;
-                log::info!("sygus-backend: bv_sz completed in {:?}", step_start.elapsed());
+                log::info!(
+                    "sygus-backend: bv_sz completed in {:?}",
+                    step_start.elapsed()
+                );
 
                 let step_start = Instant::now();
                 let sygus_cmds =
@@ -97,7 +99,10 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
                 let step_start = Instant::now();
                 let output = solver_stdout(child, &sygus_solver.0)?;
-                log::info!("sygus-backend: solver_stdout completed in {:?}", step_start.elapsed());
+                log::info!(
+                    "sygus-backend: solver_stdout completed in {:?}",
+                    step_start.elapsed()
+                );
 
                 let step_start = Instant::now();
                 let decoded = decode_cvc5_response(&sygus_file, &output);
@@ -133,16 +138,6 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
 
-fn write_cmds<W: Write, T: Display>(writer: &mut W, cmds: &[T]) -> Result<(), io::Error> {
-    for (idx, cmd) in cmds.iter().enumerate() {
-        if idx > 0 {
-            writer.write_all(b"\n")?;
-        }
-        write!(writer, "{cmd}")?;
-    }
-    Ok(())
-}
-
 type Solver = (String, Vec<String>);
 
 enum BackendResult {
@@ -158,7 +153,7 @@ fn sygus_config(bv_sz: usize, enum_trigger: usize) -> Solver {
     ("cvc5".to_string(), args)
 }
 
-fn spawn_solver<T: Display>(solver: &Solver, cmds: &[T]) -> Result<Child, io::Error> {
+fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd]) -> Result<Child, io::Error> {
     let mut child = Command::new(&solver.0)
         .args(&solver.1)
         .stdin(Stdio::piped())
@@ -169,7 +164,7 @@ fn spawn_solver<T: Display>(solver: &Solver, cmds: &[T]) -> Result<Child, io::Er
     if let Some(mut stdin) = child.stdin.take() {
         {
             let mut stdin = BufWriter::new(&mut stdin);
-            write_cmds(&mut stdin, cmds)?;
+            sygus_parser::writer::write_cmds(&mut stdin, cmds)?;
             writeln!(stdin)?;
             stdin.flush()?;
         }
