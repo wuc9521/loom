@@ -1,5 +1,6 @@
 use crate::{compile, parser::DelisProg};
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 use sygus_parser::{GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSTerm};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -125,8 +126,12 @@ struct DefineFun {
 }
 
 pub fn solve(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
+    let start = Instant::now();
     let cmds = compile::to_sygus(problem, optimize)?;
+    log::info!("closure: to_sygus completed in {:?}", start.elapsed());
+    let start = Instant::now();
     let mut solver = ClosureSolver::new(problem, cmds)?;
+    log::info!("closure: solver initialized in {:?}", start.elapsed());
     Ok(Some(solver.solve()?))
 }
 
@@ -186,7 +191,11 @@ impl<'a> ClosureSolver<'a> {
     }
 
     fn solve(&mut self) -> Result<String, String> {
+        let start = Instant::now();
+        let mut iteration = 0usize;
+        log::info!("closure: solve started");
         loop {
+            iteration += 1;
             let mut changed = false;
             for nt_idx in 0..self.nonterminals.len() {
                 changed |= self.boolean_partition_close(nt_idx)?;
@@ -194,15 +203,37 @@ impl<'a> ClosureSolver<'a> {
                 for prod_idx in 0..prod_count {
                     changed |= self.apply_production(nt_idx, prod_idx)?;
                     if let Some(term) = self.satisfying_start_term()? {
+                        log::info!(
+                            "closure: satisfying start term found in iteration {} after {:?}",
+                            iteration,
+                            start.elapsed()
+                        );
                         return Ok(self.define_fun(term));
                     }
                 }
             }
             if let Some(term) = self.satisfying_start_term()? {
+                log::info!(
+                    "closure: satisfying start term found at iteration boundary {} after {:?}",
+                    iteration,
+                    start.elapsed()
+                );
                 return Ok(self.define_fun(term));
             }
             if !changed {
+                log::info!(
+                    "closure: fixed point reached after {} iterations in {:?}",
+                    iteration,
+                    start.elapsed()
+                );
                 return Ok("infeasible".to_string());
+            }
+            if iteration <= 5 || iteration % 25 == 0 {
+                log::info!(
+                    "closure: completed iteration {} in {:?}",
+                    iteration,
+                    start.elapsed()
+                );
             }
         }
     }

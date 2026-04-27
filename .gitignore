@@ -4,6 +4,7 @@ Cargo.lock
 src/.antlr
 target
 .vscode/
+.cargo/
 logs/
 theory/
 tests

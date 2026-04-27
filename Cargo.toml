@@ -19,3 +19,4 @@ serde = { version = "1", features = ["derive"] }
 sygus-parser = {path = "../sygus-parser-rs"} 
 toml = "1.1.2"
 walkdir = "2"
+cvc5 = { version = "0.4", features = ["static"] }
