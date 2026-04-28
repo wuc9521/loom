@@ -2,7 +2,7 @@ use crate::{compile, parser::DelisProg};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use sygus_parser::{
-    GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSFile, SyGuSTerm,
+    GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSFile, SyGuSGTerm, SyGuSTerm,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -464,7 +464,7 @@ impl<'a> ClosureSolver<'a> {
         }
         Ok(changed)
     }
-    
+
     fn evaluator(&self) -> EvalContext<'_> {
         EvalContext { funcs: &self.funcs }
     }
@@ -695,7 +695,9 @@ impl ConstraintVerifier {
 
     fn failing_constraint_indices(&self, solution: &str) -> Result<Vec<usize>, String> {
         let body = parse_solution_body(solution, &self.synth_name)?;
-        let bits = self.evaluator().eval_bv(&body, &HashMap::new(), self.synth_width)?;
+        let bits = self
+            .evaluator()
+            .eval_bv(&body, &HashMap::new(), self.synth_width)?;
         let mut env = HashMap::new();
         env.insert(
             self.synth_name.clone(),

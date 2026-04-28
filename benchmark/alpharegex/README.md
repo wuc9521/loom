@@ -1,5 +1,7 @@
 <https://github.com/kupl/AlphaRegexPublic>
 
+25 cases. 
+
 ```bibtex
 @article{10.1145/3093335.2993244,
 author = {Lee, Mina and So, Sunbeom and Oh, Hakjoo},

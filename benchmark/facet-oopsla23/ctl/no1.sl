@@ -33,30 +33,30 @@
    (ctl.not CTL)
    (ctl.and CTL CTL)
    (ctl.or CTL CTL)
-   (ctl.ex CTL)
-   (ctl.ax CTL))))
+   (ctl.EX CTL)
+   (ctl.AX CTL))))
 
-(define-finite CtlAsp
+(define-finite CTL.Asp
   (record (model Model) (state U))
   :where true)
 
 (define-semantics
-  ((Ctl.Sem (phi CTL) (asp CtlAsp)))
+  ((CTL.Sem (phi CTL) (asp CTL.Asp)))
   ((match phi
      ((p) (p (state asp)))
-     ((ctl.not x) (not (Ctl.Sem x asp)))
-     ((ctl.and x y) (and (Ctl.Sem x asp) (Ctl.Sem y asp)))
-     ((ctl.or x y) (or (Ctl.Sem x asp) (Ctl.Sem y asp)))
-     ((ctl.ex x)
+     ((ctl.not x) (not (CTL.Sem x asp)))
+     ((ctl.and x y) (and (CTL.Sem x asp) (CTL.Sem y asp)))
+     ((ctl.or x y) (or (CTL.Sem x asp) (CTL.Sem y asp)))
+     ((ctl.EX x)
       (exists ((next (domain (U (model asp)))))
         (and (R (state asp) next)
-             (Ctl.Sem x (CtlAsp (model asp) next)))))
-     ((ctl.ax x)
+             (CTL.Sem x (CTL.Asp (model asp) next)))))
+     ((ctl.AX x)
       (forall ((next (domain (U (model asp)))))
         (or (not (R (state asp) next))
-            (Ctl.Sem x (CtlAsp (model asp) next))))))))
+            (CTL.Sem x (CTL.Asp (model asp) next))))))))
 
 (synth-fun phi () CTL)
-(constraint (Ctl.Sem phi (CtlAsp k-pos $0)))
-(constraint (not (Ctl.Sem phi (CtlAsp k-neg $0))))
+(constraint (CTL.Sem phi (CTL.Asp k-pos $0)))
+(constraint (not (CTL.Sem phi (CTL.Asp k-neg $0))))
 (check-synth)

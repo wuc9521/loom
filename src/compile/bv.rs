@@ -9,7 +9,6 @@ use crate::{
     lang::eval::eval_symbols,
     parser::{DelisCmd, DelisProg},
 };
-use itertools::Itertools;
 use lexpr::Value;
 use std::{cell::RefCell, collections::HashMap, time::Instant};
 use sygus_parser::{
@@ -119,6 +118,15 @@ impl<'a> NativeCompiler<'a> {
         let grammar_start = Instant::now();
         let grammar = self.grammar()?;
         log::info!("native grammar compilation completed in {:?}", grammar_start.elapsed());
+        let synth_args = self
+            .problem
+            .cmds
+            .iter()
+            .find_map(|cmd| match cmd {
+                DelisCmd::As(SyGuSCmd::SynthFun(_, args, _, _)) => Some(args.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| "missing synth-fun command".to_string())?;
         for cons in &self.sig.constructors {
             let cons_start = Instant::now();
             cmds.push(self.constructor_fun(cons)?);
@@ -128,12 +136,13 @@ impl<'a> NativeCompiler<'a> {
                 cons_start.elapsed()
             );
         }
-        cmds.push(
-            Cmd::synth_fun(&synth_name(self.problem)?)
-                .ret(Sort::bitvec(self.sort_width(self.sig.start_sort())?))
-                .grammar(grammar)
-                .build(),
-        );
+        let mut synth_cmd = Cmd::synth_fun(&synth_name(self.problem)?)
+            .ret(Sort::bitvec(self.sort_width(self.sig.start_sort())?))
+            .grammar(grammar);
+        for arg in synth_args {
+            synth_cmd = synth_cmd.arg(&arg.name, arg.sort);
+        }
+        cmds.push(synth_cmd.build());
         let synth = Term::var(&synth_name(self.problem)?);
         for constraint in &self.program.constraints {
             let domain = self.ctx.domain_for_relation(&constraint.relation)?;
@@ -330,6 +339,14 @@ impl<'a> NativeCompiler<'a> {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(or_exprs(parts))
             }
+            "ite" if items.len() == 4 => match self.eval_bool(items[1], env)? {
+                BoolExpr::Const(true) => self.eval_bool(items[2], env),
+                BoolExpr::Const(false) => self.eval_bool(items[3], env),
+                cond => Ok(or_exprs(vec![
+                    and_exprs(vec![cond.clone(), self.eval_bool(items[2], env)?]),
+                    and_exprs(vec![negate_expr(cond), self.eval_bool(items[3], env)?]),
+                ])),
+            },
             "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env),
             "<" if items.len() == 3 => self.eval_int_compare(items[1], items[2], env, |l, r| l < r),
             "<=" if items.len() == 3 => {
@@ -396,8 +413,8 @@ impl<'a> NativeCompiler<'a> {
             .ok_or_else(|| format!("unsupported domain expression: {domain_expr}"))?;
         match items.first().and_then(|item| item.as_symbol()) {
             Some("int-range") if items.len() == 3 => {
-                let lo = self.eval_int_expr(items[1], env)?;
-                let hi = self.eval_int_expr(items[2], env)?;
+                let lo = self.ctx.eval_int_expr(items[1], env)?;
+                let hi = self.ctx.eval_int_expr(items[2], env)?;
                 if lo < 0 || hi < lo {
                     return Ok(Vec::new());
                 }
@@ -474,23 +491,11 @@ impl<'a> NativeCompiler<'a> {
             let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
             return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
         }
-        let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut disjuncts = Vec::new();
-        for tuple in domains
-            .iter()
-            .map(|values| values.iter())
-            .multi_cartesian_product()
+        for tuple in self
+            .ctx
+            .matching_model_call_tuples(func, args, env, interped_bool)?
         {
-            let arg_names = tuple
-                .iter()
-                .map(|value| value.display())
-                .collect::<Vec<_>>();
-            let Some(value) = eval_symbols(func, &arg_names, &model_ref.func_interps) else {
-                continue;
-            };
-            if !interped_bool(value) {
-                continue;
-            }
             let conjuncts = args
                 .iter()
                 .zip(tuple.iter())
@@ -536,11 +541,9 @@ impl<'a> NativeCompiler<'a> {
         if let (Ok(lhs_value), Ok(rhs_value)) =
             (self.ctx.eval_value(lhs, env), self.ctx.eval_value(rhs, env))
         {
-            return Ok(BoolExpr::Const(
-                self.values_equal(&lhs_value, &rhs_value, env)?,
-            ));
+            return Ok(BoolExpr::Const(self.ctx.values_equal(&lhs_value, &rhs_value, env)?));
         }
-        if self.eval_int_expr(lhs, env).is_ok() && self.eval_int_expr(rhs, env).is_ok() {
+        if self.ctx.eval_int_expr(lhs, env).is_ok() && self.ctx.eval_int_expr(rhs, env).is_ok() {
             return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
         }
         self.eval_finite_terms_equal(lhs, rhs, env)
@@ -556,13 +559,9 @@ impl<'a> NativeCompiler<'a> {
     where
         F: FnOnce(isize, isize) -> bool,
     {
-        let lhs = self.eval_int_expr(lhs, env)?;
-        let rhs = self.eval_int_expr(rhs, env)?;
+        let lhs = self.ctx.eval_int_expr(lhs, env)?;
+        let rhs = self.ctx.eval_int_expr(rhs, env)?;
         Ok(BoolExpr::Const(cmp(lhs, rhs)))
-    }
-
-    fn eval_int_expr(&self, expr: &Value, env: &Env) -> Result<isize, String> {
-        self.ctx.eval_int_expr(expr, env)
     }
 
     fn eval_finite_eq(
@@ -572,15 +571,11 @@ impl<'a> NativeCompiler<'a> {
         env: &Env,
     ) -> Result<BoolExpr, String> {
         if let Ok(value) = self.ctx.eval_value(expr, env) {
-            return Ok(BoolExpr::Const(
-                self.values_match_target(&value, target, env)?,
-            ));
+            return Ok(BoolExpr::Const(self.ctx.value_matches_target(&value, target, env)?));
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
-                return Ok(BoolExpr::Const(
-                    self.values_match_target(value, target, env)?,
-                ));
+                return Ok(BoolExpr::Const(self.ctx.value_matches_target(value, target, env)?));
             }
             if let Some(matches) = self.ctx.constant_value_matches(symbol, target, env)? {
                 return Ok(BoolExpr::Const(matches));
@@ -594,6 +589,16 @@ impl<'a> NativeCompiler<'a> {
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("finite expression operator must be a symbol: {expr}"))?;
+        if op == "ite" && items.len() == 4 {
+            return match self.eval_bool(items[1], env)? {
+                BoolExpr::Const(true) => self.eval_finite_eq(items[2], target, env),
+                BoolExpr::Const(false) => self.eval_finite_eq(items[3], target, env),
+                cond => Ok(or_exprs(vec![
+                    and_exprs(vec![cond.clone(), self.eval_finite_eq(items[2], target, env)?]),
+                    and_exprs(vec![negate_expr(cond), self.eval_finite_eq(items[3], target, env)?]),
+                ])),
+            };
+        }
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
                 if let Some(aspect) = env.aspect.get(aspect_arg) {
@@ -615,34 +620,6 @@ impl<'a> NativeCompiler<'a> {
             return self.eval_model_finite_call_eq(op, &items[1..], target, env);
         }
         Err(format!("unsupported finite expression: {expr}"))
-    }
-
-    fn values_equal(
-        &self,
-        lhs: &AspectValue,
-        rhs: &AspectValue,
-        env: &Env,
-    ) -> Result<bool, String> {
-        Ok(self.values_match_target(lhs, rhs, env)? && self.values_match_target(rhs, lhs, env)?)
-    }
-
-    fn values_match_target(
-        &self,
-        value: &AspectValue,
-        target: &AspectValue,
-        env: &Env,
-    ) -> Result<bool, String> {
-        match (value, target) {
-            (AspectValue::Int(idx), AspectValue::Univ { sort, name }) => {
-                let model = self.ctx.current_model(env)?;
-                let model_ref = self.ctx.model(&model)?;
-                let Some(domain) = crate::lang::eval::get_domain_for_sort(model_ref, sort) else {
-                    return Ok(false);
-                };
-                Ok(domain.get(*idx).is_some_and(|candidate| candidate == name))
-            }
-            _ => Ok(value == target),
-        }
     }
 
     fn eval_semantic_finite_call_eq(
@@ -703,23 +680,10 @@ impl<'a> NativeCompiler<'a> {
                     .is_some_and(|value| interped_value_matches(value, target)),
             ));
         }
-        let domains = self.ctx.argument_domains(sig, model_ref)?;
         let mut disjuncts = Vec::new();
-        for tuple in domains
-            .iter()
-            .map(|values| values.iter())
-            .multi_cartesian_product()
-        {
-            let arg_names = tuple
-                .iter()
-                .map(|value| value.display())
-                .collect::<Vec<_>>();
-            let Some(value) = eval_symbols(func, &arg_names, &model_ref.func_interps) else {
-                continue;
-            };
-            if !interped_value_matches(value, target) {
-                continue;
-            }
+        for tuple in self.ctx.matching_model_call_tuples(func, args, env, |value| {
+            interped_value_matches(value, target)
+        })? {
             let conjuncts = args
                 .iter()
                 .zip(tuple.iter())
@@ -896,6 +860,13 @@ fn or_exprs(disjuncts: Vec<BoolExpr>) -> BoolExpr {
         0 => BoolExpr::Const(false),
         1 => BoolExpr::Dynamic(dynamic.remove(0)),
         _ => BoolExpr::Dynamic(Bool::or(dynamic)),
+    }
+}
+
+fn negate_expr(expr: BoolExpr) -> BoolExpr {
+    match expr {
+        BoolExpr::Const(value) => BoolExpr::Const(!value),
+        BoolExpr::Dynamic(term) => BoolExpr::Dynamic(Bool::not(term)),
     }
 }
 

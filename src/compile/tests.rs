@@ -927,3 +927,43 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 
     assert!(err.contains("provides 1 scalar fields, expected 2"));
 }
+
+#[test]
+fn finite_value_ite_is_supported_in_semantics() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m
+  (define-univ U ($0 $1)))
+(declare-term-types
+ ((Formula 0) (TermU 0))
+ (((holds TermU))
+  ((var))))
+(define-finite Asp
+  (record (model Model) (pick U)))
+(define-semantics
+  ((TermU.Sem (t TermU) (asp Asp)))
+  :returns U
+  ((match t
+     ((var) (ite (= (pick asp) $0) $1 $0)))))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp Asp)))
+  ((match phi
+     ((holds t) (= (TermU.Sem t asp) $1)))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (Asp m $0)))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("finite-valued ite should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 2);
+    assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
+}

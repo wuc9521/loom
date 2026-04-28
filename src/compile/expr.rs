@@ -41,6 +41,13 @@ pub fn eval_bool(
             .iter()
             .try_fold(false, |acc, expr| Ok(acc || eval_bool(expr, env, models)?)),
         "not" if list.len() == 2 => Ok(!eval_bool(list[1], env, models)?),
+        "ite" if list.len() == 4 => {
+            if eval_bool(list[1], env, models)? {
+                eval_bool(list[2], env, models)
+            } else {
+                eval_bool(list[3], env, models)
+            }
+        }
         "=" | "<" | "<=" => {
             if list.len() != 3 {
                 return Err(format!("{op} expects two arguments, got {expr}"));

@@ -61,76 +61,20 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
-    let optimize = args.optimize;
-    let enum_trigger = args.enum_trigger;
-    let use_cegis = args.cegis;
+    let sygus_optimize = args.optimize;
+    let sygus_enum_trigger = args.enum_trigger;
+    let sygus_cegis = args.cegis;
     const SYGUS_STACK_BYTES: usize = 128 * 1024 * 1024;
     thread::Builder::new()
         .name("sygus-backend".to_string())
         .stack_size(SYGUS_STACK_BYTES)
         .spawn(move || {
-            let result = (|| -> Result<String, io::Error> {
-                let solve_start = Instant::now();
-                let decoded = if use_cegis {
-                    let step_start = Instant::now();
-                    let full_sygus_cmds =
-                        compile::to_sygus(&sygus_file, optimize).map_err(io::Error::other)?;
-                    log::info!(
-                        "sygus-backend: full to_sygus for verification completed in {:?}",
-                        step_start.elapsed()
-                    );
-                    let step_start = Instant::now();
-                    let solved =
-                        cegis_solve(&sygus_file, &full_sygus_cmds, optimize, enum_trigger)?;
-                    log::info!(
-                        "sygus-backend: cegis completed in {:?}",
-                        step_start.elapsed()
-                    );
-                    solved
-                } else {
-                    let step_start = Instant::now();
-                    let bv_sz = compile::bv_sz(&sygus_file).map_err(io::Error::other)?;
-                    log::info!(
-                        "sygus-backend: bv_sz completed in {:?}",
-                        step_start.elapsed()
-                    );
-
-                    let step_start = Instant::now();
-                    let sygus_cmds =
-                        compile::to_sygus(&sygus_file, optimize).map_err(io::Error::other)?;
-                    log::info!(
-                        "sygus-backend: to_sygus completed in {:?}",
-                        step_start.elapsed()
-                    );
-
-                    let step_start = Instant::now();
-                    let sygus_solver = sygus_config(bv_sz, enum_trigger);
-                    log::info!(
-                        "sygus-backend: sygus_config completed in {:?}",
-                        step_start.elapsed()
-                    );
-
-                    let step_start = Instant::now();
-                    let child = spawn_solver(&sygus_solver, &sygus_cmds)?;
-                    log::info!(
-                        "sygus-backend: spawn_solver completed in {:?}",
-                        step_start.elapsed()
-                    );
-
-                    let step_start = Instant::now();
-                    let output = solver_stdout(child, &sygus_solver.0)?;
-                    log::info!(
-                        "sygus-backend: solver_stdout completed in {:?}",
-                        step_start.elapsed()
-                    );
-                    decode_cvc5_response(&sygus_file, &output)?
-                };
-                log::info!(
-                    "sygus-backend: solve completed in {:?}",
-                    solve_start.elapsed()
-                );
-                Ok(decoded)
-            })();
+            let result = solve_with_sygus(
+                &sygus_file,
+                sygus_optimize,
+                sygus_enum_trigger,
+                sygus_cegis,
+            );
             let _ = sygus_tx.send(BackendResult::Sygus(result));
         })?;
 
@@ -148,6 +92,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             }
             BackendResult::Closure(Ok(None)) => {}
             BackendResult::Closure(Err(e)) | BackendResult::Sygus(Err(e)) => {
+                log::error!("backend failed: {}", e);
                 first_error.get_or_insert(e);
             }
         }
@@ -157,12 +102,12 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
 
-type Solver = (String, Vec<String>);
-
 enum BackendResult {
     Closure(Result<Option<String>, io::Error>),
     Sygus(Result<String, io::Error>),
 }
+
+type Solver = (String, Vec<String>);
 
 fn sygus_config(bv_sz: usize, enum_trigger: usize) -> Solver {
     let mut args = vec!["--lang=sygus2".to_string()];
@@ -173,22 +118,97 @@ fn sygus_config(bv_sz: usize, enum_trigger: usize) -> Solver {
 }
 
 fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd]) -> Result<Child, io::Error> {
+    let mut input = Vec::new();
+    sygus_parser::writer::write_cmds(&mut input, cmds)?;
+    writeln!(&mut input)?;
+
     let mut child = Command::new(&solver.0)
         .args(&solver.1)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::inherit())
         .spawn()?;
     register_pid(child.id());
     if let Some(mut stdin) = child.stdin.take() {
-        {
-            let mut stdin = BufWriter::new(&mut stdin);
-            sygus_parser::writer::write_cmds(&mut stdin, cmds)?;
-            writeln!(stdin)?;
-            stdin.flush()?;
-        }
+        thread::Builder::new()
+            .name("sygus-stdin-writer".to_string())
+            .spawn(move || {
+                let _ = stdin.write_all(&input);
+                let _ = stdin.flush();
+            })?;
     }
     Ok(child)
+}
+
+fn solve_with_sygus(
+    delis_file: &DelisProg,
+    optimize: bool,
+    enum_trigger: usize,
+    cegis_size: Option<usize>,
+) -> Result<String, io::Error> {
+    let solve_start = Instant::now();
+    let decoded = if let Some(cegis_size) = cegis_size {
+        let step_start = Instant::now();
+        let full_sygus_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+        log::info!(
+            "sygus-backend: full to_sygus for verification completed in {:?}",
+            step_start.elapsed()
+        );
+        let step_start = Instant::now();
+        let solved = cegis_solve(
+            delis_file,
+            &full_sygus_cmds,
+            optimize,
+            enum_trigger,
+            cegis_size,
+        )?;
+        log::info!(
+            "sygus-backend: cegis completed in {:?}",
+            step_start.elapsed()
+        );
+        solved
+    } else {
+        let step_start = Instant::now();
+        let sygus_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+        log::info!(
+            "sygus-backend: to_sygus completed in {:?}",
+            step_start.elapsed()
+        );
+
+        let step_start = Instant::now();
+        let bv_sz = sygus_bit_width(&sygus_cmds).map_err(io::Error::other)?;
+        log::info!(
+            "sygus-backend: derived bv width completed in {:?}",
+            step_start.elapsed()
+        );
+
+        let step_start = Instant::now();
+        let sygus_solver = sygus_config(bv_sz, enum_trigger);
+        log::info!(
+            "sygus-backend: sygus_config completed in {:?}",
+            step_start.elapsed()
+        );
+
+        let step_start = Instant::now();
+        let child = spawn_solver(&sygus_solver, &sygus_cmds)?;
+        log::info!(
+            "sygus-backend: spawn_solver completed in {:?}",
+            step_start.elapsed()
+        );
+
+        let step_start = Instant::now();
+        let output = solver_stdout(child, &sygus_solver.0)?;
+        log::info!(
+            "sygus-backend: solver_stdout completed in {:?}",
+            step_start.elapsed()
+        );
+        decode_cvc5_response(delis_file, &output)?
+    };
+    log::info!(
+        "sygus-backend: solve completed in {:?}",
+        solve_start.elapsed()
+    );
+    Ok(decoded)
 }
 
 fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
@@ -214,10 +234,12 @@ fn cegis_solve(
     full_cmds: &[SyGuSCmd],
     optimize: bool,
     enum_trigger: usize,
+    seed_size: usize,
 ) -> Result<String, io::Error> {
+    let seed_size = seed_size.max(1);
     let constraints = problem_constraints(delis_file);
     let constraint_count = constraints.len();
-    if constraint_count <= 6 {
+    if constraint_count <= seed_size {
         let bv_sz = compile::bv_sz(delis_file).map_err(io::Error::other)?;
         let cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
         let solver = sygus_config(bv_sz, enum_trigger);
@@ -230,7 +252,7 @@ fn cegis_solve(
         .iter()
         .map(|term| constraint_polarity(term))
         .collect::<Vec<_>>();
-    let mut active = initial_cegis_constraints(&polarities);
+    let mut active = initial_cegis_constraints(&polarities, seed_size);
     let mut round = 0usize;
     loop {
         round += 1;
@@ -243,7 +265,8 @@ fn cegis_solve(
         let reduced_problem = subset_problem(delis_file, &active);
         let round_start = Instant::now();
         let bv_sz = compile::bv_sz(&reduced_problem).map_err(io::Error::other)?;
-        let subset_cmds = compile::to_sygus(&reduced_problem, optimize).map_err(io::Error::other)?;
+        let subset_cmds =
+            compile::to_sygus(&reduced_problem, optimize).map_err(io::Error::other)?;
         let solver = sygus_config(bv_sz, enum_trigger);
         log::info!(
             "cegis round {}: reduced compilation completed in {:?}",
@@ -277,6 +300,32 @@ fn cegis_solve(
             ));
         }
     }
+}
+
+fn sygus_bit_width(cmds: &[SyGuSCmd]) -> Result<usize, String> {
+    let sort = cmds
+        .iter()
+        .find_map(|cmd| match cmd {
+            SyGuSCmd::SynthFun(_, _, sort, _) => Some(sort),
+            _ => None,
+        })
+        .ok_or_else(|| "missing synth-fun in generated SyGuS".to_string())?;
+    let text = sort.to_string();
+    let prefix = "(_ BitVec ";
+    let suffix = ")";
+    if let Some(width) = text
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.strip_suffix(suffix))
+    {
+        return width
+            .trim()
+            .parse::<usize>()
+            .map_err(|e| format!("failed to parse synth-fun bit-width {width}: {e}"));
+    }
+    Err(format!(
+        "expected synth-fun to return a BitVec, found {}",
+        sort
+    ))
 }
 
 fn subset_problem(problem: &DelisProg, active: &HashSet<usize>) -> DelisProg {
@@ -320,37 +369,39 @@ fn constraint_polarity(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
 fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
     match term {
         sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::Bool(value)) => Some(*value),
-        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => match bits.as_str()
-        {
-            "#b1" => Some(true),
-            "#b0" => Some(false),
-            _ => None,
-        },
+        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => {
+            match bits.as_str() {
+                "#b1" => Some(true),
+                "#b0" => Some(false),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
 
-fn initial_cegis_constraints(polarities: &[Option<bool>]) -> HashSet<usize> {
+fn initial_cegis_constraints(polarities: &[Option<bool>], seed_size: usize) -> HashSet<usize> {
+    let seed_size = seed_size.max(1);
     let mut active = HashSet::new();
-    for target in [Some(true), Some(false)] {
+    let target_pos = seed_size.div_ceil(2);
+    let target_neg = seed_size / 2;
+    for (target, class_target) in [(Some(true), target_pos), (Some(false), target_neg)] {
+        let mut class_count = 0usize;
         for (idx, polarity) in polarities.iter().enumerate() {
-            if *polarity == target {
+            if *polarity == target && !active.contains(&idx) {
                 active.insert(idx);
-                if active.len() >= 6 {
+                class_count += 1;
+                if active.len() >= seed_size {
                     return active;
                 }
-                let class_count = active
-                    .iter()
-                    .filter(|selected| polarities[**selected] == target)
-                    .count();
-                if class_count >= 3 {
+                if class_count >= class_target {
                     break;
                 }
             }
         }
     }
     for idx in 0..polarities.len() {
-        if active.len() >= 6 {
+        if active.len() >= seed_size {
             break;
         }
         active.insert(idx);
@@ -428,7 +479,7 @@ fn decode_cvc5_response(delis_file: &DelisProg, output: &str) -> Result<String, 
 #[command(
     author,
     version,
-    about = "Parse and analyze your custom language files"
+    about = "Delis: Learning logic formulas from finite models"
 )]
 pub struct CLI {
     /// Path to the input file (if not using --in)
@@ -472,12 +523,19 @@ pub struct CLI {
     chc_witness: bool,
 
     /// Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value.
-    #[arg(long = "enum-trigger", default_value_t = 512)]
+    #[arg(short = 'E', long = "enum-trigger", default_value_t = 512)]
     enum_trigger: usize,
 
-    /// Use counterexample-guided subset solving for the external SyGuS backend.
-    #[arg(long = "cegis", default_value_t = false)]
-    cegis: bool,
+    /// Use counterexample-guided subset solving for the external SyGuS backend,
+    /// seeding with up to N constraints.
+    #[arg(
+        long = "cegis",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "6",
+        value_name = "N"
+    )]
+    cegis: Option<usize>,
 }
 
 /// Run the language parsing application

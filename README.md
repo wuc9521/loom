@@ -1,17 +1,18 @@
 # Delis
 
-Install dependency `cvc5` and `z3` for the default solver setup.
-By default, Delis races the compiled CHC and SyGuS problems with `cvc5`.
+Install dependency `cvc5` for the default solver setup.
+By default, Delis races the compiled SyGuS problems with `cvc5`.
 The first decisive backend result ends the run.
-When the semantic bit-vector encoding length is at least
-`--enum-trigger`, Delis runs SyGuS with `cvc5 --lang=sygus2 --sygus-enum=fast`.
+When the semantic bit-vector encoding length is at least `--enum-trigger`,
+Delis runs SyGuS with `cvc5 --lang=sygus2 --sygus-enum=fast`.
 The default trigger is `512`.
 
 Usage
 
 ```
-$ ./target/release/delis --help                                                    
-Parse and analyze your custom language files
+$ cargo install --path . --locked 
+$ delis --help                                                    
+Delis: Learning logic formulas from finite models
 
 Usage: delis [OPTIONS] [FILE]
 
@@ -19,14 +20,17 @@ Arguments:
   [FILE]  Path to the input file (if not using --in)
 
 Options:
-  -i, --in                      Read input from stdin instead of file
-  -v, --verbose                 Enable verbose output
-  -d, --dump-sygus              Translate to SyGuS BV and print to stdout
-      --dump-chc                Translate to CHC (HORN) and print to stdout
-      --enum-trigger <ENUM_TRIGGER>
-                                  Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 512]
-  -h, --help                    Print help
-  -V, --version                 Print version
+  -i, --in                           Read input from stdin instead of file
+  -v, --verbose                      Enable verbose output
+  -O, --optimize[=<OPTIMIZE>]        Enable SyGuS optimization passes (use -O=false or --optimize=false to disable) [default: true] [possible values: true, false]
+  -d, --dump-sygus                   Translate to SyGuS BV and print to stdout
+      --dump-chc                     Translate to CHC (HORN) and print to stdout
+      --dump-chc-witness             Translate to Z3 fixedpoint CHC witness query and print to stdout
+      --chc-witness                  Solve using only the Z3 fixedpoint CHC witness path
+      --enum-trigger <ENUM_TRIGGER>  Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 512]
+      --cegis                        Use counterexample-guided subset solving for the external SyGuS backend
+  -h, --help                         Print help
+  -V, --version                      Print version
 ```
 
 Demo

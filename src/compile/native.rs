@@ -13,6 +13,7 @@ use crate::{
     },
     parser::{DelisCmd, DelisProg},
 };
+use itertools::Itertools;
 use lexpr::Value;
 use std::collections::HashMap;
 
@@ -339,12 +340,77 @@ impl<'a> SemanticContext<'a> {
             return self.eval_model_value_call(op, &items[1..], env);
         }
         match op {
+            "ite" if items.len() == 4 => {
+                return if self.eval_bool_value(items[1], env)? {
+                    self.eval_value(items[2], env)
+                } else {
+                    self.eval_value(items[3], env)
+                };
+            }
             "+" | "-" | "size" => {
                 return self.nonnegative_int_value(self.eval_int_expr(expr, env)?);
             }
             _ => {}
         }
         Err(format!("unsupported value expression: {expr}"))
+    }
+
+    pub fn eval_bool_value(&self, expr: &Value, env: &impl EnvView) -> Result<bool, String> {
+        if let Some(value) = expr.as_bool() {
+            return Ok(value);
+        }
+        if let Some(symbol) = expr.as_symbol() {
+            return match symbol {
+                "true" => Ok(true),
+                "false" => Ok(false),
+                _ => Err(format!("expected Bool expression, got {expr}")),
+            };
+        }
+        let items = expr
+            .to_ref_vec()
+            .ok_or_else(|| format!("expected Bool expression, got {expr}"))?;
+        let op = items
+            .first()
+            .and_then(|item| item.as_symbol())
+            .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
+        match op {
+            "not" if items.len() == 2 => Ok(!self.eval_bool_value(items[1], env)?),
+            "and" => items[1..]
+                .iter()
+                .try_fold(true, |acc, item| Ok(acc && self.eval_bool_value(item, env)?)),
+            "or" => items[1..]
+                .iter()
+                .try_fold(false, |acc, item| Ok(acc || self.eval_bool_value(item, env)?)),
+            "ite" if items.len() == 4 => {
+                if self.eval_bool_value(items[1], env)? {
+                    self.eval_bool_value(items[2], env)
+                } else {
+                    self.eval_bool_value(items[3], env)
+                }
+            }
+            "=" if items.len() == 3 => {
+                if let (Ok(lhs), Ok(rhs)) =
+                    (self.eval_value(items[1], env), self.eval_value(items[2], env))
+                {
+                    return self.values_equal(&lhs, &rhs, env);
+                }
+                Ok(self.eval_int_expr(items[1], env)? == self.eval_int_expr(items[2], env)?)
+            }
+            "<" if items.len() == 3 => {
+                Ok(self.eval_int_expr(items[1], env)? < self.eval_int_expr(items[2], env)?)
+            }
+            "<=" if items.len() == 3 => {
+                Ok(self.eval_int_expr(items[1], env)? <= self.eval_int_expr(items[2], env)?)
+            }
+            "ite" if items.len() == 4 => {
+                if self.eval_bool_value(items[1], env)? {
+                    self.eval_bool_value(items[2], env)
+                } else {
+                    self.eval_bool_value(items[3], env)
+                }
+            }
+            _ => Err(format!("unsupported Bool expression: {expr}")),
+        }
     }
 
     pub fn eval_int_expr(&self, expr: &Value, env: &impl EnvView) -> Result<isize, String> {
@@ -501,6 +567,15 @@ impl<'a> SemanticContext<'a> {
         }
         let items = expr.to_ref_vec()?;
         let op = items.first()?.as_symbol()?;
+        if op == "ite" && items.len() == 4 {
+            let then_sort = self.infer_finite_sort(items[2], env);
+            let else_sort = self.infer_finite_sort(items[3], env);
+            return match (then_sort, else_sort) {
+                (Some(lhs), Some(rhs)) if lhs == rhs => Some(lhs),
+                (Some(sort), None) | (None, Some(sort)) => Some(sort),
+                _ => None,
+            };
+        }
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
                 if let Some(aspect) = env.aspects().get(aspect_arg) {
@@ -520,6 +595,34 @@ impl<'a> SemanticContext<'a> {
         self.func_sigs.get(op).map(|sig| sig.ret_sort.to_string())
     }
 
+    pub fn values_equal(
+        &self,
+        lhs: &AspectValue,
+        rhs: &AspectValue,
+        env: &impl EnvView,
+    ) -> Result<bool, String> {
+        Ok(self.value_matches_target(lhs, rhs, env)? && self.value_matches_target(rhs, lhs, env)?)
+    }
+
+    pub fn value_matches_target(
+        &self,
+        value: &AspectValue,
+        target: &AspectValue,
+        env: &impl EnvView,
+    ) -> Result<bool, String> {
+        match (value, target) {
+            (AspectValue::Int(idx), AspectValue::Univ { sort, name }) => {
+                let model = self.current_model(env)?;
+                let model_ref = self.model(&model)?;
+                let Some(domain) = get_domain_for_sort(model_ref, sort) else {
+                    return Ok(false);
+                };
+                Ok(domain.get(*idx).is_some_and(|candidate| candidate == name))
+            }
+            _ => Ok(value == target),
+        }
+    }
+
     pub fn constant_value_matches(
         &self,
         symbol: &str,
@@ -530,6 +633,50 @@ impl<'a> SemanticContext<'a> {
         let model_ref = self.model(&model)?;
         Ok(eval_symbols(symbol, &[], &model_ref.func_interps)
             .map(|value| crate::compile::semantic::interped_value_matches(value, target)))
+    }
+
+    pub fn matching_model_call_tuples<F>(
+        &self,
+        func: &str,
+        args: &[&Value],
+        env: &impl EnvView,
+        mut keep: F,
+    ) -> Result<Vec<Vec<AspectValue>>, String>
+    where
+        F: FnMut(&InterpedValue) -> bool,
+    {
+        let sig = self
+            .func_sigs
+            .get(func)
+            .ok_or_else(|| format!("unknown function {func}"))?;
+        if sig.arg_sorts.len() != args.len() {
+            return Err(format!(
+                "function {func} expects {} arguments, got {}",
+                sig.arg_sorts.len(),
+                args.len()
+            ));
+        }
+        let model = self.current_model(env)?;
+        let model_ref = self.model(&model)?;
+        let domains = self.argument_domains(sig, model_ref)?;
+        let mut out = Vec::new();
+        for tuple in domains
+            .iter()
+            .map(|values| values.iter())
+            .multi_cartesian_product()
+        {
+            let arg_names = tuple
+                .iter()
+                .map(|value| value.display())
+                .collect::<Vec<_>>();
+            let Some(value) = eval_symbols(func, &arg_names, &model_ref.func_interps) else {
+                continue;
+            };
+            if keep(value) {
+                out.push(tuple.into_iter().cloned().collect());
+            }
+        }
+        Ok(out)
     }
 }
 

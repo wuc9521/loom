@@ -1,6 +1,8 @@
 <https://github.com/jrkoenig/folseparators>
 <https://github.com/wilcoxjay/mypyvy>
 
+320 cases for each theory
+
 ```bibtex
 @inproceedings{10.1145/3385412.3386018,
 author = {Koenig, Jason R. and Padon, Oded and Immerman, Neil and Aiken, Alex},

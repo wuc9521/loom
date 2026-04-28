@@ -592,6 +592,7 @@ pub fn compile_one_way(
             .unwrap_or(1)
             .max(1);
         constructor_cmds.push(builder.ret(Sort::bitvec(result_width)).body(body).build());
+        log::info!("sygus BV constructor {}: rules={}", cons.name, rules.len(),);
     }
 
     cmds.extend(constructor_cmds);
