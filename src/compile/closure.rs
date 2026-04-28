@@ -131,6 +131,55 @@ struct EvalContext<'a> {
     funcs: &'a HashMap<String, DefineFun>,
 }
 
+#[derive(Default)]
+struct EvalEnv {
+    base: HashMap<String, EvalValue>,
+    scoped: HashMap<String, Vec<EvalValue>>,
+    scopes: Vec<Vec<String>>,
+}
+
+impl EvalEnv {
+    fn with_base(base: HashMap<String, EvalValue>) -> Self {
+        Self {
+            base,
+            scoped: HashMap::new(),
+            scopes: Vec::new(),
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&EvalValue> {
+        self.scoped
+            .get(name)
+            .and_then(|values| values.last())
+            .or_else(|| self.base.get(name))
+    }
+
+    fn push_scope(&mut self) {
+        self.scopes.push(Vec::new());
+    }
+
+    fn insert_local(&mut self, name: String, value: EvalValue) {
+        self.scoped.entry(name.clone()).or_default().push(value);
+        self.scopes
+            .last_mut()
+            .expect("scope must exist before inserting locals")
+            .push(name);
+    }
+
+    fn pop_scope(&mut self) {
+        if let Some(names) = self.scopes.pop() {
+            for name in names.into_iter().rev() {
+                if let Some(values) = self.scoped.get_mut(&name) {
+                    values.pop();
+                    if values.is_empty() {
+                        self.scoped.remove(&name);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn solve(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
     let start = Instant::now();
     let cmds = compile::to_sygus(problem, optimize)?;
@@ -270,16 +319,15 @@ impl<'a> ClosureSolver<'a> {
     }
 
     fn satisfies(&self, bits: &Bits) -> Result<bool, String> {
-        let mut env = HashMap::new();
-        env.insert(
+        let mut env = EvalEnv::with_base(HashMap::from([(
             self.synth_name.clone(),
             EvalValue::Bv(
                 bits.clone(),
                 self.nonterminals[self.nt_by_symbol[&self.start]].width,
             ),
-        );
+        )]));
         for constraint in &self.constraints {
-            if !self.evaluator().eval_bool(constraint, &env)? {
+            if !self.evaluator().eval_bool(constraint, &mut env)? {
                 return Ok(false);
             }
         }
@@ -353,7 +401,9 @@ impl<'a> ClosureSolver<'a> {
         for (name, value) in func.args.iter().zip(args) {
             env.insert(name.clone(), EvalValue::Bv(value.bits.clone(), value.width));
         }
-        let bits = self.evaluator().eval_bv(&func.body, &env, func.width)?;
+        let bits = self
+            .evaluator()
+            .eval_bv(&func.body, &mut EvalEnv::with_base(env), func.width)?;
         let term = if args.is_empty() {
             SyGuSTerm::Identifier(Identifier::Symbol(prod.ctor.clone()))
         } else {
@@ -488,23 +538,14 @@ impl EvalValue {
 }
 
 impl<'a> EvalContext<'a> {
-    fn eval_bool(
-        &self,
-        term: &SyGuSTerm,
-        env: &HashMap<String, EvalValue>,
-    ) -> Result<bool, String> {
+    fn eval_bool(&self, term: &SyGuSTerm, env: &mut EvalEnv) -> Result<bool, String> {
         match self.eval(term, env)? {
             EvalValue::Bool(value) => Ok(value),
             other => Err(format!("expected Bool, got {:?}", other.kind())),
         }
     }
 
-    fn eval_bv(
-        &self,
-        term: &SyGuSTerm,
-        env: &HashMap<String, EvalValue>,
-        width: usize,
-    ) -> Result<Bits, String> {
+    fn eval_bv(&self, term: &SyGuSTerm, env: &mut EvalEnv, width: usize) -> Result<Bits, String> {
         match self.eval(term, env)? {
             EvalValue::Bv(bits, actual) => {
                 if actual == width {
@@ -517,11 +558,7 @@ impl<'a> EvalContext<'a> {
         }
     }
 
-    fn eval(
-        &self,
-        term: &SyGuSTerm,
-        env: &HashMap<String, EvalValue>,
-    ) -> Result<EvalValue, String> {
+    fn eval(&self, term: &SyGuSTerm, env: &mut EvalEnv) -> Result<EvalValue, String> {
         match term {
             SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
                 if let Some(value) = env.get(name) {
@@ -544,11 +581,14 @@ impl<'a> EvalContext<'a> {
             }
             SyGuSTerm::Application(id, args) => self.eval_app(id, args, env),
             SyGuSTerm::Let(bindings, body) => {
-                let mut next = env.clone();
+                env.push_scope();
                 for binding in bindings {
-                    next.insert(binding.name.clone(), self.eval(&binding.term, &next)?);
+                    let value = self.eval(&binding.term, env)?;
+                    env.insert_local(binding.name.clone(), value);
                 }
-                self.eval(body, &next)
+                let result = self.eval(body, env);
+                env.pop_scope();
+                result
             }
             SyGuSTerm::Annotated(inner, _) => self.eval(inner, env),
             _ => Err(format!("unsupported SyGuS term in closure eval: {term}")),
@@ -559,7 +599,7 @@ impl<'a> EvalContext<'a> {
         &self,
         id: &Identifier,
         args: &[SyGuSTerm],
-        env: &HashMap<String, EvalValue>,
+        env: &mut EvalEnv,
     ) -> Result<EvalValue, String> {
         let op = id.get_name();
         match op {
@@ -628,22 +668,24 @@ impl<'a> EvalContext<'a> {
                             args.len()
                         ));
                     }
-                    let mut next = env.clone();
-                    for (name, arg) in func.args.iter().zip(args) {
-                        next.insert(name.clone(), self.eval(arg, env)?);
+                    let arg_values = args
+                        .iter()
+                        .map(|arg| self.eval(arg, env))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    env.push_scope();
+                    for (name, value) in func.args.iter().cloned().zip(arg_values) {
+                        env.insert_local(name, value);
                     }
-                    return self.eval(&func.body, &next);
+                    let result = self.eval(&func.body, env);
+                    env.pop_scope();
+                    return result;
                 }
                 Err(format!("unsupported SyGuS operator {id}"))
             }
         }
     }
 
-    fn eval_bv_value(
-        &self,
-        term: &SyGuSTerm,
-        env: &HashMap<String, EvalValue>,
-    ) -> Result<(Bits, usize), String> {
+    fn eval_bv_value(&self, term: &SyGuSTerm, env: &mut EvalEnv) -> Result<(Bits, usize), String> {
         match self.eval(term, env)? {
             EvalValue::Bv(bits, width) => Ok((bits, width)),
             other => Err(format!("expected BitVec, got {:?}", other.kind())),
@@ -697,15 +739,14 @@ impl ConstraintVerifier {
         let body = parse_solution_body(solution, &self.synth_name)?;
         let bits = self
             .evaluator()
-            .eval_bv(&body, &HashMap::new(), self.synth_width)?;
-        let mut env = HashMap::new();
-        env.insert(
+            .eval_bv(&body, &mut EvalEnv::default(), self.synth_width)?;
+        let mut env = EvalEnv::with_base(HashMap::from([(
             self.synth_name.clone(),
             EvalValue::Bv(bits, self.synth_width),
-        );
+        )]));
         let mut failing = Vec::new();
         for (idx, constraint) in self.constraints.iter().enumerate() {
-            if !self.evaluator().eval_bool(constraint, &env)? {
+            if !self.evaluator().eval_bool(constraint, &mut env)? {
                 failing.push(idx);
             }
         }

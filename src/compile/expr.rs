@@ -1,4 +1,4 @@
-use crate::{compile::types::AspectValue, lang::eval::get_domain_for_sort};
+use crate::{compile::types::AspectValue, lang::eval::get_domain_for_sort, lang::model::Model};
 use lexpr::Value;
 use std::collections::HashMap;
 use sygus_parser::SyGuSTerm;
@@ -6,7 +6,7 @@ use sygus_parser::SyGuSTerm;
 pub fn eval_sygus_int(
     term: &SyGuSTerm,
     env: &[(String, AspectValue)],
-    models: &HashMap<String, &crate::lang::model::Model>,
+    models: &HashMap<String, &Model>,
 ) -> Result<isize, String> {
     let expr = lexpr::from_str(&term.to_string())
         .map_err(|e| format!("failed to parse integer aspect expression {term}: {e}"))?;
@@ -16,7 +16,7 @@ pub fn eval_sygus_int(
 pub fn eval_bool(
     expr: &Value,
     env: &[(String, AspectValue)],
-    models: &HashMap<String, &crate::lang::model::Model>,
+    models: &HashMap<String, &Model>,
 ) -> Result<bool, String> {
     if let Some(symbol) = expr.as_symbol() {
         return match symbol {
@@ -137,7 +137,7 @@ fn model_name_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<String
 fn sorted_model_domain_expr(
     expr: &Value,
     env: &[(String, AspectValue)],
-    models: &HashMap<String, &crate::lang::model::Model>,
+    models: &HashMap<String, &Model>,
 ) -> Result<(String, String, Vec<String>), String> {
     let items = expr.to_ref_vec().ok_or_else(|| {
         format!("expected sorted model domain expression (Sort model), got {expr}")
@@ -196,7 +196,7 @@ fn eval_enum_equality(
 fn eval_int(
     expr: &Value,
     env: &[(String, AspectValue)],
-    models: &HashMap<String, &crate::lang::model::Model>,
+    models: &HashMap<String, &Model>,
 ) -> Result<isize, String> {
     if let Some(value) = expr.as_i64() {
         return Ok(value as isize);

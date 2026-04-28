@@ -69,12 +69,8 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .name("sygus-backend".to_string())
         .stack_size(SYGUS_STACK_BYTES)
         .spawn(move || {
-            let result = solve_with_sygus(
-                &sygus_file,
-                sygus_optimize,
-                sygus_enum_trigger,
-                sygus_cegis,
-            );
+            let result =
+                solve_with_sygus(&sygus_file, sygus_optimize, sygus_enum_trigger, sygus_cegis);
             let _ = sygus_tx.send(BackendResult::Sygus(result));
         })?;
 
@@ -357,13 +353,24 @@ fn problem_constraints(problem: &DelisProg) -> Vec<sygus_parser::SyGuSTerm> {
 }
 
 fn constraint_polarity(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
-    let sygus_parser::SyGuSTerm::Application(id, args) = term else {
-        return None;
-    };
-    if id.get_name() != "=" || args.len() != 2 {
-        return None;
+    constraint_expected_truth(term, false)
+}
+
+fn constraint_expected_truth(term: &sygus_parser::SyGuSTerm, negated: bool) -> Option<bool> {
+    if let sygus_parser::SyGuSTerm::Application(id, args) = term {
+        if id.get_name() == "not" && args.len() == 1 {
+            return constraint_expected_truth(&args[0], !negated);
+        }
+        if id.get_name() == "=" && args.len() == 2 {
+            if let Some(value) = binary_truth_value(&args[0]) {
+                return constraint_expected_truth(&args[1], negated ^ !value);
+            }
+            if let Some(value) = binary_truth_value(&args[1]) {
+                return constraint_expected_truth(&args[0], negated ^ !value);
+            }
+        }
     }
-    binary_truth_value(&args[0]).or_else(|| binary_truth_value(&args[1]))
+    Some(!negated)
 }
 
 fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
@@ -377,6 +384,61 @@ fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sygus_parser::ast::{Identifier, Literal, SyGuSTerm};
+
+    fn app(name: &str, args: Vec<SyGuSTerm>) -> SyGuSTerm {
+        SyGuSTerm::Application(Identifier::from_str(name).unwrap(), args)
+    }
+
+    fn bool_lit(value: bool) -> SyGuSTerm {
+        SyGuSTerm::Literal(Literal::Bool(value))
+    }
+
+    fn bin_lit(bits: &str) -> SyGuSTerm {
+        SyGuSTerm::Literal(Literal::BinConst(bits.into()))
+    }
+
+    fn atom(name: &str) -> SyGuSTerm {
+        app(name, vec![])
+    }
+
+    #[test]
+    fn constraint_polarity_handles_nested_negation_and_truth_equalities() {
+        assert_eq!(constraint_polarity(&atom("p")), Some(true));
+        assert_eq!(
+            constraint_polarity(&app("not", vec![atom("p")])),
+            Some(false)
+        );
+        assert_eq!(
+            constraint_polarity(&app("not", vec![app("not", vec![atom("p")])])),
+            Some(true)
+        );
+        assert_eq!(
+            constraint_polarity(&app("=", vec![atom("p"), bool_lit(true)])),
+            Some(true)
+        );
+        assert_eq!(
+            constraint_polarity(&app("=", vec![atom("p"), bool_lit(false)])),
+            Some(false)
+        );
+        assert_eq!(
+            constraint_polarity(&app("=", vec![atom("p"), bin_lit("#b1")])),
+            Some(true)
+        );
+        assert_eq!(
+            constraint_polarity(&app("=", vec![atom("p"), bin_lit("#b0")])),
+            Some(false)
+        );
+        assert_eq!(
+            constraint_polarity(&app("not", vec![app("=", vec![atom("p"), bin_lit("#b0")])])),
+            Some(true)
+        );
     }
 }
 

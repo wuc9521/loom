@@ -39,6 +39,11 @@ struct TypedTerm {
     sort: String,
 }
 
+struct BoolPair {
+    pos: PredFormula,
+    neg: PredFormula,
+}
+
 #[derive(Default, Clone, Debug)]
 struct QuantifierTiming {
     calls: usize,
@@ -219,11 +224,6 @@ impl<'a> ChcCompiler<'a> {
         cons: &TermConstructor,
     ) -> Result<(), String> {
         let start = Instant::now();
-        let initial_rules = out.rules.len();
-        let mut eval_pos_total = Duration::ZERO;
-        let mut eval_neg_total = Duration::ZERO;
-        let mut emit_pos_total = Duration::ZERO;
-        let mut emit_neg_total = Duration::ZERO;
         *self.quantifier_profile.borrow_mut() = QuantifierProfile::default();
         let mut matched = false;
         let domains = self.program.domains.clone();
@@ -267,12 +267,15 @@ impl<'a> ChcCompiler<'a> {
             }
             for bit in &domain.bits {
                 Rc::make_mut(&mut env.aspect).insert("asp".to_string(), bit.aspect.clone());
-                let step_start = Instant::now();
-                let formula = match (&domain.kind, &bit.value) {
-                    (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
-                    (SemanticKind::FiniteValue { .. }, Some(value)) => {
-                        self.eval_finite_eq(&case.body, value, &env)?
+                let (formula, neg_formula) = match (&domain.kind, &bit.value) {
+                    (SemanticKind::Bool, None) => {
+                        let pair = self.eval_bool_pair(&case.body, &env)?;
+                        (pair.pos, pair.neg)
                     }
+                    (SemanticKind::FiniteValue { .. }, Some(value)) => (
+                        self.eval_finite_eq(&case.body, value, &env)?,
+                        self.eval_finite_neq(&case.body, value, &env)?,
+                    ),
                     _ => {
                         return Err(format!(
                             "malformed semantic domain bit {} for {}",
@@ -280,16 +283,6 @@ impl<'a> ChcCompiler<'a> {
                         ));
                     }
                 };
-                eval_pos_total += step_start.elapsed();
-                let step_start = Instant::now();
-                let neg_formula = match (&domain.kind, &bit.value) {
-                    (SemanticKind::Bool, None) => self.eval_bool_neg(&case.body, &env)?,
-                    (SemanticKind::FiniteValue { .. }, Some(value)) => {
-                        self.eval_finite_neq(&case.body, value, &env)?
-                    }
-                    _ => unreachable!(),
-                };
-                eval_neg_total += step_start.elapsed();
                 let head = PredAtom::new(
                     self.pred_for(
                         &domain.relation,
@@ -299,10 +292,7 @@ impl<'a> ChcCompiler<'a> {
                     )?,
                     head_term.clone(),
                 );
-                let step_start = Instant::now();
                 self.emit_formula_rules(out, head.clone(), formula, &cons.result_sort, &head_term)?;
-                emit_pos_total += step_start.elapsed();
-                let step_start = Instant::now();
                 self.emit_formula_rules(
                     out,
                     head.dual(),
@@ -310,7 +300,6 @@ impl<'a> ChcCompiler<'a> {
                     &cons.result_sort,
                     &head_term,
                 )?;
-                emit_neg_total += step_start.elapsed();
             }
         }
         if !matched {
@@ -319,20 +308,10 @@ impl<'a> ChcCompiler<'a> {
                 cons.name
             ));
         }
-        let quant = self.quantifier_profile.borrow().clone();
         log::info!(
-            "CHC constructor {} compiled in {:?} ({} rules, eval+ {:?}, eval- {:?}, emit+ {:?}, emit- {:?}, q forall+ {:?}, q forall- {:?}, q exists+ {:?}, q exists- {:?})",
+            "CHC constructor {} compiled in {:?}",
             cons.name,
             start.elapsed(),
-            out.rules.len().saturating_sub(initial_rules),
-            eval_pos_total,
-            eval_neg_total,
-            emit_pos_total,
-            emit_neg_total,
-            quant.forall_pos,
-            quant.forall_neg,
-            quant.exists_pos,
-            quant.exists_neg,
         );
         Ok(())
     }
@@ -459,23 +438,24 @@ impl<'a> ChcCompiler<'a> {
     }
 
     fn eval_bool(&self, expr: &Value, env: &Env) -> Result<PredFormula, String> {
-        self.eval_bool_polarity(expr, env, true)
+        Ok(self.eval_bool_pair(expr, env)?.pos)
     }
 
     fn eval_bool_neg(&self, expr: &Value, env: &Env) -> Result<PredFormula, String> {
-        self.eval_bool_polarity(expr, env, false)
+        Ok(self.eval_bool_pair(expr, env)?.neg)
     }
 
-    fn eval_bool_polarity(
-        &self,
-        expr: &Value,
-        env: &Env,
-        positive: bool,
-    ) -> Result<PredFormula, String> {
+    fn eval_bool_pair(&self, expr: &Value, env: &Env) -> Result<BoolPair, String> {
         if let Some(symbol) = expr.as_symbol() {
-            return match (symbol, positive) {
-                ("true", true) | ("false", false) => Ok(formula_true()),
-                ("true", false) | ("false", true) => Ok(formula_false()),
+            return match symbol {
+                "true" => Ok(BoolPair {
+                    pos: formula_true(),
+                    neg: formula_false(),
+                }),
+                "false" => Ok(BoolPair {
+                    pos: formula_false(),
+                    neg: formula_true(),
+                }),
                 _ => Err(format!("expected Bool expression, got {expr}")),
             };
         }
@@ -487,91 +467,86 @@ impl<'a> ChcCompiler<'a> {
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
         match op {
-            "not" if items.len() == 2 => self.eval_bool_polarity(items[1], env, !positive),
-            "and" if positive => {
-                let mut acc = formula_true();
-                for item in &items[1..] {
-                    acc = formula_and(acc, self.eval_bool_polarity(item, env, true)?);
-                    if matches!(acc, PredFormula::False) {
-                        break;
-                    }
-                }
-                Ok(acc)
+            "not" if items.len() == 2 => {
+                let pair = self.eval_bool_pair(items[1], env)?;
+                Ok(BoolPair {
+                    pos: pair.neg,
+                    neg: pair.pos,
+                })
             }
             "and" => {
-                let mut acc = formula_false();
+                let mut pos = formula_true();
+                let mut neg = formula_false();
                 for item in &items[1..] {
-                    acc = formula_or(acc, self.eval_bool_polarity(item, env, false)?);
-                    if matches!(acc, PredFormula::True) {
+                    let pair = self.eval_bool_pair(item, env)?;
+                    pos = formula_and(pos, pair.pos);
+                    neg = formula_or(neg, pair.neg);
+                    if matches!(pos, PredFormula::False) && matches!(neg, PredFormula::True) {
                         break;
                     }
                 }
-                Ok(acc)
-            }
-            "or" if positive => {
-                let mut acc = formula_false();
-                for item in &items[1..] {
-                    acc = formula_or(acc, self.eval_bool_polarity(item, env, true)?);
-                    if matches!(acc, PredFormula::True) {
-                        break;
-                    }
-                }
-                Ok(acc)
+                Ok(BoolPair { pos, neg })
             }
             "or" => {
-                let mut acc = formula_true();
+                let mut pos = formula_false();
+                let mut neg = formula_true();
                 for item in &items[1..] {
-                    acc = formula_and(acc, self.eval_bool_polarity(item, env, false)?);
-                    if matches!(acc, PredFormula::False) {
+                    let pair = self.eval_bool_pair(item, env)?;
+                    pos = formula_or(pos, pair.pos);
+                    neg = formula_and(neg, pair.neg);
+                    if matches!(pos, PredFormula::True) && matches!(neg, PredFormula::False) {
                         break;
                     }
                 }
-                Ok(acc)
+                Ok(BoolPair { pos, neg })
             }
-            "ite" if items.len() == 4 => Ok(formula_or(
-                formula_and(
-                    self.eval_bool(items[1], env)?,
-                    self.eval_bool_polarity(items[2], env, positive)?,
-                ),
-                formula_and(
-                    self.eval_bool_neg(items[1], env)?,
-                    self.eval_bool_polarity(items[3], env, positive)?,
-                ),
-            )),
-            "=" if items.len() == 3 => self.eval_equality(items[1], items[2], env, positive),
-            "<" if items.len() == 3 => self.eval_int_compare(
-                items[1],
-                items[2],
-                env,
-                if positive { IntCmp::Lt } else { IntCmp::Ge },
-            ),
-            "<=" if items.len() == 3 => self.eval_int_compare(
-                items[1],
-                items[2],
-                env,
-                if positive { IntCmp::Le } else { IntCmp::Gt },
-            ),
+            "ite" if items.len() == 4 => {
+                let cond = self.eval_bool_pair(items[1], env)?;
+                let then_pair = self.eval_bool_pair(items[2], env)?;
+                let else_pair = self.eval_bool_pair(items[3], env)?;
+                Ok(BoolPair {
+                    pos: formula_or(
+                        formula_and(cond.pos.clone(), then_pair.pos),
+                        formula_and(cond.neg.clone(), else_pair.pos),
+                    ),
+                    neg: formula_or(
+                        formula_and(cond.pos, then_pair.neg),
+                        formula_and(cond.neg, else_pair.neg),
+                    ),
+                })
+            }
+            "=" if items.len() == 3 => Ok(BoolPair {
+                pos: self.eval_equality(items[1], items[2], env, true)?,
+                neg: self.eval_equality(items[1], items[2], env, false)?,
+            }),
+            "<" if items.len() == 3 => Ok(BoolPair {
+                pos: self.eval_int_compare(items[1], items[2], env, IntCmp::Lt)?,
+                neg: self.eval_int_compare(items[1], items[2], env, IntCmp::Ge)?,
+            }),
+            "<=" if items.len() == 3 => Ok(BoolPair {
+                pos: self.eval_int_compare(items[1], items[2], env, IntCmp::Le)?,
+                neg: self.eval_int_compare(items[1], items[2], env, IntCmp::Gt)?,
+            }),
             "forall" | "exists" if items.len() == 3 => {
-                self.eval_quantifier(op == "forall", items[1], items[2], env, positive)
+                self.eval_quantifier_pair(op == "forall", items[1], items[2], env)
             }
             relation if self.ctx.has_relation(relation) => {
-                self.eval_semantic_bool_call(relation, &items[1..], env, positive)
+                self.eval_semantic_bool_call_pair(relation, &items[1..], env)
             }
             func if self.ctx.has_func(func) => {
-                self.eval_model_bool_call(func, &items[1..], env, positive)
+                self.eval_model_bool_call_pair(func, &items[1..], env)
             }
             _ => Err(format!("unsupported Bool expression: {expr}")),
         }
     }
 
-    fn eval_quantifier(
+    fn eval_quantifier_pair(
         &self,
         forall: bool,
         bindings: &Value,
         body: &Value,
         env: &Env,
-        positive: bool,
-    ) -> Result<PredFormula, String> {
+    ) -> Result<BoolPair, String> {
         let binding_list = bindings
             .to_ref_vec()
             .ok_or_else(|| format!("quantifier binding list must be a list: {bindings}"))?;
@@ -592,16 +567,19 @@ impl<'a> ChcCompiler<'a> {
         let var = var
             .as_symbol()
             .ok_or_else(|| format!("quantifier variable must be a symbol: {var}"))?;
-        let conjunctive = if positive { forall } else { !forall };
-        let body_positive = positive;
         let total_start = Instant::now();
         let domain_start = Instant::now();
         let values = self.quantifier_values(domain_expr, env)?;
         let domain_time = domain_start.elapsed();
-        let mut out = if conjunctive {
+        let mut pos = if forall {
             formula_true()
         } else {
             formula_false()
+        };
+        let mut neg = if forall {
+            formula_false()
+        } else {
+            formula_true()
         };
         let mut clone_time = Duration::ZERO;
         let mut body_time = Duration::ZERO;
@@ -614,32 +592,36 @@ impl<'a> ChcCompiler<'a> {
             next.values.insert(var.to_string(), value);
             clone_time += step_start.elapsed();
             let step_start = Instant::now();
-            let part = self.eval_bool_polarity(body, &next, body_positive)?;
+            let pair = self.eval_bool_pair(body, &next)?;
             body_time += step_start.elapsed();
             let step_start = Instant::now();
-            out = if conjunctive {
-                formula_and(out, part)
+            if forall {
+                pos = formula_and(pos, pair.pos);
+                neg = formula_or(neg, pair.neg);
             } else {
-                formula_or(out, part)
-            };
+                pos = formula_or(pos, pair.pos);
+                neg = formula_and(neg, pair.neg);
+            }
             combine_time += step_start.elapsed();
-            if matches!(out, PredFormula::False) && conjunctive {
+            if forall && matches!(pos, PredFormula::False) && matches!(neg, PredFormula::True) {
                 break;
             }
-            if matches!(out, PredFormula::True) && !conjunctive {
+            if !forall && matches!(pos, PredFormula::True) && matches!(neg, PredFormula::False) {
                 break;
             }
         }
         let mut profile = self.quantifier_profile.borrow_mut();
-        let bucket = profile.bucket_mut(forall, positive);
-        bucket.calls += 1;
-        bucket.iterations += iterations;
-        bucket.domain_time += domain_time;
-        bucket.clone_time += clone_time;
-        bucket.body_time += body_time;
-        bucket.combine_time += combine_time;
-        bucket.total_time += total_start.elapsed();
-        Ok(out)
+        for positive in [true, false] {
+            let bucket = profile.bucket_mut(forall, positive);
+            bucket.calls += 1;
+            bucket.iterations += iterations;
+            bucket.domain_time += domain_time;
+            bucket.clone_time += clone_time;
+            bucket.body_time += body_time;
+            bucket.combine_time += combine_time;
+            bucket.total_time += total_start.elapsed();
+        }
+        Ok(BoolPair { pos, neg })
     }
 
     fn quantifier_values(
@@ -715,13 +697,12 @@ impl<'a> ChcCompiler<'a> {
         Ok(bool_formula(value))
     }
 
-    fn eval_semantic_bool_call(
+    fn eval_semantic_bool_call_pair(
         &self,
         relation: &str,
         args: &[&Value],
         env: &Env,
-        positive: bool,
-    ) -> Result<PredFormula, String> {
+    ) -> Result<BoolPair, String> {
         let domain = self.ctx.domain_for_relation(relation)?;
         if domain.kind != SemanticKind::Bool {
             return Err(format!("{relation} does not return Bool"));
@@ -731,33 +712,39 @@ impl<'a> ChcCompiler<'a> {
         }
         let terms = self.child_terms(args[0], env)?;
         let allowed_sorts = self.relation_term_sorts(relation)?;
-        let mut out = formula_false();
+        let mut pos = formula_false();
+        let mut neg = formula_false();
         for (guard, aspect) in self.aspect_variants(args[1], relation, env)? {
             for term in &terms {
                 if !allowed_sorts.iter().any(|sort| sort == &term.sort) {
                     continue;
                 }
                 let pred = self.pred_for(relation, &term.sort, &aspect, None)?;
-                let pred = if positive { pred } else { pred.dual() };
-                out = formula_or(
-                    out,
+                pos = formula_or(
+                    pos,
                     formula_and(
                         guard.clone(),
                         formula_atom(PredAtom::new(pred.clone(), term.term.clone())),
                     ),
                 );
+                neg = formula_or(
+                    neg,
+                    formula_and(
+                        guard.clone(),
+                        formula_atom(PredAtom::new(pred.dual(), term.term.clone())),
+                    ),
+                );
             }
         }
-        Ok(out)
+        Ok(BoolPair { pos, neg })
     }
 
-    fn eval_model_bool_call(
+    fn eval_model_bool_call_pair(
         &self,
         func: &str,
         args: &[&Value],
         env: &Env,
-        expected: bool,
-    ) -> Result<PredFormula, String> {
+    ) -> Result<BoolPair, String> {
         let sig = self
             .ctx
             .func_sigs
@@ -770,12 +757,32 @@ impl<'a> ChcCompiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
             let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
-            return Ok(bool_formula(value.as_ref().is_some_and(interped_bool) == expected));
+            let matched = value.as_ref().is_some_and(interped_bool);
+            return Ok(BoolPair {
+                pos: bool_formula(matched),
+                neg: bool_formula(!matched),
+            });
         }
+        Ok(BoolPair {
+            pos: self.eval_model_call_matches(func, args, env, |value| interped_bool(value))?,
+            neg: self.eval_model_call_matches(func, args, env, |value| !interped_bool(value))?,
+        })
+    }
+
+    fn eval_model_call_matches<F>(
+        &self,
+        func: &str,
+        args: &[&Value],
+        env: &Env,
+        mut keep: F,
+    ) -> Result<PredFormula, String>
+    where
+        F: FnMut(&crate::lang::model::InterpedValue) -> bool,
+    {
         let mut out = formula_false();
         for tuple in self
             .ctx
-            .matching_model_call_tuples(func, args, env, |value| interped_bool(value) == expected)?
+            .matching_model_call_tuples(func, args, env, |value| keep(value))?
         {
             let mut conj = formula_true();
             for (arg_expr, value) in args.iter().zip(tuple.iter()) {
@@ -886,7 +893,11 @@ impl<'a> ChcCompiler<'a> {
     ) -> Result<PredFormula, String> {
         if let Ok(value) = self.ctx.eval_value(expr, env) {
             let matches = self.ctx.value_matches_target(&value, target, env)?;
-            return Ok(if matches == positive { formula_true() } else { formula_false() });
+            return Ok(if matches == positive {
+                formula_true()
+            } else {
+                formula_false()
+            });
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
@@ -1007,27 +1018,14 @@ impl<'a> ChcCompiler<'a> {
                 .is_some_and(|value| interped_value_matches(value, target));
             return Ok(bool_formula(matches == positive));
         }
-        let mut out = formula_false();
-        for tuple in self.ctx.matching_model_call_tuples(func, args, env, |value| {
+        self.eval_model_call_matches(func, args, env, |value| {
             interped_value_matches(value, target) == positive
-        })? {
-            let mut conj = formula_true();
-            for (arg_expr, value) in args.iter().zip(tuple.iter()) {
-                conj = formula_and(conj, self.eval_finite_eq(arg_expr, value, env)?);
-            }
-            out = formula_or(out, conj);
-        }
-        Ok(out)
+        })
     }
 
     fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<TypedTerm>, String> {
         if let Some(child) = expr.as_symbol() {
-            if env
-                .current_var
-                .as_deref()
-                .map(String::as_str)
-                == Some(child)
-            {
+            if env.current_var.as_deref().map(String::as_str) == Some(child) {
                 let term = env.current_term.clone().ok_or_else(|| {
                     "missing current term for recursive semantic call".to_string()
                 })?;

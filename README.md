@@ -43,10 +43,25 @@ time delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl
 delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl  0.14s user 0.02s system 129% cpu 0.123 total
 ```
 
+Docker
+
+`delis` depends on the sibling path crate `../sygus-parser-rs`, so the Docker
+build context must be the parent directory that contains both repositories.
+
+```bash
+cd /path/to/parent/of/delis-and-sygus-parser-rs
+docker build -f delis/Dockerfile -t delis:latest .
+docker run --rm delis:latest --help
+docker run --rm -v "$PWD/delis:/work" -w /work delis:latest ./benchmark/alpharegex/re/no20.sl --verbose --cegis
+```
+
+The runtime image installs `cvc5`, which is the default external solver used by
+Delis.
+
 # TODO
 
 - [x] CEGIS: randomly choose n models and verify on the rest.
 - [x] `--dump-sygus`.
 - [ ] Implement String / Flash.
 - [ ] `DryadSynth` on old benchmarks.
-- [ ] CTL.
+- [x] CTL.
