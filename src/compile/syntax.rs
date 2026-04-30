@@ -1,24 +1,13 @@
 use crate::{
     backends::smt2::ast::HornTerm,
     compile::AspectKey,
-    parser::{ast::TermTypes, DelisCmd, DelisProg},
+    parser::ast::TermTypes,
 };
 use std::collections::HashMap;
 use sygus_parser::{
-    DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSCmd, SyGuSGTerm,
+    DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSGTerm,
     SyGuSTerm,
 };
-
-pub fn synth_name(problem: &DelisProg) -> Result<String, String> {
-    problem
-        .cmds
-        .iter()
-        .find_map(|cmd| match cmd {
-            DelisCmd::As(SyGuSCmd::SynthFun(name, _, _, _)) => Some(name.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| "SyGuS compilation requires synth-fun".to_string())
-}
 
 pub fn term_sort() -> Sort {
     Sort::Simple(Identifier::Symbol("Term".to_string()))
@@ -226,7 +215,7 @@ impl TermSignature {
         if sort_name == self.start_sort {
             "Start".to_string()
         } else {
-            sort_name.to_string()
+            format!("NT.{sort_name}")
         }
     }
 
@@ -250,5 +239,9 @@ impl TermSignature {
 
     pub fn start_sort(&self) -> &str {
         &self.start_sort
+    }
+
+    pub fn sort_order(&self) -> &[String] {
+        &self.sort_order
     }
 }

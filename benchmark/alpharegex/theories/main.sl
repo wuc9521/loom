@@ -6,7 +6,7 @@
 (declare-term-types
  ((RegLan 0))
  (((char.0) (char.1)
-   (re.any)
+   (re.allchar)
    (re.opt RegLan)
    (re.++ RegLan RegLan)
    (re.union RegLan RegLan)
@@ -23,7 +23,7 @@
       (and (= (j asp) (+ (i asp) 1)) (zero (i asp))))
      ((char.1)
       (and (= (j asp) (+ (i asp) 1)) (one (i asp))))
-     ((re.any)
+     ((re.allchar)
       (= (j asp) (+ (i asp) 1)))
      ((re.opt x)
       (or (= (i asp) (j asp))

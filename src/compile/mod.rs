@@ -1,6 +1,6 @@
 use crate::backends::smt2::ast::HornProg;
 use crate::backends::smt2::twa::saturate_program;
-use crate::parser::{DelisCmd, DelisProg};
+use crate::parser::DelisProg;
 use lexpr::Value;
 use std::time::Instant;
 use sygus_parser::{Sort, SyGuSCmd};
@@ -8,6 +8,7 @@ use sygus_parser::{Sort, SyGuSCmd};
 mod bv;
 mod chc;
 mod closure;
+mod context;
 mod expr;
 mod finite;
 mod native;
@@ -16,9 +17,9 @@ mod syntax;
 mod types;
 
 pub use finite::compile;
-use syntax::synth_name;
 pub use syntax::{TermConstructor, TermSignature};
 pub use types::{AspectKey, BitMapping, ConstraintBit, Encoding};
+use context::CompileContext;
 
 pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
     closure::solve(problem, optimize)
@@ -29,20 +30,13 @@ pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<V
 }
 
 pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
-    let semantic_program = finite::compile_semantic_program(problem)?;
-    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
-        DelisCmd::TermTypes(cmd) => Some(cmd),
-        _ => None,
-    });
-    let Some(declare_term_types) = declare_term_types else {
-        return Err("SyGuS compilation requires declare-term-types".to_string());
-    };
-    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    if supports_native_sygus(&semantic_program) {
-        let width = semantic_program
+    let ctx = CompileContext::new(problem)?;
+    if supports_native_sygus(&ctx.semantic_program) {
+        let width = ctx
+            .semantic_program
             .domains
             .iter()
-            .filter(|domain| domain.term_sort == sig.start_sort())
+            .filter(|domain| domain.term_sort == ctx.sig.start_sort())
             .map(|domain| domain.bits.len())
             .sum::<usize>();
         if width == 0 {
@@ -50,16 +44,22 @@ pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
         }
         return Ok(width);
     }
-    let mut program = to_chc_ast(problem)?;
-    if semantic_program.needs_saturation {
-        program = saturate_program(&program, &sig)?;
+    let mut program = chc::compile_with_context(
+        ctx.problem,
+        ctx.semantic_program.clone(),
+        ctx.sig.clone(),
+        ctx.semantic_cases.clone(),
+    )?;
+    if ctx.semantic_program.needs_saturation {
+        program = saturate_program(&program, &ctx.sig)?;
     }
     let widths = complete_sort_widths(
-        &sig,
-        &semantic_program,
+        &ctx.sig,
+        &ctx.semantic_program,
+        &ctx.semantic_cases,
         crate::backends::sygus::bv::sort_widths(&program),
     )?;
-    let width = widths.get(sig.start_sort()).copied().unwrap_or(0);
+    let width = widths.get(ctx.sig.start_sort()).copied().unwrap_or(0);
     if width == 0 {
         return Err("SyGuS compilation requires at least one semantic state".to_string());
     }
@@ -68,63 +68,73 @@ pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
 
 pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
     let semantic_start = Instant::now();
-    let semantic_program = finite::compile_semantic_program(problem)?;
+    let ctx = CompileContext::new(problem)?;
     log::info!(
         "compile_semantic_program completed in {:?}",
         semantic_start.elapsed()
     );
-    if supports_native_sygus(&semantic_program) {
+    if supports_native_sygus(&ctx.semantic_program) {
         log::info!("using native SyGuS BV lowering");
         let native_start = Instant::now();
-        let result = bv::compile(problem, semantic_program, optimize);
-        log::info!("native SyGuS BV lowering completed in {:?}", native_start.elapsed());
+        let result = bv::compile(&ctx, optimize);
+        log::info!(
+            "native SyGuS BV lowering completed in {:?}",
+            native_start.elapsed()
+        );
         return result;
     }
     log::info!("using CHC-to-BV SyGuS lowering");
-    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
-        DelisCmd::TermTypes(cmd) => Some(cmd),
-        _ => None,
-    });
-    let Some(declare_term_types) = declare_term_types else {
-        return Err("SyGuS compilation requires declare-term-types".to_string());
-    };
-    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
     let chc_start = Instant::now();
-    let mut program = to_chc_ast(problem)?;
-    if semantic_program.needs_saturation {
-        program = saturate_program(&program, &sig)?;
+    let mut program = chc::compile_with_context(
+        ctx.problem,
+        ctx.semantic_program.clone(),
+        ctx.sig.clone(),
+        ctx.semantic_cases.clone(),
+    )?;
+    if ctx.semantic_program.needs_saturation {
+        program = saturate_program(&program, &ctx.sig)?;
     }
     log::info!("CHC lowering completed in {:?}", chc_start.elapsed());
     let layouts = complete_layouts(
-        &sig,
-        &semantic_program,
+        &ctx.sig,
+        &ctx.semantic_program,
+        &ctx.semantic_cases,
         crate::backends::sygus::bv::layouts_by_sort(&program),
     )?;
-    let sort_widths = layouts
+    let sort_alias_cmds = layouts
         .iter()
-        .map(|(sort, layout)| (sort.clone(), Sort::bitvec(layout.states.len().max(1))))
+        .map(|(sort, layout)| {
+            SyGuSCmd::DefineSort(
+                sort.clone(),
+                Vec::new(),
+                Sort::bitvec(layout.states.len().max(1)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let sort_aliases = layouts
+        .keys()
+        .map(|sort| (sort.clone(), Sort::from_name(sort)))
         .collect::<std::collections::HashMap<_, _>>();
-    let grammar = sig.bv_grammar_with_sorts(declare_term_types, &sort_widths)?;
+    let grammar = ctx.sig.bv_grammar_with_sorts(ctx.term_types, &sort_aliases)?;
     let bv_start = Instant::now();
-    let result = crate::backends::sygus::bv::compile_one_way(
+    let mut result = crate::backends::sygus::bv::compile_one_way(
         &program,
-        &synth_name(problem)?,
+        &ctx.synth_name,
         grammar,
-        &sig,
-        sig.start_sort(),
+        &ctx.sig,
+        ctx.sig.start_sort(),
         Some(layouts),
         optimize,
-    )
-    .into_iter()
-    .map(Ok)
-    .collect();
+    );
+    result.splice(1..1, sort_alias_cmds);
     log::info!("CHC BV emission completed in {:?}", bv_start.elapsed());
-    result
+    Ok(result)
 }
 
 fn complete_layouts(
     sig: &TermSignature,
     program: &types::SemanticProgram,
+    semantic_cases: &context::SemanticCases,
     mut layouts: std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>,
 ) -> Result<std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>, String> {
     let fallback_template = if layouts.len() == 1 {
@@ -148,7 +158,9 @@ fn complete_layouts(
         layouts
             .entry(spec.term_sort.clone())
             .or_insert_with(|| template.clone());
-        let cases = semantic::parse_cases(&spec.body)?;
+        let cases = semantic_cases
+            .get(&spec.relation)
+            .ok_or_else(|| format!("missing parsed cases for {}", spec.relation))?;
         for cons in cases.keys() {
             if let Some(sort) = cons_sorts.get(cons) {
                 layouts
@@ -163,11 +175,13 @@ fn complete_layouts(
 fn complete_sort_widths(
     sig: &TermSignature,
     program: &types::SemanticProgram,
+    semantic_cases: &context::SemanticCases,
     widths: std::collections::HashMap<String, usize>,
 ) -> Result<std::collections::HashMap<String, usize>, String> {
     complete_layouts(
         sig,
         program,
+        semantic_cases,
         widths
             .into_iter()
             .map(|(sort, width)| {
@@ -242,16 +256,17 @@ fn contains_self_call(relation: &str, self_var: &str, expr: &Value) -> bool {
 }
 
 pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
-    let semantic_program = finite::compile_semantic_program(problem)?;
-    Ok(semantic_program
+    let ctx = CompileContext::new(problem)?;
+    Ok(ctx
+        .semantic_program
         .domains
         .iter()
         .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool)))
 }
 
 pub fn to_chc_ast(problem: &DelisProg) -> Result<HornProg, String> {
-    let semantic_program = finite::compile_semantic_program(problem)?;
-    chc::compile(problem, semantic_program)
+    let ctx = CompileContext::new(problem)?;
+    chc::compile_with_context(problem, ctx.semantic_program, ctx.sig, ctx.semantic_cases)
 }
 
 #[cfg(test)]

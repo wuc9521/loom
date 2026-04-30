@@ -16,7 +16,7 @@ use crate::{
         },
     },
     lang::eval::{eval_symbols, get_domain_for_sort},
-    parser::{DelisCmd, DelisProg},
+    parser::DelisProg,
 };
 use lexpr::Value;
 use std::{
@@ -94,16 +94,13 @@ impl EnvView for Env {
     }
 }
 
-pub fn compile(problem: &DelisProg, program: SemanticProgram) -> Result<HornProg, String> {
-    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
-        DelisCmd::TermTypes(cmd) => Some(cmd),
-        _ => None,
-    });
-    let Some(declare_term_types) = declare_term_types else {
-        return Err("CHC compilation requires declare-term-types".to_string());
-    };
-    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    ChcCompiler::new(problem, program, sig)?.compile()
+pub fn compile_with_context(
+    problem: &DelisProg,
+    program: SemanticProgram,
+    sig: TermSignature,
+    semantic_cases: HashMap<String, HashMap<String, crate::compile::semantic::Case>>,
+) -> Result<HornProg, String> {
+    ChcCompiler::new(problem, program, sig, semantic_cases)?.compile()
 }
 
 struct ChcCompiler<'a> {
@@ -124,8 +121,9 @@ impl<'a> ChcCompiler<'a> {
         problem: &'a DelisProg,
         program: SemanticProgram,
         sig: TermSignature,
+        semantic_cases: HashMap<String, HashMap<String, crate::compile::semantic::Case>>,
     ) -> Result<Self, String> {
-        let ctx = SemanticContext::new(problem, &program)?;
+        let ctx = SemanticContext::with_cases(problem, &program, &semantic_cases)?;
         let constructor_sorts = sig
             .constructors
             .iter()
@@ -148,12 +146,31 @@ impl<'a> ChcCompiler<'a> {
             }
             relation_sorts.insert(spec.relation.clone(), sorts);
         }
-        let mut predicates = HashMap::new();
-        for domain in &program.domains {
+        Ok(Self {
+            program,
+            sig,
+            ctx,
+            relation_sorts,
+            predicates: HashMap::new(),
+            next_helper_id: 0,
+            ground_model_eval: RefCell::new(HashMap::new()),
+            domain_values_cache: RefCell::new(HashMap::new()),
+            quantifier_profile: RefCell::new(QuantifierProfile::default()),
+        }
+        .init_predicates())
+    }
+
+    fn init_predicates(mut self) -> Self {
+        for domain in &self.program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, &bit.aspect, bit.value.as_ref());
-                for sort in relation_sorts.get(&domain.relation).into_iter().flatten() {
-                    predicates.insert(
+                for sort in self
+                    .relation_sorts
+                    .get(&domain.relation)
+                    .into_iter()
+                    .flatten()
+                {
+                    self.predicates.insert(
                         (
                             domain.relation.clone(),
                             sort.clone(),
@@ -168,17 +185,7 @@ impl<'a> ChcCompiler<'a> {
                 }
             }
         }
-        Ok(Self {
-            program,
-            sig,
-            ctx,
-            relation_sorts,
-            predicates,
-            next_helper_id: 0,
-            ground_model_eval: RefCell::new(HashMap::new()),
-            domain_values_cache: RefCell::new(HashMap::new()),
-            quantifier_profile: RefCell::new(QuantifierProfile::default()),
-        })
+        self
     }
 
     fn compile(mut self) -> Result<HornProg, String> {

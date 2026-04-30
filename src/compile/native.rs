@@ -1,6 +1,6 @@
 use crate::{
     compile::{
-        semantic::{parse_cases, Case},
+        semantic::Case,
         types::{
             AspectKey, AspectValue, FiniteSpace, SemanticDomain, SemanticKind, SemanticProgram,
             SemanticSpec,
@@ -33,7 +33,11 @@ pub struct SemanticContext<'a> {
 }
 
 impl<'a> SemanticContext<'a> {
-    pub fn new(problem: &'a DelisProg, program: &SemanticProgram) -> Result<Self, String> {
+    pub fn with_cases(
+        problem: &'a DelisProg,
+        program: &SemanticProgram,
+        cases: &HashMap<String, HashMap<String, Case>>,
+    ) -> Result<Self, String> {
         let models = problem
             .cmds
             .iter()
@@ -72,10 +76,6 @@ impl<'a> SemanticContext<'a> {
                 .or_default()
                 .push(domain.clone());
         }
-        let mut cases = HashMap::new();
-        for spec in &program.semantics {
-            cases.insert(spec.relation.clone(), parse_cases(&spec.body)?);
-        }
         Ok(Self {
             models,
             func_sigs,
@@ -83,7 +83,7 @@ impl<'a> SemanticContext<'a> {
             specs,
             domains_by_relation,
             domains_by_sort,
-            cases,
+            cases: cases.clone(),
         })
     }
 

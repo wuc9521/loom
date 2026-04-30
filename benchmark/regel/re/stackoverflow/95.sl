@@ -1,7 +1,7 @@
 (require "../theories/so/95.sl")
 (require "../../common/models/so/95.sl")
 
-(synth-fun r () RegLan)
+(synth-fun regex () RegLan)
 
 (constraint (RegLan.Sem r (ReAsp so_95_P1 0 (size (Pos so_95_P1)))))
 (constraint (not (RegLan.Sem r (ReAsp so_95_N1 0 (size (Pos so_95_N1))))))

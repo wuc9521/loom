@@ -1,13 +1,14 @@
 use crate::{
     backends::sygus::optim::{self, BitwiseExpr},
     compile::{
+        context::CompileContext,
         native::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
-        syntax::{synth_name, TermConstructor, TermSignature},
+        syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, SemanticKind, SemanticProgram},
     },
     lang::eval::eval_symbols,
-    parser::{DelisCmd, DelisProg},
+    parser::ast::TermTypes,
 };
 use lexpr::Value;
 use std::{cell::RefCell, collections::HashMap, time::Instant};
@@ -51,41 +52,42 @@ impl EnvView for Env {
 }
 
 struct NativeCompiler<'a> {
-    problem: &'a DelisProg,
+    term_types: &'a TermTypes,
     program: SemanticProgram,
     sig: TermSignature,
     ctx: SemanticContext<'a>,
+    synth_name: String,
+    synth_args: Vec<sygus_parser::SortedVar>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
     ground_model_eval:
         RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
     optimize: bool,
 }
 
-pub fn compile(
-    problem: &DelisProg,
-    program: SemanticProgram,
-    optimize: bool,
-) -> Result<Vec<SyGuSCmd>, String> {
-    let declare_term_types = problem.cmds.iter().find_map(|cmd| match cmd {
-        DelisCmd::TermTypes(cmd) => Some(cmd),
-        _ => None,
-    });
-    let Some(declare_term_types) = declare_term_types else {
-        return Err("SyGuS compilation requires declare-term-types".to_string());
-    };
-    let sig = TermSignature::from_declare_term_types(declare_term_types)?;
-    let mut compiler = NativeCompiler::new(problem, program, sig, optimize)?;
+pub fn compile(ctx: &CompileContext<'_>, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
+    let mut compiler = NativeCompiler::from_context(ctx, optimize)?;
     compiler.compile()
 }
 
 impl<'a> NativeCompiler<'a> {
-    fn new(
-        problem: &'a DelisProg,
-        program: SemanticProgram,
-        sig: TermSignature,
-        optimize: bool,
-    ) -> Result<Self, String> {
-        let ctx = SemanticContext::new(problem, &program)?;
+    fn sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
+        self.sig
+            .sort_order()
+            .iter()
+            .map(|sort| {
+                Ok(SyGuSCmd::DefineSort(
+                    sort.clone(),
+                    Vec::new(),
+                    Sort::bitvec(self.sort_width(sort)?),
+                ))
+            })
+            .collect()
+    }
+
+    fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
+        let program = ctx_data.semantic_program.clone();
+        let sig = ctx_data.sig.clone();
+        let ctx = ctx_data.semantic_context()?;
         let mut bit_index = HashMap::new();
         let mut offsets = HashMap::new();
         for domain in &program.domains {
@@ -103,10 +105,12 @@ impl<'a> NativeCompiler<'a> {
             *offset += domain.bits.len();
         }
         Ok(Self {
-            problem,
+            term_types: ctx_data.term_types,
             program,
             sig,
             ctx,
+            synth_name: ctx_data.synth_name.clone(),
+            synth_args: ctx_data.synth_args.clone(),
             bit_index,
             ground_model_eval: RefCell::new(HashMap::new()),
             optimize,
@@ -115,18 +119,10 @@ impl<'a> NativeCompiler<'a> {
 
     fn compile(&mut self) -> Result<Vec<SyGuSCmd>, String> {
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
+        cmds.extend(self.sort_alias_cmds()?);
         let grammar_start = Instant::now();
         let grammar = self.grammar()?;
         log::info!("native grammar compilation completed in {:?}", grammar_start.elapsed());
-        let synth_args = self
-            .problem
-            .cmds
-            .iter()
-            .find_map(|cmd| match cmd {
-                DelisCmd::As(SyGuSCmd::SynthFun(_, args, _, _)) => Some(args.clone()),
-                _ => None,
-            })
-            .ok_or_else(|| "missing synth-fun command".to_string())?;
         for cons in &self.sig.constructors {
             let cons_start = Instant::now();
             cmds.push(self.constructor_fun(cons)?);
@@ -136,14 +132,14 @@ impl<'a> NativeCompiler<'a> {
                 cons_start.elapsed()
             );
         }
-        let mut synth_cmd = Cmd::synth_fun(&synth_name(self.problem)?)
-            .ret(Sort::bitvec(self.sort_width(self.sig.start_sort())?))
+        let mut synth_cmd = Cmd::synth_fun(&self.synth_name)
+            .ret(Sort::from_name(self.sig.start_sort()))
             .grammar(grammar);
-        for arg in synth_args {
+        for arg in self.synth_args.clone() {
             synth_cmd = synth_cmd.arg(&arg.name, arg.sort);
         }
         cmds.push(synth_cmd.build());
-        let synth = Term::var(&synth_name(self.problem)?);
+        let synth = Term::var(&self.synth_name);
         for constraint in &self.program.constraints {
             let domain = self.ctx.domain_for_relation(&constraint.relation)?;
             if domain.kind != SemanticKind::Bool {
@@ -173,27 +169,22 @@ impl<'a> NativeCompiler<'a> {
     }
 
     fn grammar(&self) -> Result<GrammarDef, String> {
-        let declare_term_types = self.problem.cmds.iter().find_map(|cmd| match cmd {
-            DelisCmd::TermTypes(cmd) => Some(cmd),
-            _ => None,
-        });
-        let Some(decl) = declare_term_types else {
-            return Err("SyGuS compilation requires declare-term-types".to_string());
-        };
-        let sorted_vars = decl
+        let sorted_vars = self
+            .term_types
             .sort_decls
             .iter()
             .map(|sort_decl| {
                 Ok(SortedVar {
                     name: self.sig.grammar_symbol_for_sort(&sort_decl.symbol),
-                    sort: Sort::bitvec(self.sort_width(&sort_decl.symbol)?),
+                    sort: Sort::from_name(&sort_decl.symbol),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let grouped_rule_lists = decl
+        let grouped_rule_lists = self
+            .term_types
             .sort_decls
             .iter()
-            .zip(decl.term_type_decls.iter())
+            .zip(self.term_types.term_type_decls.iter())
             .map(|(sort_decl, term_type_decl)| {
                 let symbol = self.sig.grammar_symbol_for_sort(&sort_decl.symbol);
                 let terms = term_type_decl
@@ -211,7 +202,7 @@ impl<'a> NativeCompiler<'a> {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(GroupedRuleList {
                     symbol,
-                    sort: Sort::bitvec(self.sort_width(&sort_decl.symbol)?),
+                    sort: Sort::from_name(&sort_decl.symbol),
                     terms,
                 })
             })
@@ -270,7 +261,7 @@ impl<'a> NativeCompiler<'a> {
         let mut builder = Cmd::define_fun(&cons.name);
         let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
         for (idx, sort) in cons.arg_sorts.iter().enumerate() {
-            builder = builder.arg(&arg_names[idx], Sort::bitvec(self.sort_width(sort)?));
+            builder = builder.arg(&arg_names[idx], Sort::from_name(sort));
         }
         let lift_bits = bool_bits
             .iter()
@@ -295,7 +286,7 @@ impl<'a> NativeCompiler<'a> {
             compact_bitvec(bits)
         });
         Ok(builder
-            .ret(Sort::bitvec(self.sort_width(&cons.result_sort)?))
+            .ret(Sort::from_name(&cons.result_sort))
             .body(body)
             .build())
     }

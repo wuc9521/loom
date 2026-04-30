@@ -54,23 +54,28 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .name("closure-backend".to_string())
         .stack_size(CLOSURE_STACK_BYTES)
         .spawn(move || {
-            let result = compile::solve_by_closure(&closure_file, closure_optimize)
-                .map_err(io::Error::other);
+            let result = compile::solve_by_closure(&closure_file, closure_optimize).map_err(io::Error::other);
             let _ = closure_tx.send(BackendResult::Closure(result));
         })?;
 
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
     let sygus_optimize = args.optimize;
-    let sygus_enum_trigger = args.enum_trigger;
     let sygus_cegis = args.cegis;
+    let sygus_backend = SygusBackend::from_cli(args);
+    let sygus_verbose = args.verbose;
     const SYGUS_STACK_BYTES: usize = 128 * 1024 * 1024;
     thread::Builder::new()
         .name("sygus-backend".to_string())
         .stack_size(SYGUS_STACK_BYTES)
         .spawn(move || {
-            let result =
-                solve_with_sygus(&sygus_file, sygus_optimize, sygus_enum_trigger, sygus_cegis);
+            let result = solve_with_sygus(
+                &sygus_file,
+                &sygus_backend,
+                sygus_optimize,
+                sygus_cegis,
+                sygus_verbose,
+            );
             let _ = sygus_tx.send(BackendResult::Sygus(result));
         })?;
 
@@ -105,12 +110,32 @@ enum BackendResult {
 
 type Solver = (String, Vec<String>);
 
-fn sygus_config(bv_sz: usize, enum_trigger: usize) -> Solver {
-    let mut args = vec!["--lang=sygus2".to_string()];
-    if bv_sz >= enum_trigger {
-        args.push("--sygus-enum=fast".to_string());
+#[derive(Clone, Debug)]
+enum SygusBackend {
+    InProcessDryadSynth,
+    External(Solver),
+}
+
+impl SygusBackend {
+    fn from_cli(args: &CLI) -> Self {
+        match &args.solver {
+            Some(path) => Self::External((path.clone(), external_solver_args(path))),
+            None => Self::InProcessDryadSynth,
+        }
     }
-    ("cvc5".to_string(), args)
+}
+
+fn external_solver_args(path: &str) -> Vec<String> {
+    let path_buf = PathBuf::from(path);
+    let name = path_buf
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path);
+    match name {
+        "dryadsynth-bv" => vec!["-in".to_string()],
+        "cvc5" => vec!["--lang=sygus2".to_string()],
+        _ => Vec::new(),
+    }
 }
 
 fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd]) -> Result<Child, io::Error> {
@@ -136,11 +161,29 @@ fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd]) -> Result<Child, io::Error> 
     Ok(child)
 }
 
+fn solve_cmds_with_backend(
+    backend: &SygusBackend,
+    cmds: &[SyGuSCmd],
+    verbose: bool,
+) -> Result<String, io::Error> {
+    match backend {
+        SygusBackend::InProcessDryadSynth => {
+            dryadsynth_bv::solve_sygus_cmds(cmds, None, "", if verbose { 1 } else { 0 })
+                .map_err(io::Error::other)
+        }
+        SygusBackend::External(solver) => {
+            let child = spawn_solver(solver, cmds)?;
+            solver_stdout(child, &solver.0)
+        }
+    }
+}
+
 fn solve_with_sygus(
     delis_file: &DelisProg,
+    backend: &SygusBackend,
     optimize: bool,
-    enum_trigger: usize,
     cegis_size: Option<usize>,
+    verbose: bool,
 ) -> Result<String, io::Error> {
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
@@ -154,9 +197,10 @@ fn solve_with_sygus(
         let solved = cegis_solve(
             delis_file,
             &full_sygus_cmds,
+            backend,
             optimize,
-            enum_trigger,
             cegis_size,
+            verbose,
         )?;
         log::info!(
             "sygus-backend: cegis completed in {:?}",
@@ -170,35 +214,13 @@ fn solve_with_sygus(
             "sygus-backend: to_sygus completed in {:?}",
             step_start.elapsed()
         );
-
         let step_start = Instant::now();
-        let bv_sz = sygus_bit_width(&sygus_cmds).map_err(io::Error::other)?;
-        log::info!(
-            "sygus-backend: derived bv width completed in {:?}",
-            step_start.elapsed()
-        );
-
-        let step_start = Instant::now();
-        let sygus_solver = sygus_config(bv_sz, enum_trigger);
-        log::info!(
-            "sygus-backend: sygus_config completed in {:?}",
-            step_start.elapsed()
-        );
-
-        let step_start = Instant::now();
-        let child = spawn_solver(&sygus_solver, &sygus_cmds)?;
-        log::info!(
-            "sygus-backend: spawn_solver completed in {:?}",
-            step_start.elapsed()
-        );
-
-        let step_start = Instant::now();
-        let output = solver_stdout(child, &sygus_solver.0)?;
-        log::info!(
-            "sygus-backend: solver_stdout completed in {:?}",
-            step_start.elapsed()
-        );
-        decode_cvc5_response(delis_file, &output)?
+        let output = solve_cmds_with_backend(backend, &sygus_cmds, verbose)?;
+        log::info!("sygus-backend: backend solve completed in {:?}", step_start.elapsed());
+        match backend {
+            SygusBackend::InProcessDryadSynth => output,
+            SygusBackend::External(_) => decode_cvc5_response(delis_file, &output)?,
+        }
     };
     log::info!(
         "sygus-backend: solve completed in {:?}",
@@ -228,20 +250,21 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
 fn cegis_solve(
     delis_file: &DelisProg,
     full_cmds: &[SyGuSCmd],
+    backend: &SygusBackend,
     optimize: bool,
-    enum_trigger: usize,
     seed_size: usize,
+    verbose: bool,
 ) -> Result<String, io::Error> {
     let seed_size = seed_size.max(1);
     let constraints = problem_constraints(delis_file);
     let constraint_count = constraints.len();
     if constraint_count <= seed_size {
-        let bv_sz = compile::bv_sz(delis_file).map_err(io::Error::other)?;
         let cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
-        let solver = sygus_config(bv_sz, enum_trigger);
-        let child = spawn_solver(&solver, &cmds)?;
-        let output = solver_stdout(child, &solver.0)?;
-        return decode_cvc5_response(delis_file, &output);
+        let output = solve_cmds_with_backend(backend, &cmds, verbose)?;
+        return match backend {
+            SygusBackend::InProcessDryadSynth => Ok(output),
+            SygusBackend::External(_) => decode_cvc5_response(delis_file, &output),
+        };
     }
 
     let polarities = constraints
@@ -260,23 +283,23 @@ fn cegis_solve(
         );
         let reduced_problem = subset_problem(delis_file, &active);
         let round_start = Instant::now();
-        let bv_sz = compile::bv_sz(&reduced_problem).map_err(io::Error::other)?;
         let subset_cmds =
             compile::to_sygus(&reduced_problem, optimize).map_err(io::Error::other)?;
-        let solver = sygus_config(bv_sz, enum_trigger);
         log::info!(
             "cegis round {}: reduced compilation completed in {:?}",
             round,
             round_start.elapsed()
         );
-        let child = spawn_solver(&solver, &subset_cmds)?;
-        let output = solver_stdout(child, &solver.0)?;
+        let output = solve_cmds_with_backend(backend, &subset_cmds, verbose)?;
         let trimmed = output.trim();
         if trimmed == "infeasible" {
             log::info!("cegis round {}: subset is infeasible", round);
             return Ok("infeasible".to_string());
         }
-        let decoded = decode_cvc5_response(delis_file, &output)?;
+        let decoded = match backend {
+            SygusBackend::InProcessDryadSynth => output,
+            SygusBackend::External(_) => decode_cvc5_response(delis_file, &output)?,
+        };
         let failing =
             compile::failing_constraint_indices(full_cmds, &decoded).map_err(io::Error::other)?;
         if failing.is_empty() {
@@ -296,32 +319,6 @@ fn cegis_solve(
             ));
         }
     }
-}
-
-fn sygus_bit_width(cmds: &[SyGuSCmd]) -> Result<usize, String> {
-    let sort = cmds
-        .iter()
-        .find_map(|cmd| match cmd {
-            SyGuSCmd::SynthFun(_, _, sort, _) => Some(sort),
-            _ => None,
-        })
-        .ok_or_else(|| "missing synth-fun in generated SyGuS".to_string())?;
-    let text = sort.to_string();
-    let prefix = "(_ BitVec ";
-    let suffix = ")";
-    if let Some(width) = text
-        .strip_prefix(prefix)
-        .and_then(|rest| rest.strip_suffix(suffix))
-    {
-        return width
-            .trim()
-            .parse::<usize>()
-            .map_err(|e| format!("failed to parse synth-fun bit-width {width}: {e}"));
-    }
-    Err(format!(
-        "expected synth-fun to return a BitVec, found {}",
-        sort
-    ))
 }
 
 fn subset_problem(problem: &DelisProg, active: &HashSet<usize>) -> DelisProg {
@@ -584,10 +581,6 @@ pub struct CLI {
     #[arg(long = "chc-witness", default_value_t = false)]
     chc_witness: bool,
 
-    /// Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value.
-    #[arg(short = 'E', long = "enum-trigger", default_value_t = 512)]
-    enum_trigger: usize,
-
     /// Use counterexample-guided subset solving for the external SyGuS backend,
     /// seeding with up to N constraints.
     #[arg(
@@ -598,6 +591,10 @@ pub struct CLI {
         value_name = "N"
     )]
     cegis: Option<usize>,
+
+    /// Use an explicit external SyGuS solver executable instead of the in-process dryadsynth-bv backend.
+    #[arg(long = "solver", value_name = "PATH")]
+    solver: Option<String>,
 }
 
 /// Run the language parsing application

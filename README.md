@@ -62,6 +62,39 @@ Delis.
 
 - [x] CEGIS: randomly choose n models and verify on the rest.
 - [x] `--dump-sygus`.
-- [ ] Implement String / Flash.
-- [ ] `DryadSynth` on old benchmarks.
+- [?] Implement String / Flash.
+- [x] `DryadSynth` on old benchmarks.
 - [x] CTL.
+
+```bash
+(base) *[main][~/Codes/Rust/delis]$ time delis ./benchmark/alpharegex/re/no10.sl                                  
+WARN SyGuS file parsed, total cmds=27 dryadsynth-bv/src/main.rs:101
+(re.++ (re.opt char.0) (re.++ (re.* (re.++ char.1 char.0)) (re.opt char.1)))
+delis ./benchmark/alpharegex/re/no10.sl  324.44s user 2.05s system 199% cpu 2:43.46 total
+
+
+(base) *[main][~/Codes/Rust/delis]$ time delis ./benchmark/alpharegex/re/no10.sl --dump-sygus | cvc5 --lang=sygus2
+^Ccvc5 interrupted by user.
+delis ./benchmark/alpharegex/re/no10.sl --dump-sygus  0.06s user 0.01s system 78% cpu 0.091 total
+cvc5 --lang=sygus2  240.98s user 2.10s system 99% cpu 4:03.54 total
+```
+
+```bash
+(base) *[main][~/Codes/Rust/delis]$ time delis ./benchmark/folsep-pldi20/fo1/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl4.sl --dump-sygus | dryadsynth-bv -in 
+(
+(define-fun phi () (_ BitVec 13) (fol.0.not (fol.0.and (fol.0.exists.x0.node (fol.ctx-x0-node.atom.rb.rcv_msg fol.ctx-x0-node.var.x0.node fol.ctx-x0-node.term.rb.tp_correctness.n0)) (fol.0.forall.x0.node (fol.ctx-x0-node.or (fol.ctx-x0-node.eq.node fol.ctx-x0-node.var.x0.node fol.ctx-x0-node.term.rb.tp_relay.n1) (fol.ctx-x0-node.atom.rb.rcv_msg fol.ctx-x0-node.var.x0.node fol.ctx-x0-node.term.rb.tp_correctness.n0))))))
+)
+delis  --dump-sygus  0.05s user 0.01s system 97% cpu 0.057 total
+dryadsynth-bv -in  1.17s user 0.02s system 97% cpu 1.216 total
+
+
+(base) *[main][~/Codes/Rust/delis]$ time delis ./benchmark/folsep-pldi20/fo1/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl4.sl --dump-sygus | cvc5 --lang=sygus2
+(
+(define-fun phi () (_ BitVec 13) (fol.0.forall.x0.quorum_b (fol.ctx-x0-quorum_b.and (fol.ctx-x0-quorum_b.not (fol.ctx-x0-quorum_b.forall.x0.node (fol.ctx-x0-node.atom.rb.rcv_msg fol.ctx-x0-node.var.x0.node fol.ctx-x0-node.var.x0.node))) (fol.ctx-x0-quorum_b.or (fol.ctx-x0-quorum_b.atom.rb.rcv_msg fol.ctx-x0-quorum_b.term.rb.tp_correctness.n0 fol.ctx-x0-quorum_b.term.rb.tp_relay.n1) (fol.ctx-x0-quorum_b.atom.member_b fol.ctx-x0-quorum_b.term.rb.tp_relay.n1 fol.ctx-x0-quorum_b.var.x0.quorum_b)))))
+)
+delis  --dump-sygus  0.05s user 0.01s system 97% cpu 0.059 total
+cvc5 --lang=sygus2  5.07s user 0.04s system 99% cpu 5.139 total
+```
+
+- [ ] String: simpler model representation / `charAt`
+.

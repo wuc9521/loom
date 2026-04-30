@@ -439,12 +439,6 @@ pub fn compile_one_way(
 
     let layouts = layouts.unwrap_or_else(|| layouts_by_sort(program));
     let constructors = sig.constructors.clone();
-    let start_width = layouts
-        .get(start_sort)
-        .map(|layout| layout.states.len())
-        .unwrap_or(1)
-        .max(1);
-    let bv_sort = Sort::bitvec(start_width);
 
     let constructor_names = constructors
         .iter()
@@ -540,12 +534,7 @@ pub fn compile_one_way(
         let mut builder = Cmd::define_fun(&cons.name);
         let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
         for (idx, arg_sort) in cons.arg_sorts.iter().enumerate() {
-            let width = layouts
-                .get(arg_sort)
-                .map(|layout| layout.states.len())
-                .unwrap_or(1)
-                .max(1);
-            builder = builder.arg(&arg_names[idx], Sort::bitvec(width));
+            builder = builder.arg(&arg_names[idx], Sort::from_name(arg_sort));
         }
         let bool_bits = layouts[&cons.result_sort]
             .states
@@ -586,12 +575,7 @@ pub fn compile_one_way(
                 .collect::<Vec<_>>();
             compact_bitvec(bits)
         });
-        let result_width = layouts
-            .get(&cons.result_sort)
-            .map(|layout| layout.states.len())
-            .unwrap_or(1)
-            .max(1);
-        constructor_cmds.push(builder.ret(Sort::bitvec(result_width)).body(body).build());
+        constructor_cmds.push(builder.ret(Sort::from_name(&cons.result_sort)).body(body).build());
         log::info!("sygus BV constructor {}: rules={}", cons.name, rules.len(),);
     }
 
@@ -599,7 +583,7 @@ pub fn compile_one_way(
 
     cmds.push(
         Cmd::synth_fun(synth_name)
-            .ret(bv_sort.clone())
+            .ret(Sort::from_name(start_sort))
             .grammar(grammar)
             .build(),
     );

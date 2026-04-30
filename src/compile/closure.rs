@@ -1,4 +1,4 @@
-use crate::{compile, parser::DelisProg};
+use crate::{compile, parser::DelisProg, sorts::SortEnv};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use sygus_parser::{
@@ -209,13 +209,14 @@ struct ClosureSolver<'a> {
 
 impl<'a> ClosureSolver<'a> {
     fn new(problem: &'a DelisProg, cmds: Vec<SyGuSCmd>) -> Result<Self, String> {
+        let sort_env = SortEnv::from_cmds(&cmds);
         let mut funcs = HashMap::new();
         let mut synth = None;
         let mut constraints = Vec::new();
         for cmd in cmds {
             match cmd {
                 SyGuSCmd::DefineFun(name, args, sort, body) => {
-                    let width = bv_width(&sort)?;
+                    let width = sort_env.bv_width(&sort)?;
                     funcs.insert(
                         name,
                         DefineFun {
@@ -236,7 +237,7 @@ impl<'a> ClosureSolver<'a> {
         }
         let (synth_name, synth_sort, grammar) =
             synth.ok_or_else(|| "closure requires synth-fun".to_string())?;
-        let (nonterminals, nt_by_symbol, start) = build_nonterminals(grammar)?;
+        let (nonterminals, nt_by_symbol, start) = build_nonterminals(grammar, &sort_env)?;
         Ok(Self {
             problem,
             synth_name,
@@ -702,13 +703,14 @@ struct ConstraintVerifier {
 
 impl ConstraintVerifier {
     fn new(cmds: &[SyGuSCmd]) -> Result<Self, String> {
+        let sort_env = SortEnv::from_cmds(cmds);
         let mut funcs = HashMap::new();
         let mut synth = None;
         let mut constraints = Vec::new();
         for cmd in cmds {
             match cmd {
                 SyGuSCmd::DefineFun(name, args, sort, body) => {
-                    let width = bv_width(sort)?;
+                    let width = sort_env.bv_width(sort)?;
                     funcs.insert(
                         name.clone(),
                         DefineFun {
@@ -719,7 +721,7 @@ impl ConstraintVerifier {
                     );
                 }
                 SyGuSCmd::SynthFun(name, _args, sort, _grammar) => {
-                    synth = Some((name.clone(), bv_width(sort)?));
+                    synth = Some((name.clone(), sort_env.bv_width(sort)?));
                 }
                 SyGuSCmd::Constraint(term) => constraints.push(term.clone()),
                 _ => {}
@@ -760,6 +762,7 @@ impl ConstraintVerifier {
 
 fn build_nonterminals(
     grammar: GrammarDef,
+    sort_env: &SortEnv,
 ) -> Result<(Vec<Nonterminal>, HashMap<String, usize>, String), String> {
     let mut nonterminals = Vec::new();
     let mut nt_by_symbol = HashMap::new();
@@ -769,7 +772,7 @@ fn build_nonterminals(
         .map(|group| group.symbol.clone())
         .ok_or_else(|| "empty SyGuS grammar".to_string())?;
     for group in grammar.grouped_rule_lists {
-        let width = bv_width(&group.sort)?;
+        let width = sort_env.bv_width(&group.sort)?;
         let mut productions = Vec::new();
         let mut bool_ops = BoolOps::default();
         for term in group.terms {
@@ -850,14 +853,6 @@ fn collect_tuples(
         collect_tuples(nonterminals, arg_indices, pos + 1, current, out);
         current.pop();
     }
-}
-
-fn bv_width(sort: &Sort) -> Result<usize, String> {
-    let text = sort.to_string();
-    text.strip_prefix("(_ BitVec ")
-        .and_then(|rest| rest.strip_suffix(')'))
-        .and_then(|width| width.parse::<usize>().ok())
-        .ok_or_else(|| format!("expected BitVec sort, got {sort}"))
 }
 
 fn synth_signature_parts(
