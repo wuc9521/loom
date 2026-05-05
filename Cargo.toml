@@ -9,8 +9,8 @@ incremental = true
 [dependencies]
 clap = {version = "4.4", features = ["derive"]}# command line argument parser       
 ctrlc = "3.4"
-dryadsynth-bv = { path = "../dryadsynth-bv" }
 derive_more = {version = "2.1.1", features = ["display"]}
+dryadsynth-bv = {path = "../dryadsynth-bv"}
 env_logger = "0.11.5"
 itertools = "0.14.0"
 lexpr = "0.2.7"

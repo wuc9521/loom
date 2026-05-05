@@ -33,6 +33,28 @@ pub struct SemanticContext<'a> {
 }
 
 impl<'a> SemanticContext<'a> {
+    fn eval_explicit_aspect_field(
+        &self,
+        arg: &Value,
+        sort: &str,
+        model: &str,
+        env: &impl EnvView,
+    ) -> Result<AspectValue, String> {
+        if let Some(symbol) = arg.as_symbol() {
+            let model_ref = self.model(model)?;
+            if sort != "Int"
+                && get_domain_for_sort(model_ref, sort)
+                    .is_some_and(|domain| domain.iter().any(|elem| elem == symbol))
+            {
+                return Ok(AspectValue::Univ {
+                    sort: sort.to_string(),
+                    name: symbol.to_string(),
+                });
+            }
+        }
+        self.eval_value_for_sort(arg, sort, env)
+    }
+
     pub fn with_cases(
         problem: &'a DelisProg,
         program: &SemanticProgram,
@@ -234,7 +256,11 @@ impl<'a> SemanticContext<'a> {
                     model = Some(self.eval_model_name(arg, env)?);
                 }
                 crate::compile::types::FieldDomain::Sort(sort) => {
-                    let value = self.eval_value_for_sort(arg, sort, env)?;
+                    let value = if let Some(model_name) = model.as_deref() {
+                        self.eval_explicit_aspect_field(arg, sort, model_name, env)?
+                    } else {
+                        self.eval_value_for_sort(arg, sort, env)?
+                    };
                     match &value {
                         AspectValue::Univ { sort: actual, .. } if actual == sort => {}
                         AspectValue::Int(_) if sort == "Int" => {}

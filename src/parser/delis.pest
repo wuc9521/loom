@@ -5,6 +5,7 @@ DelisCmd = {
 | DeclareTermTypes
 | DefineFinite
 | DefineSemantics
+| DeclareAxiom
 | FuncDecl
 | ModelDef
 }
@@ -36,6 +37,12 @@ DefineSemantics = {
   ~ SemanticsHeader
   ~ ReturnsClause?
   ~ SemanticsBody
+  ~ ")"
+}
+DeclareAxiom = {
+  "("
+  ~ #DelisTkDeclareAxiom="declare-axiom"
+  ~ DelisSExprBody
   ~ ")"
 }
 ReturnsClause = { ":returns" ~ Sort }

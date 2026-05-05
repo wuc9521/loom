@@ -44,6 +44,19 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         }
         return Ok(());
     }
+
+    if args.r#enum {
+        let result =
+            compile::solve_by_closure(delis_file, args.optimize).map_err(io::Error::other)?;
+        if let Some(output) = result {
+            println!("{output}");
+            return Ok(());
+        }
+        return Err(io::Error::other(
+            "enumerative backend did not produce a result",
+        ));
+    }
+
     let (tx, rx) = mpsc::channel();
 
     let closure_tx = tx.clone();
@@ -54,7 +67,8 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .name("closure-backend".to_string())
         .stack_size(CLOSURE_STACK_BYTES)
         .spawn(move || {
-            let result = compile::solve_by_closure(&closure_file, closure_optimize).map_err(io::Error::other);
+            let result = compile::solve_by_closure(&closure_file, closure_optimize)
+                .map_err(io::Error::other);
             let _ = closure_tx.send(BackendResult::Closure(result));
         })?;
 
@@ -216,10 +230,13 @@ fn solve_with_sygus(
         );
         let step_start = Instant::now();
         let output = solve_cmds_with_backend(backend, &sygus_cmds, verbose)?;
-        log::info!("sygus-backend: backend solve completed in {:?}", step_start.elapsed());
+        log::info!(
+            "sygus-backend: backend solve completed in {:?}",
+            step_start.elapsed()
+        );
         match backend {
             SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => decode_cvc5_response(delis_file, &output)?,
+            SygusBackend::External(_) => decode_response(delis_file, &output)?,
         }
     };
     log::info!(
@@ -263,7 +280,7 @@ fn cegis_solve(
         let output = solve_cmds_with_backend(backend, &cmds, verbose)?;
         return match backend {
             SygusBackend::InProcessDryadSynth => Ok(output),
-            SygusBackend::External(_) => decode_cvc5_response(delis_file, &output),
+            SygusBackend::External(_) => decode_response(delis_file, &output),
         };
     }
 
@@ -298,7 +315,7 @@ fn cegis_solve(
         }
         let decoded = match backend {
             SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => decode_cvc5_response(delis_file, &output)?,
+            SygusBackend::External(_) => decode_response(delis_file, &output)?,
         };
         let failing =
             compile::failing_constraint_indices(full_cmds, &decoded).map_err(io::Error::other)?;
@@ -506,7 +523,7 @@ fn synth_signature(
         .ok_or_else(|| io::Error::other("missing synth-fun command"))
 }
 
-fn decode_cvc5_response(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
+fn decode_response(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
     let trimmed = output.trim();
     let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
         &trimmed[1..trimmed.len() - 1]
@@ -564,6 +581,10 @@ pub struct CLI {
         value_parser = clap::builder::BoolishValueParser::new()
     )]
     optimize: bool,
+
+    /// Use only Delis's internal enumerative backend (no SyGuS solver backend).
+    #[arg(long = "enum", default_value_t = false)]
+    r#enum: bool,
 
     /// Translate to SyGuS BV and print to stdout
     #[arg(short, long = "dump-sygus", default_value_t = false)]

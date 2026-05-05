@@ -614,6 +614,44 @@ fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
 }
 
 #[test]
+fn semantic_bv_preserves_composite_top_level_constraints() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(define-model m
+  (define-univ Pos ($0 $1)))
+(declare-term-types
+ ((Formula 0))
+ (((top)
+   (bot))))
+(define-finite Asp
+  (record (model Model) (t Pos)))
+(define-semantics
+  ((Formula.Sem (phi Formula) (asp Asp)))
+  ((match phi
+     ((top) true)
+     ((bot) false))))
+(synth-fun phi () Formula)
+(constraint (not (and (Formula.Sem phi (Asp m $0))
+                      (Formula.Sem phi (Asp m $1)))))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("composite top-level constraints should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(output.contains("(constraint (not (and"));
+    assert!(output.contains("((_ extract 0 0) phi)"));
+    assert!(output.contains("((_ extract 1 1) phi)"));
+}
+
+#[test]
 fn sygus_unified_backend_supports_parent_with_finite_valued_semantics() {
     let problem = parse(
         r#"

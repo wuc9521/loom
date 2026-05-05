@@ -16,10 +16,10 @@ mod semantic;
 mod syntax;
 mod types;
 
+use context::CompileContext;
 pub use finite::compile;
 pub use syntax::{TermConstructor, TermSignature};
 pub use types::{AspectKey, BitMapping, ConstraintBit, Encoding};
-use context::CompileContext;
 
 pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
     closure::solve(problem, optimize)
@@ -115,7 +115,9 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
         .keys()
         .map(|sort| (sort.clone(), Sort::from_name(sort)))
         .collect::<std::collections::HashMap<_, _>>();
-    let grammar = ctx.sig.bv_grammar_with_sorts(ctx.term_types, &sort_aliases)?;
+    let grammar = ctx
+        .sig
+        .bv_grammar_with_sorts(ctx.term_types, &sort_aliases)?;
     let bv_start = Instant::now();
     let mut result = crate::backends::sygus::bv::compile_one_way(
         &program,

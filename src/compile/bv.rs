@@ -2,13 +2,14 @@ use crate::{
     backends::sygus::optim::{self, BitwiseExpr},
     compile::{
         context::CompileContext,
+        expr::sygus_term_to_value,
         native::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
         syntax::{TermConstructor, TermSignature},
-        types::{AspectKey, AspectValue, SemanticKind, SemanticProgram},
+        types::{AspectKey, AspectValue, SemanticKind},
     },
     lang::eval::eval_symbols,
-    parser::ast::TermTypes,
+    parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
 use lexpr::Value;
 use std::{cell::RefCell, collections::HashMap, time::Instant};
@@ -52,8 +53,8 @@ impl EnvView for Env {
 }
 
 struct NativeCompiler<'a> {
+    problem: &'a DelisProg,
     term_types: &'a TermTypes,
-    program: SemanticProgram,
     sig: TermSignature,
     ctx: SemanticContext<'a>,
     synth_name: String,
@@ -70,6 +71,28 @@ pub fn compile(ctx: &CompileContext<'_>, optimize: bool) -> Result<Vec<SyGuSCmd>
 }
 
 impl<'a> NativeCompiler<'a> {
+    fn semantic_term_bit(
+        &self,
+        term_expr: &Value,
+        bit: usize,
+        env: &Env,
+    ) -> Result<SyGuSTerm, String> {
+        let child_name = term_expr
+            .as_symbol()
+            .ok_or_else(|| format!("semantic call term must be a symbol: {term_expr}"))?;
+        if let Some(child) = env.children.get(child_name) {
+            return Ok(bit_is_one(extract_arg_bit(child.arg_idx, bit)));
+        }
+        if child_name == self.synth_name {
+            return Ok(bit_is_one(BitVec::extract(
+                bit,
+                bit,
+                Term::var(&self.synth_name),
+            )));
+        }
+        Err(format!("unknown semantic term variable {child_name}"))
+    }
+
     fn sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
         self.sig
             .sort_order()
@@ -85,12 +108,11 @@ impl<'a> NativeCompiler<'a> {
     }
 
     fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
-        let program = ctx_data.semantic_program.clone();
         let sig = ctx_data.sig.clone();
         let ctx = ctx_data.semantic_context()?;
         let mut bit_index = HashMap::new();
         let mut offsets = HashMap::new();
-        for domain in &program.domains {
+        for domain in &ctx_data.semantic_program.domains {
             let offset = offsets.entry(domain.term_sort.clone()).or_insert(0);
             for bit in &domain.bits {
                 bit_index.insert(
@@ -105,8 +127,8 @@ impl<'a> NativeCompiler<'a> {
             *offset += domain.bits.len();
         }
         Ok(Self {
+            problem: ctx_data.problem,
             term_types: ctx_data.term_types,
-            program,
             sig,
             ctx,
             synth_name: ctx_data.synth_name.clone(),
@@ -139,33 +161,26 @@ impl<'a> NativeCompiler<'a> {
             synth_cmd = synth_cmd.arg(&arg.name, arg.sort);
         }
         cmds.push(synth_cmd.build());
-        let synth = Term::var(&self.synth_name);
-        for constraint in &self.program.constraints {
-            let domain = self.ctx.domain_for_relation(&constraint.relation)?;
-            if domain.kind != SemanticKind::Bool {
-                return Err(format!(
-                    "top-level constraint {} must target Bool semantics",
-                    constraint.relation
-                ));
-            }
-            let aspect = AspectKey {
-                relation: constraint.relation.clone(),
-                model: constraint.model.clone(),
-                fields: constraint.fields.clone(),
+        let env = Env::default();
+        for cmd in &self.problem.cmds {
+            let DelisCmd::As(SyGuSCmd::Constraint(term)) = cmd else {
+                continue;
             };
-            let idx = self.bit_for(&constraint.relation, &aspect, None)?;
-            let bit = BitVec::extract(idx, idx, synth.clone());
-            cmds.push(
-                Cmd::constraint()
-                    .body(Bool::eq(
-                        bit,
-                        BitVec::const_(if constraint.expected { 1 } else { 0 }, 1),
-                    ))
-                    .build(),
-            );
+            cmds.push(Cmd::constraint().body(self.lower_top_level_constraint(term, &env)?).build());
         }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
+    }
+
+    fn lower_top_level_constraint(
+        &self,
+        term: &SyGuSTerm,
+        env: &Env,
+    ) -> Result<SyGuSTerm, String> {
+        match self.eval_bool(&sygus_term_to_value(term)?, env)? {
+            BoolExpr::Const(value) => Ok(SyGuSTerm::Literal(Literal::Bool(value))),
+            BoolExpr::Dynamic(term) => Ok(term),
+        }
     }
 
     fn grammar(&self) -> Result<GrammarDef, String> {
@@ -440,19 +455,9 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let child_name = args[0]
-            .as_symbol()
-            .ok_or_else(|| format!("semantic call term must be a child variable: {}", args[0]))?;
-        let child = env
-            .children
-            .get(child_name)
-            .ok_or_else(|| format!("unknown semantic child variable {child_name}"))?;
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let bit = self.bit_for(relation, &aspect, None)?;
-        Ok(BoolExpr::Dynamic(bit_is_one(extract_arg_bit(
-            child.arg_idx,
-            bit,
-        ))))
+        Ok(BoolExpr::Dynamic(self.semantic_term_bit(args[0], bit, env)?))
     }
 
     fn eval_model_bool_call(
@@ -627,19 +632,9 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let child_name = args[0]
-            .as_symbol()
-            .ok_or_else(|| format!("semantic call term must be a child variable: {}", args[0]))?;
-        let child = env
-            .children
-            .get(child_name)
-            .ok_or_else(|| format!("unknown semantic child variable {child_name}"))?;
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let bit = self.bit_for(relation, &aspect, Some(target))?;
-        Ok(BoolExpr::Dynamic(bit_is_one(extract_arg_bit(
-            child.arg_idx,
-            bit,
-        ))))
+        Ok(BoolExpr::Dynamic(self.semantic_term_bit(args[0], bit, env)?))
     }
 
     fn eval_model_finite_call_eq(

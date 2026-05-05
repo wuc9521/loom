@@ -15,8 +15,8 @@ use crate::{
 };
 use itertools::Itertools;
 use lexpr::Value;
-use std::collections::HashMap;
-use sygus_parser::SyGuSTerm;
+use std::collections::{HashMap, HashSet};
+use sygus_parser::{Identifier, SyGuSTerm};
 
 type AspectAssignment = Vec<(String, AspectValue)>;
 
@@ -152,12 +152,17 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
     let semantic_constraints =
         collect_semantic_constraints(problem, &semantic_specs, &spaces_by_name, &models_by_name)?;
     let mut model_names = Vec::new();
-    let mut seen_model_names = std::collections::HashSet::new();
+    let mut seen_model_names = HashSet::new();
     for constraint in &semantic_constraints {
         if models_by_name.contains_key(&constraint.model)
             && seen_model_names.insert(constraint.model.clone())
         {
             model_names.push(constraint.model.clone());
+        }
+    }
+    for model_name in referenced_models_in_constraints(problem, &spaces_by_name) {
+        if models_by_name.contains_key(&model_name) && seen_model_names.insert(model_name.clone()) {
+            model_names.push(model_name);
         }
     }
     let loaded_models = collect_loaded_models(&model_names, &models_by_name);
@@ -256,6 +261,56 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
         constraints: semantic_constraints,
         needs_saturation,
     })
+}
+
+fn referenced_models_in_constraints(
+    problem: &DelisProg,
+    spaces_by_name: &HashMap<String, &FiniteSpace>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for cmd in &problem.cmds {
+        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
+            continue;
+        };
+        collect_models_in_term(term, spaces_by_name, &mut seen, &mut out);
+    }
+    out
+}
+
+fn collect_models_in_term(
+    term: &SyGuSTerm,
+    spaces_by_name: &HashMap<String, &FiniteSpace>,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<String>,
+) {
+    match term {
+        SyGuSTerm::Application(id, args) => {
+            let name = id.get_name();
+            if let Some(space) = spaces_by_name.get(name) {
+                for (field, arg) in space.fields.iter().zip(args.iter()) {
+                    if matches!(&field.domain, FieldDomain::Sort(sort) if sort == "Model") {
+                        if let SyGuSTerm::Identifier(Identifier::Symbol(model_name)) = arg {
+                            if seen.insert(model_name.clone()) {
+                                out.push(model_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            for arg in args {
+                collect_models_in_term(arg, spaces_by_name, seen, out);
+            }
+        }
+        SyGuSTerm::Let(bindings, body) => {
+            for binding in bindings {
+                collect_models_in_term(&binding.term, spaces_by_name, seen, out);
+            }
+            collect_models_in_term(body, spaces_by_name, seen, out);
+        }
+        SyGuSTerm::Annotated(inner, _) => collect_models_in_term(inner, spaces_by_name, seen, out),
+        _ => {}
+    }
 }
 
 fn contains_parent_navigation(expr: &Value) -> bool {

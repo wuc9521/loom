@@ -1,7 +1,49 @@
 use crate::{compile::types::AspectValue, lang::eval::get_domain_for_sort, lang::model::Model};
 use lexpr::Value;
 use std::collections::HashMap;
-use sygus_parser::SyGuSTerm;
+use sygus_parser::{Identifier, Literal, SyGuSTerm};
+
+pub fn sygus_term_to_value(term: &SyGuSTerm) -> Result<Value, String> {
+    match term {
+        SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(Value::symbol(name.as_str())),
+        SyGuSTerm::Identifier(other) => Ok(Value::symbol(other.to_string())),
+        SyGuSTerm::Literal(Literal::Bool(value)) => Ok(Value::symbol(if *value {
+            "true"
+        } else {
+            "false"
+        })),
+        SyGuSTerm::Literal(Literal::Numeral(value)) => Ok(Value::from(*value as i64)),
+        SyGuSTerm::Literal(Literal::Decimal(value)) => {
+            Err(format!("decimal literals are unsupported in Delis constraints: {value}"))
+        }
+        SyGuSTerm::Literal(Literal::BinConst(value))
+        | SyGuSTerm::Literal(Literal::HexConst(value)) => Ok(Value::symbol(value.as_str())),
+        SyGuSTerm::Application(id, args) => {
+            let mut values = Vec::with_capacity(args.len() + 1);
+            values.push(Value::symbol(id.to_string()));
+            for arg in args {
+                values.push(sygus_term_to_value(arg)?);
+            }
+            Ok(Value::list(values))
+        }
+        SyGuSTerm::Let(bindings, body) => {
+            let mut lets = Vec::with_capacity(bindings.len() + 1);
+            lets.push(Value::symbol("let"));
+            let mut binding_values = Vec::with_capacity(bindings.len());
+            for binding in bindings {
+                binding_values.push(Value::list(vec![
+                    Value::symbol(binding.name.as_str()),
+                    sygus_term_to_value(&binding.term)?,
+                ]));
+            }
+            lets.push(Value::list(binding_values));
+            lets.push(sygus_term_to_value(body)?);
+            Ok(Value::list(lets))
+        }
+        SyGuSTerm::Annotated(inner, _) => sygus_term_to_value(inner),
+        other => Err(format!("unsupported SyGuS term in Delis constraint lowering: {other}")),
+    }
+}
 
 pub fn eval_sygus_int(
     term: &SyGuSTerm,
