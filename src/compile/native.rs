@@ -547,6 +547,9 @@ impl<'a> SemanticContext<'a> {
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
         let value = self.eval_value(expr, env)?;
+        if sort == "Int" {
+            return Ok(value);
+        }
         if let AspectValue::Int(idx) = &value {
             let model = self.current_model(env)?;
             let model_ref = self.model(&model)?;

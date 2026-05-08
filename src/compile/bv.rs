@@ -144,7 +144,10 @@ impl<'a> NativeCompiler<'a> {
         cmds.extend(self.sort_alias_cmds()?);
         let grammar_start = Instant::now();
         let grammar = self.grammar()?;
-        log::info!("native grammar compilation completed in {:?}", grammar_start.elapsed());
+        log::info!(
+            "native grammar compilation completed in {:?}",
+            grammar_start.elapsed()
+        );
         for cons in &self.sig.constructors {
             let cons_start = Instant::now();
             cmds.push(self.constructor_fun(cons)?);
@@ -163,20 +166,22 @@ impl<'a> NativeCompiler<'a> {
         cmds.push(synth_cmd.build());
         let env = Env::default();
         for cmd in &self.problem.cmds {
-            let DelisCmd::As(SyGuSCmd::Constraint(term)) = cmd else {
-                continue;
+            let term = match cmd {
+                DelisCmd::As(SyGuSCmd::Constraint(term)) => term,
+                DelisCmd::DeclareAxiom(_) => continue,
+                _ => continue,
             };
-            cmds.push(Cmd::constraint().body(self.lower_top_level_constraint(term, &env)?).build());
+            cmds.push(
+                Cmd::constraint()
+                    .body(self.lower_top_level_constraint(term, &env)?)
+                    .build(),
+            );
         }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
     }
 
-    fn lower_top_level_constraint(
-        &self,
-        term: &SyGuSTerm,
-        env: &Env,
-    ) -> Result<SyGuSTerm, String> {
+    fn lower_top_level_constraint(&self, term: &SyGuSTerm, env: &Env) -> Result<SyGuSTerm, String> {
         match self.eval_bool(&sygus_term_to_value(term)?, env)? {
             BoolExpr::Const(value) => Ok(SyGuSTerm::Literal(Literal::Bool(value))),
             BoolExpr::Dynamic(term) => Ok(term),
@@ -457,7 +462,9 @@ impl<'a> NativeCompiler<'a> {
         }
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let bit = self.bit_for(relation, &aspect, None)?;
-        Ok(BoolExpr::Dynamic(self.semantic_term_bit(args[0], bit, env)?))
+        Ok(BoolExpr::Dynamic(
+            self.semantic_term_bit(args[0], bit, env)?,
+        ))
     }
 
     fn eval_model_bool_call(
@@ -537,7 +544,9 @@ impl<'a> NativeCompiler<'a> {
         if let (Ok(lhs_value), Ok(rhs_value)) =
             (self.ctx.eval_value(lhs, env), self.ctx.eval_value(rhs, env))
         {
-            return Ok(BoolExpr::Const(self.ctx.values_equal(&lhs_value, &rhs_value, env)?));
+            return Ok(BoolExpr::Const(
+                self.ctx.values_equal(&lhs_value, &rhs_value, env)?,
+            ));
         }
         if self.ctx.eval_int_expr(lhs, env).is_ok() && self.ctx.eval_int_expr(rhs, env).is_ok() {
             return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
@@ -567,11 +576,15 @@ impl<'a> NativeCompiler<'a> {
         env: &Env,
     ) -> Result<BoolExpr, String> {
         if let Ok(value) = self.ctx.eval_value(expr, env) {
-            return Ok(BoolExpr::Const(self.ctx.value_matches_target(&value, target, env)?));
+            return Ok(BoolExpr::Const(
+                self.ctx.value_matches_target(&value, target, env)?,
+            ));
         }
         if let Some(symbol) = expr.as_symbol() {
             if let Some(value) = env.values.get(symbol) {
-                return Ok(BoolExpr::Const(self.ctx.value_matches_target(value, target, env)?));
+                return Ok(BoolExpr::Const(
+                    self.ctx.value_matches_target(value, target, env)?,
+                ));
             }
             if let Some(matches) = self.ctx.constant_value_matches(symbol, target, env)? {
                 return Ok(BoolExpr::Const(matches));
@@ -590,8 +603,14 @@ impl<'a> NativeCompiler<'a> {
                 BoolExpr::Const(true) => self.eval_finite_eq(items[2], target, env),
                 BoolExpr::Const(false) => self.eval_finite_eq(items[3], target, env),
                 cond => Ok(or_exprs(vec![
-                    and_exprs(vec![cond.clone(), self.eval_finite_eq(items[2], target, env)?]),
-                    and_exprs(vec![negate_expr(cond), self.eval_finite_eq(items[3], target, env)?]),
+                    and_exprs(vec![
+                        cond.clone(),
+                        self.eval_finite_eq(items[2], target, env)?,
+                    ]),
+                    and_exprs(vec![
+                        negate_expr(cond),
+                        self.eval_finite_eq(items[3], target, env)?,
+                    ]),
                 ])),
             };
         }
@@ -634,7 +653,9 @@ impl<'a> NativeCompiler<'a> {
         }
         let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
         let bit = self.bit_for(relation, &aspect, Some(target))?;
-        Ok(BoolExpr::Dynamic(self.semantic_term_bit(args[0], bit, env)?))
+        Ok(BoolExpr::Dynamic(
+            self.semantic_term_bit(args[0], bit, env)?,
+        ))
     }
 
     fn eval_model_finite_call_eq(
@@ -667,9 +688,12 @@ impl<'a> NativeCompiler<'a> {
             ));
         }
         let mut disjuncts = Vec::new();
-        for tuple in self.ctx.matching_model_call_tuples(func, args, env, |value| {
-            interped_value_matches(value, target)
-        })? {
+        for tuple in self
+            .ctx
+            .matching_model_call_tuples(func, args, env, |value| {
+                interped_value_matches(value, target)
+            })?
+        {
             let conjuncts = args
                 .iter()
                 .zip(tuple.iter())

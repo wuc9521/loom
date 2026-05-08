@@ -99,6 +99,7 @@ impl Session {
             | DelisCmd::TermTypes(_)
             | DelisCmd::FiniteAspect(_)
             | DelisCmd::Semantics(_)
+            | DelisCmd::DeclareAxiom(_)
             | DelisCmd::As(_) => {}
         }
         Some(cmd.clone())

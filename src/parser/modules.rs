@@ -186,6 +186,7 @@ fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
             DelisCmd::DefineModel(model) => {
                 names.insert(model.name.clone());
             }
+            DelisCmd::DeclareAxiom(_) => {}
             _ => {}
         }
     }

@@ -244,6 +244,38 @@ fn semantic_predicates_use_aspect_projection() {
 }
 
 #[test]
+fn finite_compilation_loads_models_referenced_only_by_axioms() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0))
+  (interp-fun a (match (((_) true)))))
+(declare-term-types ((Regex 0)) (((a))))
+(define-finite Asp
+  (record (model Model) (i Int))
+  :where (= i 0))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp Asp)))
+  ((match r
+     ((a) (a (i asp))))))
+(synth-fun r () Regex)
+(declare-axiom (Regex.Sem r (Asp w 0)))
+(check-synth)
+"#,
+    );
+
+    let summary = compile(&problem).expect("axiom-referenced model should be enumerated");
+
+    assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
+    assert_eq!(summary.constraint_bits.len(), 0);
+    assert_eq!(summary.bit_mappings.len(), 1);
+    assert_eq!(summary.bit_mappings[0].aspect.model, "w");
+}
+
+#[test]
 fn detects_two_way_navigation() {
     let problem = parse(
         r#"

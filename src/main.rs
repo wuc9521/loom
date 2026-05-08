@@ -178,11 +178,12 @@ fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd]) -> Result<Child, io::Error> 
 fn solve_cmds_with_backend(
     backend: &SygusBackend,
     cmds: &[SyGuSCmd],
+    axioms: Option<&[sygus_parser::SyGuSTerm]>,
     verbose: bool,
 ) -> Result<String, io::Error> {
     match backend {
         SygusBackend::InProcessDryadSynth => {
-            dryadsynth_bv::solve_sygus_cmds(cmds, None, "", if verbose { 1 } else { 0 })
+            dryadsynth_bv::solve_sygus_cmds(cmds, None, "", axioms, if verbose { 1 } else { 0 })
                 .map_err(io::Error::other)
         }
         SygusBackend::External(solver) => {
@@ -199,6 +200,8 @@ fn solve_with_sygus(
     cegis_size: Option<usize>,
     verbose: bool,
 ) -> Result<String, io::Error> {
+    let axioms = delis_axioms(delis_file);
+    let axiom_slice = (!axioms.is_empty()).then_some(axioms.as_slice());
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
         let step_start = Instant::now();
@@ -229,7 +232,7 @@ fn solve_with_sygus(
             step_start.elapsed()
         );
         let step_start = Instant::now();
-        let output = solve_cmds_with_backend(backend, &sygus_cmds, verbose)?;
+        let output = solve_cmds_with_backend(backend, &sygus_cmds, axiom_slice, verbose)?;
         log::info!(
             "sygus-backend: backend solve completed in {:?}",
             step_start.elapsed()
@@ -277,7 +280,7 @@ fn cegis_solve(
     let constraint_count = constraints.len();
     if constraint_count <= seed_size {
         let cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
-        let output = solve_cmds_with_backend(backend, &cmds, verbose)?;
+        let output = solve_cmds_with_backend(backend, &cmds, None, verbose)?;
         return match backend {
             SygusBackend::InProcessDryadSynth => Ok(output),
             SygusBackend::External(_) => decode_response(delis_file, &output),
@@ -307,7 +310,7 @@ fn cegis_solve(
             round,
             round_start.elapsed()
         );
-        let output = solve_cmds_with_backend(backend, &subset_cmds, verbose)?;
+        let output = solve_cmds_with_backend(backend, &subset_cmds, None, verbose)?;
         let trimmed = output.trim();
         if trimmed == "infeasible" {
             log::info!("cegis round {}: subset is infeasible", round);
@@ -353,6 +356,20 @@ fn subset_problem(problem: &DelisProg, active: &HashSet<usize>) -> DelisProg {
         }
     }
     DelisProg { cmds }
+}
+
+fn is_true_axiom_term(term: &sygus_parser::SyGuSTerm) -> bool {
+    match term {
+        sygus_parser::SyGuSTerm::Identifier(id) => id.get_name().eq_ignore_ascii_case("true"),
+        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::Bool(v)) => *v,
+        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => bits == "#b1",
+        sygus_parser::SyGuSTerm::Application(id, args)
+            if id.get_name() == "=" && args.len() == 2 =>
+        {
+            args[0] == args[1]
+        }
+        _ => false,
+    }
 }
 
 fn problem_constraints(problem: &DelisProg) -> Vec<sygus_parser::SyGuSTerm> {
@@ -404,6 +421,7 @@ fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use delis::parser::ast::parse as parse_delis;
     use sygus_parser::ast::{Identifier, Literal, SyGuSTerm};
 
     fn app(name: &str, args: Vec<SyGuSTerm>) -> SyGuSTerm {
@@ -453,6 +471,25 @@ mod tests {
             constraint_polarity(&app("not", vec![app("=", vec![atom("p"), bin_lit("#b0")])])),
             Some(true)
         );
+    }
+
+    #[test]
+    fn delis_axioms_discards_trivial_truths() {
+        let problem = parse_delis(
+            r#"
+(set-logic ALL)
+(declare-axiom true)
+(declare-axiom (= x x))
+(declare-axiom (= x y))
+"#,
+            None,
+        )
+        .expect("axiom fixture should parse");
+
+        let axioms = delis_axioms(&problem);
+
+        assert_eq!(axioms.len(), 1);
+        assert_eq!(axioms[0].to_string(), "(= x y)");
     }
 }
 
@@ -521,6 +558,17 @@ fn synth_signature(
             _ => None,
         })
         .ok_or_else(|| io::Error::other("missing synth-fun command"))
+}
+
+fn delis_axioms(problem: &DelisProg) -> Vec<sygus_parser::SyGuSTerm> {
+    problem
+        .cmds
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DelisCmd::DeclareAxiom(term) if !is_true_axiom_term(term) => Some(term.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn decode_response(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {

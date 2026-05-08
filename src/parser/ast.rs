@@ -10,7 +10,7 @@ use derive_more::Display;
 use itertools::Itertools;
 use pest::iterators::Pair;
 use pest::Parser;
-use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd};
+use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd, SyGuSTerm};
 
 #[derive(Clone, Debug, Display)]
 #[display(
@@ -274,6 +274,9 @@ pub enum DelisCmd {
     #[display("{}", _0)]
     Semantics(Semantics),
 
+    #[display("(declare-axiom {})", _0)]
+    DeclareAxiom(sygus_parser::SyGuSTerm),
+
     #[display("{}", _0)]
     DeclareFunc(FuncSig),
 
@@ -343,6 +346,20 @@ fn parse_delis_cmd_pair(cmd: Pair<'_, Rule>) -> Result<DelisCmd, DelisParseError
         Rule::DefineSemantics => {
             let decl = Semantics::parse(cmd)?;
             Ok(DelisCmd::Semantics(decl))
+        }
+        Rule::DeclareAxiom => {
+            let mut inner = cmd.into_inner();
+            let term = inner
+                .next()
+                .ok_or_else(|| {
+                    DelisParseError::InvalidSyntax(
+                        "declare-axiom expects a boolean SyGuS term".to_string(),
+                    )
+                })?
+                .as_str();
+            let parsed = SyGuSTerm::from_str(term)
+                .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
+            Ok(DelisCmd::DeclareAxiom(parsed))
         }
         Rule::FuncDecl => {
             let sig = FuncSig::parse(cmd)?;
@@ -475,6 +492,19 @@ mod tests {
                 );
             }
             other => panic!("expected define-semantics, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_declare_axiom() {
+        let cmd = parse_command("(declare-axiom (= (re.opt x) (re.union re.eps x)))", None)
+            .expect("declare-axiom should parse");
+
+        match cmd {
+            DelisCmd::DeclareAxiom(term) => {
+                assert_eq!(term.to_string(), "(= (re.opt x) (re.union re.eps x))");
+            }
+            other => panic!("expected declare-axiom, got {other:?}"),
         }
     }
 

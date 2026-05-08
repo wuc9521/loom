@@ -270,8 +270,12 @@ fn referenced_models_in_constraints(
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for cmd in &problem.cmds {
-        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
-            continue;
+        let term = match cmd {
+            DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,
+            DelisCmd::DeclareAxiom(term) => term,
+            _ => {
+                continue;
+            }
         };
         collect_models_in_term(term, spaces_by_name, &mut seen, &mut out);
     }
@@ -333,8 +337,10 @@ fn collect_semantic_constraints(
         .collect::<HashMap<_, _>>();
     let mut constraints = Vec::new();
     for cmd in &problem.cmds {
-        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
-            continue;
+        let term = match cmd {
+            DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,
+            DelisCmd::DeclareAxiom(_) => continue,
+            _ => continue,
         };
         if let Some(constraint) =
             parse_semantic_constraint(term, &semantics_by_relation, spaces_by_name, models_by_name)?
