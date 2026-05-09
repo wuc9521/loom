@@ -1,0 +1,6 @@
+group	path	status	total_ms	sygus_ms	solve_ms	sygus_bytes	sygus_lines	solution_bytes	delis_exit_code	solver_exit_code	delis_args	solver	solver_args	solution_path	detail
+fo-folseparators-fo0	benchmark/FO/folseparators/FO0/alternating_bit_protocol-abp.sl	solved	80	0	80	0	0	370	0					bench-results/artifacts/fo-folseparators-fo0/alternating_bit_protocol-abp.sl	
+fo-folseparators-fo0	benchmark/FO/folseparators/FO0/alternating_bit_protocol-abp0.sl	solved	40	0	40	0	0	305	0					bench-results/artifacts/fo-folseparators-fo0/alternating_bit_protocol-abp0.sl	
+fo-folseparators-fo0	benchmark/FO/folseparators/FO0/alternating_bit_protocol-abp1.sl	solved	40	0	40	0	0	307	0					bench-results/artifacts/fo-folseparators-fo0/alternating_bit_protocol-abp1.sl	
+fo-folseparators-fo0	benchmark/FO/folseparators/FO0/alternating_bit_protocol-abp10.sl	infeasible	20	0	20	0	0	11	0					bench-results/artifacts/fo-folseparators-fo0/alternating_bit_protocol-abp10.sl	
+fo-folseparators-fo0	benchmark/FO/folseparators/FO0/alternating_bit_protocol-abp11.sl	solved	50	0	50	0	0	272	0					bench-results/artifacts/fo-folseparators-fo0/alternating_bit_protocol-abp11.sl	
