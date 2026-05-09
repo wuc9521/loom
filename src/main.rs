@@ -75,7 +75,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
     let sygus_optimize = args.optimize;
-    let sygus_cegis = args.cegis;
+    let sygus_cegis = (args.cegis > 0).then_some(args.cegis);
     let sygus_backend = SygusBackend::from_cli(args);
     let sygus_verbose = args.verbose;
     const SYGUS_STACK_BYTES: usize = 128 * 1024 * 1024;
@@ -651,15 +651,16 @@ pub struct CLI {
     chc_witness: bool,
 
     /// Use counterexample-guided subset solving for the external SyGuS backend,
-    /// seeding with up to N constraints.
+    /// seeding with up to N constraints. Use `--cegis=0` to disable.
     #[arg(
         long = "cegis",
         num_args = 0..=1,
         require_equals = true,
+        default_value = "6",
         default_missing_value = "6",
         value_name = "N"
     )]
-    cegis: Option<usize>,
+    cegis: usize,
 
     /// Use an explicit external SyGuS solver executable instead of the in-process dryadsynth-bv backend.
     #[arg(long = "solver", value_name = "PATH")]

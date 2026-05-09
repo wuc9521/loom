@@ -28,7 +28,7 @@ Options:
       --dump-chc-witness             Translate to Z3 fixedpoint CHC witness query and print to stdout
       --chc-witness                  Solve using only the Z3 fixedpoint CHC witness path
       --enum-trigger <ENUM_TRIGGER>  Use `cvc5 --sygus-enum=fast` when the semantic BV encoding length is at least this value [default: 512]
-      --cegis                        Use counterexample-guided subset solving for the external SyGuS backend
+      --cegis[=<N>]                  Use counterexample-guided subset solving for the external SyGuS backend; default seed is 6, use --cegis=0 to disable
   -h, --help                         Print help
   -V, --version                      Print version
 ```
@@ -45,18 +45,67 @@ delis ./benchmark/fok/folsep-pldi20/alternating_bit_protocol-abp_ack_msg.sl  0.1
 
 Docker
 
-`delis` depends on the sibling path crate `../sygus-parser-rs`, so the Docker
-build context must be the parent directory that contains both repositories.
+`delis` depends on the sibling path crates `../sygus-parser-rs` and
+`../dryadsynth-bv`, so the Docker build context must be the parent directory
+that contains all three repositories.
 
 ```bash
-cd /path/to/parent/of/delis-and-sygus-parser-rs
+cd /path/to/parent/of/delis-sygus-parser-rs-and-dryadsynth-bv
 docker build -f delis/Dockerfile -t delis:latest .
 docker run --rm delis:latest --help
-docker run --rm -v "$PWD/delis:/work" -w /work delis:latest ./benchmark/alpharegex/re/no20.sl --verbose --cegis
+docker run --rm -v "$PWD/delis:/work" -w /work delis:latest ./benchmark/alpharegex/re/no20.sl --verbose
 ```
 
 The runtime image installs `cvc5`, which is the default external solver used by
 Delis.
+
+Remote benchmarking
+
+For a remote server, the simplest workflow is to build the Docker image locally
+and export it as one tarball. This avoids any private-repository setup on the
+server.
+
+Local machine:
+
+```bash
+make docker
+```
+
+This writes `dist/delis.tar.gz`.
+
+You can override the image name or output path if needed:
+
+```bash
+make docker IMAGE_TAG=my-delis:bench IMAGE_ARCHIVE=/tmp/my-delis-bench.tar.gz
+```
+
+By default the image is built for `linux/amd64`, which matches most remote
+servers. You can override that if needed:
+
+```bash
+make docker IMAGE_PLATFORM=linux/arm64
+```
+
+Then copy the tarball to the server with `scp`, load it there with `docker
+load`, and run the container as needed.
+
+The image includes:
+
+- `/usr/local/bin/delis`
+- `/usr/local/bin/delis-bench`
+- `/app/benchmark`
+- `/app/benchmarks.toml`
+
+Run the benchmark driver with the bundled manifest:
+
+```bash
+docker run --rm --entrypoint /usr/local/bin/delis-bench delis:bench /app/benchmarks.toml
+```
+
+Each folder writes its own TSV results file. By default, `delis-bench` resumes:
+if a file path is already present in that folder's TSV, it is skipped on later
+runs. To force a full rerun of one folder, set `rerun = true` in that folder's
+TOML entry.
 
 # TODO
 
