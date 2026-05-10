@@ -31,7 +31,6 @@ COPY --from=builder /workspace/delis/target/release/delis /usr/local/bin/delis
 COPY --from=builder /workspace/delis/target/release/delis-bench /usr/local/bin/delis-bench
 COPY delis/benchmark /app/benchmark
 COPY delis/benchmarks.toml /app/benchmarks.toml
-COPY delis/benchmarks-a.toml /app/benchmarks-a.toml
 COPY delis/README.md /app/README.md
 
 ENTRYPOINT ["/usr/local/bin/delis"]

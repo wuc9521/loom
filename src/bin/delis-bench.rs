@@ -1,22 +1,66 @@
 use clap::Parser;
 use delis::process::{cleanup_children, register_pid, unregister_pid};
+use regex::Regex;
 use serde::Deserialize;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env,
     fs::{self, File, OpenOptions},
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
     process::{Child, ExitStatus, Stdio},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Run Delis benchmarks from a TOML manifest")]
+#[command(
+    author,
+    version,
+    about = "Run Delis benchmarks from a TOML manifest or explicit file list"
+)]
 struct Cli {
-    #[arg(value_name = "TOML")]
-    manifest: PathBuf,
+    #[arg(value_name = "TOML", conflicts_with = "path")]
+    manifest: Option<PathBuf>,
+
+    #[arg(long = "path", value_name = "PATH", num_args = 1.., conflicts_with = "manifest")]
+    path: Vec<PathBuf>,
+
+    #[arg(long)]
+    name: Option<String>,
+
+    #[arg(long)]
+    delis: Option<PathBuf>,
+
+    #[arg(long, default_value = "native")]
+    mode: BenchMode,
+
+    #[arg(long = "delis-arg")]
+    delis_args: Vec<String>,
+
+    #[arg(long, default_value_t = false)]
+    recursive: bool,
+
+    #[arg(long)]
+    sygus_solver: Option<String>,
+
+    #[arg(long = "sygus-solver-arg")]
+    sygus_solver_args: Vec<String>,
+
+    #[arg(long, default_value_t = default_timeout_secs())]
+    sygus_timeout_secs: u64,
+
+    #[arg(long, default_value_t = default_timeout_secs())]
+    solve_timeout_secs: u64,
+
+    #[arg(long)]
+    results_dir: Option<PathBuf>,
+
+    #[arg(long)]
+    results: Option<PathBuf>,
+
+    #[arg(long, default_value_t = false)]
+    rerun: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,6 +83,7 @@ struct BenchmarkConfig {
 struct FolderConfig {
     name: Option<String>,
     path: PathBuf,
+    path_regex: Option<String>,
     mode: Option<BenchMode>,
     #[serde(default)]
     recursive: bool,
@@ -54,7 +99,7 @@ struct FolderConfig {
     rerun: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]
 enum BenchMode {
     Native,
@@ -124,14 +169,24 @@ enum CommandRun {
     },
 }
 
+struct SpawnedCommand {
+    child: Child,
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
+}
+
 fn default_timeout_secs() -> u64 {
-    5
+    600
 }
 
 fn load_config(path: &Path) -> Result<BenchmarkConfig, io::Error> {
     let text = fs::read_to_string(path)?;
-    let config: BenchmarkConfig = toml::from_str(&text)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("invalid manifest: {e}")))?;
+    let config: BenchmarkConfig = toml::from_str(&text).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid manifest: {e}"),
+        )
+    })?;
     if config.folders.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -152,6 +207,14 @@ fn resolve_relative(base_file: &Path, path: &Path) -> PathBuf {
     }
 }
 
+fn resolve_relative_from(base_dir: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base_dir.join(path)
+    }
+}
+
 fn resolve_program_path(base_file: &Path, program: &Path) -> PathBuf {
     if program.is_absolute() || program.components().count() == 1 {
         program.to_path_buf()
@@ -160,9 +223,17 @@ fn resolve_program_path(base_file: &Path, program: &Path) -> PathBuf {
     }
 }
 
-fn resolve_delis_path(manifest: &Path, configured: Option<&PathBuf>) -> Result<PathBuf, io::Error> {
+fn resolve_program_path_from(base_dir: &Path, program: &Path) -> PathBuf {
+    if program.is_absolute() || program.components().count() == 1 {
+        program.to_path_buf()
+    } else {
+        resolve_relative_from(base_dir, program)
+    }
+}
+
+fn resolve_delis_path(base_dir: &Path, configured: Option<&PathBuf>) -> Result<PathBuf, io::Error> {
     if let Some(path) = configured {
-        return Ok(resolve_program_path(manifest, path));
+        return Ok(resolve_program_path_from(base_dir, path));
     }
     if let Ok(path) = env::var("DELIS_BENCH_SOLVER") {
         return Ok(PathBuf::from(path));
@@ -175,7 +246,10 @@ fn resolve_delis_path(manifest: &Path, configured: Option<&PathBuf>) -> Result<P
 
 fn default_solver_args(cmd: &str) -> Vec<String> {
     let path = Path::new(cmd);
-    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or(cmd);
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(cmd);
     match name {
         "dryadsynth-bv" => vec!["-in".to_string()],
         "cvc5" => vec!["--lang=sygus2".to_string()],
@@ -203,6 +277,40 @@ fn list_benchmark_files(dir: &Path, recursive: bool) -> Result<Vec<PathBuf>, io:
     Ok(files)
 }
 
+fn filter_files_by_regex(
+    root: &Path,
+    files: Vec<PathBuf>,
+    path_regex: Option<&str>,
+) -> Result<Vec<PathBuf>, io::Error> {
+    let Some(path_regex) = path_regex else {
+        return Ok(files);
+    };
+    let regex = Regex::new(path_regex).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid path_regex {path_regex:?}: {e}"),
+        )
+    })?;
+    let filtered = files
+        .into_iter()
+        .filter(|path| {
+            let rel = path.strip_prefix(root).unwrap_or(path);
+            regex.is_match(&rel.to_string_lossy())
+        })
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "path_regex {:?} matched no benchmark files under {}",
+                path_regex,
+                root.display()
+            ),
+        ));
+    }
+    Ok(filtered)
+}
+
 fn slugify(name: &str) -> String {
     let mut slug = String::new();
     for ch in name.chars() {
@@ -220,7 +328,10 @@ fn slugify(name: &str) -> String {
     }
 }
 
-fn resolve_folders(config: &BenchmarkConfig, manifest: &Path) -> Result<Vec<ResolvedFolder>, io::Error> {
+fn resolve_folders(
+    config: &BenchmarkConfig,
+    manifest: &Path,
+) -> Result<Vec<ResolvedFolder>, io::Error> {
     let results_root = resolve_relative(
         manifest,
         config
@@ -231,7 +342,11 @@ fn resolve_folders(config: &BenchmarkConfig, manifest: &Path) -> Result<Vec<Reso
     let mut resolved = Vec::with_capacity(config.folders.len());
     for folder in &config.folders {
         let path = resolve_relative(manifest, &folder.path);
-        let files = list_benchmark_files(&path, folder.recursive)?;
+        let files = filter_files_by_regex(
+            &path,
+            list_benchmark_files(&path, folder.recursive)?,
+            folder.path_regex.as_deref(),
+        )?;
         if files.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -295,7 +410,127 @@ fn resolve_folders(config: &BenchmarkConfig, manifest: &Path) -> Result<Vec<Reso
     Ok(resolved)
 }
 
-fn spawn_command(program: &Path, args: &[String], stdin_bytes: Option<&[u8]>) -> Result<Child, io::Error> {
+fn common_parent(paths: &[PathBuf]) -> PathBuf {
+    if paths.is_empty() {
+        return PathBuf::from(".");
+    }
+    let mut current = paths[0]
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf();
+    for path in &paths[1..] {
+        let candidate = path.parent().unwrap_or_else(|| Path::new("."));
+        while !candidate.starts_with(&current) && !current.as_os_str().is_empty() {
+            current.pop();
+        }
+        if current.as_os_str().is_empty() {
+            return PathBuf::from(".");
+        }
+    }
+    current
+}
+
+fn resolve_cli_folder(cli: &Cli, cwd: &Path) -> Result<ResolvedFolder, io::Error> {
+    if cli.path.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "either provide a manifest path or pass --path",
+        ));
+    }
+    let mut files = Vec::with_capacity(cli.path.len());
+    for path in &cli.path {
+        let resolved = resolve_relative_from(cwd, path);
+        if resolved.is_dir() {
+            files.extend(list_benchmark_files(&resolved, cli.recursive)?);
+            continue;
+        }
+        if resolved.extension().and_then(|ext| ext.to_str()) != Some("sl") || !resolved.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "path {} is neither an .sl file nor a benchmark folder",
+                    resolved.display()
+                ),
+            ));
+        }
+        files.push(resolved);
+    }
+    if files.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "no benchmark files found from --path",
+        ));
+    }
+    files.sort();
+    files.dedup();
+
+    let name = cli.name.clone().unwrap_or_else(|| "ad-hoc".to_string());
+    let results_root = cli
+        .results_dir
+        .as_deref()
+        .map(|path| resolve_relative_from(cwd, path))
+        .unwrap_or_else(|| cwd.join("bench-results"));
+    let results_path = cli
+        .results
+        .as_deref()
+        .map(|path| resolve_relative_from(cwd, path))
+        .unwrap_or_else(|| results_root.join(format!("{}.tsv", slugify(&name))));
+    let artifacts_dir = results_root.join("artifacts").join(slugify(&name));
+
+    let (solver_cmd, solver_args) = if cli.mode == BenchMode::ExternalSygus {
+        let solver_cmd = cli
+            .sygus_solver
+            .clone()
+            .or_else(|| env::var("DELIS_BENCH_SYGUS_SOLVER").ok())
+            .unwrap_or_else(|| "cvc5".to_string());
+        let solver_cmd = resolve_program_path_from(cwd, Path::new(&solver_cmd))
+            .display()
+            .to_string();
+        let solver_args = if !cli.sygus_solver_args.is_empty() {
+            cli.sygus_solver_args.clone()
+        } else {
+            default_solver_args(&solver_cmd)
+        };
+        (solver_cmd, solver_args)
+    } else {
+        (String::new(), Vec::new())
+    };
+
+    Ok(ResolvedFolder {
+        name,
+        path: common_parent(&files),
+        mode: cli.mode,
+        delis_args: cli.delis_args.clone(),
+        sygus_timeout: Duration::from_secs(cli.sygus_timeout_secs),
+        solve_timeout: Duration::from_secs(cli.solve_timeout_secs),
+        solver_cmd,
+        solver_args,
+        files,
+        results_path,
+        artifacts_dir,
+        rerun: cli.rerun,
+    })
+}
+
+fn spawn_command(
+    program: &Path,
+    args: &[String],
+    stdin_bytes: Option<&[u8]>,
+) -> Result<SpawnedCommand, io::Error> {
+    let timestamp_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_nanos();
+    let nonce = format!(
+        "delis-bench-{}-{}",
+        std::process::id(),
+        timestamp_nanos
+    );
+    let stdout_path = env::temp_dir().join(format!("{nonce}.stdout"));
+    let stderr_path = env::temp_dir().join(format!("{nonce}.stderr"));
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
     let mut child = std::process::Command::new(program)
         .args(args)
         .stdin(if stdin_bytes.is_some() {
@@ -303,8 +538,8 @@ fn spawn_command(program: &Path, args: &[String], stdin_bytes: Option<&[u8]>) ->
         } else {
             Stdio::null()
         })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
         .spawn()?;
     register_pid(child.id());
     if let Some(input) = stdin_bytes {
@@ -318,7 +553,17 @@ fn spawn_command(program: &Path, args: &[String], stdin_bytes: Option<&[u8]>) ->
                 })?;
         }
     }
-    Ok(child)
+    Ok(SpawnedCommand {
+        child,
+        stdout_path,
+        stderr_path,
+    })
+}
+
+fn read_command_output(path: &Path) -> Vec<u8> {
+    let bytes = fs::read(path).unwrap_or_default();
+    let _ = fs::remove_file(path);
+    bytes
 }
 
 fn run_command(
@@ -327,28 +572,32 @@ fn run_command(
     stdin_bytes: Option<&[u8]>,
     timeout: Duration,
 ) -> Result<CommandRun, io::Error> {
-    let mut child = spawn_command(program, args, stdin_bytes)?;
+    let SpawnedCommand {
+        mut child,
+        stdout_path,
+        stderr_path,
+    } = spawn_command(program, args, stdin_bytes)?;
     let pid = child.id();
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
             unregister_pid(pid);
-            let output = child.wait_with_output()?;
+            let _ = child.wait()?;
             return Ok(CommandRun::Completed(CommandResult {
                 status,
                 duration: start.elapsed(),
-                stdout: output.stdout,
-                stderr: output.stderr,
+                stdout: read_command_output(&stdout_path),
+                stderr: read_command_output(&stderr_path),
             }));
         }
         if start.elapsed() >= timeout {
             let _ = child.kill();
             unregister_pid(pid);
-            let output = child.wait_with_output()?;
+            let _ = child.wait();
             return Ok(CommandRun::TimedOut {
                 duration: start.elapsed(),
-                stdout: output.stdout,
-                stderr: output.stderr,
+                stdout: read_command_output(&stdout_path),
+                stderr: read_command_output(&stderr_path),
             });
         }
         thread::sleep(Duration::from_millis(10));
@@ -493,21 +742,67 @@ fn load_completed_paths(results_path: &Path) -> Result<HashSet<String>, io::Erro
     Ok(completed)
 }
 
-fn open_results_writer(results_path: &Path, rerun: bool) -> Result<BufWriter<File>, io::Error> {
+fn row_path(row: &str) -> Option<&str> {
+    let mut cols = row.split('\t');
+    let _group = cols.next();
+    cols.next()
+}
+
+#[derive(Debug, Default)]
+struct ResultsTable {
+    order: Vec<String>,
+    rows: HashMap<String, String>,
+}
+
+fn load_results_table(results_path: &Path) -> Result<ResultsTable, io::Error> {
+    let mut table = ResultsTable::default();
+    if !results_path.exists() {
+        return Ok(table);
+    }
+    let text = fs::read_to_string(results_path)?;
+    for line in text.lines() {
+        if line.is_empty() || line.starts_with("group\tpath\t") {
+            continue;
+        }
+        if let Some(path) = row_path(line) {
+            let path = path.to_string();
+            if !table.rows.contains_key(&path) {
+                table.order.push(path.clone());
+            }
+            table.rows.insert(path, line.to_string());
+        }
+    }
+    Ok(table)
+}
+
+fn write_results_table(results_path: &Path, table: &ResultsTable) -> Result<(), io::Error> {
+    if let Some(parent) = results_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp_path = results_path.with_extension("tsv.tmp");
+    let mut writer = BufWriter::new(File::create(&tmp_path)?);
+    write_header(&mut writer)?;
+    for path in &table.order {
+        if let Some(row) = table.rows.get(path) {
+            writeln!(writer, "{row}")?;
+        }
+    }
+    writer.flush()?;
+    fs::rename(tmp_path, results_path)?;
+    Ok(())
+}
+
+fn open_results_writer(results_path: &Path) -> Result<BufWriter<File>, io::Error> {
     if let Some(parent) = results_path.parent() {
         fs::create_dir_all(parent)?;
     }
     let existed = results_path.exists();
-    let file = if rerun {
-        File::create(results_path)?
-    } else {
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(results_path)?
-    };
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(results_path)?;
     let mut writer = BufWriter::new(file);
-    if rerun || !existed {
+    if !existed {
         write_header(&mut writer)?;
         writer.flush()?;
     }
@@ -526,37 +821,38 @@ fn run_file_external_sygus(
 
     let relative_path = relative_display(file, manifest_dir);
     let generation = run_command(delis, &command_args, None, folder.sygus_timeout)?;
-    let make_outcome =
-        |status: Status,
-         sygus_duration: Duration,
-         solve_duration: Duration,
-         sygus_bytes: usize,
-         sygus_lines: usize,
-         solution_bytes: usize,
-         delis_exit_code: Option<i32>,
-         solver_exit_code: Option<i32>,
-         solution_path: String,
-         detail: String| Outcome {
-            group: folder.name.clone(),
-            path: relative_path.clone(),
-            status,
-            total_duration: sygus_duration + solve_duration,
-            sygus_duration,
-            solve_duration,
-            sygus_bytes,
-            sygus_lines,
-            solution_bytes,
-            delis_exit_code,
-            solver_exit_code,
-            delis_args: folder.delis_args.clone(),
-            solver_cmd: folder.solver_cmd.clone(),
-            solver_args: folder.solver_args.clone(),
-            solution_path,
-            detail,
-        };
+    let make_outcome = |status: Status,
+                        sygus_duration: Duration,
+                        solve_duration: Duration,
+                        sygus_bytes: usize,
+                        sygus_lines: usize,
+                        solution_bytes: usize,
+                        delis_exit_code: Option<i32>,
+                        solver_exit_code: Option<i32>,
+                        solution_path: String,
+                        detail: String| Outcome {
+        group: folder.name.clone(),
+        path: relative_path.clone(),
+        status,
+        total_duration: sygus_duration + solve_duration,
+        sygus_duration,
+        solve_duration,
+        sygus_bytes,
+        sygus_lines,
+        solution_bytes,
+        delis_exit_code,
+        solver_exit_code,
+        delis_args: folder.delis_args.clone(),
+        solver_cmd: folder.solver_cmd.clone(),
+        solver_args: folder.solver_args.clone(),
+        solution_path,
+        detail,
+    };
 
     match generation {
-        CommandRun::TimedOut { duration, stderr, .. } => Ok(make_outcome(
+        CommandRun::TimedOut {
+            duration, stderr, ..
+        } => Ok(make_outcome(
             Status::SygusTimeout,
             duration,
             Duration::ZERO,
@@ -567,7 +863,10 @@ fn run_file_external_sygus(
             None,
             String::new(),
             if stderr.is_empty() {
-                format!("SyGuS generation timed out after {:.3}s", duration.as_secs_f64())
+                format!(
+                    "SyGuS generation timed out after {:.3}s",
+                    duration.as_secs_f64()
+                )
             } else {
                 format!(
                     "SyGuS generation timed out after {:.3}s; {}",
@@ -687,33 +986,34 @@ fn run_file_native(
 
     let relative_path = relative_display(file, manifest_dir);
     let run = run_command(delis, &command_args, None, folder.solve_timeout)?;
-    let make_outcome =
-        |status: Status,
-         total_duration: Duration,
-         solution_bytes: usize,
-         delis_exit_code: Option<i32>,
-         solution_path: String,
-         detail: String| Outcome {
-            group: folder.name.clone(),
-            path: relative_path.clone(),
-            status,
-            total_duration,
-            sygus_duration: Duration::ZERO,
-            solve_duration: total_duration,
-            sygus_bytes: 0,
-            sygus_lines: 0,
-            solution_bytes,
-            delis_exit_code,
-            solver_exit_code: None,
-            delis_args: folder.delis_args.clone(),
-            solver_cmd: String::new(),
-            solver_args: Vec::new(),
-            solution_path,
-            detail,
-        };
+    let make_outcome = |status: Status,
+                        total_duration: Duration,
+                        solution_bytes: usize,
+                        delis_exit_code: Option<i32>,
+                        solution_path: String,
+                        detail: String| Outcome {
+        group: folder.name.clone(),
+        path: relative_path.clone(),
+        status,
+        total_duration,
+        sygus_duration: Duration::ZERO,
+        solve_duration: total_duration,
+        sygus_bytes: 0,
+        sygus_lines: 0,
+        solution_bytes,
+        delis_exit_code,
+        solver_exit_code: None,
+        delis_args: folder.delis_args.clone(),
+        solver_cmd: String::new(),
+        solver_args: Vec::new(),
+        solution_path,
+        detail,
+    };
 
     match run {
-        CommandRun::TimedOut { duration, stderr, .. } => Ok(make_outcome(
+        CommandRun::TimedOut {
+            duration, stderr, ..
+        } => Ok(make_outcome(
             Status::SolveTimeout,
             duration,
             0,
@@ -779,37 +1079,39 @@ fn run_file(
     }
 }
 
-fn main() -> Result<(), io::Error> {
-    ctrlc::set_handler(move || {
-        cleanup_children();
-        std::process::exit(130);
-    })
-    .expect("Error setting Ctrl-C handler");
-
-    let cli = Cli::parse();
-    let config = load_config(&cli.manifest)?;
-    let manifest_dir = cli
-        .manifest
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .to_path_buf();
-    let delis = resolve_delis_path(&cli.manifest, config.delis.as_ref())?;
-    let folders = resolve_folders(&config, &cli.manifest)?;
-
+fn run_folders(
+    delis: &Path,
+    manifest_dir: &Path,
+    folders: Vec<ResolvedFolder>,
+) -> Result<(), io::Error> {
     let mut stdout = BufWriter::new(io::stdout().lock());
     write_header(&mut stdout)?;
     stdout.flush()?;
 
     for folder in folders {
-        let completed = if folder.rerun {
-            HashSet::new()
+        let folder_paths = folder
+            .files
+            .iter()
+            .map(|file| relative_display(file, manifest_dir))
+            .collect::<HashSet<_>>();
+        let mut results_table = if folder.rerun {
+            Some(load_results_table(&folder.results_path)?)
+        } else {
+            None
+        };
+        let completed = if let Some(table) = &results_table {
+            table.rows
+                .keys()
+                .filter(|path| !folder_paths.contains(*path))
+                .cloned()
+                .collect::<HashSet<_>>()
         } else {
             load_completed_paths(&folder.results_path)?
         };
         let pending = folder
             .files
             .iter()
-            .filter(|file| !completed.contains(&relative_display(file, &manifest_dir)))
+            .filter(|file| !completed.contains(&relative_display(file, manifest_dir)))
             .count();
         eprintln!(
             "running folder {} -> {} ({} total, {} pending, rerun={}, mode={})",
@@ -821,20 +1123,64 @@ fn main() -> Result<(), io::Error> {
             mode_name(folder.mode),
         );
 
-        let mut writer = open_results_writer(&folder.results_path, folder.rerun)?;
+        let mut writer = if folder.rerun {
+            None
+        } else {
+            Some(open_results_writer(&folder.results_path)?)
+        };
         for file in &folder.files {
-            let relative = relative_display(file, &manifest_dir);
+            let relative = relative_display(file, manifest_dir);
             if completed.contains(&relative) {
                 continue;
             }
             eprintln!("  running {}", relative);
-            let outcome = run_file(&delis, &manifest_dir, &folder, file)?;
+            let outcome = run_file(delis, manifest_dir, &folder, file)?;
             let row = outcome_row(&outcome);
-            writeln!(writer, "{row}")?;
-            writer.flush()?;
+            if let Some(table) = results_table.as_mut() {
+                if !table.rows.contains_key(&relative) {
+                    table.order.push(relative.clone());
+                }
+                table.rows.insert(relative.clone(), row.clone());
+                write_results_table(&folder.results_path, table)?;
+            } else if let Some(writer) = writer.as_mut() {
+                writeln!(writer, "{row}")?;
+                writer.flush()?;
+            }
             writeln!(stdout, "{row}")?;
             stdout.flush()?;
         }
+    }
+
+    Ok(())
+}
+
+fn main() -> Result<(), io::Error> {
+    ctrlc::set_handler(move || {
+        cleanup_children();
+        std::process::exit(130);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    let cli = Cli::parse();
+    if let Some(manifest) = cli.manifest.as_ref() {
+        let config = load_config(manifest)?;
+        let manifest_dir = manifest
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        let delis = resolve_delis_path(&manifest_dir, config.delis.as_ref())?;
+        let folders = resolve_folders(&config, manifest)?;
+        run_folders(&delis, &manifest_dir, folders)?;
+    } else if !cli.path.is_empty() {
+        let cwd = env::current_dir()?;
+        let folder = resolve_cli_folder(&cli, &cwd)?;
+        let delis = resolve_delis_path(&cwd, cli.delis.as_ref())?;
+        run_folders(&delis, &cwd, vec![folder])?;
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "either provide a manifest path or pass --path",
+        ));
     }
 
     Ok(())

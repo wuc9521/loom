@@ -1,0 +1,201 @@
+group	path	status	total_ms	sygus_ms	solve_ms	sygus_bytes	sygus_lines	solution_bytes	delis_exit_code	solver_exit_code	delis_args	solver	solver_args	solution_path	detail
+reg-deepregex	benchmark/Reg/deepregex/1.sl	solved	50	0	50	0	0	59	0					bench-results/artifacts/reg-deepregex/1.sl	
+reg-deepregex	benchmark/Reg/deepregex/10.sl	solved	30	0	30	0	0	52	0					bench-results/artifacts/reg-deepregex/10.sl	
+reg-deepregex	benchmark/Reg/deepregex/100.sl	solved	403	0	403	0	0	69	0					bench-results/artifacts/reg-deepregex/100.sl	
+reg-deepregex	benchmark/Reg/deepregex/101.sl	solved	231	0	231	0	0	54	0					bench-results/artifacts/reg-deepregex/101.sl	
+reg-deepregex	benchmark/Reg/deepregex/102.sl	solve_timeout	601160	0	601160	0	0	0							delis timed out after 601.161s
+reg-deepregex	benchmark/Reg/deepregex/103.sl	solved	67919	0	67919	0	0	105	0					bench-results/artifacts/reg-deepregex/103.sl	
+reg-deepregex	benchmark/Reg/deepregex/104.sl	solved	332	0	332	0	0	72	0					bench-results/artifacts/reg-deepregex/104.sl	
+reg-deepregex	benchmark/Reg/deepregex/105.sl	solve_timeout	602640	0	602640	0	0	0							delis timed out after 602.640s
+reg-deepregex	benchmark/Reg/deepregex/106.sl	solve_timeout	600923	0	600923	0	0	0							delis timed out after 600.923s
+reg-deepregex	benchmark/Reg/deepregex/107.sl	error	318051	0	318051	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/108.sl	solve_timeout	600979	0	600979	0	0	0							delis timed out after 600.979s
+reg-deepregex	benchmark/Reg/deepregex/109.sl	solve_timeout	601219	0	601219	0	0	0							delis timed out after 601.219s
+reg-deepregex	benchmark/Reg/deepregex/11.sl	solved	1087	0	1087	0	0	111	0					bench-results/artifacts/reg-deepregex/11.sl	
+reg-deepregex	benchmark/Reg/deepregex/110.sl	solved	85345	0	85345	0	0	93	0					bench-results/artifacts/reg-deepregex/110.sl	
+reg-deepregex	benchmark/Reg/deepregex/112.sl	solved	12358	0	12358	0	0	90	0					bench-results/artifacts/reg-deepregex/112.sl	
+reg-deepregex	benchmark/Reg/deepregex/113.sl	solved	776	0	776	0	0	52	0					bench-results/artifacts/reg-deepregex/113.sl	
+reg-deepregex	benchmark/Reg/deepregex/114.sl	solved	23759	0	23759	0	0	71	0					bench-results/artifacts/reg-deepregex/114.sl	
+reg-deepregex	benchmark/Reg/deepregex/115.sl	solved	186034	0	186034	0	0	71	0					bench-results/artifacts/reg-deepregex/115.sl	
+reg-deepregex	benchmark/Reg/deepregex/116.sl	solved	80	0	80	0	0	52	0					bench-results/artifacts/reg-deepregex/116.sl	
+reg-deepregex	benchmark/Reg/deepregex/117.sl	solved	121	0	121	0	0	52	0					bench-results/artifacts/reg-deepregex/117.sl	
+reg-deepregex	benchmark/Reg/deepregex/118.sl	solved	19258	0	19258	0	0	98	0					bench-results/artifacts/reg-deepregex/118.sl	
+reg-deepregex	benchmark/Reg/deepregex/119.sl	solved	121	0	121	0	0	71	0					bench-results/artifacts/reg-deepregex/119.sl	
+reg-deepregex	benchmark/Reg/deepregex/12.sl	solved	383	0	383	0	0	91	0					bench-results/artifacts/reg-deepregex/12.sl	
+reg-deepregex	benchmark/Reg/deepregex/120.sl	solved	221	0	221	0	0	101	0					bench-results/artifacts/reg-deepregex/120.sl	
+reg-deepregex	benchmark/Reg/deepregex/121.sl	solved	110	0	110	0	0	71	0					bench-results/artifacts/reg-deepregex/121.sl	
+reg-deepregex	benchmark/Reg/deepregex/122.sl	solved	3443	0	3443	0	0	99	0					bench-results/artifacts/reg-deepregex/122.sl	
+reg-deepregex	benchmark/Reg/deepregex/123.sl	solved	846	0	846	0	0	71	0					bench-results/artifacts/reg-deepregex/123.sl	
+reg-deepregex	benchmark/Reg/deepregex/125.sl	solved	60	0	60	0	0	52	0					bench-results/artifacts/reg-deepregex/125.sl	
+reg-deepregex	benchmark/Reg/deepregex/126.sl	solved	155915	0	155915	0	0	107	0					bench-results/artifacts/reg-deepregex/126.sl	
+reg-deepregex	benchmark/Reg/deepregex/127.sl	solved	39616	0	39616	0	0	93	0					bench-results/artifacts/reg-deepregex/127.sl	
+reg-deepregex	benchmark/Reg/deepregex/128.sl	solve_timeout	600368	0	600368	0	0	0							delis timed out after 600.369s
+reg-deepregex	benchmark/Reg/deepregex/129.sl	solve_timeout	600756	0	600756	0	0	0							delis timed out after 600.756s
+reg-deepregex	benchmark/Reg/deepregex/13.sl	solved	131	0	131	0	0	71	0					bench-results/artifacts/reg-deepregex/13.sl	
+reg-deepregex	benchmark/Reg/deepregex/130.sl	solved	30	0	30	0	0	42	0					bench-results/artifacts/reg-deepregex/130.sl	
+reg-deepregex	benchmark/Reg/deepregex/131.sl	solved	50	0	50	0	0	64	0					bench-results/artifacts/reg-deepregex/131.sl	
+reg-deepregex	benchmark/Reg/deepregex/132.sl	solved	40	0	40	0	0	42	0					bench-results/artifacts/reg-deepregex/132.sl	
+reg-deepregex	benchmark/Reg/deepregex/133.sl	solve_timeout	600357	0	600357	0	0	0							delis timed out after 600.358s; ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/134.sl	solve_timeout	600699	0	600699	0	0	0							delis timed out after 600.700s
+reg-deepregex	benchmark/Reg/deepregex/135.sl	solved	241	0	241	0	0	69	0					bench-results/artifacts/reg-deepregex/135.sl	
+reg-deepregex	benchmark/Reg/deepregex/136.sl	error	537038	0	537038	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/137.sl	solved	50	0	50	0	0	42	0					bench-results/artifacts/reg-deepregex/137.sl	
+reg-deepregex	benchmark/Reg/deepregex/138.sl	solve_timeout	600946	0	600946	0	0	0							delis timed out after 600.946s
+reg-deepregex	benchmark/Reg/deepregex/139.sl	solved	292	0	292	0	0	69	0					bench-results/artifacts/reg-deepregex/139.sl	
+reg-deepregex	benchmark/Reg/deepregex/14.sl	solved	5244	0	5244	0	0	112	0					bench-results/artifacts/reg-deepregex/14.sl	
+reg-deepregex	benchmark/Reg/deepregex/140.sl	solve_timeout	600402	0	600402	0	0	0							delis timed out after 600.402s
+reg-deepregex	benchmark/Reg/deepregex/141.sl	solved	564	0	564	0	0	74	0					bench-results/artifacts/reg-deepregex/141.sl	
+reg-deepregex	benchmark/Reg/deepregex/142.sl	solve_timeout	600800	0	600800	0	0	0							delis timed out after 600.801s
+reg-deepregex	benchmark/Reg/deepregex/143.sl	solve_timeout	600906	0	600906	0	0	0							delis timed out after 600.907s
+reg-deepregex	benchmark/Reg/deepregex/144.sl	solved	916	0	916	0	0	66	0					bench-results/artifacts/reg-deepregex/144.sl	
+reg-deepregex	benchmark/Reg/deepregex/145.sl	solved	6351	0	6351	0	0	113	0					bench-results/artifacts/reg-deepregex/145.sl	
+reg-deepregex	benchmark/Reg/deepregex/146.sl	solve_timeout	600233	0	600233	0	0	0							delis timed out after 600.233s
+reg-deepregex	benchmark/Reg/deepregex/147.sl	solved	40	0	40	0	0	52	0					bench-results/artifacts/reg-deepregex/147.sl	
+reg-deepregex	benchmark/Reg/deepregex/148.sl	solve_timeout	600751	0	600751	0	0	0							delis timed out after 600.751s
+reg-deepregex	benchmark/Reg/deepregex/149.sl	solve_timeout	600171	0	600171	0	0	0							delis timed out after 600.172s; ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/15.sl	solved	251	0	251	0	0	93	0					bench-results/artifacts/reg-deepregex/15.sl	
+reg-deepregex	benchmark/Reg/deepregex/150.sl	solve_timeout	602135	0	602135	0	0	0							delis timed out after 602.136s
+reg-deepregex	benchmark/Reg/deepregex/152.sl	solved	483	0	483	0	0	78	0					bench-results/artifacts/reg-deepregex/152.sl	
+reg-deepregex	benchmark/Reg/deepregex/153.sl	solve_timeout	600544	0	600544	0	0	0							delis timed out after 600.545s
+reg-deepregex	benchmark/Reg/deepregex/154.sl	solved	1059	0	1059	0	0	88	0					bench-results/artifacts/reg-deepregex/154.sl	
+reg-deepregex	benchmark/Reg/deepregex/155.sl	solved	5744	0	5744	0	0	92	0					bench-results/artifacts/reg-deepregex/155.sl	
+reg-deepregex	benchmark/Reg/deepregex/156.sl	solved	265848	0	265848	0	0	128	0					bench-results/artifacts/reg-deepregex/156.sl	
+reg-deepregex	benchmark/Reg/deepregex/157.sl	solved	111	0	111	0	0	69	0					bench-results/artifacts/reg-deepregex/157.sl	
+reg-deepregex	benchmark/Reg/deepregex/158.sl	solved	2642	0	2642	0	0	107	0					bench-results/artifacts/reg-deepregex/158.sl	
+reg-deepregex	benchmark/Reg/deepregex/159.sl	solved	9968	0	9968	0	0	111	0					bench-results/artifacts/reg-deepregex/159.sl	
+reg-deepregex	benchmark/Reg/deepregex/16.sl	solved	20	0	20	0	0	53	0					bench-results/artifacts/reg-deepregex/16.sl	
+reg-deepregex	benchmark/Reg/deepregex/160.sl	error	436787	0	436787	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/161.sl	solved	252	0	252	0	0	68	0					bench-results/artifacts/reg-deepregex/161.sl	
+reg-deepregex	benchmark/Reg/deepregex/162.sl	solved	755	0	755	0	0	113	0					bench-results/artifacts/reg-deepregex/162.sl	
+reg-deepregex	benchmark/Reg/deepregex/163.sl	solved	412	0	412	0	0	71	0					bench-results/artifacts/reg-deepregex/163.sl	
+reg-deepregex	benchmark/Reg/deepregex/164.sl	solved	98158	0	98158	0	0	98	0					bench-results/artifacts/reg-deepregex/164.sl	
+reg-deepregex	benchmark/Reg/deepregex/165.sl	solved	241	0	241	0	0	69	0					bench-results/artifacts/reg-deepregex/165.sl	
+reg-deepregex	benchmark/Reg/deepregex/166.sl	solved	40	0	40	0	0	51	0					bench-results/artifacts/reg-deepregex/166.sl	
+reg-deepregex	benchmark/Reg/deepregex/167.sl	solved	584	0	584	0	0	80	0					bench-results/artifacts/reg-deepregex/167.sl	
+reg-deepregex	benchmark/Reg/deepregex/168.sl	solve_timeout	602416	0	602416	0	0	0							delis timed out after 602.417s
+reg-deepregex	benchmark/Reg/deepregex/169.sl	solve_timeout	600441	0	600441	0	0	0							delis timed out after 600.441s
+reg-deepregex	benchmark/Reg/deepregex/17.sl	solved	30	0	30	0	0	44	0					bench-results/artifacts/reg-deepregex/17.sl	
+reg-deepregex	benchmark/Reg/deepregex/170.sl	solved	655	0	655	0	0	96	0					bench-results/artifacts/reg-deepregex/170.sl	
+reg-deepregex	benchmark/Reg/deepregex/171.sl	solved	194	0	194	0	0	80	0					bench-results/artifacts/reg-deepregex/171.sl	ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/172.sl	solve_timeout	600241	0	600241	0	0	0							delis timed out after 600.241s
+reg-deepregex	benchmark/Reg/deepregex/173.sl	solved	29871	0	29871	0	0	93	0					bench-results/artifacts/reg-deepregex/173.sl	
+reg-deepregex	benchmark/Reg/deepregex/174.sl	solved	378594	0	378594	0	0	223	0					bench-results/artifacts/reg-deepregex/174.sl	ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/175.sl	solved	7303	0	7303	0	0	93	0					bench-results/artifacts/reg-deepregex/175.sl	
+reg-deepregex	benchmark/Reg/deepregex/176.sl	solved	45517	0	45517	0	0	127	0					bench-results/artifacts/reg-deepregex/176.sl	
+reg-deepregex	benchmark/Reg/deepregex/177.sl	solved	14792	0	14792	0	0	108	0					bench-results/artifacts/reg-deepregex/177.sl	
+reg-deepregex	benchmark/Reg/deepregex/178.sl	solved	30	0	30	0	0	44	0					bench-results/artifacts/reg-deepregex/178.sl	
+reg-deepregex	benchmark/Reg/deepregex/179.sl	solved	897	0	897	0	0	86	0					bench-results/artifacts/reg-deepregex/179.sl	
+reg-deepregex	benchmark/Reg/deepregex/18.sl	solved	201	0	201	0	0	81	0					bench-results/artifacts/reg-deepregex/18.sl	
+reg-deepregex	benchmark/Reg/deepregex/180.sl	solved	3525	0	3525	0	0	93	0					bench-results/artifacts/reg-deepregex/180.sl	
+reg-deepregex	benchmark/Reg/deepregex/181.sl	solve_timeout	600519	0	600519	0	0	0							delis timed out after 600.519s
+reg-deepregex	benchmark/Reg/deepregex/182.sl	solve_timeout	600822	0	600822	0	0	0							delis timed out after 600.822s
+reg-deepregex	benchmark/Reg/deepregex/183.sl	solved	501140	0	501140	0	0	137	0					bench-results/artifacts/reg-deepregex/183.sl	
+reg-deepregex	benchmark/Reg/deepregex/184.sl	solved	120	0	120	0	0	71	0					bench-results/artifacts/reg-deepregex/184.sl	
+reg-deepregex	benchmark/Reg/deepregex/185.sl	solve_timeout	600419	0	600419	0	0	0							delis timed out after 600.420s; ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/187.sl	solved	9140	0	9140	0	0	103	0					bench-results/artifacts/reg-deepregex/187.sl	
+reg-deepregex	benchmark/Reg/deepregex/188.sl	solved	8268	0	8268	0	0	113	0					bench-results/artifacts/reg-deepregex/188.sl	
+reg-deepregex	benchmark/Reg/deepregex/189.sl	solved	70	0	70	0	0	69	0					bench-results/artifacts/reg-deepregex/189.sl	
+reg-deepregex	benchmark/Reg/deepregex/19.sl	solved	40	0	40	0	0	64	0					bench-results/artifacts/reg-deepregex/19.sl	
+reg-deepregex	benchmark/Reg/deepregex/190.sl	solved	936	0	936	0	0	97	0					bench-results/artifacts/reg-deepregex/190.sl	
+reg-deepregex	benchmark/Reg/deepregex/191.sl	solved	1399	0	1399	0	0	105	0					bench-results/artifacts/reg-deepregex/191.sl	
+reg-deepregex	benchmark/Reg/deepregex/192.sl	solved	957	0	957	0	0	103	0					bench-results/artifacts/reg-deepregex/192.sl	
+reg-deepregex	benchmark/Reg/deepregex/193.sl	solved	503	0	503	0	0	85	0					bench-results/artifacts/reg-deepregex/193.sl	
+reg-deepregex	benchmark/Reg/deepregex/194.sl	solved	121	0	121	0	0	69	0					bench-results/artifacts/reg-deepregex/194.sl	
+reg-deepregex	benchmark/Reg/deepregex/195.sl	solved	382	0	382	0	0	97	0					bench-results/artifacts/reg-deepregex/195.sl	
+reg-deepregex	benchmark/Reg/deepregex/196.sl	solved	4085	0	4085	0	0	91	0					bench-results/artifacts/reg-deepregex/196.sl	
+reg-deepregex	benchmark/Reg/deepregex/197.sl	solved	987	0	987	0	0	103	0					bench-results/artifacts/reg-deepregex/197.sl	
+reg-deepregex	benchmark/Reg/deepregex/198.sl	solved	292	0	292	0	0	115	0					bench-results/artifacts/reg-deepregex/198.sl	
+reg-deepregex	benchmark/Reg/deepregex/199.sl	solved	2154	0	2154	0	0	103	0					bench-results/artifacts/reg-deepregex/199.sl	
+reg-deepregex	benchmark/Reg/deepregex/2.sl	solved	4181	0	4181	0	0	103	0					bench-results/artifacts/reg-deepregex/2.sl	
+reg-deepregex	benchmark/Reg/deepregex/20.sl	solved	493	0	493	0	0	91	0					bench-results/artifacts/reg-deepregex/20.sl	
+reg-deepregex	benchmark/Reg/deepregex/200.sl	solved	8513	0	8513	0	0	120	0					bench-results/artifacts/reg-deepregex/200.sl	
+reg-deepregex	benchmark/Reg/deepregex/201.sl	solved	1299	0	1299	0	0	86	0					bench-results/artifacts/reg-deepregex/201.sl	
+reg-deepregex	benchmark/Reg/deepregex/202.sl	solved	1248	0	1248	0	0	97	0					bench-results/artifacts/reg-deepregex/202.sl	
+reg-deepregex	benchmark/Reg/deepregex/203.sl	solved	5420	0	5420	0	0	120	0					bench-results/artifacts/reg-deepregex/203.sl	
+reg-deepregex	benchmark/Reg/deepregex/204.sl	solve_timeout	600056	0	600056	0	0	0							delis timed out after 600.057s
+reg-deepregex	benchmark/Reg/deepregex/205.sl	solve_timeout	600440	0	600440	0	0	0							delis timed out after 600.440s
+reg-deepregex	benchmark/Reg/deepregex/206.sl	solved	11438	0	11438	0	0	96	0					bench-results/artifacts/reg-deepregex/206.sl	
+reg-deepregex	benchmark/Reg/deepregex/207.sl	solved	7049	0	7049	0	0	103	0					bench-results/artifacts/reg-deepregex/207.sl	
+reg-deepregex	benchmark/Reg/deepregex/208.sl	solve_timeout	600115	0	600115	0	0	0							delis timed out after 600.115s
+reg-deepregex	benchmark/Reg/deepregex/21.sl	solved	1642	0	1642	0	0	86	0					bench-results/artifacts/reg-deepregex/21.sl	
+reg-deepregex	benchmark/Reg/deepregex/22.sl	solved	25438	0	25438	0	0	158	0					bench-results/artifacts/reg-deepregex/22.sl	ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/23.sl	solved	251	0	251	0	0	71	0					bench-results/artifacts/reg-deepregex/23.sl	
+reg-deepregex	benchmark/Reg/deepregex/24.sl	solved	50	0	50	0	0	52	0					bench-results/artifacts/reg-deepregex/24.sl	
+reg-deepregex	benchmark/Reg/deepregex/25.sl	solved	161	0	161	0	0	54	0					bench-results/artifacts/reg-deepregex/25.sl	
+reg-deepregex	benchmark/Reg/deepregex/26.sl	solved	141	0	141	0	0	71	0					bench-results/artifacts/reg-deepregex/26.sl	
+reg-deepregex	benchmark/Reg/deepregex/27.sl	solved	523	0	523	0	0	91	0					bench-results/artifacts/reg-deepregex/27.sl	
+reg-deepregex	benchmark/Reg/deepregex/28.sl	solved	120	0	120	0	0	71	0					bench-results/artifacts/reg-deepregex/28.sl	
+reg-deepregex	benchmark/Reg/deepregex/29.sl	solved	120	0	120	0	0	69	0					bench-results/artifacts/reg-deepregex/29.sl	
+reg-deepregex	benchmark/Reg/deepregex/3.sl	solved	40	0	40	0	0	52	0					bench-results/artifacts/reg-deepregex/3.sl	
+reg-deepregex	benchmark/Reg/deepregex/30.sl	solved	130	0	130	0	0	71	0					bench-results/artifacts/reg-deepregex/30.sl	
+reg-deepregex	benchmark/Reg/deepregex/31.sl	solved	2699	0	2699	0	0	103	0					bench-results/artifacts/reg-deepregex/31.sl	
+reg-deepregex	benchmark/Reg/deepregex/32.sl	solved	815	0	815	0	0	88	0					bench-results/artifacts/reg-deepregex/32.sl	
+reg-deepregex	benchmark/Reg/deepregex/33.sl	solved	221	0	221	0	0	70	0					bench-results/artifacts/reg-deepregex/33.sl	
+reg-deepregex	benchmark/Reg/deepregex/34.sl	solved	775	0	775	0	0	91	0					bench-results/artifacts/reg-deepregex/34.sl	ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/35.sl	solved	80	0	80	0	0	69	0					bench-results/artifacts/reg-deepregex/35.sl	
+reg-deepregex	benchmark/Reg/deepregex/36.sl	solved	70	0	70	0	0	69	0					bench-results/artifacts/reg-deepregex/36.sl	
+reg-deepregex	benchmark/Reg/deepregex/37.sl	solved	372	0	372	0	0	96	0					bench-results/artifacts/reg-deepregex/37.sl	
+reg-deepregex	benchmark/Reg/deepregex/38.sl	solved	40	0	40	0	0	54	0					bench-results/artifacts/reg-deepregex/38.sl	
+reg-deepregex	benchmark/Reg/deepregex/39.sl	solved	11562	0	11562	0	0	109	0					bench-results/artifacts/reg-deepregex/39.sl	
+reg-deepregex	benchmark/Reg/deepregex/4.sl	solved	110	0	110	0	0	73	0					bench-results/artifacts/reg-deepregex/4.sl	
+reg-deepregex	benchmark/Reg/deepregex/40.sl	solve_timeout	600252	0	600252	0	0	0							delis timed out after 600.253s
+reg-deepregex	benchmark/Reg/deepregex/41.sl	solved	90	0	90	0	0	68	0					bench-results/artifacts/reg-deepregex/41.sl	
+reg-deepregex	benchmark/Reg/deepregex/42.sl	solved	90	0	90	0	0	69	0					bench-results/artifacts/reg-deepregex/42.sl	
+reg-deepregex	benchmark/Reg/deepregex/43.sl	solved	60	0	60	0	0	61	0					bench-results/artifacts/reg-deepregex/43.sl	
+reg-deepregex	benchmark/Reg/deepregex/44.sl	solve_timeout	600587	0	600587	0	0	0							delis timed out after 600.587s
+reg-deepregex	benchmark/Reg/deepregex/45.sl	solve_timeout	600426	0	600426	0	0	0							delis timed out after 600.427s
+reg-deepregex	benchmark/Reg/deepregex/46.sl	solve_timeout	603209	0	603209	0	0	0							delis timed out after 603.209s
+reg-deepregex	benchmark/Reg/deepregex/47.sl	solved	221	0	221	0	0	71	0					bench-results/artifacts/reg-deepregex/47.sl	
+reg-deepregex	benchmark/Reg/deepregex/48.sl	solve_timeout	602145	0	602145	0	0	0							delis timed out after 602.145s
+reg-deepregex	benchmark/Reg/deepregex/49.sl	solve_timeout	603160	0	603160	0	0	0							delis timed out after 603.161s
+reg-deepregex	benchmark/Reg/deepregex/5.sl	solved	272	0	272	0	0	86	0					bench-results/artifacts/reg-deepregex/5.sl	
+reg-deepregex	benchmark/Reg/deepregex/50.sl	solve_timeout	600713	0	600713	0	0	0							delis timed out after 600.713s
+reg-deepregex	benchmark/Reg/deepregex/51.sl	solve_timeout	602157	0	602157	0	0	0							delis timed out after 602.158s
+reg-deepregex	benchmark/Reg/deepregex/52.sl	solve_timeout	601035	0	601035	0	0	0							delis timed out after 601.035s
+reg-deepregex	benchmark/Reg/deepregex/53.sl	error	372784	0	372784	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/54.sl	solved	26916	0	26916	0	0	71	0					bench-results/artifacts/reg-deepregex/54.sl	
+reg-deepregex	benchmark/Reg/deepregex/55.sl	error	302656	0	302656	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/56.sl	solve_timeout	603704	0	603704	0	0	0							delis timed out after 603.704s
+reg-deepregex	benchmark/Reg/deepregex/57.sl	solve_timeout	600393	0	600393	0	0	0							delis timed out after 600.393s
+reg-deepregex	benchmark/Reg/deepregex/58.sl	solve_timeout	603213	0	603213	0	0	0							delis timed out after 603.213s
+reg-deepregex	benchmark/Reg/deepregex/59.sl	solved	5911	0	5911	0	0	88	0					bench-results/artifacts/reg-deepregex/59.sl	
+reg-deepregex	benchmark/Reg/deepregex/6.sl	solved	30	0	30	0	0	53	0					bench-results/artifacts/reg-deepregex/6.sl	
+reg-deepregex	benchmark/Reg/deepregex/60.sl	solved	806	0	806	0	0	68	0					bench-results/artifacts/reg-deepregex/60.sl	
+reg-deepregex	benchmark/Reg/deepregex/61.sl	solve_timeout	601344	0	601344	0	0	0							delis timed out after 601.344s
+reg-deepregex	benchmark/Reg/deepregex/62.sl	solved	4920	0	4920	0	0	71	0					bench-results/artifacts/reg-deepregex/62.sl	
+reg-deepregex	benchmark/Reg/deepregex/63.sl	solved	27809	0	27809	0	0	90	0					bench-results/artifacts/reg-deepregex/63.sl	
+reg-deepregex	benchmark/Reg/deepregex/64.sl	solve_timeout	603248	0	603248	0	0	0							delis timed out after 603.248s
+reg-deepregex	benchmark/Reg/deepregex/65.sl	error	269351	0	269351	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/66.sl	solved	1602	0	1602	0	0	66	0					bench-results/artifacts/reg-deepregex/66.sl	
+reg-deepregex	benchmark/Reg/deepregex/67.sl	solve_timeout	604075	0	604075	0	0	0							delis timed out after 604.075s
+reg-deepregex	benchmark/Reg/deepregex/68.sl	solve_timeout	602337	0	602337	0	0	0							delis timed out after 602.338s
+reg-deepregex	benchmark/Reg/deepregex/69.sl	solve_timeout	602072	0	602072	0	0	0							delis timed out after 602.073s
+reg-deepregex	benchmark/Reg/deepregex/7.sl	solved	3145	0	3145	0	0	95	0					bench-results/artifacts/reg-deepregex/7.sl	
+reg-deepregex	benchmark/Reg/deepregex/70.sl	solve_timeout	602063	0	602063	0	0	0							delis timed out after 602.063s
+reg-deepregex	benchmark/Reg/deepregex/72.sl	solve_timeout	602347	0	602347	0	0	0							delis timed out after 602.348s
+reg-deepregex	benchmark/Reg/deepregex/73.sl	solve_timeout	601808	0	601808	0	0	0							delis timed out after 601.809s
+reg-deepregex	benchmark/Reg/deepregex/74.sl	error	456937	0	456937	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/75.sl	solved	1349	0	1349	0	0	69	0					bench-results/artifacts/reg-deepregex/75.sl	
+reg-deepregex	benchmark/Reg/deepregex/76.sl	solved	4500	0	4500	0	0	97	0					bench-results/artifacts/reg-deepregex/76.sl	
+reg-deepregex	benchmark/Reg/deepregex/77.sl	solve_timeout	604061	0	604061	0	0	0							delis timed out after 604.062s
+reg-deepregex	benchmark/Reg/deepregex/78.sl	solved	897	0	897	0	0	85	0					bench-results/artifacts/reg-deepregex/78.sl	
+reg-deepregex	benchmark/Reg/deepregex/79.sl	solved	10483	0	10483	0	0	69	0					bench-results/artifacts/reg-deepregex/79.sl	
+reg-deepregex	benchmark/Reg/deepregex/8.sl	solved	141	0	141	0	0	71	0					bench-results/artifacts/reg-deepregex/8.sl	
+reg-deepregex	benchmark/Reg/deepregex/80.sl	solved	21342	0	21342	0	0	71	0					bench-results/artifacts/reg-deepregex/80.sl	
+reg-deepregex	benchmark/Reg/deepregex/81.sl	solve_timeout	603973	0	603973	0	0	0							delis timed out after 603.974s
+reg-deepregex	benchmark/Reg/deepregex/82.sl	solve_timeout	600980	0	600980	0	0	0							delis timed out after 600.981s
+reg-deepregex	benchmark/Reg/deepregex/83.sl	solved	14097	0	14097	0	0	111	0					bench-results/artifacts/reg-deepregex/83.sl	
+reg-deepregex	benchmark/Reg/deepregex/84.sl	solve_timeout	602478	0	602478	0	0	0							delis timed out after 602.479s
+reg-deepregex	benchmark/Reg/deepregex/86.sl	solved	110	0	110	0	0	71	0					bench-results/artifacts/reg-deepregex/86.sl	
+reg-deepregex	benchmark/Reg/deepregex/87.sl	solved	202	0	202	0	0	54	0					bench-results/artifacts/reg-deepregex/87.sl	
+reg-deepregex	benchmark/Reg/deepregex/88.sl	solved	2167	0	2167	0	0	90	0					bench-results/artifacts/reg-deepregex/88.sl	
+reg-deepregex	benchmark/Reg/deepregex/89.sl	solved	3154	0	3154	0	0	118	0					bench-results/artifacts/reg-deepregex/89.sl	
+reg-deepregex	benchmark/Reg/deepregex/9.sl	solved	1138	0	1138	0	0	100	0					bench-results/artifacts/reg-deepregex/9.sl	
+reg-deepregex	benchmark/Reg/deepregex/90.sl	solved	1572	0	1572	0	0	91	0					bench-results/artifacts/reg-deepregex/90.sl	ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/91.sl	solved	8554	0	8554	0	0	54	0					bench-results/artifacts/reg-deepregex/91.sl	
+reg-deepregex	benchmark/Reg/deepregex/92.sl	error	550562	0	550562	0	0	0							delis exited with status None
+reg-deepregex	benchmark/Reg/deepregex/94.sl	solved	1198	0	1198	0	0	80	0					bench-results/artifacts/reg-deepregex/94.sl	ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
+reg-deepregex	benchmark/Reg/deepregex/95.sl	solved	1786	0	1786	0	0	88	0					bench-results/artifacts/reg-deepregex/95.sl	
+reg-deepregex	benchmark/Reg/deepregex/96.sl	solve_timeout	603414	0	603414	0	0	0							delis timed out after 603.415s
+reg-deepregex	benchmark/Reg/deepregex/97.sl	solve_timeout	600160	0	600160	0	0	0							delis timed out after 600.161s
+reg-deepregex	benchmark/Reg/deepregex/98.sl	solve_timeout	600202	0	600202	0	0	0							delis timed out after 600.202s

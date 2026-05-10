@@ -1,0 +1,9 @@
+[project]
+name = "delis-visual"
+version = "0.1.0"
+description = "Paper-style benchmark visualizer for delis results"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib",
+]
+

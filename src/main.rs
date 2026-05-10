@@ -107,7 +107,6 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             }
             BackendResult::Closure(Ok(None)) => {}
             BackendResult::Closure(Err(e)) | BackendResult::Sygus(Err(e)) => {
-                log::error!("backend failed: {}", e);
                 first_error.get_or_insert(e);
             }
         }
