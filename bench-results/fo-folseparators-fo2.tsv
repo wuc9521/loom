@@ -1,13 +1,13 @@
 group	path	status	total_ms	sygus_ms	solve_ms	sygus_bytes	sygus_lines	solution_bytes	delis_exit_code	solver_exit_code	delis_args	solver	solver_args	solution_path	detail
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp.sl	solved	5885	0	5885	0	0	521	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp0.sl	solved	493	0	493	0	0	258	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp0.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp1.sl	solved	500	0	500	0	0	256	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp1.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp10.sl	solved	2757	0	2757	0	0	371	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp10.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp11.sl	solved	1768	0	1768	0	0	28162	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp11.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp12.sl	solved	139501	0	139501	0	0	592	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp12.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp13.sl	solved	27171	0	27171	0	0	740	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp13.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp14.sl	solved	683	0	683	0	0	465	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp14.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp15.sl	solved	224	0	224	0	0	371	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp15.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp.sl	solved	2866	0	2866	0	0	521	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp0.sl	solved	472	0	472	0	0	258	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp0.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp1.sl	solved	471	0	471	0	0	256	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp1.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp10.sl	solve_timeout	600029	0	600029	0	0	0							delis timed out after 600.029s
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp11.sl	solved	1651	0	1651	0	0	28162	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp11.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp12.sl	solved	19156	0	19156	0	0	592	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp12.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp13.sl	solved	11359	0	11359	0	0	740	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp13.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp14.sl	solved	625	0	625	0	0	465	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp14.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp15.sl	solved	223	0	223	0	0	371	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp15.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp16.sl	solved	342382	0	342382	0	0	718	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp16.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp17.sl	solved	2330	0	2330	0	0	625	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp17.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp18.sl	solved	23097	0	23097	0	0	743	0					bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp18.sl	

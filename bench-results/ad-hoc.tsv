@@ -1,2 +1,0 @@
-group	path	status	total_ms	sygus_ms	solve_ms	sygus_bytes	sygus_lines	solution_bytes	delis_exit_code	solver_exit_code	delis_args	solver	solver_args	solution_path	detail
-ad-hoc	benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp10.sl	solved	7326	0	7326	0	0	371	0					bench-results/artifacts/ad-hoc/alternating_bit_protocol-abp10.sl	
