@@ -2,6 +2,7 @@ use crate::backends::smt2::ast::{HornAtom, HornProg, HornRule, HornTerm, Predica
 use crate::backends::sygus::optim::{self, BitwiseExpr};
 use crate::compile::{TermConstructor, TermSignature};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::time::{Duration, Instant};
 use sygus_parser::{BitVec, Bool, Cmd, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -99,6 +100,14 @@ pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
 
 fn arg_name(idx: usize) -> String {
     format!("arg{idx}")
+}
+
+fn obligation_binding_name(cons_name: &str, bit_idx: usize) -> String {
+    format!(
+        "__sygus_{}_obligation_{}",
+        cons_name.replace('.', "_"),
+        bit_idx
+    )
 }
 
 fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
@@ -384,7 +393,7 @@ fn visit_obligation(
 fn clause_expr(
     clause: &Clause,
     const_helpers: &HashMap<Obligation, bool>,
-    helper_exprs: &HashMap<Obligation, SyGuSTerm>,
+    helper_names: &HashMap<Obligation, String>,
 ) -> Result<BoolExpr, String> {
     let mut conjuncts = Vec::new();
     for child in &clause.child_refs {
@@ -402,8 +411,8 @@ fn clause_expr(
     for dep in &clause.self_refs {
         if let Some(value) = const_helpers.get(dep) {
             conjuncts.push(BoolExpr::Const(*value));
-        } else if let Some(term) = helper_exprs.get(dep) {
-            conjuncts.push(BoolExpr::Dynamic(term.clone()));
+        } else if let Some(name) = helper_names.get(dep) {
+            conjuncts.push(BoolExpr::Dynamic(Term::var(name)));
         } else {
             return Err(format!(
                 "unresolved constructor obligation dependency for state {}",
@@ -417,11 +426,11 @@ fn clause_expr(
 fn obligation_expr_with_resolved_deps(
     clauses: &[Clause],
     const_helpers: &HashMap<Obligation, bool>,
-    helper_exprs: &HashMap<Obligation, SyGuSTerm>,
+    helper_names: &HashMap<Obligation, String>,
 ) -> Result<BoolExpr, String> {
     let disjuncts = clauses
         .iter()
-        .map(|clause| clause_expr(clause, const_helpers, helper_exprs))
+        .map(|clause| clause_expr(clause, const_helpers, helper_names))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(or_exprs(disjuncts))
 }
@@ -435,11 +444,13 @@ pub fn compile_one_way(
     layouts: Option<HashMap<String, SortLayout>>,
     optimize: bool,
 ) -> Vec<SyGuSCmd> {
+    let total_start = Instant::now();
     let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
 
     let layouts = layouts.unwrap_or_else(|| layouts_by_sort(program));
     let constructors = sig.constructors.clone();
 
+    let bucketing_start = Instant::now();
     let constructor_names = constructors
         .iter()
         .map(|cons| cons.name.clone())
@@ -469,18 +480,26 @@ pub fn compile_one_way(
             _ => {}
         }
     }
+    let bucketing_elapsed = bucketing_start.elapsed();
 
     let mut constructor_cmds = Vec::new();
+    let mut plan_elapsed = Duration::ZERO;
+    let mut order_elapsed = Duration::ZERO;
+    let mut resolve_elapsed = Duration::ZERO;
+    let mut assemble_elapsed = Duration::ZERO;
 
     for cons in &constructors {
         let rules = rules_by_constructor
             .get(&cons.name)
             .cloned()
             .unwrap_or_default();
+        let plan_start = Instant::now();
         let plan = build_constructor_plan(program, &layouts, cons, &rules).unwrap_or_else(|err| {
             panic!("failed to build constructor plan for {}: {err}", cons.name)
         });
+        plan_elapsed += plan_start.elapsed();
 
+        let order_start = Instant::now();
         let mut order = Vec::new();
         let mut visiting = HashSet::new();
         let mut visited = HashSet::new();
@@ -488,16 +507,20 @@ pub fn compile_one_way(
             visit_obligation(obligation, &plan, &mut visiting, &mut visited, &mut order)
                 .unwrap_or_else(|err| panic!("{err} for constructor {}", cons.name));
         }
+        order_elapsed += order_start.elapsed();
 
+        let resolve_start = Instant::now();
         let mut const_helpers = HashMap::new();
-        let mut helper_exprs = HashMap::new();
+        let mut helper_names = HashMap::new();
+        let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
+        let mut let_bindings = Vec::new();
         for obligation in order {
             let clauses = plan
                 .obligations
                 .get(&obligation)
-                .cloned()
-                .unwrap_or_default();
-            match obligation_expr_with_resolved_deps(&clauses, &const_helpers, &helper_exprs)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            match obligation_expr_with_resolved_deps(clauses, &const_helpers, &helper_names)
                 .unwrap_or_else(|err| {
                     panic!(
                         "failed to inline constructor obligation for {}: {err}",
@@ -508,10 +531,13 @@ pub fn compile_one_way(
                     const_helpers.insert(obligation, value);
                 }
                 BoolExpr::Dynamic(body) => {
-                    helper_exprs.insert(obligation, body);
+                    let binding_name = obligation_binding_name(&cons.name, obligation.bit_idx);
+                    helper_names.insert(obligation, binding_name.clone());
+                    let_bindings.push((binding_name, body));
                 }
             }
         }
+        resolve_elapsed += resolve_start.elapsed();
         if log::log_enabled!(log::Level::Debug) {
             let entries = layouts[&cons.result_sort]
                 .states
@@ -531,8 +557,8 @@ pub fn compile_one_way(
             );
         }
 
+        let assemble_start = Instant::now();
         let mut builder = Cmd::define_fun(&cons.name);
-        let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
         for (idx, arg_sort) in cons.arg_sorts.iter().enumerate() {
             builder = builder.arg(&arg_names[idx], Sort::from_name(arg_sort));
         }
@@ -543,8 +569,8 @@ pub fn compile_one_way(
             .map(|(bit_idx, state)| {
                 if let Some(value) = const_helpers.get(&Obligation { bit_idx }) {
                     BoolExpr::Const(*value)
-                } else if let Some(expr) = helper_exprs.get(&Obligation { bit_idx }) {
-                    BoolExpr::Dynamic(expr.clone())
+                } else if let Some(name) = helper_names.get(&Obligation { bit_idx }) {
+                    BoolExpr::Dynamic(Term::var(name))
                 } else {
                     panic!(
                         "missing inlined constructor obligation for {} state {}",
@@ -575,8 +601,23 @@ pub fn compile_one_way(
                 .collect::<Vec<_>>();
             compact_bitvec(bits)
         });
+        let body = let_bindings
+            .into_iter()
+            .rev()
+            .fold(body, |acc, (name, value)| Term::let_binding(vec![(name, value)], acc));
         constructor_cmds.push(builder.ret(Sort::from_name(&cons.result_sort)).body(body).build());
-        log::info!("sygus BV constructor {}: rules={}", cons.name, rules.len(),);
+        let assemble_cons_elapsed = assemble_start.elapsed();
+        assemble_elapsed += assemble_cons_elapsed;
+        log::info!(
+            "sygus BV constructor {}: rules={}, obligations={}, plan={:?}, order={:?}, resolve={:?}, assemble={:?}",
+            cons.name,
+            rules.len(),
+            plan.obligations.len(),
+            plan_start.elapsed(),
+            order_start.elapsed(),
+            resolve_start.elapsed(),
+            assemble_cons_elapsed,
+        );
     }
 
     cmds.extend(constructor_cmds);
@@ -586,6 +627,17 @@ pub fn compile_one_way(
             .ret(Sort::from_name(start_sort))
             .grammar(grammar)
             .build(),
+    );
+
+    log::info!(
+        "sygus BV emission summary: constructors={}, rule_bucketing={:?}, plan={:?}, order={:?}, resolve={:?}, assemble={:?}, total={:?}",
+        constructors.len(),
+        bucketing_elapsed,
+        plan_elapsed,
+        order_elapsed,
+        resolve_elapsed,
+        assemble_elapsed,
+        total_start.elapsed(),
     );
 
     for rule in &program.rules {

@@ -156,12 +156,12 @@ fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c1.sl	sol
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c2.sl	solved	402	0	402	0	0	358	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c2.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c3.sl	solved	527	0	527	0	0	634	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c3.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c4.sl	solved	484	0	484	0	0	357	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c4.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c5.sl	error	364607	0	364607	0	0	0							delis exited with status None
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c6.sl	solved	463	0	463	0	0	249	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c6.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c7.sl	solved	453	0	453	0	0	327	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c7.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c8.sl	solved	372	0	372	0	0	472	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c8.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c9.sl	solved	1229	0	1229	0	0	515	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c9.sl	
-fo-folseparators-fo2	benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb10.sl	solved	1360	0	1360	0	0	4663	0					bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb10.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c5.sl	solve_timeout	605174	0	605174	0	0	0							delis timed out after 605.174s
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c6.sl	solved	430	0	430	0	0	249	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c6.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c7.sl	solved	540	0	540	0	0	327	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c7.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c8.sl	solved	364	0	364	0	0	472	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c8.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/flexible_paxos_epr-c9.sl	solved	856	0	856	0	0	326	0					bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c9.sl	
+fo-folseparators-fo2	benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb10.sl	solved	790	0	790	0	0	4663	0					bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb10.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb11.sl	solved	28528	0	28528	0	0	502	0					bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb11.sl	
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb5.sl	solve_timeout	601102	0	601102	0	0	0							delis timed out after 601.103s; ERROR backend failed: CEGIS made no progress while verification still fails src/main.rs:110
 fo-folseparators-fo2	benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb6.sl	solved	473	0	473	0	0	2598	0					bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb6.sl	

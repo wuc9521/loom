@@ -61,6 +61,9 @@ struct Cli {
 
     #[arg(long, default_value_t = false)]
     rerun: bool,
+
+    #[arg(long, default_value_t = false)]
+    restart: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +100,8 @@ struct FolderConfig {
     results: Option<PathBuf>,
     #[serde(default)]
     rerun: bool,
+    #[serde(default)]
+    restart: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, clap::ValueEnum)]
@@ -120,6 +125,7 @@ struct ResolvedFolder {
     results_path: PathBuf,
     artifacts_dir: PathBuf,
     rerun: bool,
+    restart: bool,
 }
 
 #[derive(Debug)]
@@ -405,6 +411,7 @@ fn resolve_folders(
             results_path,
             artifacts_dir,
             rerun: folder.rerun,
+            restart: folder.restart,
         });
     }
     Ok(resolved)
@@ -509,6 +516,7 @@ fn resolve_cli_folder(cli: &Cli, cwd: &Path) -> Result<ResolvedFolder, io::Error
         results_path,
         artifacts_dir,
         rerun: cli.rerun,
+        restart: cli.restart,
     })
 }
 
@@ -773,6 +781,38 @@ fn load_results_table(results_path: &Path) -> Result<ResultsTable, io::Error> {
         }
     }
     Ok(table)
+}
+
+fn progress_path(results_path: &Path) -> PathBuf {
+    results_path.with_extension("progress")
+}
+
+fn load_progress_marker(progress_path: &Path) -> Result<Option<String>, io::Error> {
+    if !progress_path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(progress_path)?;
+    let path = text.lines().next().map(str::trim).unwrap_or_default();
+    if path.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(path.to_string()))
+    }
+}
+
+fn write_progress_marker(progress_path: &Path, path: &str) -> Result<(), io::Error> {
+    if let Some(parent) = progress_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(progress_path, format!("{path}\n"))
+}
+
+fn clear_progress_marker(progress_path: &Path) -> Result<(), io::Error> {
+    match fs::remove_file(progress_path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
 }
 
 fn write_results_table(results_path: &Path, table: &ResultsTable) -> Result<(), io::Error> {
@@ -1094,36 +1134,55 @@ fn run_folders(
             .iter()
             .map(|file| relative_display(file, manifest_dir))
             .collect::<HashSet<_>>();
-        let mut results_table = if folder.rerun {
+        let manage_results_table = folder.rerun || folder.restart;
+        let mut results_table = if manage_results_table {
             Some(load_results_table(&folder.results_path)?)
         } else {
             None
         };
-        let completed = if let Some(table) = &results_table {
+        let completed = if folder.restart {
+            HashSet::new()
+        } else if let Some(table) = &results_table {
             table.rows
                 .keys()
-                .filter(|path| !folder_paths.contains(*path))
+                .filter(|path| folder_paths.contains(path.as_str()))
                 .cloned()
                 .collect::<HashSet<_>>()
         } else {
             load_completed_paths(&folder.results_path)?
+                .into_iter()
+                .filter(|path| folder_paths.contains(path.as_str()))
+                .collect()
         };
+        let progress = progress_path(&folder.results_path);
+        if let Some(path) = load_progress_marker(&progress)? {
+            if folder_paths.contains(path.as_str()) && !completed.contains(&path) {
+                eprintln!(
+                    "resuming folder {} after interruption; last in-progress file was {}",
+                    folder.path.display(),
+                    path
+                );
+            } else {
+                clear_progress_marker(&progress)?;
+            }
+        }
         let pending = folder
             .files
             .iter()
             .filter(|file| !completed.contains(&relative_display(file, manifest_dir)))
             .count();
         eprintln!(
-            "running folder {} -> {} ({} total, {} pending, rerun={}, mode={})",
+            "running folder {} -> {} ({} total, {} pending, rerun={}, restart={}, mode={})",
             folder.path.display(),
             folder.results_path.display(),
             folder.files.len(),
             pending,
             folder.rerun,
+            folder.restart,
             mode_name(folder.mode),
         );
 
-        let mut writer = if folder.rerun {
+        let mut writer = if manage_results_table {
             None
         } else {
             Some(open_results_writer(&folder.results_path)?)
@@ -1134,6 +1193,7 @@ fn run_folders(
                 continue;
             }
             eprintln!("  running {}", relative);
+            write_progress_marker(&progress, &relative)?;
             let outcome = run_file(delis, manifest_dir, &folder, file)?;
             let row = outcome_row(&outcome);
             if let Some(table) = results_table.as_mut() {
@@ -1148,7 +1208,9 @@ fn run_folders(
             }
             writeln!(stdout, "{row}")?;
             stdout.flush()?;
+            clear_progress_marker(&progress)?;
         }
+        clear_progress_marker(&progress)?;
     }
 
     Ok(())

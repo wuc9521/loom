@@ -74,6 +74,54 @@ impl QuantifierProfile {
     }
 }
 
+fn log_quantifier_bucket(cons: &str, label: &str, timing: &QuantifierTiming) {
+    if timing.calls == 0 {
+        return;
+    }
+    log::info!(
+        "CHC quantifier {} {}: calls={}, iterations={}, domain={:?}, clone={:?}, body={:?}, combine={:?}, total={:?}",
+        cons,
+        label,
+        timing.calls,
+        timing.iterations,
+        timing.domain_time,
+        timing.clone_time,
+        timing.body_time,
+        timing.combine_time,
+        timing.total_time,
+    );
+}
+
+#[derive(Default, Clone, Debug)]
+struct StageTiming {
+    calls: usize,
+    total_time: Duration,
+}
+
+#[derive(Default, Clone, Debug)]
+struct LoweringProfile {
+    eval_bool_pair: StageTiming,
+    semantic_bool_call: StageTiming,
+    semantic_finite_call: StageTiming,
+    aspect_variants: StageTiming,
+    child_terms: StageTiming,
+    pred_for: StageTiming,
+}
+
+fn log_stage_timing(cons: &str, label: &str, timing: &StageTiming) {
+    if timing.calls == 0 {
+        return;
+    }
+    log::info!(
+        "CHC stage {} {}: calls={}, total={:?}, avg={:?}",
+        cons,
+        label,
+        timing.calls,
+        timing.total_time,
+        timing.total_time / timing.calls as u32,
+    );
+}
+
 #[derive(Default, Clone)]
 struct Env {
     aspect: Rc<HashMap<String, AspectKey>>,
@@ -114,6 +162,7 @@ struct ChcCompiler<'a> {
         RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
     domain_values_cache: RefCell<HashMap<(String, String), Vec<AspectValue>>>,
     quantifier_profile: RefCell<QuantifierProfile>,
+    lowering_profile: RefCell<LoweringProfile>,
 }
 
 impl<'a> ChcCompiler<'a> {
@@ -156,6 +205,7 @@ impl<'a> ChcCompiler<'a> {
             ground_model_eval: RefCell::new(HashMap::new()),
             domain_values_cache: RefCell::new(HashMap::new()),
             quantifier_profile: RefCell::new(QuantifierProfile::default()),
+            lowering_profile: RefCell::new(LoweringProfile::default()),
         }
         .init_predicates())
     }
@@ -232,6 +282,7 @@ impl<'a> ChcCompiler<'a> {
     ) -> Result<(), String> {
         let start = Instant::now();
         *self.quantifier_profile.borrow_mut() = QuantifierProfile::default();
+        *self.lowering_profile.borrow_mut() = LoweringProfile::default();
         let mut matched = false;
         let domains = self.program.domains.clone();
         for domain in &domains {
@@ -315,6 +366,22 @@ impl<'a> ChcCompiler<'a> {
                 cons.name
             ));
         }
+        let profile = self.quantifier_profile.borrow().clone();
+        log_quantifier_bucket(&cons.name, "forall_pos", &profile.forall_pos);
+        log_quantifier_bucket(&cons.name, "forall_neg", &profile.forall_neg);
+        log_quantifier_bucket(&cons.name, "exists_pos", &profile.exists_pos);
+        log_quantifier_bucket(&cons.name, "exists_neg", &profile.exists_neg);
+        let lowering = self.lowering_profile.borrow().clone();
+        log_stage_timing(&cons.name, "eval_bool_pair", &lowering.eval_bool_pair);
+        log_stage_timing(&cons.name, "semantic_bool_call", &lowering.semantic_bool_call);
+        log_stage_timing(
+            &cons.name,
+            "semantic_finite_call",
+            &lowering.semantic_finite_call,
+        );
+        log_stage_timing(&cons.name, "aspect_variants", &lowering.aspect_variants);
+        log_stage_timing(&cons.name, "child_terms", &lowering.child_terms);
+        log_stage_timing(&cons.name, "pred_for", &lowering.pred_for);
         log::info!(
             "CHC constructor {} compiled in {:?}",
             cons.name,
@@ -453,6 +520,8 @@ impl<'a> ChcCompiler<'a> {
     }
 
     fn eval_bool_pair(&self, expr: &Value, env: &Env) -> Result<BoolPair, String> {
+        let start = Instant::now();
+        let result = (|| {
         if let Some(symbol) = expr.as_symbol() {
             return match symbol {
                 "true" => Ok(BoolPair {
@@ -545,6 +614,12 @@ impl<'a> ChcCompiler<'a> {
             }
             _ => Err(format!("unsupported Bool expression: {expr}")),
         }
+        })();
+        let elapsed = start.elapsed();
+        let mut profile = self.lowering_profile.borrow_mut();
+        profile.eval_bool_pair.calls += 1;
+        profile.eval_bool_pair.total_time += elapsed;
+        result
     }
 
     fn eval_quantifier_pair(
@@ -710,6 +785,7 @@ impl<'a> ChcCompiler<'a> {
         args: &[&Value],
         env: &Env,
     ) -> Result<BoolPair, String> {
+        let start = Instant::now();
         let domain = self.ctx.domain_for_relation(relation)?;
         if domain.kind != SemanticKind::Bool {
             return Err(format!("{relation} does not return Bool"));
@@ -743,7 +819,12 @@ impl<'a> ChcCompiler<'a> {
                 );
             }
         }
-        Ok(BoolPair { pos, neg })
+        let result = Ok(BoolPair { pos, neg });
+        let elapsed = start.elapsed();
+        let mut profile = self.lowering_profile.borrow_mut();
+        profile.semantic_bool_call.calls += 1;
+        profile.semantic_bool_call.total_time += elapsed;
+        result
     }
 
     fn eval_model_bool_call_pair(
@@ -978,6 +1059,7 @@ impl<'a> ChcCompiler<'a> {
         env: &Env,
         positive: bool,
     ) -> Result<PredFormula, String> {
+        let start = Instant::now();
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
@@ -1000,7 +1082,12 @@ impl<'a> ChcCompiler<'a> {
                 );
             }
         }
-        Ok(out)
+        let result = Ok(out);
+        let elapsed = start.elapsed();
+        let mut profile = self.lowering_profile.borrow_mut();
+        profile.semantic_finite_call.calls += 1;
+        profile.semantic_finite_call.total_time += elapsed;
+        result
     }
 
     fn eval_model_finite_call(
@@ -1031,6 +1118,8 @@ impl<'a> ChcCompiler<'a> {
     }
 
     fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<TypedTerm>, String> {
+        let start = Instant::now();
+        let result = (|| {
         if let Some(child) = expr.as_symbol() {
             if env.current_var.as_deref().map(String::as_str) == Some(child) {
                 let term = env.current_term.clone().ok_or_else(|| {
@@ -1085,6 +1174,12 @@ impl<'a> ChcCompiler<'a> {
             }
             _ => Err(format!("unsupported semantic call term navigation: {expr}")),
         }
+        })();
+        let elapsed = start.elapsed();
+        let mut profile = self.lowering_profile.borrow_mut();
+        profile.child_terms.calls += 1;
+        profile.child_terms.total_time += elapsed;
+        result
     }
 
     fn aspect_variants(
@@ -1093,6 +1188,8 @@ impl<'a> ChcCompiler<'a> {
         relation: &str,
         env: &Env,
     ) -> Result<Vec<(PredFormula, AspectKey)>, String> {
+        let start = Instant::now();
+        let result = (|| {
         if let Some(symbol) = expr.as_symbol() {
             let aspect = env
                 .aspect
@@ -1165,6 +1262,12 @@ impl<'a> ChcCompiler<'a> {
                 ))
             })
             .collect()
+        })();
+        let elapsed = start.elapsed();
+        let mut profile = self.lowering_profile.borrow_mut();
+        profile.aspect_variants.calls += 1;
+        profile.aspect_variants.total_time += elapsed;
+        result
     }
 
     fn aspect_field_variants(
@@ -1255,7 +1358,8 @@ impl<'a> ChcCompiler<'a> {
         aspect: &AspectKey,
         value: Option<&AspectValue>,
     ) -> Result<Pred, String> {
-        self.predicates
+        let start = Instant::now();
+        let result = self.predicates
             .get(&(
                 relation.to_string(),
                 sort.to_string(),
@@ -1274,7 +1378,12 @@ impl<'a> ChcCompiler<'a> {
                         .map(|v| format!(" = {}", v.display()))
                         .unwrap_or_default()
                 )
-            })
+            });
+        let elapsed = start.elapsed();
+        let mut profile = self.lowering_profile.borrow_mut();
+        profile.pred_for.calls += 1;
+        profile.pred_for.total_time += elapsed;
+        result
     }
 
     fn relation_term_sorts(&self, relation: &str) -> Result<&[String], String> {
