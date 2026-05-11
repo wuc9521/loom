@@ -24,6 +24,8 @@ Options:
   --results PATH               Explicit TSV output path.
   --rerun                      Update existing results in place and resume safely.
   --restart                    Ignore prior rows and rerun everything.
+  --shard-count N              Deterministically partition files into N shards. Default: 1
+  --shard-index I              Zero-based shard index to run. Default: 0
   --all-existing               Run the built-in benchmark groups matching existing bench-results names.
   --help                       Show this help.
 EOF
@@ -190,6 +192,12 @@ os.replace(tmp, results_path)
 PY
 }
 
+append_results_row() {
+  local results_path=$1
+  local row=$2
+  printf '%s\n' "$row" >>"$results_path"
+}
+
 write_progress_marker() {
   local progress_path=$1
   local relative=$2
@@ -207,6 +215,17 @@ load_progress_marker() {
 clear_progress_marker() {
   local progress_path=$1
   rm -f "$progress_path"
+}
+
+with_lock() {
+  local lock_path=$1
+  shift
+  mkdir -p "$(dirname "$lock_path")"
+  while ! mkdir "$lock_path" 2>/dev/null; do
+    sleep 0.1
+  done
+  "$@"
+  rmdir "$lock_path"
 }
 
 timestamp_utc() {
@@ -331,6 +350,8 @@ RESULTS_PATH=""
 RERUN=0
 RESTART=0
 RUN_ALL_EXISTING=0
+SHARD_COUNT=1
+SHARD_INDEX=0
 declare -a PATHS=()
 declare -a DELIS_ARGS=()
 declare -a SYGUS_SOLVER_ARGS=()
@@ -404,6 +425,16 @@ while (($#)); do
       RESTART=1
       shift
       ;;
+    --shard-count)
+      (($# >= 2)) || die "--shard-count requires a value"
+      SHARD_COUNT=$2
+      shift 2
+      ;;
+    --shard-index)
+      (($# >= 2)) || die "--shard-index requires a value"
+      SHARD_INDEX=$2
+      shift 2
+      ;;
     --all-existing)
       RUN_ALL_EXISTING=1
       shift
@@ -428,6 +459,7 @@ if ((RUN_ALL_EXISTING)) || ((${#PATHS[@]} == 0)); then
   [[ -n "$RESULTS_DIR" ]] && shared_args+=(--results-dir "$RESULTS_DIR")
   ((RERUN)) && shared_args+=(--rerun)
   ((RESTART)) && shared_args+=(--restart)
+  shared_args+=(--shard-count "$SHARD_COUNT" --shard-index "$SHARD_INDEX")
   if ((${#DELIS_ARGS[@]} > 0)); then
     local_arg=
     for local_arg in "${DELIS_ARGS[@]}"; do
@@ -446,6 +478,10 @@ fi
 
 ((${#PATHS[@]} > 0)) || die "at least one --path is required"
 [[ "$MODE" == "native" || "$MODE" == "external_sygus" ]] || die "--mode must be native or external_sygus"
+[[ "$SHARD_COUNT" =~ ^[0-9]+$ ]] || die "--shard-count must be a positive integer"
+[[ "$SHARD_INDEX" =~ ^[0-9]+$ ]] || die "--shard-index must be a non-negative integer"
+((SHARD_COUNT >= 1)) || die "--shard-count must be at least 1"
+((SHARD_INDEX < SHARD_COUNT)) || die "--shard-index must be less than --shard-count"
 
 CWD=$(pwd)
 DELIS_BIN=$(resolve_delis_path)
@@ -464,8 +500,13 @@ else
   RESULTS_PATH=$(abspath "$RESULTS_PATH")
 fi
 ARTIFACTS_DIR="$RESULTS_DIR/artifacts/$SLUG"
-PROGRESS_PATH="${RESULTS_PATH%.*}.progress"
-LOG_PATH="${RESULTS_PATH%.*}-$(timestamp_slug_utc).log"
+SHARD_SUFFIX=""
+if ((SHARD_COUNT > 1)); then
+  SHARD_SUFFIX="-shard-${SHARD_INDEX}-of-${SHARD_COUNT}"
+fi
+PROGRESS_PATH="${RESULTS_PATH%.*}${SHARD_SUFFIX}.progress"
+LOG_PATH="${RESULTS_PATH%.*}${SHARD_SUFFIX}-$(timestamp_slug_utc).log"
+RESULTS_LOCK_PATH="${RESULTS_PATH}.lock"
 
 declare -a FILES=()
 for raw_path in "${PATHS[@]}"; do
@@ -489,6 +530,17 @@ while IFS= read -r file; do
   deduped_files+=("$file")
 done < <(printf '%s\n' "${FILES[@]}" | sort -u)
 FILES=("${deduped_files[@]}")
+if ((SHARD_COUNT > 1)); then
+  sharded_files=()
+  file_idx=0
+  for file in "${FILES[@]}"; do
+    if (((file_idx % SHARD_COUNT) == SHARD_INDEX)); then
+      sharded_files+=("$file")
+    fi
+    file_idx=$((file_idx + 1))
+  done
+  FILES=("${sharded_files[@]}")
+fi
 ROOT=$(common_parent "${FILES[@]}")
 
 if [[ "$MODE" == "external_sygus" ]]; then
@@ -503,7 +555,7 @@ if [[ "$MODE" == "external_sygus" ]]; then
 fi
 
 printf '%s\n' "$HEADER"
-append_log "$LOG_PATH" "start name=$NAME mode=$MODE root=$ROOT results=$(relative_display "$RESULTS_PATH" "$CWD") rerun=$( ((RERUN)) && echo true || echo false ) restart=$( ((RESTART)) && echo true || echo false ) files=${#FILES[@]}"
+append_log "$LOG_PATH" "start name=$NAME mode=$MODE root=$ROOT results=$(relative_display "$RESULTS_PATH" "$CWD") rerun=$( ((RERUN)) && echo true || echo false ) restart=$( ((RESTART)) && echo true || echo false ) shard_index=$SHARD_INDEX shard_count=$SHARD_COUNT files=${#FILES[@]}"
 
 folder_paths_file=$(mktemp "${TMPDIR:-/tmp}/delis-bench-folder-paths.XXXXXX")
 trap 'rm -f "$folder_paths_file"' EXIT
@@ -548,8 +600,8 @@ action="running folder"
 if ((pending == 0)); then
   action="skipping folder"
 fi
-echo "$action $ROOT -> $(relative_display "$RESULTS_PATH" "$CWD") (${#FILES[@]} total, $pending pending, rerun=$( ((RERUN)) && echo true || echo false), restart=$( ((RESTART)) && echo true || echo false), mode=$MODE)" >&2
-append_log "$LOG_PATH" "$action total=${#FILES[@]} pending=$pending results=$(relative_display "$RESULTS_PATH" "$CWD")"
+echo "$action $ROOT -> $(relative_display "$RESULTS_PATH" "$CWD") (${#FILES[@]} total, $pending pending, rerun=$( ((RERUN)) && echo true || echo false), restart=$( ((RESTART)) && echo true || echo false), mode=$MODE, shard=$SHARD_INDEX/$SHARD_COUNT)" >&2
+append_log "$LOG_PATH" "$action total=${#FILES[@]} pending=$pending results=$(relative_display "$RESULTS_PATH" "$CWD") shard_index=$SHARD_INDEX shard_count=$SHARD_COUNT"
 if ((pending == 0)); then
   clear_progress_marker "$PROGRESS_PATH"
   append_log "$LOG_PATH" "done pending=0"
@@ -557,7 +609,7 @@ if ((pending == 0)); then
 fi
 
 if (( ! manage_results_table )); then
-  ensure_results_header "$RESULTS_PATH"
+  with_lock "$RESULTS_LOCK_PATH" ensure_results_header "$RESULTS_PATH"
 fi
 
 for file in "${FILES[@]}"; do
@@ -763,9 +815,9 @@ PY
   fi
 
   if ((manage_results_table)); then
-    update_results_row "$RESULTS_PATH" "$row"
+    with_lock "$RESULTS_LOCK_PATH" update_results_row "$RESULTS_PATH" "$row"
   else
-    printf '%s\n' "$row" >>"$RESULTS_PATH"
+    with_lock "$RESULTS_LOCK_PATH" append_results_row "$RESULTS_PATH" "$row"
   fi
   printf '%s\n' "$row"
   append_log "$LOG_PATH" "row $(sanitize_field "$row")"
