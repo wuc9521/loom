@@ -1,0 +1,3 @@
+(
+(define-fun phi () Formula0 (fol.0.forall.x0.id (fol.ctx-x0-id.or (fol.ctx-x0-id.forall.x1.id (fol.ctx-x0-id-x1-id.atom.le fol.ctx-x0-id-x1-id.var.x1.id fol.ctx-x0-id-x1-id.var.x0.id)) (fol.ctx-x0-id.forall.x1.node (fol.ctx-x0-id-x1-node.or (fol.ctx-x0-id-x1-node.atom.le fol.ctx-x0-id-x1-node.var.x0.id (fol.ctx-x0-id-x1-node.term.idn fol.ctx-x0-id-x1-node.var.x1.node)) (fol.ctx-x0-id-x1-node.not (fol.ctx-x0-id-x1-node.or (fol.ctx-x0-id-x1-node.atom.pending fol.ctx-x0-id-x1-node.var.x0.id fol.ctx-x0-id-x1-node.var.x1.node) (fol.ctx-x0-id-x1-node.forall.x0.node (fol.ctx-x0-node-x1-node.atom.pending (fol.ctx-x0-node-x1-node.term.idn fol.ctx-x0-node-x1-node.var.x1.node) fol.ctx-x0-node-x1-node.var.x0.node)))))))))
+)

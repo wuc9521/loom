@@ -1,0 +1,3 @@
+(
+(define-fun phi () Formula0 (fol.0.forall.x0.node (fol.ctx-x0-node.or (fol.ctx-x0-node.not (fol.ctx-x0-node.exists.x1.node (fol.ctx-x0-node-x1-node.forall.x2.packet (fol.ctx-x0-node-x1-node-x2-packet.atom.pending fol.ctx-x0-node-x1-node-x2-packet.var.x2.packet fol.ctx-x0-node-x1-node-x2-packet.var.x0.node fol.ctx-x0-node-x1-node-x2-packet.var.x1.node)))) (fol.ctx-x0-node.forall.x1.node (fol.ctx-x0-node-x1-node.or (fol.ctx-x0-node-x1-node.eq.node fol.ctx-x0-node-x1-node.var.x0.node fol.ctx-x0-node-x1-node.var.x1.node) (fol.ctx-x0-node-x1-node.atom.route.dom fol.ctx-x0-node-x1-node.var.x1.node fol.ctx-x0-node-x1-node.var.x0.node))))))
+)

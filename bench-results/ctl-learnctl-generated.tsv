@@ -1751,3 +1751,358 @@ ctl-learnctl-generated	benchmark/CTL/learnctl/generated/small--small_m9__small_m
 ctl-learnctl-generated	benchmark/CTL/learnctl/generated/small--small_m9__small_m10--until-E.sl	solved	137	0	137	0	0	52	0					bench-results-a/artifacts/ctl-learnctl-generated/small--small_m9__small_m10--until-E.sl	
 ctl-learnctl-generated	benchmark/CTL/learnctl/generated/small--small_m9__small_m10--until-R.sl	solved	147	0	147	0	0	61	0					bench-results-a/artifacts/ctl-learnctl-generated/small--small_m9__small_m10--until-R.sl	
 ctl-learnctl-generated	benchmark/CTL/learnctl/generated/small--small_m9__small_m10--until.sl	solved	129	0	129	0	0	61	0					bench-results-a/artifacts/ctl-learnctl-generated/small--small_m9__small_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m10--full.sl	solved	59135	0	59135	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m10--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m10--until-E.sl	solved	14303	0	14303	0	0	57	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m10--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m10--until.sl	solved	16177	0	16177	0	0	66	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m10--until-R.sl	solved	31610	0	31610	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m10--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--all-E.sl	solved	30815	0	30815	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--all-R.sl	solved	53435	0	53435	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--all.sl	solved	52948	0	52948	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--full-E.sl	solved	91279	0	91279	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--full-R.sl	solved	58704	0	58704	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--full.sl	solved	59214	0	59214	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--until-R.sl	solved	97044	0	97044	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--all-E.sl	solved	30065	0	30065	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--all.sl	solved	50477	0	50477	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--full-R.sl	solved	56240	0	56240	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--until-E.sl	solved	402141	0	402141	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m5--until.sl	solved	98300	0	98300	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m5--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--all-R.sl	solved	51424	0	51424	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--full-E.sl	solved	87902	0	87902	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--full.sl	solved	56746	0	56746	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--until-E.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--until-R.sl	solved	508613	0	508613	0	0	94	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--all-E.sl	solved	32628	0	32628	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--all.sl	solved	19933	0	19933	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--full-R.sl	solved	28095	0	28095	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--until-E.sl	solved	7489	0	7489	0	0	43	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--until.sl	solved	7576	0	7576	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m6--until.sl	solved	524253	0	524253	0	0	94	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m6--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--all-R.sl	solved	20235	0	20235	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--full-E.sl	solved	28114	0	28114	0	0	43	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--full.sl	solved	28124	0	28124	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m7--until-R.sl	solved	7574	0	7574	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m7--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--all-R.sl	solved	159461	0	159461	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--full-E.sl	solved	84946	0	84946	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--full.sl	solved	54551	0	54551	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--until-R.sl	solved	114315	0	114315	0	0	85	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--all-E.sl	solved	32561	0	32561	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--all.sl	solved	56912	0	56912	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--full-R.sl	solved	63110	0	63110	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--all-E.sl	solve_timeout	600020	0	600020	0	0	0							delis timed out after 600.020s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--until-E.sl	solved	201609	0	201609	0	0	71	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--until.sl	solved	33808	0	33808	0	0	75	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--all.sl	solved	234831	0	234831	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--full-R.sl	solved	43487	0	43487	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--all-R.sl	solved	181235	0	181235	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--full-E.sl	solved	68212	0	68212	0	0	66	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--full.sl	solved	64129	0	64129	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--until-R.sl	solved	124051	0	124051	0	0	83	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--all-E.sl	solved	32669	0	32669	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--all.sl	solved	56107	0	56107	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--full-R.sl	solved	62316	0	62316	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--until-E.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m8--until.sl	solved	112302	0	112302	0	0	85	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m8--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--all-R.sl	solved	57428	0	57428	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--full-E.sl	solved	97329	0	97329	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--full.sl	solved	62690	0	62690	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m4__medium_m9--until-R.sl	solved	33761	0	33761	0	0	75	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m4__medium_m9--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--until-E.sl	solve_timeout	600015	0	600015	0	0	0							delis timed out after 600.015s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--all-E.sl	solved	125259	0	125259	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--all.sl	solved	184156	0	184156	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--full-R.sl	solved	64247	0	64247	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--until.sl	solved	571828	0	571828	0	0	97	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--until-E.sl	solved	311000	0	311000	0	0	83	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--all-R.sl	solved	60461	0	60461	0	0	76	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--full-E.sl	solved	68053	0	68053	0	0	66	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m10--until.sl	solved	120872	0	120872	0	0	83	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--full.sl	solved	66679	0	66679	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--all-R.sl	solved	55462	0	55462	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--until-R.sl	solved	24351	0	24351	0	0	65	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--full-E.sl	solved	60246	0	60246	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--full.sl	solved	61363	0	61363	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--all-E.sl	solve_timeout	600026	0	600026	0	0	0							delis timed out after 600.026s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m6--until-R.sl	solved	556083	0	556083	0	0	97	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m6--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--all-E.sl	solved	35180	0	35180	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--all.sl	solved	171503	0	171503	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--all.sl	solved	59589	0	59589	0	0	76	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--full-R.sl	solved	59136	0	59136	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--full-R.sl	solved	66235	0	66235	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--until-E.sl	solved	42240	0	42240	0	0	65	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m7--until.sl	solved	23995	0	23995	0	0	65	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m7--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--all-R.sl	solved	169265	0	169265	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--full-E.sl	solved	58758	0	58758	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--full.sl	solved	59383	0	59383	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--until-E.sl	solve_timeout	600024	0	600024	0	0	0							delis timed out after 600.024s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--until-R.sl	solved	499263	0	499263	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--all-E.sl	solved	35176	0	35176	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--all.sl	solved	61844	0	61844	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m8--until.sl	solved	485430	0	485430	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m8--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--all-R.sl	solved	59312	0	59312	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--full-R.sl	solved	67211	0	67211	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--full-E.sl	solved	81462	0	81462	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--full.sl	solved	67571	0	67571	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--until-R.sl	solved	97791	0	97791	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--until-E.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m5__medium_m9--until.sl	solved	96893	0	96893	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m5__medium_m9--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--all-E.sl	solved	492035	0	492035	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--all-R.sl	solved	259151	0	259151	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--all.sl	solved	252382	0	252382	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--full-E.sl	solved	74743	0	74743	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--full-R.sl	solved	61155	0	61155	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--full.sl	solved	61839	0	61839	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--until-R.sl	solved	462514	0	462514	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--all-E.sl	solved	33365	0	33365	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--until-E.sl	solve_timeout	600023	0	600023	0	0	0							delis timed out after 600.023s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--all.sl	solved	57834	0	57834	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--full-R.sl	solved	64153	0	64153	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m10--until.sl	solved	476853	0	476853	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--all-R.sl	solved	57632	0	57632	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--full-E.sl	solved	78901	0	78901	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--until-E.sl	solve_timeout	600026	0	600026	0	0	0							delis timed out after 600.026s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--full.sl	solved	64260	0	64260	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--until.sl	solved	464436	0	464436	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m7--until-R.sl	solved	453045	0	453045	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m7--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--all-R.sl	solved	165783	0	165783	0	0	83	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--full-E.sl	solved	56414	0	56414	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--full.sl	solved	56941	0	56941	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--all-E.sl	solved	464798	0	464798	0	0	83	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--all.sl	solved	168440	0	168440	0	0	83	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--full-R.sl	solved	57785	0	57785	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--until-R.sl	solved	499267	0	499267	0	0	94	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--all-E.sl	solved	33845	0	33845	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--all.sl	solved	58279	0	58279	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--full-R.sl	solved	64249	0	64249	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--until-E.sl	solve_timeout	600024	0	600024	0	0	0							delis timed out after 600.024s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--until-E.sl	solve_timeout	600024	0	600024	0	0	0							delis timed out after 600.024s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m8--until.sl	solved	516938	0	516938	0	0	94	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m8--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--all-R.sl	solved	58763	0	58763	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--full-E.sl	solved	79369	0	79369	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--full.sl	solved	65918	0	65918	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--until.sl	solve_timeout	600018	0	600018	0	0	0							delis timed out after 600.018s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--all-R.sl	solved	25504	0	25504	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--full-E.sl	solved	45326	0	45326	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--full.sl	solved	51190	0	51190	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--until-R.sl	solved	26939	0	26939	0	0	76	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m6__medium_m9--until-R.sl	solved	580845	0	580845	0	0	97	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m6__medium_m9--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--all-E.sl	solved	41048	0	41048	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--all.sl	solved	25454	0	25454	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--full-R.sl	solved	51964	0	51964	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--until-E.sl	solved	22007	0	22007	0	0	66	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m10--until.sl	solved	30703	0	30703	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--all-E.sl	solve_timeout	600034	0	600034	0	0	0							delis timed out after 600.034s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--all-R.sl	solved	180655	0	180655	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--all.sl	solved	177806	0	177806	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--full-E.sl	solved	96041	0	96041	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--full-R.sl	solved	62084	0	62084	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--full.sl	solved	62797	0	62797	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--until-R.sl	solved	129269	0	129269	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--all-E.sl	solved	36483	0	36483	0	0	67	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--all.sl	solved	62253	0	62253	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--full-R.sl	solved	69422	0	69422	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--until-E.sl	solve_timeout	600021	0	600021	0	0	0							delis timed out after 600.021s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m8--until.sl	solved	127975	0	127975	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m8--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--all-R.sl	solved	62528	0	62528	0	0	79	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--full-E.sl	solved	84918	0	84918	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--until-E.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--full.sl	solved	70302	0	70302	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--until.sl	solved	119229	0	119229	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m7__medium_m9--until-R.sl	solved	121602	0	121602	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m7__medium_m9--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--all-R.sl	solved	174829	0	174829	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--full-E.sl	solved	93534	0	93534	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--full.sl	solved	59762	0	59762	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--all-E.sl	solve_timeout	600031	0	600031	0	0	0							delis timed out after 600.031s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--all.sl	solved	174477	0	174477	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--until-R.sl	solved	497595	0	497595	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--full-R.sl	solved	60474	0	60474	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--all-E.sl	solve_timeout	600024	0	600024	0	0	0							delis timed out after 600.024s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--until-E.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--all.sl	solved	261553	0	261553	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--full-R.sl	solved	62960	0	62960	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m10--until.sl	solved	503473	0	503473	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--all-R.sl	solved	249404	0	249404	0	0	89	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--full-E.sl	solved	95202	0	95202	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--until-E.sl	solve_timeout	600027	0	600027	0	0	0							delis timed out after 600.027s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--full.sl	solved	62119	0	62119	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--until.sl	solved	525790	0	525790	0	0	90	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m8__medium_m9--until-R.sl	solved	526990	0	526990	0	0	90	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m8__medium_m9--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--all-E.sl	solved	134553	0	134553	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--all-R.sl	solved	190591	0	190591	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--full-E.sl	solved	106178	0	106178	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--all.sl	solved	193748	0	193748	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--full.sl	solved	67949	0	67949	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--until-R.sl	solved	36797	0	36797	0	0	75	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--full-R.sl	solved	67950	0	67950	0	0	69	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--until-E.sl	solved	220708	0	220708	0	0	71	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/medium--medium_m9__medium_m10--until.sl	solved	37082	0	37082	0	0	75	0					bench-results/artifacts/ctl-learnctl-generated/medium--medium_m9__medium_m10--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--all-E.sl	solved	312689	0	312689	0	0	43	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m1--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--all-R.sl	solved	313117	0	313117	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m1--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--all.sl	solved	312824	0	312824	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m1--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--full-E.sl	solve_timeout	600027	0	600027	0	0	0							delis timed out after 600.027s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--full-R.sl	solve_timeout	600010	0	600010	0	0	0							delis timed out after 600.010s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--full.sl	solve_timeout	600025	0	600025	0	0	0							delis timed out after 600.025s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--until-E.sl	solve_timeout	600047	0	600047	0	0	0							delis timed out after 600.047s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--until-R.sl	solved	411256	0	411256	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m1--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m1--until.sl	solved	411173	0	411173	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m1--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--all-E.sl	solved	71000	0	71000	0	0	43	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--all-R.sl	solved	71096	0	71096	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--all.sl	solved	70612	0	70612	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--full-E.sl	solved	144884	0	144884	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--full-R.sl	solved	144624	0	144624	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--full.sl	solved	144247	0	144247	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--until-E.sl	solved	93048	0	93048	0	0	48	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--until-R.sl	solved	93196	0	93196	0	0	50	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m2--until.sl	solved	93002	0	93002	0	0	50	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m2--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--all-E.sl	solved	324757	0	324757	0	0	43	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m3--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--all-R.sl	solved	325161	0	325161	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m3--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--all.sl	solved	327266	0	327266	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m3--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--full-E.sl	solve_timeout	600018	0	600018	0	0	0							delis timed out after 600.018s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--full-R.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--full.sl	solve_timeout	600020	0	600020	0	0	0							delis timed out after 600.020s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--until-E.sl	solve_timeout	600052	0	600052	0	0	0							delis timed out after 600.052s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--until-R.sl	solved	429880	0	429880	0	0	60	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m3--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--all-E.sl	solved	52851	0	52851	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--all.sl	solved	53263	0	53263	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--full-R.sl	solved	107430	0	107430	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m3--until.sl	solved	430289	0	430289	0	0	60	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m3--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--until-E.sl	solved	71436	0	71436	0	0	48	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--all-R.sl	solved	53440	0	53440	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--until.sl	solved	71460	0	71460	0	0	50	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--full-E.sl	solved	107253	0	107253	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--all-R.sl	solved	151927	0	151927	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--full.sl	solved	107527	0	107527	0	0	42	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m4--until-R.sl	solved	71745	0	71745	0	0	50	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m4--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--full-E.sl	solved	175512	0	175512	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--all-E.sl	solved	169554	0	169554	0	0	75	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--full.sl	solved	175625	0	175625	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--all.sl	solved	152589	0	152589	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--until-R.sl	solved	102450	0	102450	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--full-R.sl	solved	175306	0	175306	0	0	61	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--all-E.sl	solved	233017	0	233017	0	0	46	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--all-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--until-E.sl	solved	153320	0	153320	0	0	84	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m5--until.sl	solved	103991	0	103991	0	0	70	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m5--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--all.sl	solved	232939	0	232939	0	0	55	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--all-R.sl	solved	232431	0	232431	0	0	55	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--full-R.sl	solved	473799	0	473799	0	0	55	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--until-E.sl	solved	154073	0	154073	0	0	43	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--full-E.sl	solved	473955	0	473955	0	0	46	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--until.sl	solved	154869	0	154869	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--full.sl	solved	475353	0	475353	0	0	55	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson--peterson_m6--until-R.sl	solved	155408	0	155408	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/peterson--peterson_m6--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--all-R.sl	solve_timeout	600011	0	600011	0	0	0							delis timed out after 600.011s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--all-E.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--full-E.sl	solve_timeout	600020	0	600020	0	0	0							delis timed out after 600.020s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--all.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--full.sl	solve_timeout	600021	0	600021	0	0	0							delis timed out after 600.021s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--full-R.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--until-R.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--until-E.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--all-E.sl	solve_timeout	600012	0	600012	0	0	0							delis timed out after 600.012s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m1--until.sl	solve_timeout	600012	0	600012	0	0	0							delis timed out after 600.012s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--all.sl	solve_timeout	600011	0	600011	0	0	0							delis timed out after 600.011s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--all-R.sl	solve_timeout	600011	0	600011	0	0	0							delis timed out after 600.011s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--full-R.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--full-E.sl	solve_timeout	600021	0	600021	0	0	0							delis timed out after 600.021s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--until-E.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--full.sl	solve_timeout	600013	0	600013	0	0	0							delis timed out after 600.013s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--until.sl	solve_timeout	600012	0	600012	0	0	0							delis timed out after 600.012s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m2--until-R.sl	solve_timeout	600010	0	600010	0	0	0							delis timed out after 600.010s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--all-R.sl	solve_timeout	600023	0	600023	0	0	0							delis timed out after 600.023s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--all-E.sl	solve_timeout	600021	0	600021	0	0	0							delis timed out after 600.021s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--full-E.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--all.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--full.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--full-R.sl	solve_timeout	600023	0	600023	0	0	0							delis timed out after 600.023s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--until-R.sl	solve_timeout	600015	0	600015	0	0	0							delis timed out after 600.015s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--until-E.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--all-E.sl	solve_timeout	600012	0	600012	0	0	0							delis timed out after 600.012s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m3--until.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--all.sl	solve_timeout	600015	0	600015	0	0	0							delis timed out after 600.015s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--all-R.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--full-R.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--full-E.sl	solve_timeout	600020	0	600020	0	0	0							delis timed out after 600.020s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--until-E.sl	solve_timeout	600013	0	600013	0	0	0							delis timed out after 600.013s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--full.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--until.sl	solve_timeout	600010	0	600010	0	0	0							delis timed out after 600.010s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m4--until-R.sl	solve_timeout	600009	0	600009	0	0	0							delis timed out after 600.009s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--all-R.sl	solve_timeout	600020	0	600020	0	0	0							delis timed out after 600.020s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--all-E.sl	solve_timeout	600015	0	600015	0	0	0							delis timed out after 600.015s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--full-E.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--all.sl	solve_timeout	600015	0	600015	0	0	0							delis timed out after 600.015s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--full.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--full-R.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--until-R.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--until-E.sl	solve_timeout	600016	0	600016	0	0	0							delis timed out after 600.016s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--all-E.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m5--until.sl	solve_timeout	600013	0	600013	0	0	0							delis timed out after 600.013s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--all.sl	solve_timeout	600018	0	600018	0	0	0							delis timed out after 600.018s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--all-R.sl	solve_timeout	600027	0	600027	0	0	0							delis timed out after 600.027s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--full-R.sl	solve_timeout	600020	0	600020	0	0	0							delis timed out after 600.020s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--full-E.sl	solve_timeout	600032	0	600032	0	0	0							delis timed out after 600.032s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--until-E.sl	solve_timeout	600029	0	600029	0	0	0							delis timed out after 600.029s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--full.sl	solve_timeout	600018	0	600018	0	0	0							delis timed out after 600.018s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--until.sl	solve_timeout	600019	0	600019	0	0	0							delis timed out after 600.019s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/peterson2--peterson2_m6--until-R.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--all-R.sl	solved	589282	0	589282	0	0	53	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--all-E.sl	solve_timeout	600053	0	600053	0	0	0							delis timed out after 600.053s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--full-E.sl	solved	574088	0	574088	0	0	44	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--all.sl	solved	574785	0	574785	0	0	53	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--full.sl	solved	571151	0	571151	0	0	53	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--until-R.sl	solved	190383	0	190383	0	0	53	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--full-R.sl	solved	572999	0	572999	0	0	53	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--until-E.sl	solved	191096	0	191096	0	0	44	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--until-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--all-E.sl	solve_timeout	600040	0	600040	0	0	0							delis timed out after 600.040s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m1--until.sl	solved	191064	0	191064	0	0	53	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m1--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--all.sl	solved	579810	0	579810	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--all-R.sl	solved	581282	0	581282	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--full-R.sl	solved	582850	0	582850	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--full-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--full-E.sl	solved	582624	0	582624	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--full-E.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--until-E.sl	solve_timeout	600028	0	600028	0	0	0							delis timed out after 600.028s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--full.sl	solved	580723	0	580723	0	0	52	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--full.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--until.sl	solved	390028	0	390028	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m2--until-R.sl	solved	387660	0	387660	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m2--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--all-R.sl	solved	592979	0	592979	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m3--all-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--all-E.sl	solve_timeout	600033	0	600033	0	0	0							delis timed out after 600.033s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--full-E.sl	solve_timeout	600013	0	600013	0	0	0							delis timed out after 600.013s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--all.sl	solved	597505	0	597505	0	0	72	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m3--all.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--full.sl	solve_timeout	600017	0	600017	0	0	0							delis timed out after 600.017s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--full-R.sl	solve_timeout	600014	0	600014	0	0	0							delis timed out after 600.014s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--until-R.sl	solved	401141	0	401141	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m3--until-R.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--until-E.sl	solve_timeout	600035	0	600035	0	0	0							delis timed out after 600.035s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--all-E.sl	solve_timeout	600148	0	600148	0	0	0							delis timed out after 600.148s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared--squared_m3--until.sl	solved	399760	0	399760	0	0	80	0					bench-results/artifacts/ctl-learnctl-generated/squared--squared_m3--until.sl	
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--all.sl	solve_timeout	600164	0	600164	0	0	0							delis timed out after 600.164s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--all-R.sl	solve_timeout	600178	0	600178	0	0	0							delis timed out after 600.178s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--full-R.sl	solve_timeout	600126	0	600126	0	0	0							delis timed out after 600.126s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--full-E.sl	solve_timeout	600159	0	600159	0	0	0							delis timed out after 600.159s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--until-E.sl	solve_timeout	600127	0	600127	0	0	0							delis timed out after 600.127s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--full.sl	solve_timeout	600153	0	600153	0	0	0							delis timed out after 600.153s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--until.sl	solve_timeout	600157	0	600157	0	0	0							delis timed out after 600.157s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m1--until-R.sl	solve_timeout	600152	0	600152	0	0	0							delis timed out after 600.152s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--all-R.sl	solve_timeout	600109	0	600109	0	0	0							delis timed out after 600.109s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--all-E.sl	solve_timeout	600097	0	600097	0	0	0							delis timed out after 600.097s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--full-E.sl	solve_timeout	600120	0	600120	0	0	0							delis timed out after 600.120s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--all.sl	solve_timeout	600136	0	600136	0	0	0							delis timed out after 600.136s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--full.sl	solve_timeout	600132	0	600132	0	0	0							delis timed out after 600.132s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--full-R.sl	solve_timeout	600192	0	600192	0	0	0							delis timed out after 600.192s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--until-R.sl	solve_timeout	600112	0	600112	0	0	0							delis timed out after 600.112s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--until-E.sl	solve_timeout	600105	0	600105	0	0	0							delis timed out after 600.105s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--all-E.sl	solve_timeout	600107	0	600107	0	0	0							delis timed out after 600.107s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m2--until.sl	solve_timeout	600111	0	600111	0	0	0							delis timed out after 600.111s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--all.sl	solve_timeout	600139	0	600139	0	0	0							delis timed out after 600.139s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--all-R.sl	solve_timeout	600153	0	600153	0	0	0							delis timed out after 600.153s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--full-R.sl	solve_timeout	600166	0	600166	0	0	0							delis timed out after 600.166s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--full-E.sl	solve_timeout	600183	0	600183	0	0	0							delis timed out after 600.183s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--until-E.sl	solve_timeout	600116	0	600116	0	0	0							delis timed out after 600.116s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--full.sl	solve_timeout	600143	0	600143	0	0	0							delis timed out after 600.143s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--until.sl	solve_timeout	600122	0	600122	0	0	0							delis timed out after 600.122s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/squared31--squared31_m3--until-R.sl	solve_timeout	600192	0	600192	0	0	0							delis timed out after 600.192s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--all-R.sl	solve_timeout	600363	0	600363	0	0	0							delis timed out after 600.363s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--all-E.sl	solve_timeout	600362	0	600362	0	0	0							delis timed out after 600.362s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--full-E.sl	solve_timeout	600298	0	600298	0	0	0							delis timed out after 600.298s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--all.sl	solve_timeout	600325	0	600325	0	0	0							delis timed out after 600.325s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--full.sl	solve_timeout	600358	0	600358	0	0	0							delis timed out after 600.358s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--full-R.sl	solve_timeout	600377	0	600377	0	0	0							delis timed out after 600.377s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--until-R.sl	solve_timeout	600311	0	600311	0	0	0							delis timed out after 600.311s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--until-E.sl	solve_timeout	600362	0	600362	0	0	0							delis timed out after 600.362s
+ctl-learnctl-generated	benchmark/CTL/learnctl/generated/zune--zune_m1--until.sl	solve_timeout	600120	0	600120	0	0	0							delis timed out after 600.120s

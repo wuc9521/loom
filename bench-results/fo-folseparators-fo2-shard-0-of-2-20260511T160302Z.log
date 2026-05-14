@@ -1,0 +1,323 @@
+[2026-05-11T16:03:06Z] start name=fo-folseparators-fo2 mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/FO/folseparators/FO2 results=bench-results/fo-folseparators-fo2.tsv rerun=false restart=true shard_index=0 shard_count=2 files=160
+[2026-05-11T16:08:15Z] running folder total=160 pending=160 results=bench-results/fo-folseparators-fo2.tsv shard_index=0 shard_count=2
+[2026-05-11T16:08:17Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_ack_msg.sl
+[2026-05-11T16:08:30Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_ack_msg.sl solved 347 0 347 0 0 574 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp_ack_msg.sl 
+[2026-05-11T16:08:32Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_ack_msg1.sl
+[2026-05-11T16:08:46Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_ack_msg1.sl solved 616 0 616 0 0 500 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp_ack_msg1.sl 
+[2026-05-11T16:08:48Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_data_msg.sl
+[2026-05-11T16:09:01Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_data_msg.sl solved 346 0 346 0 0 598 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp_data_msg.sl 
+[2026-05-11T16:09:03Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_data_msg1.sl
+[2026-05-11T16:09:17Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp_data_msg1.sl solved 673 0 673 0 0 519 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp_data_msg1.sl 
+[2026-05-11T16:09:19Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp.sl
+[2026-05-11T16:09:35Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp.sl solved 2987 0 2987 0 0 521 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp.sl 
+[2026-05-11T16:09:37Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp1.sl
+[2026-05-11T16:09:50Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp1.sl solved 451 0 451 0 0 256 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp1.sl 
+[2026-05-11T16:09:52Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp11.sl
+[2026-05-11T16:10:06Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp11.sl solved 1600 0 1600 0 0 28162 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp11.sl 
+[2026-05-11T16:10:08Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp13.sl
+[2026-05-11T16:10:33Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp13.sl solved 11416 0 11416 0 0 740 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp13.sl 
+[2026-05-11T16:10:35Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp15.sl
+[2026-05-11T16:10:48Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp15.sl solved 236 0 236 0 0 371 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp15.sl 
+[2026-05-11T16:10:50Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp17.sl
+[2026-05-11T16:11:04Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp17.sl solved 1208 0 1208 0 0 625 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp17.sl 
+[2026-05-11T16:11:06Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp2.sl
+[2026-05-11T16:11:19Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp2.sl solved 183 0 183 0 0 108 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp2.sl 
+[2026-05-11T16:11:21Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp4.sl
+[2026-05-11T16:11:35Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp4.sl solved 1377 0 1377 0 0 378 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp4.sl 
+[2026-05-11T16:11:37Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp6.sl
+[2026-05-11T16:11:52Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp6.sl solved 1432 0 1432 0 0 342 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp6.sl 
+[2026-05-11T16:11:54Z] running path=benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp8.sl
+[2026-05-11T16:12:08Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/alternating_bit_protocol-abp8.sl solved 1658 0 1658 0 0 334 0     bench-results/artifacts/fo-folseparators-fo2/alternating_bit_protocol-abp8.sl 
+[2026-05-11T16:12:10Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c.sl
+[2026-05-11T16:12:24Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c.sl solved 392 0 392 0 0 417 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c.sl 
+[2026-05-11T16:12:26Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c1.sl
+[2026-05-11T16:12:40Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c1.sl solved 403 0 403 0 0 393 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c1.sl 
+[2026-05-11T16:12:42Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c11.sl
+[2026-05-11T16:12:55Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c11.sl solved 674 0 674 0 0 567 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c11.sl 
+[2026-05-11T16:12:58Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c2.sl
+[2026-05-11T16:13:11Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c2.sl solved 395 0 395 0 0 393 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c2.sl 
+[2026-05-11T16:13:13Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c4.sl
+[2026-05-11T16:13:27Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c4.sl solved 352 0 352 0 0 434 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c4.sl 
+[2026-05-11T16:13:29Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c6.sl
+[2026-05-11T16:13:43Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c6.sl solved 352 0 352 0 0 548 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c6.sl 
+[2026-05-11T16:13:45Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c8.sl
+[2026-05-11T16:13:58Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_3t_safety-c8.sl solved 345 0 345 0 0 308 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_3t_safety-c8.sl 
+[2026-05-11T16:14:00Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c.sl
+[2026-05-11T16:14:14Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c.sl solved 793 0 793 0 0 574 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_onestep-c.sl 
+[2026-05-11T16:14:16Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c1.sl
+[2026-05-11T16:14:29Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c1.sl solved 399 0 399 0 0 471 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_onestep-c1.sl 
+[2026-05-11T16:14:31Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c3.sl
+[2026-05-11T16:14:44Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c3.sl solved 350 0 350 0 0 548 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_onestep-c3.sl 
+[2026-05-11T16:14:46Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c5.sl
+[2026-05-11T16:15:00Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_onestep-c5.sl solved 347 0 347 0 0 308 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_onestep-c5.sl 
+[2026-05-11T16:15:02Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c.sl
+[2026-05-11T16:15:15Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c.sl solved 736 0 736 0 0 417 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_safety-c.sl 
+[2026-05-11T16:15:17Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c1.sl
+[2026-05-11T16:15:31Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c1.sl solved 394 0 394 0 0 393 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_safety-c1.sl 
+[2026-05-11T16:15:33Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c12.sl
+[2026-05-11T16:15:46Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c12.sl solved 673 0 673 0 0 567 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_safety-c12.sl 
+[2026-05-11T16:15:48Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c2.sl
+[2026-05-11T16:16:02Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_5t_safety-c2.sl solved 406 0 406 0 0 393 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_5t_safety-c2.sl 
+[2026-05-11T16:16:04Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c0.sl
+[2026-05-11T16:16:18Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c0.sl solved 408 0 408 0 0 473 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_onestep-c0.sl 
+[2026-05-11T16:16:20Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c2.sl
+[2026-05-11T16:16:33Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c2.sl solved 348 0 348 0 0 403 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_onestep-c2.sl 
+[2026-05-11T16:16:36Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c4.sl
+[2026-05-11T16:16:49Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c4.sl solved 396 0 396 0 0 425 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_onestep-c4.sl 
+[2026-05-11T16:16:51Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c6.sl
+[2026-05-11T16:17:05Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_onestep-c6.sl solved 345 0 345 0 0 404 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_onestep-c6.sl 
+[2026-05-11T16:17:07Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_safety-c0.sl
+[2026-05-11T16:17:21Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_safety-c0.sl solved 1210 0 1210 0 0 541 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_safety-c0.sl 
+[2026-05-11T16:17:23Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_safety-c11.sl
+[2026-05-11T16:17:37Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_safety-c11.sl solved 516 0 516 0 0 457 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_safety-c11.sl 
+[2026-05-11T16:17:39Z] running path=benchmark/FO/folseparators/FO2/bosco_oded_7t_safety-c13.sl
+[2026-05-11T16:17:53Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/bosco_oded_7t_safety-c13.sl solved 572 0 572 0 0 444 0     bench-results/artifacts/fo-folseparators-fo2/bosco_oded_7t_safety-c13.sl 
+[2026-05-11T16:17:55Z] running path=benchmark/FO/folseparators/FO2/byz_paxos-conj10.sl
+[2026-05-11T16:18:09Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/byz_paxos-conj10.sl solved 345 0 345 0 0 580 0     bench-results/artifacts/fo-folseparators-fo2/byz_paxos-conj10.sl 
+[2026-05-11T16:18:11Z] running path=benchmark/FO/folseparators/FO2/byz_paxos-conj12.sl
+[2026-05-11T16:18:24Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/byz_paxos-conj12.sl solved 395 0 395 0 0 358 0     bench-results/artifacts/fo-folseparators-fo2/byz_paxos-conj12.sl 
+[2026-05-11T16:18:26Z] running path=benchmark/FO/folseparators/FO2/byz_paxos-conj14.sl
+[2026-05-11T16:18:40Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/byz_paxos-conj14.sl solved 682 0 682 0 0 326 0     bench-results/artifacts/fo-folseparators-fo2/byz_paxos-conj14.sl 
+[2026-05-11T16:18:42Z] running path=benchmark/FO/folseparators/FO2/byz_paxos-conj9.sl
+[2026-05-11T16:18:55Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/byz_paxos-conj9.sl solved 394 0 394 0 0 366 0     bench-results/artifacts/fo-folseparators-fo2/byz_paxos-conj9.sl 
+[2026-05-11T16:18:57Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_at_most_one_ring.sl
+[2026-05-11T16:19:24Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_at_most_one_ring.sl solved 13970 0 13970 0 0 625 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord_at_most_one_ring.sl 
+[2026-05-11T16:19:26Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs0.sl
+[2026-05-11T16:19:40Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs0.sl solved 1775 0 1775 0 0 757 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs0.sl 
+[2026-05-11T16:19:42Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs2.sl
+[2026-05-11T16:19:55Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs2.sl solved 178 0 178 0 0 481 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs2.sl 
+[2026-05-11T16:19:57Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs4.sl
+[2026-05-11T16:20:15Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs4.sl solved 5352 0 5352 0 0 896 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs4.sl 
+[2026-05-11T16:20:17Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs6.sl
+[2026-05-11T16:21:33Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs6.sl solved 60987 0 60987 0 0 973 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord_bs6.sl 
+[2026-05-11T16:21:36Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_ordered_ring.sl
+[2026-05-11T16:21:54Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord_ordered_ring.sl solved 2393 0 2393 0 0 511 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord_ordered_ring.sl 
+[2026-05-11T16:21:57Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord0.sl
+[2026-05-11T16:22:12Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord0.sl solved 342 0 342 0 0 558 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord0.sl 
+[2026-05-11T16:22:15Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord10.sl
+[2026-05-11T16:22:31Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord10.sl solved 767 0 767 0 0 567 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord10.sl 
+[2026-05-11T16:22:34Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord2.sl
+[2026-05-11T16:22:48Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord2.sl solved 126 0 126 0 0 316 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord2.sl 
+[2026-05-11T16:22:50Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord4.sl
+[2026-05-11T16:23:03Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord4.sl solved 127 0 127 0 0 403 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord4.sl 
+[2026-05-11T16:23:05Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord6.sl
+[2026-05-11T16:23:18Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord6.sl solved 132 0 132 0 0 458 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord6.sl 
+[2026-05-11T16:23:20Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord8.sl
+[2026-05-11T16:23:33Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-all-conjectures-chord8.sl solved 132 0 132 0 0 407 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-all-conjectures-chord8.sl 
+[2026-05-11T16:23:35Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord_at_least_one_ring.sl
+[2026-05-11T16:23:48Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord_at_least_one_ring.sl solved 77 0 77 0 0 270 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord_at_least_one_ring.sl 
+[2026-05-11T16:23:50Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord_connected_appendages.sl
+[2026-05-11T16:24:08Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord_connected_appendages.sl solved 5011 0 5011 0 0 772 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord_connected_appendages.sl 
+[2026-05-11T16:24:10Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord.sl
+[2026-05-11T16:24:23Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord.sl solved 77 0 77 0 0 317 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord.sl 
+[2026-05-11T16:24:25Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord1.sl
+[2026-05-11T16:24:38Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord1.sl solved 77 0 77 0 0 1123 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord1.sl 
+[2026-05-11T16:24:40Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord11.sl
+[2026-05-11T16:24:56Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord11.sl solved 2672 0 2672 0 0 674 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord11.sl 
+[2026-05-11T16:24:58Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord3.sl
+[2026-05-11T16:25:11Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord3.sl solved 126 0 126 0 0 458 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord3.sl 
+[2026-05-11T16:25:13Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord5.sl
+[2026-05-11T16:25:27Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord5.sl solved 77 0 77 0 0 578 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord5.sl 
+[2026-05-11T16:25:29Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord7.sl
+[2026-05-11T16:25:42Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord7.sl solved 131 0 131 0 0 403 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord7.sl 
+[2026-05-11T16:25:44Z] running path=benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord9.sl
+[2026-05-11T16:26:11Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/chord-1s-nofail-liveness-epr-chord9.sl solved 13932 0 13932 0 0 633 0     bench-results/artifacts/fo-folseparators-fo2/chord-1s-nofail-liveness-epr-chord9.sl 
+[2026-05-11T16:26:13Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c0.sl
+[2026-05-11T16:26:27Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c0.sl solved 351 0 351 0 0 434 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c0.sl 
+[2026-05-11T16:26:29Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c10.sl
+[2026-05-11T16:26:47Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c10.sl solved 403 0 403 0 0 634 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c10.sl 
+[2026-05-11T16:26:49Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c12.sl
+[2026-05-11T16:37:04Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c12.sl solve_timeout 603368 0 603368 0 0 0       delis timed out after 603.368s
+[2026-05-11T16:37:06Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c14.sl
+[2026-05-11T16:37:19Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c14.sl solved 676 0 676 0 0 326 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c14.sl 
+[2026-05-11T16:37:21Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c2.sl
+[2026-05-11T16:37:34Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c2.sl solved 400 0 400 0 0 358 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c2.sl 
+[2026-05-11T16:37:36Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c4.sl
+[2026-05-11T16:37:49Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c4.sl solved 607 0 607 0 0 569 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c4.sl 
+[2026-05-11T16:37:51Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c6.sl
+[2026-05-11T16:38:05Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c6.sl solved 351 0 351 0 0 257 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c6.sl 
+[2026-05-11T16:38:07Z] running path=benchmark/FO/folseparators/FO2/fast_paxos_epr-c8.sl
+[2026-05-11T16:38:28Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos_epr-c8.sl solved 8770 0 8770 0 0 361 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos_epr-c8.sl 
+[2026-05-11T16:38:30Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c.sl
+[2026-05-11T16:38:43Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c.sl solved 454 0 454 0 0 581 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c.sl 
+[2026-05-11T16:38:45Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c1.sl
+[2026-05-11T16:38:58Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c1.sl solved 343 0 343 0 0 223 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c1.sl 
+[2026-05-11T16:39:00Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c11.sl
+[2026-05-11T16:39:13Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c11.sl solved 288 0 288 0 0 249 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c11.sl 
+[2026-05-11T16:39:15Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c3.sl
+[2026-05-11T16:39:28Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c3.sl solved 453 0 453 0 0 348 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c3.sl 
+[2026-05-11T16:39:30Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c5.sl
+[2026-05-11T16:39:45Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c5.sl solved 2518 0 2518 0 0 658 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c5.sl 
+[2026-05-11T16:39:47Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c7.sl
+[2026-05-11T16:40:01Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c7.sl solved 358 0 358 0 0 456 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c7.sl 
+[2026-05-11T16:40:03Z] running path=benchmark/FO/folseparators/FO2/fast_paxos-c9.sl
+[2026-05-11T16:40:16Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/fast_paxos-c9.sl solved 569 0 569 0 0 395 0     bench-results/artifacts/fo-folseparators-fo2/fast_paxos-c9.sl 
+[2026-05-11T16:40:18Z] running path=benchmark/FO/folseparators/FO2/flexible_paxos_epr-c0.sl
+[2026-05-11T16:40:31Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/flexible_paxos_epr-c0.sl solved 438 0 438 0 0 434 0     bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c0.sl 
+[2026-05-11T16:40:33Z] running path=benchmark/FO/folseparators/FO2/flexible_paxos_epr-c2.sl
+[2026-05-11T16:40:46Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/flexible_paxos_epr-c2.sl solved 381 0 381 0 0 358 0     bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c2.sl 
+[2026-05-11T16:40:48Z] running path=benchmark/FO/folseparators/FO2/flexible_paxos_epr-c4.sl
+[2026-05-11T16:41:01Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/flexible_paxos_epr-c4.sl solved 419 0 419 0 0 357 0     bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c4.sl 
+[2026-05-11T16:41:03Z] running path=benchmark/FO/folseparators/FO2/flexible_paxos_epr-c6.sl
+[2026-05-11T16:41:16Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/flexible_paxos_epr-c6.sl solved 311 0 311 0 0 249 0     bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c6.sl 
+[2026-05-11T16:41:18Z] running path=benchmark/FO/folseparators/FO2/flexible_paxos_epr-c8.sl
+[2026-05-11T16:41:31Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/flexible_paxos_epr-c8.sl solved 383 0 383 0 0 472 0     bench-results/artifacts/fo-folseparators-fo2/flexible_paxos_epr-c8.sl 
+[2026-05-11T16:41:33Z] running path=benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl.sl
+[2026-05-11T16:41:46Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl.sl solved 148 0 148 0 0 596 0     bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl.sl 
+[2026-05-11T16:41:48Z] running path=benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl4.sl
+[2026-05-11T16:42:02Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl4.sl solved 970 0 970 0 0 369 0     bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb_tp_correctness_impl4.sl 
+[2026-05-11T16:42:04Z] running path=benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb_tp_relay_impl4.sl
+[2026-05-11T16:42:40Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb_tp_relay_impl4.sl solved 23315 0 23315 0 0 377 0     bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb_tp_relay_impl4.sl 
+[2026-05-11T16:42:42Z] running path=benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb11.sl
+[2026-05-11T16:43:04Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb11.sl solved 8740 0 8740 0 0 502 0     bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb11.sl 
+[2026-05-11T16:43:06Z] running path=benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb6.sl
+[2026-05-11T16:43:19Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb6.sl solved 268 0 268 0 0 2598 0     bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb6.sl 
+[2026-05-11T16:43:21Z] running path=benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb8.sl
+[2026-05-11T16:43:34Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/hybrid_reliable_broadcast_cisa-rb8.sl solved 841 0 841 0 0 5047 0     bench-results/artifacts/fo-folseparators-fo2/hybrid_reliable_broadcast_cisa-rb8.sl 
+[2026-05-11T16:43:36Z] running path=benchmark/FO/folseparators/FO2/leader_election_ring_btw_nonreflexive-c.sl
+[2026-05-11T16:43:48Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/leader_election_ring_btw_nonreflexive-c.sl solved 87 0 87 0 0 296 0     bench-results/artifacts/fo-folseparators-fo2/leader_election_ring_btw_nonreflexive-c.sl 
+[2026-05-11T16:43:50Z] running path=benchmark/FO/folseparators/FO2/leader_election_ring_btw_nonreflexive-c1.sl
+[2026-05-11T16:44:43Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/leader_election_ring_btw_nonreflexive-c1.sl solved 40044 0 40044 0 0 724 0     bench-results/artifacts/fo-folseparators-fo2/leader_election_ring_btw_nonreflexive-c1.sl 
+[2026-05-11T16:44:45Z] running path=benchmark/FO/folseparators/FO2/learning_switch-c.sl
+[2026-05-11T16:44:58Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/learning_switch-c.sl solved 138 0 138 0 0 402 0     bench-results/artifacts/fo-folseparators-fo2/learning_switch-c.sl 
+[2026-05-11T16:45:00Z] running path=benchmark/FO/folseparators/FO2/learning_switch-c1.sl
+[2026-05-11T16:45:12Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/learning_switch-c1.sl solved 204 0 204 0 0 362 0     bench-results/artifacts/fo-folseparators-fo2/learning_switch-c1.sl 
+[2026-05-11T16:45:14Z] running path=benchmark/FO/folseparators/FO2/learning_switch-c3.sl
+[2026-05-11T16:45:41Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/learning_switch-c3.sl solved 14308 0 14308 0 0 820 0     bench-results/artifacts/fo-folseparators-fo2/learning_switch-c3.sl 
+[2026-05-11T16:45:44Z] running path=benchmark/FO/folseparators/FO2/learning_switch-route0.sl
+[2026-05-11T16:45:57Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/learning_switch-route0.sl solved 433 0 433 0 0 637 0     bench-results/artifacts/fo-folseparators-fo2/learning_switch-route0.sl 
+[2026-05-11T16:45:59Z] running path=benchmark/FO/folseparators/FO2/learning_switch-route2.sl
+[2026-05-11T16:46:12Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/learning_switch-route2.sl solved 194 0 194 0 0 415 0     bench-results/artifacts/fo-folseparators-fo2/learning_switch-route2.sl 
+[2026-05-11T16:46:14Z] running path=benchmark/FO/folseparators/FO2/lockserv-conj3.sl
+[2026-05-11T16:46:27Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/lockserv-conj3.sl solved 84 0 84 0 0 300 0     bench-results/artifacts/fo-folseparators-fo2/lockserv-conj3.sl 
+[2026-05-11T16:46:29Z] running path=benchmark/FO/folseparators/FO2/lockserv-conj5.sl
+[2026-05-11T16:46:42Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/lockserv-conj5.sl solved 89 0 89 0 0 227 0     bench-results/artifacts/fo-folseparators-fo2/lockserv-conj5.sl 
+[2026-05-11T16:46:44Z] running path=benchmark/FO/folseparators/FO2/lockserv-conj7.sl
+[2026-05-11T16:46:57Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/lockserv-conj7.sl solved 46 0 46 0 0 195 0     bench-results/artifacts/fo-folseparators-fo2/lockserv-conj7.sl 
+[2026-05-11T16:46:59Z] running path=benchmark/FO/folseparators/FO2/lockserv-conj9.sl
+[2026-05-11T16:47:12Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/lockserv-conj9.sl solved 46 0 46 0 0 171 0     bench-results/artifacts/fo-folseparators-fo2/lockserv-conj9.sl 
+[2026-05-11T16:47:14Z] running path=benchmark/FO/folseparators/FO2/multi_paxos_epr-c.sl
+[2026-05-11T16:47:27Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/multi_paxos_epr-c.sl infeasible 310 0 310 0 0 11 0     bench-results/artifacts/fo-folseparators-fo2/multi_paxos_epr-c.sl 
+[2026-05-11T16:47:29Z] running path=benchmark/FO/folseparators/FO2/multi_paxos_epr-c1.sl
+[2026-05-11T16:47:42Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/multi_paxos_epr-c1.sl solved 381 0 381 0 0 460 0     bench-results/artifacts/fo-folseparators-fo2/multi_paxos_epr-c1.sl 
+[2026-05-11T16:47:44Z] running path=benchmark/FO/folseparators/FO2/multi_paxos_epr-c2.sl
+[2026-05-11T16:47:57Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/multi_paxos_epr-c2.sl solved 489 0 489 0 0 362 0     bench-results/artifacts/fo-folseparators-fo2/multi_paxos_epr-c2.sl 
+[2026-05-11T16:48:00Z] running path=benchmark/FO/folseparators/FO2/multi_paxos_epr-c4.sl
+[2026-05-11T16:48:13Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/multi_paxos_epr-c4.sl solved 445 0 445 0 0 386 0     bench-results/artifacts/fo-folseparators-fo2/multi_paxos_epr-c4.sl 
+[2026-05-11T16:48:15Z] running path=benchmark/FO/folseparators/FO2/multi_paxos_epr-c6.sl
+[2026-05-11T16:48:30Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/multi_paxos_epr-c6.sl solved 2698 0 2698 0 0 578 0     bench-results/artifacts/fo-folseparators-fo2/multi_paxos_epr-c6.sl 
+[2026-05-11T16:48:32Z] running path=benchmark/FO/folseparators/FO2/multi_paxos_epr-c8.sl
+[2026-05-11T16:48:45Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/multi_paxos_epr-c8.sl solved 661 0 661 0 0 361 0     bench-results/artifacts/fo-folseparators-fo2/multi_paxos_epr-c8.sl 
+[2026-05-11T16:48:47Z] running path=benchmark/FO/folseparators/FO2/paxos_epr-c.sl
+[2026-05-11T16:49:00Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/paxos_epr-c.sl solved 434 0 434 0 0 581 0     bench-results/artifacts/fo-folseparators-fo2/paxos_epr-c.sl 
+[2026-05-11T16:49:03Z] running path=benchmark/FO/folseparators/FO2/paxos_epr-c1.sl
+[2026-05-11T16:49:15Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/paxos_epr-c1.sl solved 264 0 264 0 0 461 0     bench-results/artifacts/fo-folseparators-fo2/paxos_epr-c1.sl 
+[2026-05-11T16:49:17Z] running path=benchmark/FO/folseparators/FO2/paxos_epr-c3.sl
+[2026-05-11T16:49:29Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/paxos_epr-c3.sl solved 209 0 209 0 0 249 0     bench-results/artifacts/fo-folseparators-fo2/paxos_epr-c3.sl 
+[2026-05-11T16:49:31Z] running path=benchmark/FO/folseparators/FO2/paxos_epr-c5.sl
+[2026-05-11T16:49:45Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/paxos_epr-c5.sl solved 873 0 873 0 0 547 0     bench-results/artifacts/fo-folseparators-fo2/paxos_epr-c5.sl 
+[2026-05-11T16:49:47Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c0.sl
+[2026-05-11T16:50:00Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c0.sl solved 415 0 415 0 0 451 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c0.sl 
+[2026-05-11T16:50:02Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c10.sl
+[2026-05-11T16:50:15Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c10.sl solved 760 0 760 0 0 423 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c10.sl 
+[2026-05-11T16:50:17Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c12.sl
+[2026-05-11T16:50:31Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c12.sl solved 541 0 541 0 0 315 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c12.sl 
+[2026-05-11T16:50:33Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c14.sl
+[2026-05-11T16:50:46Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c14.sl solved 555 0 555 0 0 451 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c14.sl 
+[2026-05-11T16:50:48Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c3.sl
+[2026-05-11T16:51:02Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c3.sl solved 656 0 656 0 0 362 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c3.sl 
+[2026-05-11T16:51:04Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c5.sl
+[2026-05-11T16:51:16Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c5.sl solved 485 0 485 0 0 386 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c5.sl 
+[2026-05-11T16:51:18Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c7.sl
+[2026-05-11T16:51:33Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c7.sl solved 2274 0 2274 0 0 578 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c7.sl 
+[2026-05-11T16:51:35Z] running path=benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c9.sl
+[2026-05-11T16:51:48Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/stoppable_paxos_epr-c9.sl solved 1302 0 1302 0 0 361 0     bench-results/artifacts/fo-folseparators-fo2/stoppable_paxos_epr-c9.sl 
+[2026-05-11T16:51:50Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol_tp1_impl.sl
+[2026-05-11T16:52:03Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol_tp1_impl.sl solved 148 0 148 0 0 260 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol_tp1_impl.sl 
+[2026-05-11T16:52:05Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol_tp1_impl1.sl
+[2026-05-11T16:52:34Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol_tp1_impl1.sl solved 16199 0 16199 0 0 1170 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol_tp1_impl1.sl 
+[2026-05-11T16:52:36Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol10.sl
+[2026-05-11T16:52:48Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol10.sl solved 150 0 150 0 0 392 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol10.sl 
+[2026-05-11T16:52:50Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol12.sl
+[2026-05-11T16:53:03Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol12.sl solved 142 0 142 0 0 407 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol12.sl 
+[2026-05-11T16:53:05Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol14.sl
+[2026-05-11T16:53:18Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol14.sl solved 247 0 247 0 0 3454 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol14.sl 
+[2026-05-11T16:53:20Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol16.sl
+[2026-05-11T16:53:33Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol16.sl solved 84 0 84 0 0 141 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol16.sl 
+[2026-05-11T16:53:35Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol4.sl
+[2026-05-11T16:53:49Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol4.sl solved 265 0 265 0 0 527 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol4.sl 
+[2026-05-11T16:53:51Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol6.sl
+[2026-05-11T16:54:03Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol6.sl solved 86 0 86 0 0 291 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol6.sl 
+[2026-05-11T16:54:05Z] running path=benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol8.sl
+[2026-05-11T16:54:19Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket_nested-ticket_protocol8.sl solved 1014 0 1014 0 0 900 0     bench-results/artifacts/fo-folseparators-fo2/ticket_nested-ticket_protocol8.sl 
+[2026-05-11T16:54:21Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol_safety.sl
+[2026-05-11T16:54:34Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol_safety.sl solved 145 0 145 0 0 719 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol_safety.sl 
+[2026-05-11T16:54:36Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol_tp1_impl0.sl
+[2026-05-11T16:55:27Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol_tp1_impl0.sl solved 37570 0 37570 0 0 1170 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol_tp1_impl0.sl 
+[2026-05-11T16:55:29Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol10.sl
+[2026-05-11T16:55:44Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol10.sl solved 1956 0 1956 0 0 871 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol10.sl 
+[2026-05-11T16:55:46Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol12.sl
+[2026-05-11T16:58:06Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol12.sl solved 127642 0 127642 0 0 1476 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol12.sl 
+[2026-05-11T16:58:08Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol14.sl
+[2026-05-11T16:58:21Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol14.sl solved 185 0 185 0 0 464 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol14.sl 
+[2026-05-11T16:58:23Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol16.sl
+[2026-05-11T16:58:36Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol16.sl solved 435 0 435 0 0 1048 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol16.sl 
+[2026-05-11T16:58:38Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol5.sl
+[2026-05-11T16:58:51Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol5.sl solved 86 0 86 0 0 291 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol5.sl 
+[2026-05-11T16:58:53Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol7.sl
+[2026-05-11T16:59:05Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol7.sl solved 86 0 86 0 0 291 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol7.sl 
+[2026-05-11T16:59:07Z] running path=benchmark/FO/folseparators/FO2/ticket-ticket_protocol9.sl
+[2026-05-11T16:59:20Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/ticket-ticket_protocol9.sl solved 83 0 83 0 0 392 0     bench-results/artifacts/fo-folseparators-fo2/ticket-ticket_protocol9.sl 
+[2026-05-11T16:59:22Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb_tp1_impl6.sl
+[2026-05-11T16:59:35Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb_tp1_impl6.sl solved 194 0 194 0 0 360 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb_tp1_impl6.sl 
+[2026-05-11T16:59:37Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb.sl
+[2026-05-11T16:59:52Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb.sl solved 2008 0 2008 0 0 319 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb.sl 
+[2026-05-11T16:59:54Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb1.sl
+[2026-05-11T17:00:09Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb1.sl solved 1905 0 1905 0 0 656 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb1.sl 
+[2026-05-11T17:00:11Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb11.sl
+[2026-05-11T17:00:24Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb11.sl solved 434 0 434 0 0 166 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb11.sl 
+[2026-05-11T17:00:26Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb13.sl
+[2026-05-11T17:00:39Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb13.sl solved 487 0 487 0 0 137 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb13.sl 
+[2026-05-11T17:00:41Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb15.sl
+[2026-05-11T17:00:54Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb15.sl solved 770 0 770 0 0 144 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb15.sl 
+[2026-05-11T17:00:56Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb17.sl
+[2026-05-11T17:01:11Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb17.sl solved 2164 0 2164 0 0 380 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb17.sl 
+[2026-05-11T17:01:13Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb19.sl
+[2026-05-11T17:01:26Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb19.sl solved 795 0 795 0 0 169 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb19.sl 
+[2026-05-11T17:01:28Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb20.sl
+[2026-05-11T17:01:41Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb20.sl solved 445 0 445 0 0 257 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb20.sl 
+[2026-05-11T17:01:44Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb22.sl
+[2026-05-11T17:01:57Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb22.sl solved 1175 0 1175 0 0 371 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb22.sl 
+[2026-05-11T17:02:00Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb24.sl
+[2026-05-11T17:02:12Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb24.sl solved 141 0 141 0 0 125 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb24.sl 
+[2026-05-11T17:02:14Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb301.sl
+[2026-05-11T17:02:28Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb301.sl solved 943 0 943 0 0 137 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb301.sl 
+[2026-05-11T17:02:30Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb5.sl
+[2026-05-11T17:02:45Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb5.sl solved 2122 0 2122 0 0 328 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb5.sl 
+[2026-05-11T17:02:47Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb7.sl
+[2026-05-11T17:03:00Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb7.sl solved 201 0 201 0 0 360 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb7.sl 
+[2026-05-11T17:03:02Z] running path=benchmark/FO/folseparators/FO2/tlb_pcrel-tlb9.sl
+[2026-05-11T17:03:16Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/tlb_pcrel-tlb9.sl solved 254 0 254 0 0 228 0     bench-results/artifacts/fo-folseparators-fo2/tlb_pcrel-tlb9.sl 
+[2026-05-11T17:03:18Z] running path=benchmark/FO/folseparators/FO2/toy_lock_inv-conj11.sl
+[2026-05-11T17:03:31Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/toy_lock_inv-conj11.sl solved 492 0 492 0 0 560 0     bench-results/artifacts/fo-folseparators-fo2/toy_lock_inv-conj11.sl 
+[2026-05-11T17:03:33Z] running path=benchmark/FO/folseparators/FO2/toy_lock_inv-conj13.sl
+[2026-05-11T17:03:57Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/toy_lock_inv-conj13.sl solved 11399 0 11399 0 0 648 0     bench-results/artifacts/fo-folseparators-fo2/toy_lock_inv-conj13.sl 
+[2026-05-11T17:03:59Z] running path=benchmark/FO/folseparators/FO2/toy_lock_inv-conj8.sl
+[2026-05-11T17:04:13Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/toy_lock_inv-conj8.sl solved 200 0 200 0 0 416 0     bench-results/artifacts/fo-folseparators-fo2/toy_lock_inv-conj8.sl 
+[2026-05-11T17:04:15Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c.sl
+[2026-05-11T17:04:29Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c.sl solved 1424 0 1424 0 0 442 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c.sl 
+[2026-05-11T17:04:31Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c1.sl
+[2026-05-11T17:04:45Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c1.sl solved 529 0 529 0 0 434 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c1.sl 
+[2026-05-11T17:04:47Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c11.sl
+[2026-05-11T17:05:01Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c11.sl solved 1146 0 1146 0 0 335 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c11.sl 
+[2026-05-11T17:05:03Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c13.sl
+[2026-05-11T17:05:16Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c13.sl solved 545 0 545 0 0 361 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c13.sl 
+[2026-05-11T17:05:19Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c2.sl
+[2026-05-11T17:05:32Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c2.sl solved 561 0 561 0 0 437 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c2.sl 
+[2026-05-11T17:05:34Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c4.sl
+[2026-05-11T17:05:47Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c4.sl solved 438 0 438 0 0 470 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c4.sl 
+[2026-05-11T17:05:49Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c6.sl
+[2026-05-11T17:06:07Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c6.sl solved 5848 0 5848 0 0 567 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c6.sl 
+[2026-05-11T17:06:09Z] running path=benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c8.sl
+[2026-05-11T17:06:22Z] row fo-folseparators-fo2 benchmark/FO/folseparators/FO2/vertical_paxos_epr_unverified_optimization-c8.sl solved 370 0 370 0 0 332 0     bench-results/artifacts/fo-folseparators-fo2/vertical_paxos_epr_unverified_optimization-c8.sl 
+[2026-05-11T17:06:23Z] done completed_now=160 total=160

@@ -1,0 +1,3 @@
+(
+(define-fun phi () Formula0 (fol.0.exists.x0.epoch (fol.ctx-x0-epoch.forall.x1.epoch (fol.ctx-x0-epoch-x1-epoch.or (fol.ctx-x0-epoch-x1-epoch.eq.epoch fol.ctx-x0-epoch-x1-epoch.var.x0.epoch fol.ctx-x0-epoch-x1-epoch.var.x1.epoch) (fol.ctx-x0-epoch-x1-epoch.or (fol.ctx-x0-epoch-x1-epoch.not (fol.ctx-x0-epoch-x1-epoch.exists.x0.node (fol.ctx-x0-node-x1-epoch.atom.transfer fol.ctx-x0-node-x1-epoch.var.x1.epoch fol.ctx-x0-node-x1-epoch.var.x0.node))) (fol.ctx-x0-epoch-x1-epoch.forall.x0.node (fol.ctx-x0-node-x1-epoch.atom.le fol.ctx-x0-node-x1-epoch.var.x1.epoch (fol.ctx-x0-node-x1-epoch.term.ep fol.ctx-x0-node-x1-epoch.var.x0.node))))))))
+)

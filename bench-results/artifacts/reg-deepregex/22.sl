@@ -1,3 +1,3 @@
 (
-(define-fun regex () RegLan (re.inter (re.plus char.any) (re.union (re.++ char.any (re.plus char.any)) (re.++ (re.opt char.digit) (re.opt char.lower)))))
+(define-fun regex () RegLan (re.plus (re.union char.digit (re.union char.lower (re.++ char.any char.any)))))
 )

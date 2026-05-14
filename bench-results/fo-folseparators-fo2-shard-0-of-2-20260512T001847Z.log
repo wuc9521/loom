@@ -1,0 +1,3 @@
+[2026-05-12T00:18:51Z] start name=fo-folseparators-fo2 mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/FO/folseparators/FO2 results=bench-results/fo-folseparators-fo2.tsv rerun=true restart=false shard_index=0 shard_count=2 files=160
+[2026-05-12T00:26:21Z] skipping folder total=160 pending=0 results=bench-results/fo-folseparators-fo2.tsv shard_index=0 shard_count=2
+[2026-05-12T00:26:22Z] done pending=0

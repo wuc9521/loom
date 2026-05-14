@@ -1,3 +1,3 @@
 (
-(define-fun phi () LTL (ltl.G (ltl.not ltl.p0)))
+(define-fun phi () LTL (ltl.not (ltl.F ltl.p0)))
 )

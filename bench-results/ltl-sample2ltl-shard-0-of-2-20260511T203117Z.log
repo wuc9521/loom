@@ -1,0 +1,193 @@
+[2026-05-11T20:31:20Z] start name=ltl-sample2ltl mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/sample2LTL results=bench-results/ltl-sample2ltl.tsv rerun=false restart=true shard_index=0 shard_count=2 files=95
+[2026-05-11T20:34:18Z] running folder total=95 pending=95 results=bench-results/ltl-sample2ltl.tsv shard_index=0 shard_count=2
+[2026-05-11T20:34:20Z] running path=benchmark/LTL/sample2LTL/0000.sl
+[2026-05-11T20:34:32Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0000.sl solved 80 0 80 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0000.sl 
+[2026-05-11T20:34:35Z] running path=benchmark/LTL/sample2LTL/0003.sl
+[2026-05-11T20:34:48Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0003.sl solved 482 0 482 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0003.sl 
+[2026-05-11T20:34:50Z] running path=benchmark/LTL/sample2LTL/0005.sl
+[2026-05-11T20:35:03Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0005.sl solved 842 0 842 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0005.sl 
+[2026-05-11T20:35:05Z] running path=benchmark/LTL/sample2LTL/0007.sl
+[2026-05-11T20:35:18Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0007.sl solved 1257 0 1257 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0007.sl 
+[2026-05-11T20:35:20Z] running path=benchmark/LTL/sample2LTL/0009.sl
+[2026-05-11T20:35:34Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0009.sl solved 1700 0 1700 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0009.sl 
+[2026-05-11T20:35:36Z] running path=benchmark/LTL/sample2LTL/0011.sl
+[2026-05-11T20:35:50Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0011.sl solved 2092 0 2092 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0011.sl 
+[2026-05-11T20:35:52Z] running path=benchmark/LTL/sample2LTL/0013.sl
+[2026-05-11T20:36:07Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0013.sl solved 2322 0 2322 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0013.sl 
+[2026-05-11T20:36:09Z] running path=benchmark/LTL/sample2LTL/0015.sl
+[2026-05-11T20:36:24Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0015.sl solved 2775 0 2775 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0015.sl 
+[2026-05-11T20:36:26Z] running path=benchmark/LTL/sample2LTL/0017.sl
+[2026-05-11T20:36:41Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0017.sl solved 3230 0 3230 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0017.sl 
+[2026-05-11T20:36:43Z] running path=benchmark/LTL/sample2LTL/0019.sl
+[2026-05-11T20:36:59Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0019.sl solved 3848 0 3848 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0019.sl 
+[2026-05-11T20:37:01Z] running path=benchmark/LTL/sample2LTL/0021.sl
+[2026-05-11T20:37:18Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0021.sl solved 4088 0 4088 0 0 53 0     bench-results/artifacts/ltl-sample2ltl/0021.sl 
+[2026-05-11T20:37:20Z] running path=benchmark/LTL/sample2LTL/0023.sl
+[2026-05-11T20:37:33Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0023.sl solved 420 0 420 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0023.sl 
+[2026-05-11T20:37:35Z] running path=benchmark/LTL/sample2LTL/0025.sl
+[2026-05-11T20:37:48Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0025.sl solved 1128 0 1128 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0025.sl 
+[2026-05-11T20:37:51Z] running path=benchmark/LTL/sample2LTL/0027.sl
+[2026-05-11T20:38:05Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0027.sl solved 2143 0 2143 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0027.sl 
+[2026-05-11T20:38:07Z] running path=benchmark/LTL/sample2LTL/0029.sl
+[2026-05-11T20:38:22Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0029.sl solved 2823 0 2823 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0029.sl 
+[2026-05-11T20:38:24Z] running path=benchmark/LTL/sample2LTL/0031.sl
+[2026-05-11T20:38:40Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0031.sl solved 3393 0 3393 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0031.sl 
+[2026-05-11T20:38:42Z] running path=benchmark/LTL/sample2LTL/0033.sl
+[2026-05-11T20:38:59Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0033.sl solved 4857 0 4857 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0033.sl 
+[2026-05-11T20:39:01Z] running path=benchmark/LTL/sample2LTL/0035.sl
+[2026-05-11T20:39:18Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0035.sl solved 5006 0 5006 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0035.sl 
+[2026-05-11T20:39:20Z] running path=benchmark/LTL/sample2LTL/0037.sl
+[2026-05-11T20:39:39Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0037.sl solved 6287 0 6287 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0037.sl 
+[2026-05-11T20:39:41Z] running path=benchmark/LTL/sample2LTL/0039.sl
+[2026-05-11T20:40:00Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0039.sl solved 6816 0 6816 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0039.sl 
+[2026-05-11T20:40:02Z] running path=benchmark/LTL/sample2LTL/0041.sl
+[2026-05-11T20:40:22Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0041.sl solved 8005 0 8005 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0041.sl 
+[2026-05-11T20:40:24Z] running path=benchmark/LTL/sample2LTL/0043.sl
+[2026-05-11T20:40:45Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0043.sl solved 8179 0 8179 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0043.sl 
+[2026-05-11T20:40:47Z] running path=benchmark/LTL/sample2LTL/0045.sl
+[2026-05-11T20:40:59Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0045.sl solved 199 0 199 0 0 70 0     bench-results/artifacts/ltl-sample2ltl/0045.sl 
+[2026-05-11T20:41:01Z] running path=benchmark/LTL/sample2LTL/0047.sl
+[2026-05-11T20:41:14Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0047.sl solved 801 0 801 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0047.sl 
+[2026-05-11T20:41:16Z] running path=benchmark/LTL/sample2LTL/0049.sl
+[2026-05-11T20:41:32Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0049.sl solved 2754 0 2754 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0049.sl 
+[2026-05-11T20:41:34Z] running path=benchmark/LTL/sample2LTL/0051.sl
+[2026-05-11T20:41:48Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0051.sl solved 2238 0 2238 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0051.sl 
+[2026-05-11T20:41:50Z] running path=benchmark/LTL/sample2LTL/0053.sl
+[2026-05-11T20:42:05Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0053.sl solved 2638 0 2638 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0053.sl 
+[2026-05-11T20:42:07Z] running path=benchmark/LTL/sample2LTL/0055.sl
+[2026-05-11T20:42:23Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0055.sl solved 3396 0 3396 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0055.sl 
+[2026-05-11T20:42:25Z] running path=benchmark/LTL/sample2LTL/0057.sl
+[2026-05-11T20:42:41Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0057.sl solved 3284 0 3284 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0057.sl 
+[2026-05-11T20:42:43Z] running path=benchmark/LTL/sample2LTL/0059.sl
+[2026-05-11T20:43:00Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0059.sl solved 4689 0 4689 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0059.sl 
+[2026-05-11T20:43:02Z] running path=benchmark/LTL/sample2LTL/0061.sl
+[2026-05-11T20:43:19Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0061.sl solved 5488 0 5488 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0061.sl 
+[2026-05-11T20:43:21Z] running path=benchmark/LTL/sample2LTL/0063.sl
+[2026-05-11T20:43:39Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0063.sl solved 5329 0 5329 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0063.sl 
+[2026-05-11T20:43:41Z] running path=benchmark/LTL/sample2LTL/0065.sl
+[2026-05-11T20:43:59Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0065.sl solved 6122 0 6122 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0065.sl 
+[2026-05-11T20:44:01Z] running path=benchmark/LTL/sample2LTL/0068.sl
+[2026-05-11T20:44:14Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0068.sl solved 350 0 350 0 0 88 0     bench-results/artifacts/ltl-sample2ltl/0068.sl 
+[2026-05-11T20:44:16Z] running path=benchmark/LTL/sample2LTL/0070.sl
+[2026-05-11T20:44:32Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0070.sl solved 3189 0 3189 0 0 92 0     bench-results/artifacts/ltl-sample2ltl/0070.sl 
+[2026-05-11T20:44:33Z] running path=benchmark/LTL/sample2LTL/0072.sl
+[2026-05-11T20:44:47Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0072.sl solved 777 0 777 0 0 88 0     bench-results/artifacts/ltl-sample2ltl/0072.sl 
+[2026-05-11T20:44:49Z] running path=benchmark/LTL/sample2LTL/0074.sl
+[2026-05-11T20:45:04Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0074.sl solved 3390 0 3390 0 0 92 0     bench-results/artifacts/ltl-sample2ltl/0074.sl 
+[2026-05-11T20:45:06Z] running path=benchmark/LTL/sample2LTL/0076.sl
+[2026-05-11T20:45:21Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0076.sl solved 2045 0 2045 0 0 92 0     bench-results/artifacts/ltl-sample2ltl/0076.sl 
+[2026-05-11T20:45:23Z] running path=benchmark/LTL/sample2LTL/0078.sl
+[2026-05-11T20:45:40Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0078.sl solved 1115 0 1115 0 0 88 0     bench-results/artifacts/ltl-sample2ltl/0078.sl 
+[2026-05-11T20:45:42Z] running path=benchmark/LTL/sample2LTL/0080.sl
+[2026-05-11T20:46:01Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0080.sl solved 1877 0 1877 0 0 88 0     bench-results/artifacts/ltl-sample2ltl/0080.sl 
+[2026-05-11T20:46:03Z] running path=benchmark/LTL/sample2LTL/0082.sl
+[2026-05-11T20:46:22Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0082.sl solved 2273 0 2273 0 0 88 0     bench-results/artifacts/ltl-sample2ltl/0082.sl 
+[2026-05-11T20:46:24Z] running path=benchmark/LTL/sample2LTL/0084.sl
+[2026-05-11T20:46:41Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0084.sl solved 3729 0 3729 0 0 92 0     bench-results/artifacts/ltl-sample2ltl/0084.sl 
+[2026-05-11T20:46:43Z] running path=benchmark/LTL/sample2LTL/0086.sl
+[2026-05-11T20:46:59Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0086.sl solved 3098 0 3098 0 0 92 0     bench-results/artifacts/ltl-sample2ltl/0086.sl 
+[2026-05-11T20:47:01Z] running path=benchmark/LTL/sample2LTL/0088.sl
+[2026-05-11T20:47:14Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0088.sl solved 84 0 84 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0088.sl 
+[2026-05-11T20:47:16Z] running path=benchmark/LTL/sample2LTL/0091.sl
+[2026-05-11T20:47:29Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0091.sl solved 442 0 442 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0091.sl 
+[2026-05-11T20:47:31Z] running path=benchmark/LTL/sample2LTL/0093.sl
+[2026-05-11T20:47:45Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0093.sl solved 953 0 953 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0093.sl 
+[2026-05-11T20:47:47Z] running path=benchmark/LTL/sample2LTL/0095.sl
+[2026-05-11T20:48:00Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0095.sl solved 1359 0 1359 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0095.sl 
+[2026-05-11T20:48:02Z] running path=benchmark/LTL/sample2LTL/0097.sl
+[2026-05-11T20:48:17Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0097.sl solved 1778 0 1778 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0097.sl 
+[2026-05-11T20:48:19Z] running path=benchmark/LTL/sample2LTL/0099.sl
+[2026-05-11T20:48:33Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0099.sl solved 2185 0 2185 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0099.sl 
+[2026-05-11T20:48:35Z] running path=benchmark/LTL/sample2LTL/0101.sl
+[2026-05-11T20:48:50Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0101.sl solved 2663 0 2663 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0101.sl 
+[2026-05-11T20:48:52Z] running path=benchmark/LTL/sample2LTL/0103.sl
+[2026-05-11T20:49:07Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0103.sl solved 3083 0 3083 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0103.sl 
+[2026-05-11T20:49:09Z] running path=benchmark/LTL/sample2LTL/0105.sl
+[2026-05-11T20:49:25Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0105.sl solved 3554 0 3554 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0105.sl 
+[2026-05-11T20:49:27Z] running path=benchmark/LTL/sample2LTL/0107.sl
+[2026-05-11T20:49:43Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0107.sl solved 3743 0 3743 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0107.sl 
+[2026-05-11T20:49:45Z] running path=benchmark/LTL/sample2LTL/0109.sl
+[2026-05-11T20:50:02Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0109.sl solved 4297 0 4297 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0109.sl 
+[2026-05-11T20:50:04Z] running path=benchmark/LTL/sample2LTL/0112.sl
+[2026-05-11T20:50:16Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0112.sl solved 141 0 141 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0112.sl 
+[2026-05-11T20:50:18Z] running path=benchmark/LTL/sample2LTL/0116.sl
+[2026-05-11T20:50:32Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0116.sl solved 1079 0 1079 0 0 84 0     bench-results/artifacts/ltl-sample2ltl/0116.sl 
+[2026-05-11T20:50:34Z] running path=benchmark/LTL/sample2LTL/0118.sl
+[2026-05-11T20:51:04Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0118.sl solved 17688 0 17688 0 0 100 0     bench-results/artifacts/ltl-sample2ltl/0118.sl 
+[2026-05-11T20:51:06Z] running path=benchmark/LTL/sample2LTL/0120.sl
+[2026-05-11T20:51:19Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0120.sl solved 540 0 540 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0120.sl 
+[2026-05-11T20:51:21Z] running path=benchmark/LTL/sample2LTL/0122.sl
+[2026-05-11T20:52:01Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0122.sl solved 28410 0 28410 0 0 100 0     bench-results/artifacts/ltl-sample2ltl/0122.sl 
+[2026-05-11T20:52:03Z] running path=benchmark/LTL/sample2LTL/0125.sl
+[2026-05-11T20:52:19Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0125.sl solved 2949 0 2949 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0125.sl 
+[2026-05-11T20:52:21Z] running path=benchmark/LTL/sample2LTL/0127.sl
+[2026-05-11T20:52:36Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0127.sl solved 3322 0 3322 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0127.sl 
+[2026-05-11T20:52:38Z] running path=benchmark/LTL/sample2LTL/0129.sl
+[2026-05-11T20:52:55Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0129.sl solved 3819 0 3819 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0129.sl 
+[2026-05-11T20:52:57Z] running path=benchmark/LTL/sample2LTL/0131.sl
+[2026-05-11T20:53:14Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0131.sl solved 4709 0 4709 0 0 78 0     bench-results/artifacts/ltl-sample2ltl/0131.sl 
+[2026-05-11T20:53:16Z] running path=benchmark/LTL/sample2LTL/0134.sl
+[2026-05-11T20:53:28Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0134.sl solved 195 0 195 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0134.sl 
+[2026-05-11T20:53:30Z] running path=benchmark/LTL/sample2LTL/0136.sl
+[2026-05-11T20:53:44Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0136.sl solved 313 0 313 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0136.sl 
+[2026-05-11T20:53:46Z] running path=benchmark/LTL/sample2LTL/0138.sl
+[2026-05-11T20:53:59Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0138.sl solved 432 0 432 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0138.sl 
+[2026-05-11T20:54:01Z] running path=benchmark/LTL/sample2LTL/0140.sl
+[2026-05-11T20:54:15Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0140.sl solved 610 0 610 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0140.sl 
+[2026-05-11T20:54:17Z] running path=benchmark/LTL/sample2LTL/0142.sl
+[2026-05-11T20:54:30Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0142.sl solved 672 0 672 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0142.sl 
+[2026-05-11T20:54:32Z] running path=benchmark/LTL/sample2LTL/0144.sl
+[2026-05-11T20:54:46Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0144.sl solved 766 0 766 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0144.sl 
+[2026-05-11T20:54:48Z] running path=benchmark/LTL/sample2LTL/0146.sl
+[2026-05-11T20:55:02Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0146.sl solved 949 0 949 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0146.sl 
+[2026-05-11T20:55:04Z] running path=benchmark/LTL/sample2LTL/0148.sl
+[2026-05-11T20:55:17Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0148.sl solved 1067 0 1067 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0148.sl 
+[2026-05-11T20:55:19Z] running path=benchmark/LTL/sample2LTL/0150.sl
+[2026-05-11T20:55:33Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0150.sl solved 1255 0 1255 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0150.sl 
+[2026-05-11T20:55:35Z] running path=benchmark/LTL/sample2LTL/0152.sl
+[2026-05-11T20:55:49Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0152.sl solved 1359 0 1359 0 0 43 0     bench-results/artifacts/ltl-sample2ltl/0152.sl 
+[2026-05-11T20:55:51Z] running path=benchmark/LTL/sample2LTL/0154.sl
+[2026-05-11T20:56:03Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0154.sl solved 87 0 87 0 0 50 0     bench-results/artifacts/ltl-sample2ltl/0154.sl 
+[2026-05-11T20:56:05Z] running path=benchmark/LTL/sample2LTL/0156.sl
+[2026-05-11T20:56:18Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0156.sl solved 311 0 311 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0156.sl 
+[2026-05-11T20:56:20Z] running path=benchmark/LTL/sample2LTL/0158.sl
+[2026-05-11T20:56:33Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0158.sl solved 493 0 493 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0158.sl 
+[2026-05-11T20:56:35Z] running path=benchmark/LTL/sample2LTL/0160.sl
+[2026-05-11T20:56:48Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0160.sl solved 728 0 728 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0160.sl 
+[2026-05-11T20:56:50Z] running path=benchmark/LTL/sample2LTL/0162.sl
+[2026-05-11T20:57:03Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0162.sl solved 733 0 733 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0162.sl 
+[2026-05-11T20:57:05Z] running path=benchmark/LTL/sample2LTL/0164.sl
+[2026-05-11T20:57:18Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0164.sl solved 787 0 787 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0164.sl 
+[2026-05-11T20:57:20Z] running path=benchmark/LTL/sample2LTL/0166.sl
+[2026-05-11T20:57:33Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0166.sl solved 1009 0 1009 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0166.sl 
+[2026-05-11T20:57:35Z] running path=benchmark/LTL/sample2LTL/0168.sl
+[2026-05-11T20:57:49Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0168.sl solved 1081 0 1081 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0168.sl 
+[2026-05-11T20:57:51Z] running path=benchmark/LTL/sample2LTL/0170.sl
+[2026-05-11T20:58:04Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0170.sl solved 1408 0 1408 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0170.sl 
+[2026-05-11T20:58:06Z] running path=benchmark/LTL/sample2LTL/0172.sl
+[2026-05-11T20:58:21Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0172.sl solved 1544 0 1544 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0172.sl 
+[2026-05-11T20:58:23Z] running path=benchmark/LTL/sample2LTL/0174.sl
+[2026-05-11T20:58:37Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0174.sl solved 1627 0 1627 0 0 74 0     bench-results/artifacts/ltl-sample2ltl/0174.sl 
+[2026-05-11T20:58:39Z] running path=benchmark/LTL/sample2LTL/0176.sl
+[2026-05-11T20:58:51Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0176.sl solved 81 0 81 0 0 60 0     bench-results/artifacts/ltl-sample2ltl/0176.sl 
+[2026-05-11T20:58:53Z] running path=benchmark/LTL/sample2LTL/0178.sl
+[2026-05-11T20:59:06Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0178.sl solved 262 0 262 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0178.sl 
+[2026-05-11T20:59:07Z] running path=benchmark/LTL/sample2LTL/0180.sl
+[2026-05-11T20:59:20Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0180.sl solved 318 0 318 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0180.sl 
+[2026-05-11T20:59:22Z] running path=benchmark/LTL/sample2LTL/0182.sl
+[2026-05-11T20:59:35Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0182.sl solved 554 0 554 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0182.sl 
+[2026-05-11T20:59:37Z] running path=benchmark/LTL/sample2LTL/0184.sl
+[2026-05-11T20:59:50Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0184.sl solved 616 0 616 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0184.sl 
+[2026-05-11T20:59:52Z] running path=benchmark/LTL/sample2LTL/0186.sl
+[2026-05-11T21:00:05Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0186.sl solved 720 0 720 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0186.sl 
+[2026-05-11T21:00:07Z] running path=benchmark/LTL/sample2LTL/0188.sl
+[2026-05-11T21:00:20Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0188.sl solved 911 0 911 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0188.sl 
+[2026-05-11T21:00:22Z] running path=benchmark/LTL/sample2LTL/0190.sl
+[2026-05-11T21:00:36Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0190.sl solved 1234 0 1234 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0190.sl 
+[2026-05-11T21:00:38Z] running path=benchmark/LTL/sample2LTL/0192.sl
+[2026-05-11T21:00:52Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0192.sl solved 1253 0 1253 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0192.sl 
+[2026-05-11T21:00:54Z] running path=benchmark/LTL/sample2LTL/0194.sl
+[2026-05-11T21:01:12Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0194.sl solved 1525 0 1525 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0194.sl 
+[2026-05-11T21:01:14Z] running path=benchmark/LTL/sample2LTL/0196.sl
+[2026-05-11T21:01:28Z] row ltl-sample2ltl benchmark/LTL/sample2LTL/0196.sl solved 1536 0 1536 0 0 67 0     bench-results/artifacts/ltl-sample2ltl/0196.sl 
+[2026-05-11T21:01:29Z] done completed_now=95 total=95

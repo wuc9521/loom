@@ -1,0 +1,5 @@
+[2026-05-11T15:28:48Z] start name=fo-finvar-popl22 mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/FO/finvar-popl22 results=bench-results/fo-finvar-popl22.tsv rerun=false restart=true shard_index=1 shard_count=2 files=1
+[2026-05-11T15:28:53Z] running folder total=1 pending=1 results=bench-results/fo-finvar-popl22.tsv shard_index=1 shard_count=2
+[2026-05-11T15:28:55Z] running path=benchmark/FO/finvar-popl22/no2-fo1.sl
+[2026-05-11T15:29:08Z] row fo-finvar-popl22 benchmark/FO/finvar-popl22/no2-fo1.sl solved 128 0 128 0 0 320 0     bench-results/artifacts/fo-finvar-popl22/no2-fo1.sl 
+[2026-05-11T15:29:09Z] done completed_now=1 total=1
