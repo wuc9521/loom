@@ -1,6 +1,7 @@
 use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem};
 use std::{
     collections::HashMap,
+    hash::{Hash, Hasher},
     sync::{Mutex, OnceLock},
 };
 
@@ -26,8 +27,14 @@ struct FuncInterpCache {
     by_name: HashMap<String, FuncInterpIndex>,
 }
 
-fn interp_cache() -> &'static Mutex<HashMap<SliceKey, FuncInterpCache>> {
-    static CACHE: OnceLock<Mutex<HashMap<SliceKey, FuncInterpCache>>> = OnceLock::new();
+#[derive(Clone)]
+struct CachedFuncInterp {
+    fingerprint: u64,
+    cache: FuncInterpCache,
+}
+
+fn interp_cache() -> &'static Mutex<HashMap<SliceKey, CachedFuncInterp>> {
+    static CACHE: OnceLock<Mutex<HashMap<SliceKey, CachedFuncInterp>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -66,13 +73,30 @@ fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
     FuncInterpCache { by_name }
 }
 
+fn interp_fingerprint(func_interps: &[FuncInterp]) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    func_interps.len().hash(&mut hasher);
+    for interp in func_interps {
+        interp.to_string().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 fn interp_cache_for(func_interps: &[FuncInterp]) -> FuncInterpCache {
     let key = slice_key(func_interps);
+    let fingerprint = interp_fingerprint(func_interps);
     let mut cache = interp_cache().lock().expect("interp cache poisoned");
-    cache
-        .entry(key)
-        .or_insert_with(|| build_interp_cache(func_interps))
-        .clone()
+    let entry = cache.entry(key).or_insert_with(|| CachedFuncInterp {
+        fingerprint,
+        cache: build_interp_cache(func_interps),
+    });
+    if entry.fingerprint != fingerprint {
+        *entry = CachedFuncInterp {
+            fingerprint,
+            cache: build_interp_cache(func_interps),
+        };
+    }
+    entry.cache.clone()
 }
 
 fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
