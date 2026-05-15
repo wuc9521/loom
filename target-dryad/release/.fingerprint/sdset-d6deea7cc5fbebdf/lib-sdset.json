@@ -1,1 +1,0 @@
-{"rustc":6675399023931808104,"features":"[]","declared_features":"[\"serde\", \"unstable\"]","target":8731576463993270542,"profile":2040997289075261528,"path":8738679846314141055,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"release/.fingerprint/sdset-d6deea7cc5fbebdf/dep-lib-sdset","checksum":false}}],"rustflags":[],"config":2069994364910194474,"compile_kind":0}
