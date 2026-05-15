@@ -1,2 +1,0 @@
-cargo:rerun-if-env-changed=RUSTC_BOOTSTRAP
-cargo:rustc-cfg=rustc_is_unstable
