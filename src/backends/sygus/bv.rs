@@ -513,6 +513,8 @@ pub fn compile_one_way(
         let mut const_helpers = HashMap::new();
         let mut helper_names = HashMap::new();
         let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
+        // Distinct obligation RHS values: identical SyGuS term reuses one `let` binding.
+        let mut distinct_obligations: Vec<(SyGuSTerm, String)> = Vec::new();
         let mut let_bindings = Vec::new();
         for obligation in order {
             let clauses = plan
@@ -531,9 +533,17 @@ pub fn compile_one_way(
                     const_helpers.insert(obligation, value);
                 }
                 BoolExpr::Dynamic(body) => {
-                    let binding_name = obligation_binding_name(&cons.name, obligation.bit_idx);
-                    helper_names.insert(obligation, binding_name.clone());
-                    let_bindings.push((binding_name, body));
+                    let binding_name =
+                        if let Some((_, name)) = distinct_obligations.iter().find(|(t, _)| t == &body)
+                        {
+                            name.clone()
+                        } else {
+                            let name = obligation_binding_name(&cons.name, obligation.bit_idx);
+                            distinct_obligations.push((body.clone(), name.clone()));
+                            let_bindings.push((name.clone(), body));
+                            name
+                        };
+                    helper_names.insert(obligation, binding_name);
                 }
             }
         }
