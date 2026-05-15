@@ -170,16 +170,13 @@ if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   docker run --name "$CONTAINER" -dit -v "$VOLUME":/data "$IMAGE" /bin/bash >/dev/null
 fi
 
-run_cmd=(
-  cd /root/folseparators
-  "python3.7 experiments/run_experiment.py -o /data/artifact-learning.json --timeout $TIMEOUT_SECS --cpus $CPUS --count $COUNT"
-)
+run_cmd="cd /root/folseparators && python3.7 experiments/run_experiment.py -o /data/artifact-learning.json --timeout $TIMEOUT_SECS --cpus $CPUS --count $COUNT"
 if [[ -n "$SINGLE" ]]; then
-  run_cmd[1]+=" --single $SINGLE"
+  run_cmd+=" --single $SINGLE"
 fi
-run_cmd[1]+=" > /data/artifact-learning.log 2>&1"
+run_cmd+=" > /data/artifact-learning.log 2>&1"
 
-docker exec "$CONTAINER" /bin/bash -lc "${run_cmd[0]} && ${run_cmd[1]}"
+docker exec "$CONTAINER" /bin/bash -lc "$run_cmd"
 
 docker cp "$CONTAINER":/data/artifact-learning.json "$JSON_OUT"
 docker cp "$CONTAINER":/data/artifact-learning.log "$LOG_OUT"
