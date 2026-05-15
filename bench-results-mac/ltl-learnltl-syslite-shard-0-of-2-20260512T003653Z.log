@@ -1,0 +1,3 @@
+[2026-05-12T00:36:57Z] start name=ltl-learnltl-syslite mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/learnltl/syslite-comparison results=bench-results/ltl-learnltl-syslite.tsv rerun=true restart=false shard_index=0 shard_count=2 files=4
+[2026-05-12T00:37:11Z] skipping folder total=4 pending=0 results=bench-results/ltl-learnltl-syslite.tsv shard_index=0 shard_count=2
+[2026-05-12T00:37:12Z] done pending=0

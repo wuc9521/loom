@@ -79,6 +79,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let sygus_backend = SygusBackend::from_cli(args);
     let sygus_verbose = args.verbose;
     let sygus_min = args.min;
+    let sygus_mitm = args.mitm;
     const SYGUS_STACK_BYTES: usize = 128 * 1024 * 1024;
     thread::Builder::new()
         .name("sygus-backend".to_string())
@@ -91,6 +92,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
                 sygus_cegis,
                 sygus_verbose,
                 sygus_min,
+                sygus_mitm,
             );
             let _ = sygus_tx.send(BackendResult::Sygus(result));
         })?;
@@ -153,7 +155,12 @@ fn external_solver_args(path: &str) -> Vec<String> {
     }
 }
 
-fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd], min: bool) -> Result<Child, io::Error> {
+fn spawn_solver(
+    solver: &Solver,
+    cmds: &[SyGuSCmd],
+    min: bool,
+    mitm: bool,
+) -> Result<Child, io::Error> {
     let mut args = solver.1.clone();
     if !min {
         let path_buf = PathBuf::from(&solver.0);
@@ -163,6 +170,16 @@ fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd], min: bool) -> Result<Child, 
             .unwrap_or(&solver.0);
         if name == "dryadsynth-bv" {
             args.push("--min=false".to_string());
+        }
+    }
+    if mitm {
+        let path_buf = PathBuf::from(&solver.0);
+        let name = path_buf
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&solver.0);
+        if name == "dryadsynth-bv" {
+            args.push("--mitm".to_string());
         }
     }
 
@@ -194,21 +211,21 @@ fn solve_cmds_with_backend(
     axioms: Option<&[sygus_parser::SyGuSTerm]>,
     verbose: bool,
     min: bool,
+    mitm: bool,
 ) -> Result<String, io::Error> {
     match backend {
-        SygusBackend::InProcessDryadSynth => {
-            dryadsynth_bv::solve_sygus_cmds(
-                cmds,
-                None,
-                "",
-                axioms,
-                if verbose { 1 } else { 0 },
-                min,
-            )
-            .map_err(io::Error::other)
-        }
+        SygusBackend::InProcessDryadSynth => dryadsynth_bv::solve_sygus_cmds(
+            cmds,
+            None,
+            "",
+            axioms,
+            if verbose { 1 } else { 0 },
+            min,
+            mitm,
+        )
+        .map_err(io::Error::other),
         SygusBackend::External(solver) => {
-            let child = spawn_solver(solver, cmds, min)?;
+            let child = spawn_solver(solver, cmds, min, mitm)?;
             solver_stdout(child, &solver.0)
         }
     }
@@ -221,6 +238,7 @@ fn solve_with_sygus(
     cegis_size: Option<usize>,
     verbose: bool,
     min: bool,
+    mitm: bool,
 ) -> Result<String, io::Error> {
     let axioms = delis_axioms(delis_file);
     let axiom_slice = (!axioms.is_empty()).then_some(axioms.as_slice());
@@ -241,6 +259,7 @@ fn solve_with_sygus(
             cegis_size,
             verbose,
             min,
+            mitm,
         )?;
         log::info!(
             "sygus-backend: cegis completed in {:?}",
@@ -255,7 +274,8 @@ fn solve_with_sygus(
             step_start.elapsed()
         );
         let step_start = Instant::now();
-        let output = solve_cmds_with_backend(backend, &sygus_cmds, axiom_slice, verbose, min)?;
+        let output =
+            solve_cmds_with_backend(backend, &sygus_cmds, axiom_slice, verbose, min, mitm)?;
         log::info!(
             "sygus-backend: backend solve completed in {:?}",
             step_start.elapsed()
@@ -298,13 +318,14 @@ fn cegis_solve(
     seed_size: usize,
     verbose: bool,
     min: bool,
+    mitm: bool,
 ) -> Result<String, io::Error> {
     let seed_size = seed_size.max(1);
     let constraints = problem_constraints(delis_file);
     let constraint_count = constraints.len();
     if constraint_count <= seed_size {
         let cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
-        let output = solve_cmds_with_backend(backend, &cmds, None, verbose, min)?;
+        let output = solve_cmds_with_backend(backend, &cmds, None, verbose, min, mitm)?;
         return match backend {
             SygusBackend::InProcessDryadSynth => Ok(output),
             SygusBackend::External(_) => decode_response(delis_file, &output),
@@ -334,7 +355,7 @@ fn cegis_solve(
             round,
             round_start.elapsed()
         );
-        let output = solve_cmds_with_backend(backend, &subset_cmds, None, verbose, min)?;
+        let output = solve_cmds_with_backend(backend, &subset_cmds, None, verbose, min, mitm)?;
         let trimmed = output.trim();
         if trimmed == "infeasible" {
             log::info!("cegis round {}: subset is infeasible", round);
@@ -664,6 +685,10 @@ pub struct CLI {
         value_parser = clap::builder::BoolishValueParser::new()
     )]
     min: bool,
+
+    /// Use interactive meet-in-the-middle relevance refinement instead of full precomputation.
+    #[arg(long = "mitm", default_value_t = false)]
+    mitm: bool,
 
     /// Use only Delis's internal enumerative backend (no SyGuS solver backend).
     #[arg(long = "enum", default_value_t = false)]

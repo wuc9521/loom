@@ -1,0 +1,11 @@
+[2026-05-11T20:29:40Z] start name=ltl-learnltl-syslite mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/learnltl/syslite-comparison results=bench-results/ltl-learnltl-syslite.tsv rerun=false restart=true shard_index=0 shard_count=2 files=4
+[2026-05-11T20:29:50Z] running folder total=4 pending=4 results=bench-results/ltl-learnltl-syslite.tsv shard_index=0 shard_count=2
+[2026-05-11T20:29:52Z] running path=benchmark/LTL/learnltl/syslite-comparison/bank_transaction_1250.sl
+[2026-05-11T20:30:10Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/bank_transaction_1250.sl solved 4352 0 4352 0 0 67 0     bench-results/artifacts/ltl-learnltl-syslite/bank_transaction_1250.sl 
+[2026-05-11T20:30:12Z] running path=benchmark/LTL/learnltl/syslite-comparison/dynamic_separation_of_duty_1250.sl
+[2026-05-11T20:30:32Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/dynamic_separation_of_duty_1250.sl solved 7863 0 7863 0 0 85 0     bench-results/artifacts/ltl-learnltl-syslite/dynamic_separation_of_duty_1250.sl 
+[2026-05-11T20:30:34Z] running path=benchmark/LTL/learnltl/syslite-comparison/glba_6802_1250.sl
+[2026-05-11T20:30:54Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/glba_6802_1250.sl solved 7030 0 7030 0 0 84 0     bench-results/artifacts/ltl-learnltl-syslite/glba_6802_1250.sl 
+[2026-05-11T20:30:56Z] running path=benchmark/LTL/learnltl/syslite-comparison/hippa_16450a3_1250.sl
+[2026-05-11T20:31:14Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/hippa_16450a3_1250.sl solved 5862 0 5862 0 0 67 0     bench-results/artifacts/ltl-learnltl-syslite/hippa_16450a3_1250.sl 
+[2026-05-11T20:31:15Z] done completed_now=4 total=4

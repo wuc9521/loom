@@ -1,0 +1,59 @@
+[2026-05-11T20:13:34Z] start name=ltl-learnltl-sat-abscence mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/learnltl/sat-comparison/abscence results=bench-results/ltl-learnltl-sat-abscence.tsv rerun=false restart=true shard_index=0 shard_count=2 files=28
+[2026-05-11T20:14:29Z] running folder total=28 pending=28 results=bench-results/ltl-learnltl-sat-abscence.tsv shard_index=0 shard_count=2
+[2026-05-11T20:14:31Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0000.sl
+[2026-05-11T20:14:43Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0000.sl solved 46 0 46 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0000.sl 
+[2026-05-11T20:14:45Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0006.sl
+[2026-05-11T20:14:58Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0006.sl solved 142 0 142 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0006.sl 
+[2026-05-11T20:15:00Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0008.sl
+[2026-05-11T20:15:13Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0008.sl solved 353 0 353 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0008.sl 
+[2026-05-11T20:15:15Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0010.sl
+[2026-05-11T20:15:27Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0010.sl solved 318 0 318 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0010.sl 
+[2026-05-11T20:15:29Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0012.sl
+[2026-05-11T20:15:42Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0012.sl solved 261 0 261 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0012.sl 
+[2026-05-11T20:15:44Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0015.sl
+[2026-05-11T20:15:57Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0015.sl solved 371 0 371 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0015.sl 
+[2026-05-11T20:15:59Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0017.sl
+[2026-05-11T20:16:12Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0017.sl solved 1184 0 1184 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0017.sl 
+[2026-05-11T20:16:14Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0019.sl
+[2026-05-11T20:16:29Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0019.sl solved 1386 0 1386 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0019.sl 
+[2026-05-11T20:16:31Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0022.sl
+[2026-05-11T20:16:43Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0022.sl solved 141 0 141 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0022.sl 
+[2026-05-11T20:16:45Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0024.sl
+[2026-05-11T20:16:58Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0024.sl solved 88 0 88 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0024.sl 
+[2026-05-11T20:17:00Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0026.sl
+[2026-05-11T20:17:13Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0026.sl solved 305 0 305 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0026.sl 
+[2026-05-11T20:17:15Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0028.sl
+[2026-05-11T20:17:28Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0028.sl solved 388 0 388 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0028.sl 
+[2026-05-11T20:17:30Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0030.sl
+[2026-05-11T20:17:43Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0030.sl solved 490 0 490 0 0 84 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0030.sl 
+[2026-05-11T20:17:45Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0032.sl
+[2026-05-11T20:17:59Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0032.sl solved 1618 0 1618 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0032.sl 
+[2026-05-11T20:18:01Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0034.sl
+[2026-05-11T20:18:14Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0034.sl solved 836 0 836 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0034.sl 
+[2026-05-11T20:18:16Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0036.sl
+[2026-05-11T20:18:30Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0036.sl solved 980 0 980 0 0 84 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0036.sl 
+[2026-05-11T20:18:32Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0038.sl
+[2026-05-11T20:18:47Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0038.sl solved 2642 0 2642 0 0 60 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0038.sl 
+[2026-05-11T20:18:49Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0040.sl
+[2026-05-11T20:19:06Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0040.sl solved 4537 0 4537 0 0 84 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0040.sl 
+[2026-05-11T20:19:08Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0042.sl
+[2026-05-11T20:19:20Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0042.sl solved 88 0 88 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0042.sl 
+[2026-05-11T20:19:22Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0045.sl
+[2026-05-11T20:19:35Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0045.sl solved 136 0 136 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0045.sl 
+[2026-05-11T20:19:37Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0047.sl
+[2026-05-11T20:19:49Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0047.sl solved 136 0 136 0 0 53 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0047.sl 
+[2026-05-11T20:19:51Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0049.sl
+[2026-05-11T20:20:04Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0049.sl solved 389 0 389 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0049.sl 
+[2026-05-11T20:20:06Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0052.sl
+[2026-05-11T20:20:20Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0052.sl solved 587 0 587 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0052.sl 
+[2026-05-11T20:20:22Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0054.sl
+[2026-05-11T20:20:34Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0054.sl solved 382 0 382 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0054.sl 
+[2026-05-11T20:20:37Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0056.sl
+[2026-05-11T20:20:51Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0056.sl solved 1063 0 1063 0 0 70 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0056.sl 
+[2026-05-11T20:20:53Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0058.sl
+[2026-05-11T20:21:07Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0058.sl solved 1115 0 1115 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0058.sl 
+[2026-05-11T20:21:09Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0060.sl
+[2026-05-11T20:21:22Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0060.sl solved 1232 0 1232 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0060.sl 
+[2026-05-11T20:21:24Z] running path=benchmark/LTL/learnltl/sat-comparison/abscence/0062.sl
+[2026-05-11T20:21:43Z] row ltl-learnltl-sat-abscence benchmark/LTL/learnltl/sat-comparison/abscence/0062.sl solved 6158 0 6158 0 0 78 0     bench-results/artifacts/ltl-learnltl-sat-abscence/0062.sl 
+[2026-05-11T20:21:44Z] done completed_now=28 total=28

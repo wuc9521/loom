@@ -1,4 +1,0 @@
-group	path	status	total_ms	sygus_ms	solve_ms	sygus_bytes	sygus_lines	solution_bytes	delis_exit_code	solver_exit_code	delis_args	solver	solver_args	solution_path	detail
-fo-finvar-popl22	benchmark/FO/finvar-popl22/no1-fo0.sl	infeasible	36	0	36	0	0	11	0					bench-results/artifacts/fo-finvar-popl22/no1-fo0.sl	
-fo-finvar-popl22	benchmark/FO/finvar-popl22/no2-fo1.sl	solved	130	0	130	0	0	320	0					bench-results/artifacts/fo-finvar-popl22/no2-fo1.sl	
-fo-finvar-popl22	benchmark/FO/finvar-popl22/no3-fo2.sl	solved	561	0	561	0	0	154	0					bench-results/artifacts/fo-finvar-popl22/no3-fo2.sl	

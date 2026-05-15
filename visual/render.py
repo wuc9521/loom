@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import csv
-from collections import defaultdict
+import json
+import math
+import tarfile
+from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import median
 
@@ -47,6 +50,25 @@ LEVEL_COLORS = {
     "oracle": "#111827",
 }
 
+COMPARE_COLORS = {
+    "Delis": "#1F4E79",
+    "LearnCTL": "#A23B32",
+    "Folseparators": "#2C6E49",
+    "sample2LTL": "#A23B32",
+}
+
+LEARNCTL_VARIANT_MAP = {
+    "": "all",
+    "-R": "all-R",
+    "-E": "all-E",
+    "-F": "full",
+    "-F -R": "full-R",
+    "-F -E": "full-E",
+    "-U": "until",
+    "-U -R": "until-R",
+    "-U -E": "until-E",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -66,6 +88,21 @@ def parse_args() -> argparse.Namespace:
         "--title",
         default="Delis Benchmark Results",
         help="Title prefix used in figure headers.",
+    )
+    parser.add_argument(
+        "--learnctl-csv",
+        default="/Users/wuchentian/Codes/C++/learnctl/bench/bench_results_Naturalificas-MacBook.local.csv",
+        help="LearnCTL benchmark CSV for CTL comparisons.",
+    )
+    parser.add_argument(
+        "--folseparators-json",
+        default="/Users/wuchentian/Downloads/artifact-upload/560.tgz",
+        help="Folseparators benchmark source: results JSON or ACM artifact .tgz.",
+    )
+    parser.add_argument(
+        "--samples2ltl-csv",
+        default="/Users/wuchentian/Codes/Python/samples2LTL/experiments/dtSubset3Strategy2/statsSubset3Strategy2.csv",
+        help="sample2LTL benchmark CSV for LTL/sample2LTL comparisons.",
     )
     return parser.parse_args()
 
@@ -143,10 +180,30 @@ def status_counts(rows: list[dict[str, str]]) -> dict[str, int]:
     return counts
 
 
+def suite_slug(group: str) -> str:
+    return group.replace("/", "-")
+
+
+def benchmark_leaf(row: dict[str, str]) -> str:
+    return Path(row["path"]).name
+
+
+def best_solved_seconds(candidates: list[dict[str, str]]) -> float | None:
+    solved = [seconds(row) for row in candidates if row["status"] == "solved"]
+    return min(solved) if solved else None
+
+
+def percent_xs(resolved_count: int, total_count: int) -> list[float]:
+    if resolved_count <= 0 or total_count <= 0:
+        return []
+    return [100.0 * idx / total_count for idx in range(1, resolved_count + 1)]
+
+
 def prep_axes(ax: plt.Axes, title: str) -> None:
     ax.set_title(title, loc="left", fontweight="bold", pad=10)
-    ax.set_xlabel("Benchmarks resolved (sorted by time)")
+    ax.set_xlabel("Benchmarks resolved (%)")
     ax.set_ylabel("Time (seconds)")
+    ax.set_xlim(0, 100)
     ax.set_yscale("log")
     ax.yaxis.set_major_locator(LogLocator(base=10))
     ax.yaxis.set_minor_locator(LogLocator(base=10, subs=(0.2, 0.4, 0.6, 0.8)))
@@ -162,13 +219,20 @@ def plot_single_suite_cactus(
     title: str,
     color: str,
 ) -> None:
+    total_count = len(rows)
     times = resolved_times(rows)
     fig, ax = plt.subplots(figsize=(8.6, 5.8), constrained_layout=True)
     prep_axes(ax, title)
     if times:
-        xs = list(range(1, len(times) + 1))
-        ax.plot(xs, times, linewidth=2.2, color=color)
-    subtitle = f"resolved={len(times)} / total={len(rows)}"
+        ax.plot(
+            percent_xs(len(times), total_count),
+            times,
+            linewidth=2.2,
+            color=color,
+            label=f"Delis (n={total_count}, resolved={len(times)})",
+        )
+        ax.legend(frameon=False, loc="upper left")
+    subtitle = f"resolved={len(times)} / total={total_count}"
     ax.text(
         0.01,
         0.98,
@@ -181,19 +245,6 @@ def plot_single_suite_cactus(
     )
     fig.savefig(out_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
-
-
-def suite_slug(group: str) -> str:
-    return group.replace("/", "-")
-
-
-def benchmark_leaf(row: dict[str, str]) -> str:
-    return Path(row["path"]).name
-
-
-def best_solved_seconds(candidates: list[dict[str, str]]) -> float | None:
-    solved = [seconds(row) for row in candidates if row["status"] == "solved"]
-    return min(solved) if solved else None
 
 
 def plot_parallel_levels(
@@ -217,20 +268,38 @@ def plot_parallel_levels(
     if not ordered_instances:
         return
 
-    xs = list(range(1, len(ordered_instances) + 1))
+    total_count = len(ordered_instances)
+    xs = percent_xs(total_count, total_count)
     fig, ax = plt.subplots(figsize=(10.8, 6.6), constrained_layout=True)
     prep_axes(ax, title)
     oracle = [best for _, best in ordered_instances]
-    ax.plot(xs, oracle, linewidth=2.6, color=LEVEL_COLORS["oracle"], linestyle="--", label="oracle")
+    ax.plot(
+        xs,
+        oracle,
+        linewidth=2.6,
+        color=LEVEL_COLORS["oracle"],
+        linestyle="--",
+        label=f"oracle (n={total_count})",
+    )
 
     for level in level_order:
         ys = []
+        solved = 0
         for leaf, _ in ordered_instances:
             row = instance_map[leaf].get(level)
-            ys.append(seconds(row) if row and row["status"] == "solved" else float("nan"))
-        ax.plot(xs, ys, linewidth=2.0, color=LEVEL_COLORS[level], label=level)
+            ok = row and row["status"] == "solved"
+            ys.append(seconds(row) if ok else float("nan"))
+            solved += int(bool(ok))
+        ax.scatter(
+            xs,
+            ys,
+            s=10,
+            color=LEVEL_COLORS[level],
+            label=f"{level} (resolved={solved}/{total_count})",
+            alpha=0.9,
+        )
 
-    ax.legend(frameon=False, ncol=len(level_order) + 1, loc="upper left")
+    ax.legend(frameon=False, ncol=min(len(level_order) + 1, 3), loc="upper left")
     ax.text(
         0.01,
         0.02,
@@ -253,11 +322,13 @@ def plot_status_breakdown(
     by_group = grouped(rows, "group")
     groups = list(by_group.keys())
     counts = [status_counts(by_group[group]) for group in groups]
+    totals = [len(by_group[group]) for group in groups]
 
     fig_height = max(5.5, 0.36 * len(groups) + 1.8)
     fig, ax = plt.subplots(figsize=(13.5, fig_height), constrained_layout=True)
     ax.set_title(title, loc="left", fontweight="bold", pad=10)
-    ax.set_xlabel("Benchmarks")
+    ax.set_xlabel("Benchmarks (%)")
+    ax.set_xlim(0, 100)
     ax.grid(axis="x", color="#D1D5DB", linewidth=0.8)
     ax.set_axisbelow(True)
 
@@ -269,10 +340,13 @@ def plot_status_breakdown(
         "error": "#991B1B",
     }
 
-    left = [0] * len(groups)
+    left = [0.0] * len(groups)
     y = list(range(len(groups)))
     for status in STATUS_ORDER:
-        values = [entry.get(status, 0) for entry in counts]
+        values = [
+            (100.0 * entry.get(status, 0) / total) if total else 0.0
+            for entry, total in zip(counts, totals)
+        ]
         ax.barh(
             y,
             values,
@@ -285,7 +359,8 @@ def plot_status_breakdown(
         )
         left = [lhs + rhs for lhs, rhs in zip(left, values)]
 
-    ax.set_yticks(y, groups)
+    labels = [f"{group} (n={total})" for group, total in zip(groups, totals)]
+    ax.set_yticks(y, labels)
     ax.invert_yaxis()
     ax.legend(frameon=False, ncol=5, loc="upper center", bbox_to_anchor=(0.5, 1.08))
     fig.savefig(out_path, format="pdf", bbox_inches="tight")
@@ -325,6 +400,260 @@ def write_summary(rows: list[dict[str, str]], out_path: Path) -> None:
                     f"{median(times):.6f}" if times else "",
                 ]
             )
+
+
+def learnctl_variant(parameters: str) -> str | None:
+    return LEARNCTL_VARIANT_MAP.get(parameters.strip())
+
+
+def learnctl_filename(row: dict[str, str]) -> str | None:
+    variant = learnctl_variant(row.get("Parameters", ""))
+    if variant is None:
+        return None
+    positive = row["Positive sample"].strip()
+    mutants = []
+    for token in row["Negative sample"].split():
+        token = token.strip()
+        if not token:
+            continue
+        mutants.append(token.split("/")[-1].replace("-", "_"))
+    if not positive or not mutants:
+        return None
+    return f"{positive}--{'__'.join(mutants)}--{variant}.sl"
+
+
+def parse_learnctl_seconds(value: str) -> tuple[str, float | None]:
+    text = (value or "").strip()
+    if not text:
+        return ("error", None)
+    if text.isdigit():
+        return ("solved", float(text) / 1000.0)
+    if text.startswith("timed out at "):
+        parts = text.split()
+        try:
+            return ("solve_timeout", float(parts[3]))
+        except (IndexError, ValueError):
+            return ("solve_timeout", None)
+    return ("error", None)
+
+
+def load_learnctl_series(csv_path: Path) -> dict[str, dict[str, float | str | None]]:
+    if not csv_path.exists():
+        return {}
+    series: dict[str, dict[str, float | str | None]] = {}
+    with csv_path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            filename = learnctl_filename(row)
+            if not filename:
+                continue
+            status, secs = parse_learnctl_seconds(row.get("Time (ms)", ""))
+            current = series.get(filename)
+            candidate = {"status": status, "seconds": secs}
+            if current is None:
+                series[filename] = candidate
+                continue
+            current_secs = current["seconds"]
+            if status == "solved" and (
+                current["status"] != "solved"
+                or current_secs is None
+                or (secs is not None and secs < current_secs)
+            ):
+                series[filename] = candidate
+    return series
+
+
+def parse_samples2ltl_seconds(value: str) -> tuple[str, float | None]:
+    text = (value or "").strip()
+    if not text or text == "/":
+        return ("solve_timeout", None)
+    try:
+        return ("solved", float(text))
+    except ValueError:
+        return ("error", None)
+
+
+def load_samples2ltl_series(csv_path: Path) -> dict[str, dict[str, float | str | None]]:
+    if not csv_path.exists():
+        return {}
+    series: dict[str, dict[str, float | str | None]] = {}
+    with csv_path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            trace_name = (row.get("name of the test file") or "").strip()
+            if not trace_name:
+                continue
+            filename = f"{Path(trace_name).stem}.sl"
+            status, secs = parse_samples2ltl_seconds(row.get("dt solving time", ""))
+            candidate = {"status": status, "seconds": secs}
+            current = series.get(filename)
+            if current is None:
+                series[filename] = candidate
+                continue
+            current_secs = current["seconds"]
+            if status == "solved" and (
+                current["status"] != "solved"
+                or current_secs is None
+                or (secs is not None and secs < current_secs)
+            ):
+                series[filename] = candidate
+    return series
+
+
+def load_folseparators_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    if path.suffix == ".json":
+        return json.loads(path.read_text())
+    if path.suffixes[-2:] == [".tar", ".gz"] or path.suffix == ".tgz":
+        preferred = [
+            "data/original-submission/pldi-cvc4.json",
+            "data/pldi20-learning.json",
+        ]
+        with tarfile.open(path, "r:gz") as outer:
+            manifest = json.load(outer.extractfile("manifest.json"))
+            layers = manifest[0]["Layers"]
+            for target in preferred:
+                payload = None
+                for layer_name in layers:
+                    layer = tarfile.open(
+                        fileobj=outer.extractfile(layer_name), mode="r:"
+                    )
+                    try:
+                        member = layer.getmember(target)
+                    except KeyError:
+                        continue
+                    payload = layer.extractfile(member).read()
+                    break
+                if payload is not None:
+                    return json.loads(payload)
+        return []
+    return []
+
+
+def load_folseparators_series(path: Path) -> dict[str, dict[str, float | str | None]]:
+    rows = load_folseparators_rows(path)
+    if not rows:
+        return {}
+    series: dict[str, dict[str, float | str | None]] = {}
+    for row in rows:
+        filename = f"{row['base']}-{row['conjecture']}.sl"
+        if row.get("success") and isinstance(row.get("stats"), dict):
+            secs = float(row["stats"].get("total_time", 0.0))
+            candidate = {"status": "solved", "seconds": secs}
+        elif row.get("killed"):
+            candidate = {
+                "status": "solve_timeout",
+                "seconds": float(row.get("timeout", 0)),
+            }
+        else:
+            candidate = {"status": "error", "seconds": None}
+        current = series.get(filename)
+        if current is None:
+            series[filename] = candidate
+        elif candidate["status"] == "solved":
+            current_secs = current["seconds"]
+            cand_secs = candidate["seconds"]
+            if (
+                current["status"] != "solved"
+                or current_secs is None
+                or (cand_secs is not None and cand_secs < current_secs)
+            ):
+                series[filename] = candidate
+    return series
+
+
+def delis_series(
+    rows: list[dict[str, str]],
+) -> dict[str, dict[str, float | str | None]]:
+    series: dict[str, dict[str, float | str | None]] = {}
+    for row in rows:
+        leaf = benchmark_leaf(row)
+        secs = (
+            seconds(row)
+            if row["status"] in RESOLVED_STATUSES or row["status"] in TIMEOUT_STATUSES
+            else None
+        )
+        candidate = {"status": row["status"], "seconds": secs}
+        current = series.get(leaf)
+        if current is None:
+            series[leaf] = candidate
+        elif row["status"] == "solved":
+            current_secs = current["seconds"]
+            if (
+                current["status"] != "solved"
+                or current_secs is None
+                or secs < current_secs
+            ):
+                series[leaf] = candidate
+    return series
+
+
+def comparable_order(
+    series_map: dict[str, dict[str, dict[str, float | str | None]]],
+) -> list[str]:
+    ordered = []
+    for key in set().union(*[set(series.keys()) for series in series_map.values()]):
+        solved = [
+            float(entry["seconds"])
+            for entry in (series.get(key) for series in series_map.values())
+            if entry and entry["status"] == "solved" and entry["seconds"] is not None
+        ]
+        if solved:
+            ordered.append((key, min(solved)))
+    ordered.sort(key=lambda item: item[1])
+    return [key for key, _ in ordered]
+
+
+def plot_comparison_cactus(
+    title: str,
+    out_path: Path,
+    series_map: dict[str, dict[str, dict[str, float | str | None]]],
+    note: str = "",
+) -> None:
+    ordered_keys = comparable_order(series_map)
+    if not ordered_keys:
+        return
+
+    total_count = len(
+        set().union(*[set(series.keys()) for series in series_map.values()])
+    )
+    if total_count == 0:
+        return
+
+    fig, ax = plt.subplots(figsize=(9.4, 6.0), constrained_layout=True)
+    prep_axes(ax, title)
+
+    for name, series in series_map.items():
+        solved_times = sorted(
+            float(entry["seconds"])
+            for entry in series.values()
+            if entry["status"] == "solved" and entry["seconds"] is not None
+        )
+        if not solved_times:
+            continue
+        ax.plot(
+            percent_xs(len(solved_times), total_count),
+            solved_times,
+            linewidth=2.2,
+            color=COMPARE_COLORS.get(name, "#374151"),
+            label=f"{name} (resolved={len(solved_times)}/{total_count})",
+        )
+
+    if note:
+        ax.text(
+            0.01,
+            0.02,
+            note,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=8.5,
+            color="#4B5563",
+        )
+    ax.legend(frameon=False, loc="upper left")
+    fig.savefig(out_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
 
 
 def main() -> None:
@@ -374,6 +703,52 @@ def main() -> None:
             ["FO1-LFP", "FO2-LFP"],
             fo_lfp_levels,
             out_dir / "fo-lfp-folseparators-parallel.pdf",
+        )
+
+    learnctl_series = load_learnctl_series(Path(args.learnctl_csv))
+    delis_ctl_rows = by_group.get("ctl-learnctl-generated", [])
+    if delis_ctl_rows and learnctl_series:
+        plot_comparison_cactus(
+            f"{args.title}: CTL LearnCTL Comparison",
+            out_dir / "ctl-learnctl-generated-comparison.pdf",
+            {
+                "Delis": delis_series(delis_ctl_rows),
+                "LearnCTL": learnctl_series,
+            },
+            note="x-axis is percentage of the currently known union of benchmark cases; missing/incomplete runs are skipped until present.",
+        )
+
+    samples2ltl_series = load_samples2ltl_series(Path(args.samples2ltl_csv))
+    delis_samples2ltl_rows = by_group.get("ltl-sample2ltl", [])
+    if delis_samples2ltl_rows and samples2ltl_series:
+        plot_comparison_cactus(
+            f"{args.title}: LTL sample2LTL Comparison",
+            out_dir / "ltl-sample2ltl-comparison.pdf",
+            {
+                "Delis": delis_series(delis_samples2ltl_rows),
+                "sample2LTL": samples2ltl_series,
+            },
+            note="comparison uses the matched 5to10Traces decision-tree benchmark CSV; x-axis is percentage over the currently known union.",
+        )
+
+    folseparators_series = load_folseparators_series(Path(args.folseparators_json))
+    for group in [
+        "fo-folseparators-fo0",
+        "fo-folseparators-fo1",
+        "fo-folseparators-fo2",
+        "fo-folseparators-fo3",
+    ]:
+        group_rows = by_group.get(group, [])
+        if not group_rows or not folseparators_series:
+            continue
+        plot_comparison_cactus(
+            f"{args.title}: {group} vs folseparators",
+            out_dir / f"{suite_slug(group)}-comparison.pdf",
+            {
+                "Delis": delis_series(group_rows),
+                "Folseparators": folseparators_series,
+            },
+            note="x-axis is percentage of the currently known union of benchmark cases; folseparators filenames are matched by normalized benchmark stem.",
         )
 
     plot_status_breakdown(

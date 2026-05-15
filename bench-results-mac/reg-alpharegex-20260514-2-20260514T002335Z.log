@@ -1,0 +1,53 @@
+[2026-05-14T00:24:00Z] start name=reg-alpharegex-20260514 mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/Reg/alpharegex results=bench-results/reg-alpharegex-20260514-2.tsv rerun=false restart=true shard_index=0 shard_count=1 files=25
+[2026-05-14T00:24:46Z] running folder total=25 pending=25 results=bench-results/reg-alpharegex-20260514-2.tsv shard_index=0 shard_count=1
+[2026-05-14T00:24:48Z] running path=benchmark/Reg/alpharegex/no01.sl
+[2026-05-14T00:25:00Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no01.sl solved 77 0 77 0 0 66 0     bench-results/artifacts/reg-alpharegex-20260514/no01.sl 
+[2026-05-14T00:25:02Z] running path=benchmark/Reg/alpharegex/no02.sl
+[2026-05-14T00:25:13Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no02.sl solved 76 0 76 0 0 81 0     bench-results/artifacts/reg-alpharegex-20260514/no02.sl 
+[2026-05-14T00:25:15Z] running path=benchmark/Reg/alpharegex/no03.sl
+[2026-05-14T00:35:29Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no03.sl solve_timeout 602478 0 602478 0 0 0       delis timed out after 602.478s
+[2026-05-14T00:35:31Z] running path=benchmark/Reg/alpharegex/no04.sl
+[2026-05-14T00:35:44Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no04.sl solved 72 0 72 0 0 81 0     bench-results/artifacts/reg-alpharegex-20260514/no04.sl 
+[2026-05-14T00:35:46Z] running path=benchmark/Reg/alpharegex/no05.sl
+[2026-05-14T00:35:59Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no05.sl solved 239 0 239 0 0 104 0     bench-results/artifacts/reg-alpharegex-20260514/no05.sl 
+[2026-05-14T00:36:01Z] running path=benchmark/Reg/alpharegex/no06.sl
+[2026-05-14T00:36:14Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no06.sl solved 70 0 70 0 0 89 0     bench-results/artifacts/reg-alpharegex-20260514/no06.sl 
+[2026-05-14T00:36:16Z] running path=benchmark/Reg/alpharegex/no07.sl
+[2026-05-14T00:46:28Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no07.sl solve_timeout 600648 0 600648 0 0 0       delis timed out after 600.648s
+[2026-05-14T00:46:30Z] running path=benchmark/Reg/alpharegex/no08.sl
+[2026-05-14T00:46:46Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no08.sl solved 3462 0 3462 0 0 102 0     bench-results/artifacts/reg-alpharegex-20260514/no08.sl 
+[2026-05-14T00:46:48Z] running path=benchmark/Reg/alpharegex/no09.sl
+[2026-05-14T00:48:24Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no09.sl solved 83755 0 83755 0 0 142 0     bench-results/artifacts/reg-alpharegex-20260514/no09.sl 
+[2026-05-14T00:48:26Z] running path=benchmark/Reg/alpharegex/no10.sl
+[2026-05-14T00:48:40Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no10.sl solved 1908 0 1908 0 0 110 0     bench-results/artifacts/reg-alpharegex-20260514/no10.sl 
+[2026-05-14T00:48:42Z] running path=benchmark/Reg/alpharegex/no11.sl
+[2026-05-14T00:48:54Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no11.sl solved 128 0 128 0 0 71 0     bench-results/artifacts/reg-alpharegex-20260514/no11.sl 
+[2026-05-14T00:48:56Z] running path=benchmark/Reg/alpharegex/no12.sl
+[2026-05-14T00:49:12Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no12.sl solved 4846 0 4846 0 0 107 0     bench-results/artifacts/reg-alpharegex-20260514/no12.sl 
+[2026-05-14T00:49:14Z] running path=benchmark/Reg/alpharegex/no13.sl
+[2026-05-14T00:53:53Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no13.sl solved 266430 0 266430 0 0 129 0     bench-results/artifacts/reg-alpharegex-20260514/no13.sl 
+[2026-05-14T00:53:54Z] running path=benchmark/Reg/alpharegex/no14.sl
+[2026-05-14T00:54:07Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no14.sl solved 1327 0 1327 0 0 122 0     bench-results/artifacts/reg-alpharegex-20260514/no14.sl 
+[2026-05-14T00:54:09Z] running path=benchmark/Reg/alpharegex/no15.sl
+[2026-05-14T00:54:20Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no15.sl solved 75 0 75 0 0 89 0     bench-results/artifacts/reg-alpharegex-20260514/no15.sl 
+[2026-05-14T00:54:22Z] running path=benchmark/Reg/alpharegex/no16.sl
+[2026-05-14T00:54:37Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no16.sl solved 2870 0 2870 0 0 121 0     bench-results/artifacts/reg-alpharegex-20260514/no16.sl 
+[2026-05-14T00:54:39Z] running path=benchmark/Reg/alpharegex/no17.sl
+[2026-05-14T00:57:33Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no17.sl solved 161825 0 161825 0 0 131 0     bench-results/artifacts/reg-alpharegex-20260514/no17.sl 
+[2026-05-14T00:57:35Z] running path=benchmark/Reg/alpharegex/no18.sl
+[2026-05-14T00:57:50Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no18.sl solved 3260 0 3260 0 0 105 0     bench-results/artifacts/reg-alpharegex-20260514/no18.sl 
+[2026-05-14T00:57:52Z] running path=benchmark/Reg/alpharegex/no19.sl
+[2026-05-14T01:02:06Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no19.sl solved 242038 0 242038 0 0 146 0     bench-results/artifacts/reg-alpharegex-20260514/no19.sl 
+[2026-05-14T01:02:07Z] running path=benchmark/Reg/alpharegex/no20.sl
+[2026-05-14T01:02:19Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no20.sl solved 184 0 184 0 0 90 0     bench-results/artifacts/reg-alpharegex-20260514/no20.sl 
+[2026-05-14T01:02:21Z] running path=benchmark/Reg/alpharegex/no21.sl
+[2026-05-14T01:03:03Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no21.sl solved 29992 0 29992 0 0 126 0     bench-results/artifacts/reg-alpharegex-20260514/no21.sl 
+[2026-05-14T01:03:05Z] running path=benchmark/Reg/alpharegex/no22.sl
+[2026-05-14T01:03:18Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no22.sl solved 1432 0 1432 0 0 118 0     bench-results/artifacts/reg-alpharegex-20260514/no22.sl 
+[2026-05-14T01:03:20Z] running path=benchmark/Reg/alpharegex/no23.sl
+[2026-05-14T01:03:55Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no23.sl solved 23648 0 23648 0 0 122 0     bench-results/artifacts/reg-alpharegex-20260514/no23.sl 
+[2026-05-14T01:03:57Z] running path=benchmark/Reg/alpharegex/no24.sl
+[2026-05-14T01:06:55Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no24.sl solved 165499 0 165499 0 0 134 0     bench-results/artifacts/reg-alpharegex-20260514/no24.sl 
+[2026-05-14T01:06:56Z] running path=benchmark/Reg/alpharegex/no25.sl
+[2026-05-14T01:09:00Z] row reg-alpharegex-20260514 benchmark/Reg/alpharegex/no25.sl solved 112299 0 112299 0 0 117 0     bench-results/artifacts/reg-alpharegex-20260514/no25.sl 
+[2026-05-14T01:09:01Z] done completed_now=25 total=25

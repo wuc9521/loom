@@ -103,11 +103,7 @@ fn arg_name(idx: usize) -> String {
 }
 
 fn obligation_binding_name(cons_name: &str, bit_idx: usize) -> String {
-    format!(
-        "__sygus_{}_obligation_{}",
-        cons_name.replace('.', "_"),
-        bit_idx
-    )
+    format!("__sygus_{}_b{}", cons_name.replace('.', "_"), bit_idx)
 }
 
 fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {

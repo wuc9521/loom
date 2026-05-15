@@ -1,0 +1,57 @@
+[2026-05-11T19:23:35Z] start name=ltl-learnltl-sat-universality mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/learnltl/sat-comparison/universality results=bench-results/ltl-learnltl-sat-universality.tsv rerun=false restart=true shard_index=1 shard_count=2 files=27
+[2026-05-11T19:24:32Z] running folder total=27 pending=27 results=bench-results/ltl-learnltl-sat-universality.tsv shard_index=1 shard_count=2
+[2026-05-11T19:24:34Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0003.sl
+[2026-05-11T19:24:47Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0003.sl solved 84 0 84 0 0 43 0     bench-results/artifacts/ltl-learnltl-sat-universality/0003.sl 
+[2026-05-11T19:24:49Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0006.sl
+[2026-05-11T19:25:03Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0006.sl solved 132 0 132 0 0 43 0     bench-results/artifacts/ltl-learnltl-sat-universality/0006.sl 
+[2026-05-11T19:25:05Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0010.sl
+[2026-05-11T19:25:19Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0010.sl solved 321 0 321 0 0 43 0     bench-results/artifacts/ltl-learnltl-sat-universality/0010.sl 
+[2026-05-11T19:25:21Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0013.sl
+[2026-05-11T19:25:35Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0013.sl solved 495 0 495 0 0 43 0     bench-results/artifacts/ltl-learnltl-sat-universality/0013.sl 
+[2026-05-11T19:25:37Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0016.sl
+[2026-05-11T19:25:51Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0016.sl solved 548 0 548 0 0 43 0     bench-results/artifacts/ltl-learnltl-sat-universality/0016.sl 
+[2026-05-11T19:25:53Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0019.sl
+[2026-05-11T19:26:08Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0019.sl solved 1438 0 1438 0 0 43 0     bench-results/artifacts/ltl-learnltl-sat-universality/0019.sl 
+[2026-05-11T19:26:10Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0021.sl
+[2026-05-11T19:26:23Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0021.sl solved 48 0 48 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0021.sl 
+[2026-05-11T19:26:25Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0023.sl
+[2026-05-11T19:26:39Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0023.sl solved 200 0 200 0 0 51 0     bench-results/artifacts/ltl-learnltl-sat-universality/0023.sl 
+[2026-05-11T19:26:41Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0025.sl
+[2026-05-11T19:26:55Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0025.sl solved 140 0 140 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0025.sl 
+[2026-05-11T19:26:57Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0027.sl
+[2026-05-11T19:27:10Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0027.sl solved 208 0 208 0 0 74 0     bench-results/artifacts/ltl-learnltl-sat-universality/0027.sl 
+[2026-05-11T19:27:12Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0029.sl
+[2026-05-11T19:27:27Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0029.sl solved 716 0 716 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0029.sl 
+[2026-05-11T19:27:29Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0031.sl
+[2026-05-11T19:27:43Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0031.sl solved 590 0 590 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0031.sl 
+[2026-05-11T19:27:45Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0033.sl
+[2026-05-11T19:27:59Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0033.sl solved 480 0 480 0 0 74 0     bench-results/artifacts/ltl-learnltl-sat-universality/0033.sl 
+[2026-05-11T19:28:01Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0035.sl
+[2026-05-11T19:28:16Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0035.sl solved 2147 0 2147 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0035.sl 
+[2026-05-11T19:28:19Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0037.sl
+[2026-05-11T19:28:33Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0037.sl solved 1080 0 1080 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0037.sl 
+[2026-05-11T19:28:35Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0039.sl
+[2026-05-11T19:28:50Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0039.sl solved 1201 0 1201 0 0 74 0     bench-results/artifacts/ltl-learnltl-sat-universality/0039.sl 
+[2026-05-11T19:28:52Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0041.sl
+[2026-05-11T19:29:13Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0041.sl solved 8019 0 8019 0 0 50 0     bench-results/artifacts/ltl-learnltl-sat-universality/0041.sl 
+[2026-05-11T19:29:15Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0043.sl
+[2026-05-11T19:29:28Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0043.sl solved 89 0 89 0 0 62 0     bench-results/artifacts/ltl-learnltl-sat-universality/0043.sl 
+[2026-05-11T19:29:31Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0046.sl
+[2026-05-11T19:29:44Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0046.sl solved 210 0 210 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0046.sl 
+[2026-05-11T19:29:46Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0048.sl
+[2026-05-11T19:30:00Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0048.sl solved 188 0 188 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0048.sl 
+[2026-05-11T19:30:02Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0050.sl
+[2026-05-11T19:30:16Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0050.sl solved 524 0 524 0 0 59 0     bench-results/artifacts/ltl-learnltl-sat-universality/0050.sl 
+[2026-05-11T19:30:18Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0052.sl
+[2026-05-11T19:30:31Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0052.sl solved 428 0 428 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0052.sl 
+[2026-05-11T19:30:33Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0054.sl
+[2026-05-11T19:30:47Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0054.sl solved 383 0 383 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0054.sl 
+[2026-05-11T19:30:49Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0056.sl
+[2026-05-11T19:31:04Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0056.sl solved 1615 0 1615 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0056.sl 
+[2026-05-11T19:31:06Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0058.sl
+[2026-05-11T19:31:20Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0058.sl solved 951 0 951 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0058.sl 
+[2026-05-11T19:31:22Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0060.sl
+[2026-05-11T19:31:36Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0060.sl solved 1062 0 1062 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0060.sl 
+[2026-05-11T19:31:38Z] running path=benchmark/LTL/learnltl/sat-comparison/universality/0062.sl
+[2026-05-11T19:31:54Z] row ltl-learnltl-sat-universality benchmark/LTL/learnltl/sat-comparison/universality/0062.sl solved 4307 0 4307 0 0 67 0     bench-results/artifacts/ltl-learnltl-sat-universality/0062.sl 
+[2026-05-11T19:31:55Z] done completed_now=27 total=27
