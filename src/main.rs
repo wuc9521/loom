@@ -17,8 +17,15 @@ use std::{
 };
 use sygus_parser::{Sort, SyGuSCmd, SyGuSFile};
 
+fn render_sygus_bytes(cmds: &[SyGuSCmd]) -> Result<Vec<u8>, io::Error> {
+    let mut bytes = Vec::new();
+    sygus_parser::writer::write_cmds(&mut bytes, cmds)?;
+    writeln!(&mut bytes)?;
+    Ok(bytes)
+}
+
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
-    if args.dump_chc || args.dump_sygus {
+    if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
             let program = compile::to_chc_ast(delis_file).map_err(io::Error::other)?;
             println!(
@@ -30,17 +37,25 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
                     .join("\n")
             );
         }
-        if args.dump_sygus {
+        if args.dump_sygus || args.dump_sygus_stats {
             let compile_start = Instant::now();
             let cmds = compile::to_sygus(delis_file, args.optimize).map_err(io::Error::other)?;
             log::info!("to_sygus completed in {:?}", compile_start.elapsed());
-            let write_start = Instant::now();
-            let stdout = io::stdout();
-            let mut stdout = BufWriter::new(stdout.lock());
-            sygus_parser::writer::write_cmds(&mut stdout, &cmds)?;
-            writeln!(stdout)?;
-            stdout.flush()?;
-            log::info!("write SyGuS completed in {:?}", write_start.elapsed());
+            let render_start = Instant::now();
+            let sygus_bytes = render_sygus_bytes(&cmds)?;
+            log::info!("render SyGuS completed in {:?}", render_start.elapsed());
+            if args.dump_sygus {
+                let stdout = io::stdout();
+                let mut stdout = BufWriter::new(stdout.lock());
+                stdout.write_all(&sygus_bytes)?;
+                stdout.flush()?;
+            }
+            if args.dump_sygus_stats {
+                let total_ms = compile_start.elapsed().as_millis();
+                let bytes = sygus_bytes.len();
+                let lines = sygus_bytes.iter().filter(|byte| **byte == b'\n').count();
+                println!("SYGUS_STATS\t{}\t{}\t{}", total_ms, bytes, lines);
+            }
         }
         return Ok(());
     }
@@ -697,6 +712,11 @@ pub struct CLI {
     /// Translate to SyGuS BV and print to stdout
     #[arg(short, long = "dump-sygus", default_value_t = false)]
     dump_sygus: bool,
+
+    /// Translate to SyGuS BV, but print only machine-readable stats:
+    /// `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines`
+    #[arg(long = "sygus-stats", default_value_t = false)]
+    dump_sygus_stats: bool,
 
     /// Translate to CHC (HORN) and print to stdout
     #[arg(long = "dump-chc", default_value_t = false)]
