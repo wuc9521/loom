@@ -58,23 +58,25 @@ PY
 
 run_command() {
   local timeout_secs=$1
+  local cwd=$2
+  shift
   shift
   local meta_file stdout_file stderr_file
   meta_file=$(mktemp "${TMPDIR:-/tmp}/bench-syslite-meta.XXXXXX")
   stdout_file=$(mktemp "${TMPDIR:-/tmp}/bench-syslite-stdout.XXXXXX")
   stderr_file=$(mktemp "${TMPDIR:-/tmp}/bench-syslite-stderr.XXXXXX")
-  python3 - "$timeout_secs" "$stdout_file" "$stderr_file" "$meta_file" "$@" <<'PY'
+  python3 - "$timeout_secs" "$cwd" "$stdout_file" "$stderr_file" "$meta_file" "$@" <<'PY'
 import subprocess, sys, time
 timeout_secs = float(sys.argv[1])
-stdout_path, stderr_path, meta_path = sys.argv[2:5]
-cmd = sys.argv[5:]
+cwd, stdout_path, stderr_path, meta_path = sys.argv[2:6]
+cmd = sys.argv[6:]
 stdout = open(stdout_path, 'wb')
 stderr = open(stderr_path, 'wb')
 start = time.monotonic()
 timed_out = 0
 returncode = None
 try:
-    proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr)
+    proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, cwd=cwd)
     try:
         returncode = proc.wait(timeout=timeout_secs)
     except subprocess.TimeoutExpired:
@@ -269,7 +271,7 @@ PY
   outputs=()
   while IFS= read -r line; do
     outputs+=("$line")
-  done < <(run_command "$TIMEOUT_SECS" "${cmd[@]}")
+  done < <(run_command "$TIMEOUT_SECS" "$REPO" "${cmd[@]}")
   meta_file=${outputs[0]}
   stdout_file=${outputs[1]}
   stderr_file=${outputs[2]}
@@ -298,7 +300,7 @@ PY
       status="empty"
     fi
   fi
-  row=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+  row=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
     "$(sanitize_field "$NAME")" \
     "$(sanitize_field "$relative")" \
     "$status" \
