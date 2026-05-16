@@ -1,0 +1,50 @@
+[2026-05-15T12:46:05Z] start name=reg-alpharegex-cvc5 solver=cvc5 root=/root/delis/benchmark/Reg/alpharegex/sygus results=bench-results/reg-alpharegex-cvc5.tsv rerun=true restart=false shard_index=0 shard_count=1 files=25
+[2026-05-15T12:46:06Z] resume last_in_progress=benchmark/Reg/alpharegex/sygus/GCPE_03.sl
+[2026-05-15T12:46:06Z] running folder total=25 pending=23 results=bench-results/reg-alpharegex-cvc5.tsv shard_index=0 shard_count=1
+[2026-05-15T12:46:06Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_03.sl
+[2026-05-15T12:56:07Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_03.sl status=solve_timeout completed=1
+[2026-05-15T12:56:07Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_04.sl
+[2026-05-15T12:56:07Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_04.sl status=solved completed=2
+[2026-05-15T12:56:07Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_05.sl
+[2026-05-15T12:56:08Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_05.sl status=solved completed=3
+[2026-05-15T12:56:08Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_06.sl
+[2026-05-15T12:56:08Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_06.sl status=solved completed=4
+[2026-05-15T12:56:08Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_07.sl
+[2026-05-15T13:06:09Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_07.sl status=solve_timeout completed=5
+[2026-05-15T13:06:09Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_08.sl
+[2026-05-15T13:06:10Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_08.sl status=solved completed=6
+[2026-05-15T13:06:10Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_09.sl
+[2026-05-15T13:16:10Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_09.sl status=solve_timeout completed=7
+[2026-05-15T13:16:10Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_10.sl
+[2026-05-15T13:18:18Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_10.sl status=solved completed=8
+[2026-05-15T13:18:18Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_11.sl
+[2026-05-15T13:18:18Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_11.sl status=solved completed=9
+[2026-05-15T13:18:18Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_12.sl
+[2026-05-15T13:18:18Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_12.sl status=solved completed=10
+[2026-05-15T13:18:18Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_13.sl
+[2026-05-15T13:28:19Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_13.sl status=solve_timeout completed=11
+[2026-05-15T13:28:19Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_14.sl
+[2026-05-15T13:28:40Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_14.sl status=solved completed=12
+[2026-05-15T13:28:40Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_15.sl
+[2026-05-15T13:28:40Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_15.sl status=solved completed=13
+[2026-05-15T13:28:40Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_16.sl
+[2026-05-15T13:28:47Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_16.sl status=solved completed=14
+[2026-05-15T13:28:47Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_17.sl
+[2026-05-15T13:38:48Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_17.sl status=solve_timeout completed=15
+[2026-05-15T13:38:48Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_18.sl
+[2026-05-15T13:38:53Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_18.sl status=solved completed=16
+[2026-05-15T13:38:53Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_19.sl
+[2026-05-15T13:48:53Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_19.sl status=solve_timeout completed=17
+[2026-05-15T13:48:54Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_20.sl
+[2026-05-15T13:48:57Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_20.sl status=solved completed=18
+[2026-05-15T13:48:57Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_21.sl
+[2026-05-15T13:48:59Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_21.sl status=solved completed=19
+[2026-05-15T13:48:59Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_22.sl
+[2026-05-15T13:49:10Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_22.sl status=solved completed=20
+[2026-05-15T13:49:10Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_23.sl
+[2026-05-15T13:49:25Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_23.sl status=solved completed=21
+[2026-05-15T13:49:25Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_24.sl
+[2026-05-15T13:59:26Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_24.sl status=solve_timeout completed=22
+[2026-05-15T13:59:26Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_25.sl
+[2026-05-15T13:59:29Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_25.sl status=solved completed=23
+[2026-05-15T13:59:29Z] done completed=23

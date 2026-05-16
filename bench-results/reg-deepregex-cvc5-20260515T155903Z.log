@@ -1,0 +1,386 @@
+[2026-05-15T15:59:03Z] start name=reg-deepregex-cvc5 solver=cvc5 root=/root/delis/benchmark/Reg/deepregex/sygus results=bench-results/reg-deepregex-cvc5.tsv rerun=false restart=false shard_index=0 shard_count=1 files=200
+[2026-05-15T15:59:05Z] resume last_in_progress=benchmark/Reg/deepregex/sygus/109.sl
+[2026-05-15T15:59:09Z] running folder total=200 pending=191 results=bench-results/reg-deepregex-cvc5.tsv shard_index=0 shard_count=1
+[2026-05-15T15:59:10Z] running path=benchmark/Reg/deepregex/sygus/109.sl
+[2026-05-15T16:09:10Z] done path=benchmark/Reg/deepregex/sygus/109.sl status=solve_timeout completed=1
+[2026-05-15T16:09:10Z] running path=benchmark/Reg/deepregex/sygus/10.sl
+[2026-05-15T16:09:11Z] done path=benchmark/Reg/deepregex/sygus/10.sl status=solved completed=2
+[2026-05-15T16:09:11Z] running path=benchmark/Reg/deepregex/sygus/110.sl
+[2026-05-15T16:19:11Z] done path=benchmark/Reg/deepregex/sygus/110.sl status=solve_timeout completed=3
+[2026-05-15T16:19:12Z] running path=benchmark/Reg/deepregex/sygus/112.sl
+[2026-05-15T16:29:12Z] done path=benchmark/Reg/deepregex/sygus/112.sl status=solve_timeout completed=4
+[2026-05-15T16:29:12Z] running path=benchmark/Reg/deepregex/sygus/113.sl
+[2026-05-15T16:29:13Z] done path=benchmark/Reg/deepregex/sygus/113.sl status=solved completed=5
+[2026-05-15T16:29:13Z] running path=benchmark/Reg/deepregex/sygus/114.sl
+[2026-05-15T16:29:13Z] done path=benchmark/Reg/deepregex/sygus/114.sl status=solved completed=6
+[2026-05-15T16:29:13Z] running path=benchmark/Reg/deepregex/sygus/115.sl
+[2026-05-15T16:29:13Z] done path=benchmark/Reg/deepregex/sygus/115.sl status=solved completed=7
+[2026-05-15T16:29:13Z] running path=benchmark/Reg/deepregex/sygus/116.sl
+[2026-05-15T16:29:13Z] done path=benchmark/Reg/deepregex/sygus/116.sl status=solved completed=8
+[2026-05-15T16:29:13Z] running path=benchmark/Reg/deepregex/sygus/117.sl
+[2026-05-15T16:29:14Z] done path=benchmark/Reg/deepregex/sygus/117.sl status=solved completed=9
+[2026-05-15T16:29:14Z] running path=benchmark/Reg/deepregex/sygus/118.sl
+[2026-05-15T16:39:14Z] done path=benchmark/Reg/deepregex/sygus/118.sl status=solve_timeout completed=10
+[2026-05-15T16:39:15Z] running path=benchmark/Reg/deepregex/sygus/119.sl
+[2026-05-15T16:39:15Z] done path=benchmark/Reg/deepregex/sygus/119.sl status=solved completed=11
+[2026-05-15T16:39:15Z] running path=benchmark/Reg/deepregex/sygus/11.sl
+[2026-05-15T16:49:16Z] done path=benchmark/Reg/deepregex/sygus/11.sl status=solve_timeout completed=12
+[2026-05-15T16:49:16Z] running path=benchmark/Reg/deepregex/sygus/120.sl
+[2026-05-15T16:50:30Z] done path=benchmark/Reg/deepregex/sygus/120.sl status=solved completed=13
+[2026-05-15T16:50:30Z] running path=benchmark/Reg/deepregex/sygus/121.sl
+[2026-05-15T16:50:30Z] done path=benchmark/Reg/deepregex/sygus/121.sl status=solved completed=14
+[2026-05-15T16:50:30Z] running path=benchmark/Reg/deepregex/sygus/122.sl
+[2026-05-15T16:51:17Z] done path=benchmark/Reg/deepregex/sygus/122.sl status=solved completed=15
+[2026-05-15T16:51:17Z] running path=benchmark/Reg/deepregex/sygus/123.sl
+[2026-05-15T16:51:17Z] done path=benchmark/Reg/deepregex/sygus/123.sl status=solved completed=16
+[2026-05-15T16:51:17Z] running path=benchmark/Reg/deepregex/sygus/125.sl
+[2026-05-15T16:51:17Z] done path=benchmark/Reg/deepregex/sygus/125.sl status=solved completed=17
+[2026-05-15T16:51:17Z] running path=benchmark/Reg/deepregex/sygus/126.sl
+[2026-05-15T17:01:18Z] done path=benchmark/Reg/deepregex/sygus/126.sl status=solve_timeout completed=18
+[2026-05-15T17:01:18Z] running path=benchmark/Reg/deepregex/sygus/127.sl
+[2026-05-15T17:11:19Z] done path=benchmark/Reg/deepregex/sygus/127.sl status=solve_timeout completed=19
+[2026-05-15T17:11:19Z] running path=benchmark/Reg/deepregex/sygus/128.sl
+[2026-05-15T17:21:20Z] done path=benchmark/Reg/deepregex/sygus/128.sl status=solve_timeout completed=20
+[2026-05-15T17:21:20Z] running path=benchmark/Reg/deepregex/sygus/129.sl
+[2026-05-15T17:22:36Z] done path=benchmark/Reg/deepregex/sygus/129.sl status=solved completed=21
+[2026-05-15T17:22:36Z] running path=benchmark/Reg/deepregex/sygus/12.sl
+[2026-05-15T17:23:06Z] done path=benchmark/Reg/deepregex/sygus/12.sl status=solved completed=22
+[2026-05-15T17:23:06Z] running path=benchmark/Reg/deepregex/sygus/130.sl
+[2026-05-15T17:23:06Z] done path=benchmark/Reg/deepregex/sygus/130.sl status=solved completed=23
+[2026-05-15T17:23:06Z] running path=benchmark/Reg/deepregex/sygus/131.sl
+[2026-05-15T17:23:06Z] done path=benchmark/Reg/deepregex/sygus/131.sl status=solved completed=24
+[2026-05-15T17:23:06Z] running path=benchmark/Reg/deepregex/sygus/132.sl
+[2026-05-15T17:23:06Z] done path=benchmark/Reg/deepregex/sygus/132.sl status=solved completed=25
+[2026-05-15T17:23:06Z] running path=benchmark/Reg/deepregex/sygus/133.sl
+[2026-05-15T17:33:07Z] done path=benchmark/Reg/deepregex/sygus/133.sl status=solve_timeout completed=26
+[2026-05-15T17:33:08Z] running path=benchmark/Reg/deepregex/sygus/134.sl
+[2026-05-15T17:33:08Z] done path=benchmark/Reg/deepregex/sygus/134.sl status=solved completed=27
+[2026-05-15T17:33:08Z] running path=benchmark/Reg/deepregex/sygus/135.sl
+[2026-05-15T17:33:08Z] done path=benchmark/Reg/deepregex/sygus/135.sl status=solved completed=28
+[2026-05-15T17:33:08Z] running path=benchmark/Reg/deepregex/sygus/136.sl
+[2026-05-15T17:43:09Z] done path=benchmark/Reg/deepregex/sygus/136.sl status=solve_timeout completed=29
+[2026-05-15T17:43:09Z] running path=benchmark/Reg/deepregex/sygus/137.sl
+[2026-05-15T17:43:09Z] done path=benchmark/Reg/deepregex/sygus/137.sl status=solved completed=30
+[2026-05-15T17:43:09Z] running path=benchmark/Reg/deepregex/sygus/138.sl
+[2026-05-15T17:53:10Z] done path=benchmark/Reg/deepregex/sygus/138.sl status=solve_timeout completed=31
+[2026-05-15T17:53:10Z] running path=benchmark/Reg/deepregex/sygus/139.sl
+[2026-05-15T17:53:11Z] done path=benchmark/Reg/deepregex/sygus/139.sl status=solved completed=32
+[2026-05-15T17:53:11Z] running path=benchmark/Reg/deepregex/sygus/13.sl
+[2026-05-15T17:53:11Z] done path=benchmark/Reg/deepregex/sygus/13.sl status=solved completed=33
+[2026-05-15T17:53:11Z] running path=benchmark/Reg/deepregex/sygus/140.sl
+[2026-05-15T18:03:12Z] done path=benchmark/Reg/deepregex/sygus/140.sl status=solve_timeout completed=34
+[2026-05-15T18:03:12Z] running path=benchmark/Reg/deepregex/sygus/141.sl
+[2026-05-15T18:03:12Z] done path=benchmark/Reg/deepregex/sygus/141.sl status=solved completed=35
+[2026-05-15T18:03:12Z] running path=benchmark/Reg/deepregex/sygus/142.sl
+[2026-05-15T18:13:13Z] done path=benchmark/Reg/deepregex/sygus/142.sl status=solve_timeout completed=36
+[2026-05-15T18:13:13Z] running path=benchmark/Reg/deepregex/sygus/143.sl
+[2026-05-15T18:23:14Z] done path=benchmark/Reg/deepregex/sygus/143.sl status=solve_timeout completed=37
+[2026-05-15T18:23:14Z] running path=benchmark/Reg/deepregex/sygus/144.sl
+[2026-05-15T18:23:15Z] done path=benchmark/Reg/deepregex/sygus/144.sl status=solved completed=38
+[2026-05-15T18:23:15Z] running path=benchmark/Reg/deepregex/sygus/145.sl
+[2026-05-15T18:33:16Z] done path=benchmark/Reg/deepregex/sygus/145.sl status=solve_timeout completed=39
+[2026-05-15T18:33:16Z] running path=benchmark/Reg/deepregex/sygus/146.sl
+[2026-05-15T18:33:16Z] done path=benchmark/Reg/deepregex/sygus/146.sl status=error completed=40
+[2026-05-15T18:33:16Z] running path=benchmark/Reg/deepregex/sygus/147.sl
+[2026-05-15T18:33:16Z] done path=benchmark/Reg/deepregex/sygus/147.sl status=solved completed=41
+[2026-05-15T18:33:16Z] running path=benchmark/Reg/deepregex/sygus/148.sl
+[2026-05-15T18:43:17Z] done path=benchmark/Reg/deepregex/sygus/148.sl status=solve_timeout completed=42
+[2026-05-15T18:43:17Z] running path=benchmark/Reg/deepregex/sygus/149.sl
+[2026-05-15T18:44:53Z] done path=benchmark/Reg/deepregex/sygus/149.sl status=solved completed=43
+[2026-05-15T18:44:54Z] running path=benchmark/Reg/deepregex/sygus/14.sl
+[2026-05-15T18:46:41Z] done path=benchmark/Reg/deepregex/sygus/14.sl status=solved completed=44
+[2026-05-15T18:46:41Z] running path=benchmark/Reg/deepregex/sygus/150.sl
+[2026-05-15T18:56:42Z] done path=benchmark/Reg/deepregex/sygus/150.sl status=solve_timeout completed=45
+[2026-05-15T18:56:42Z] running path=benchmark/Reg/deepregex/sygus/152.sl
+[2026-05-15T18:56:42Z] done path=benchmark/Reg/deepregex/sygus/152.sl status=solved completed=46
+[2026-05-15T18:56:42Z] running path=benchmark/Reg/deepregex/sygus/153.sl
+[2026-05-15T19:06:43Z] done path=benchmark/Reg/deepregex/sygus/153.sl status=solve_timeout completed=47
+[2026-05-15T19:06:43Z] running path=benchmark/Reg/deepregex/sygus/154.sl
+[2026-05-15T19:06:44Z] done path=benchmark/Reg/deepregex/sygus/154.sl status=solved completed=48
+[2026-05-15T19:06:44Z] running path=benchmark/Reg/deepregex/sygus/155.sl
+[2026-05-15T19:16:45Z] done path=benchmark/Reg/deepregex/sygus/155.sl status=solve_timeout completed=49
+[2026-05-15T19:16:45Z] running path=benchmark/Reg/deepregex/sygus/156.sl
+[2026-05-15T19:26:46Z] done path=benchmark/Reg/deepregex/sygus/156.sl status=solve_timeout completed=50
+[2026-05-15T19:26:46Z] running path=benchmark/Reg/deepregex/sygus/157.sl
+[2026-05-15T19:26:46Z] done path=benchmark/Reg/deepregex/sygus/157.sl status=solved completed=51
+[2026-05-15T19:26:46Z] running path=benchmark/Reg/deepregex/sygus/158.sl
+[2026-05-15T19:30:49Z] done path=benchmark/Reg/deepregex/sygus/158.sl status=solved completed=52
+[2026-05-15T19:30:49Z] running path=benchmark/Reg/deepregex/sygus/159.sl
+[2026-05-15T19:40:50Z] done path=benchmark/Reg/deepregex/sygus/159.sl status=solve_timeout completed=53
+[2026-05-15T19:40:50Z] running path=benchmark/Reg/deepregex/sygus/15.sl
+[2026-05-15T19:40:51Z] done path=benchmark/Reg/deepregex/sygus/15.sl status=solved completed=54
+[2026-05-15T19:40:52Z] running path=benchmark/Reg/deepregex/sygus/160.sl
+[2026-05-15T19:40:54Z] done path=benchmark/Reg/deepregex/sygus/160.sl status=solved completed=55
+[2026-05-15T19:40:54Z] running path=benchmark/Reg/deepregex/sygus/161.sl
+[2026-05-15T19:40:55Z] done path=benchmark/Reg/deepregex/sygus/161.sl status=solved completed=56
+[2026-05-15T19:40:55Z] running path=benchmark/Reg/deepregex/sygus/162.sl
+[2026-05-15T19:40:55Z] done path=benchmark/Reg/deepregex/sygus/162.sl status=solved completed=57
+[2026-05-15T19:40:55Z] running path=benchmark/Reg/deepregex/sygus/163.sl
+[2026-05-15T19:40:55Z] done path=benchmark/Reg/deepregex/sygus/163.sl status=solved completed=58
+[2026-05-15T19:40:55Z] running path=benchmark/Reg/deepregex/sygus/164.sl
+[2026-05-15T19:50:56Z] done path=benchmark/Reg/deepregex/sygus/164.sl status=solve_timeout completed=59
+[2026-05-15T19:50:56Z] running path=benchmark/Reg/deepregex/sygus/165.sl
+[2026-05-15T19:50:57Z] done path=benchmark/Reg/deepregex/sygus/165.sl status=solved completed=60
+[2026-05-15T19:50:57Z] running path=benchmark/Reg/deepregex/sygus/166.sl
+[2026-05-15T19:50:57Z] done path=benchmark/Reg/deepregex/sygus/166.sl status=solved completed=61
+[2026-05-15T19:50:57Z] running path=benchmark/Reg/deepregex/sygus/167.sl
+[2026-05-15T19:50:57Z] done path=benchmark/Reg/deepregex/sygus/167.sl status=solved completed=62
+[2026-05-15T19:50:57Z] running path=benchmark/Reg/deepregex/sygus/168.sl
+[2026-05-15T20:00:58Z] done path=benchmark/Reg/deepregex/sygus/168.sl status=solve_timeout completed=63
+[2026-05-15T20:00:58Z] running path=benchmark/Reg/deepregex/sygus/169.sl
+[2026-05-15T20:03:04Z] done path=benchmark/Reg/deepregex/sygus/169.sl status=solved completed=64
+[2026-05-15T20:03:05Z] running path=benchmark/Reg/deepregex/sygus/16.sl
+[2026-05-15T20:03:05Z] done path=benchmark/Reg/deepregex/sygus/16.sl status=solved completed=65
+[2026-05-15T20:03:05Z] running path=benchmark/Reg/deepregex/sygus/170.sl
+[2026-05-15T20:13:05Z] done path=benchmark/Reg/deepregex/sygus/170.sl status=solve_timeout completed=66
+[2026-05-15T20:13:05Z] running path=benchmark/Reg/deepregex/sygus/171.sl
+[2026-05-15T20:13:06Z] done path=benchmark/Reg/deepregex/sygus/171.sl status=solved completed=67
+[2026-05-15T20:13:06Z] running path=benchmark/Reg/deepregex/sygus/172.sl
+[2026-05-15T20:23:07Z] done path=benchmark/Reg/deepregex/sygus/172.sl status=solve_timeout completed=68
+[2026-05-15T20:23:07Z] running path=benchmark/Reg/deepregex/sygus/173.sl
+[2026-05-15T20:33:08Z] done path=benchmark/Reg/deepregex/sygus/173.sl status=solve_timeout completed=69
+[2026-05-15T20:33:08Z] running path=benchmark/Reg/deepregex/sygus/174.sl
+[2026-05-15T20:43:09Z] done path=benchmark/Reg/deepregex/sygus/174.sl status=solve_timeout completed=70
+[2026-05-15T20:43:09Z] running path=benchmark/Reg/deepregex/sygus/175.sl
+[2026-05-15T20:53:10Z] done path=benchmark/Reg/deepregex/sygus/175.sl status=solve_timeout completed=71
+[2026-05-15T20:53:10Z] running path=benchmark/Reg/deepregex/sygus/176.sl
+[2026-05-15T21:03:10Z] done path=benchmark/Reg/deepregex/sygus/176.sl status=solve_timeout completed=72
+[2026-05-15T21:03:10Z] running path=benchmark/Reg/deepregex/sygus/177.sl
+[2026-05-15T21:07:59Z] done path=benchmark/Reg/deepregex/sygus/177.sl status=solved completed=73
+[2026-05-15T21:07:59Z] running path=benchmark/Reg/deepregex/sygus/178.sl
+[2026-05-15T21:07:59Z] done path=benchmark/Reg/deepregex/sygus/178.sl status=solved completed=74
+[2026-05-15T21:07:59Z] running path=benchmark/Reg/deepregex/sygus/179.sl
+[2026-05-15T21:08:01Z] done path=benchmark/Reg/deepregex/sygus/179.sl status=solved completed=75
+[2026-05-15T21:08:01Z] running path=benchmark/Reg/deepregex/sygus/17.sl
+[2026-05-15T21:08:01Z] done path=benchmark/Reg/deepregex/sygus/17.sl status=solved completed=76
+[2026-05-15T21:08:01Z] running path=benchmark/Reg/deepregex/sygus/180.sl
+[2026-05-15T21:11:26Z] done path=benchmark/Reg/deepregex/sygus/180.sl status=solved completed=77
+[2026-05-15T21:11:26Z] running path=benchmark/Reg/deepregex/sygus/181.sl
+[2026-05-15T21:21:27Z] done path=benchmark/Reg/deepregex/sygus/181.sl status=solve_timeout completed=78
+[2026-05-15T21:21:27Z] running path=benchmark/Reg/deepregex/sygus/182.sl
+[2026-05-15T21:24:20Z] done path=benchmark/Reg/deepregex/sygus/182.sl status=solved completed=79
+[2026-05-15T21:24:20Z] running path=benchmark/Reg/deepregex/sygus/183.sl
+[2026-05-15T21:34:21Z] done path=benchmark/Reg/deepregex/sygus/183.sl status=solve_timeout completed=80
+[2026-05-15T21:34:21Z] running path=benchmark/Reg/deepregex/sygus/184.sl
+[2026-05-15T21:34:21Z] done path=benchmark/Reg/deepregex/sygus/184.sl status=solved completed=81
+[2026-05-15T21:34:21Z] running path=benchmark/Reg/deepregex/sygus/185.sl
+[2026-05-15T21:44:22Z] done path=benchmark/Reg/deepregex/sygus/185.sl status=solve_timeout completed=82
+[2026-05-15T21:44:22Z] running path=benchmark/Reg/deepregex/sygus/187.sl
+[2026-05-15T21:54:23Z] done path=benchmark/Reg/deepregex/sygus/187.sl status=solve_timeout completed=83
+[2026-05-15T21:54:23Z] running path=benchmark/Reg/deepregex/sygus/188.sl
+[2026-05-15T22:04:24Z] done path=benchmark/Reg/deepregex/sygus/188.sl status=solve_timeout completed=84
+[2026-05-15T22:04:24Z] running path=benchmark/Reg/deepregex/sygus/189.sl
+[2026-05-15T22:04:24Z] done path=benchmark/Reg/deepregex/sygus/189.sl status=solved completed=85
+[2026-05-15T22:04:24Z] running path=benchmark/Reg/deepregex/sygus/18.sl
+[2026-05-15T22:04:25Z] done path=benchmark/Reg/deepregex/sygus/18.sl status=solved completed=86
+[2026-05-15T22:04:25Z] running path=benchmark/Reg/deepregex/sygus/190.sl
+[2026-05-15T22:06:30Z] done path=benchmark/Reg/deepregex/sygus/190.sl status=solved completed=87
+[2026-05-15T22:06:30Z] running path=benchmark/Reg/deepregex/sygus/191.sl
+[2026-05-15T22:08:53Z] done path=benchmark/Reg/deepregex/sygus/191.sl status=solved completed=88
+[2026-05-15T22:08:53Z] running path=benchmark/Reg/deepregex/sygus/192.sl
+[2026-05-15T22:10:39Z] done path=benchmark/Reg/deepregex/sygus/192.sl status=solved completed=89
+[2026-05-15T22:10:39Z] running path=benchmark/Reg/deepregex/sygus/193.sl
+[2026-05-15T22:10:41Z] done path=benchmark/Reg/deepregex/sygus/193.sl status=solved completed=90
+[2026-05-15T22:10:41Z] running path=benchmark/Reg/deepregex/sygus/194.sl
+[2026-05-15T22:10:41Z] done path=benchmark/Reg/deepregex/sygus/194.sl status=solved completed=91
+[2026-05-15T22:10:41Z] running path=benchmark/Reg/deepregex/sygus/195.sl
+[2026-05-15T22:10:41Z] done path=benchmark/Reg/deepregex/sygus/195.sl status=solved completed=92
+[2026-05-15T22:10:41Z] running path=benchmark/Reg/deepregex/sygus/196.sl
+[2026-05-15T22:10:55Z] done path=benchmark/Reg/deepregex/sygus/196.sl status=solved completed=93
+[2026-05-15T22:10:55Z] running path=benchmark/Reg/deepregex/sygus/197.sl
+[2026-05-15T22:12:43Z] done path=benchmark/Reg/deepregex/sygus/197.sl status=solved completed=94
+[2026-05-15T22:12:43Z] running path=benchmark/Reg/deepregex/sygus/198.sl
+[2026-05-15T22:12:43Z] done path=benchmark/Reg/deepregex/sygus/198.sl status=solved completed=95
+[2026-05-15T22:12:43Z] running path=benchmark/Reg/deepregex/sygus/199.sl
+[2026-05-15T22:15:22Z] done path=benchmark/Reg/deepregex/sygus/199.sl status=solved completed=96
+[2026-05-15T22:15:22Z] running path=benchmark/Reg/deepregex/sygus/19.sl
+[2026-05-15T22:15:22Z] done path=benchmark/Reg/deepregex/sygus/19.sl status=solved completed=97
+[2026-05-15T22:15:22Z] running path=benchmark/Reg/deepregex/sygus/1.sl
+[2026-05-15T22:15:22Z] done path=benchmark/Reg/deepregex/sygus/1.sl status=solved completed=98
+[2026-05-15T22:15:22Z] running path=benchmark/Reg/deepregex/sygus/200.sl
+[2026-05-15T22:25:23Z] done path=benchmark/Reg/deepregex/sygus/200.sl status=solve_timeout completed=99
+[2026-05-15T22:25:23Z] running path=benchmark/Reg/deepregex/sygus/201.sl
+[2026-05-15T22:25:24Z] done path=benchmark/Reg/deepregex/sygus/201.sl status=solved completed=100
+[2026-05-15T22:25:24Z] running path=benchmark/Reg/deepregex/sygus/202.sl
+[2026-05-15T22:27:21Z] done path=benchmark/Reg/deepregex/sygus/202.sl status=solved completed=101
+[2026-05-15T22:27:21Z] running path=benchmark/Reg/deepregex/sygus/203.sl
+[2026-05-15T22:37:22Z] done path=benchmark/Reg/deepregex/sygus/203.sl status=solve_timeout completed=102
+[2026-05-15T22:37:22Z] running path=benchmark/Reg/deepregex/sygus/204.sl
+[2026-05-15T22:47:23Z] done path=benchmark/Reg/deepregex/sygus/204.sl status=solve_timeout completed=103
+[2026-05-15T22:47:23Z] running path=benchmark/Reg/deepregex/sygus/205.sl
+[2026-05-15T22:57:24Z] done path=benchmark/Reg/deepregex/sygus/205.sl status=solve_timeout completed=104
+[2026-05-15T22:57:24Z] running path=benchmark/Reg/deepregex/sygus/206.sl
+[2026-05-15T22:57:57Z] done path=benchmark/Reg/deepregex/sygus/206.sl status=solved completed=105
+[2026-05-15T22:57:57Z] running path=benchmark/Reg/deepregex/sygus/207.sl
+[2026-05-15T22:59:18Z] done path=benchmark/Reg/deepregex/sygus/207.sl status=solved completed=106
+[2026-05-15T22:59:18Z] running path=benchmark/Reg/deepregex/sygus/208.sl
+[2026-05-15T23:09:19Z] done path=benchmark/Reg/deepregex/sygus/208.sl status=solve_timeout completed=107
+[2026-05-15T23:09:19Z] running path=benchmark/Reg/deepregex/sygus/20.sl
+[2026-05-15T23:09:38Z] done path=benchmark/Reg/deepregex/sygus/20.sl status=solved completed=108
+[2026-05-15T23:09:39Z] running path=benchmark/Reg/deepregex/sygus/21.sl
+[2026-05-15T23:09:40Z] done path=benchmark/Reg/deepregex/sygus/21.sl status=solved completed=109
+[2026-05-15T23:09:40Z] running path=benchmark/Reg/deepregex/sygus/22.sl
+[2026-05-15T23:11:44Z] done path=benchmark/Reg/deepregex/sygus/22.sl status=solved completed=110
+[2026-05-15T23:11:44Z] running path=benchmark/Reg/deepregex/sygus/23.sl
+[2026-05-15T23:11:44Z] done path=benchmark/Reg/deepregex/sygus/23.sl status=solved completed=111
+[2026-05-15T23:11:44Z] running path=benchmark/Reg/deepregex/sygus/24.sl
+[2026-05-15T23:11:45Z] done path=benchmark/Reg/deepregex/sygus/24.sl status=solved completed=112
+[2026-05-15T23:11:45Z] running path=benchmark/Reg/deepregex/sygus/25.sl
+[2026-05-15T23:11:45Z] done path=benchmark/Reg/deepregex/sygus/25.sl status=solved completed=113
+[2026-05-15T23:11:45Z] running path=benchmark/Reg/deepregex/sygus/26.sl
+[2026-05-15T23:11:45Z] done path=benchmark/Reg/deepregex/sygus/26.sl status=solved completed=114
+[2026-05-15T23:11:45Z] running path=benchmark/Reg/deepregex/sygus/27.sl
+[2026-05-15T23:12:01Z] done path=benchmark/Reg/deepregex/sygus/27.sl status=solved completed=115
+[2026-05-15T23:12:01Z] running path=benchmark/Reg/deepregex/sygus/28.sl
+[2026-05-15T23:12:01Z] done path=benchmark/Reg/deepregex/sygus/28.sl status=solved completed=116
+[2026-05-15T23:12:01Z] running path=benchmark/Reg/deepregex/sygus/29.sl
+[2026-05-15T23:12:02Z] done path=benchmark/Reg/deepregex/sygus/29.sl status=solved completed=117
+[2026-05-15T23:12:02Z] running path=benchmark/Reg/deepregex/sygus/2.sl
+[2026-05-15T23:14:35Z] done path=benchmark/Reg/deepregex/sygus/2.sl status=solved completed=118
+[2026-05-15T23:14:35Z] running path=benchmark/Reg/deepregex/sygus/30.sl
+[2026-05-15T23:14:35Z] done path=benchmark/Reg/deepregex/sygus/30.sl status=solved completed=119
+[2026-05-15T23:14:35Z] running path=benchmark/Reg/deepregex/sygus/31.sl
+[2026-05-15T23:15:50Z] done path=benchmark/Reg/deepregex/sygus/31.sl status=solved completed=120
+[2026-05-15T23:15:50Z] running path=benchmark/Reg/deepregex/sygus/32.sl
+[2026-05-15T23:15:52Z] done path=benchmark/Reg/deepregex/sygus/32.sl status=solved completed=121
+[2026-05-15T23:15:52Z] running path=benchmark/Reg/deepregex/sygus/33.sl
+[2026-05-15T23:15:52Z] done path=benchmark/Reg/deepregex/sygus/33.sl status=solved completed=122
+[2026-05-15T23:15:52Z] running path=benchmark/Reg/deepregex/sygus/34.sl
+[2026-05-15T23:16:09Z] done path=benchmark/Reg/deepregex/sygus/34.sl status=solved completed=123
+[2026-05-15T23:16:09Z] running path=benchmark/Reg/deepregex/sygus/35.sl
+[2026-05-15T23:16:09Z] done path=benchmark/Reg/deepregex/sygus/35.sl status=solved completed=124
+[2026-05-15T23:16:10Z] running path=benchmark/Reg/deepregex/sygus/36.sl
+[2026-05-15T23:16:10Z] done path=benchmark/Reg/deepregex/sygus/36.sl status=solved completed=125
+[2026-05-15T23:16:10Z] running path=benchmark/Reg/deepregex/sygus/37.sl
+[2026-05-15T23:17:51Z] done path=benchmark/Reg/deepregex/sygus/37.sl status=solved completed=126
+[2026-05-15T23:17:51Z] running path=benchmark/Reg/deepregex/sygus/38.sl
+[2026-05-15T23:17:51Z] done path=benchmark/Reg/deepregex/sygus/38.sl status=solved completed=127
+[2026-05-15T23:17:51Z] running path=benchmark/Reg/deepregex/sygus/39.sl
+[2026-05-15T23:19:16Z] done path=benchmark/Reg/deepregex/sygus/39.sl status=solved completed=128
+[2026-05-15T23:19:16Z] running path=benchmark/Reg/deepregex/sygus/3.sl
+[2026-05-15T23:19:16Z] done path=benchmark/Reg/deepregex/sygus/3.sl status=solved completed=129
+[2026-05-15T23:19:16Z] running path=benchmark/Reg/deepregex/sygus/40.sl
+[2026-05-15T23:29:17Z] done path=benchmark/Reg/deepregex/sygus/40.sl status=solve_timeout completed=130
+[2026-05-15T23:29:17Z] running path=benchmark/Reg/deepregex/sygus/41.sl
+[2026-05-15T23:29:17Z] done path=benchmark/Reg/deepregex/sygus/41.sl status=solved completed=131
+[2026-05-15T23:29:17Z] running path=benchmark/Reg/deepregex/sygus/42.sl
+[2026-05-15T23:29:18Z] done path=benchmark/Reg/deepregex/sygus/42.sl status=solved completed=132
+[2026-05-15T23:29:18Z] running path=benchmark/Reg/deepregex/sygus/43.sl
+[2026-05-15T23:29:18Z] done path=benchmark/Reg/deepregex/sygus/43.sl status=solved completed=133
+[2026-05-15T23:29:18Z] running path=benchmark/Reg/deepregex/sygus/44.sl
+[2026-05-15T23:39:19Z] done path=benchmark/Reg/deepregex/sygus/44.sl status=solve_timeout completed=134
+[2026-05-15T23:39:19Z] running path=benchmark/Reg/deepregex/sygus/45.sl
+[2026-05-15T23:49:20Z] done path=benchmark/Reg/deepregex/sygus/45.sl status=solve_timeout completed=135
+[2026-05-15T23:49:20Z] running path=benchmark/Reg/deepregex/sygus/46.sl
+[2026-05-15T23:52:39Z] done path=benchmark/Reg/deepregex/sygus/46.sl status=solved completed=136
+[2026-05-15T23:52:39Z] running path=benchmark/Reg/deepregex/sygus/47.sl
+[2026-05-15T23:52:40Z] done path=benchmark/Reg/deepregex/sygus/47.sl status=solved completed=137
+[2026-05-15T23:52:40Z] running path=benchmark/Reg/deepregex/sygus/48.sl
+[2026-05-16T00:02:41Z] done path=benchmark/Reg/deepregex/sygus/48.sl status=solve_timeout completed=138
+[2026-05-16T00:02:41Z] running path=benchmark/Reg/deepregex/sygus/49.sl
+[2026-05-16T00:12:42Z] done path=benchmark/Reg/deepregex/sygus/49.sl status=solve_timeout completed=139
+[2026-05-16T00:12:42Z] running path=benchmark/Reg/deepregex/sygus/4.sl
+[2026-05-16T00:12:42Z] done path=benchmark/Reg/deepregex/sygus/4.sl status=solved completed=140
+[2026-05-16T00:12:42Z] running path=benchmark/Reg/deepregex/sygus/50.sl
+[2026-05-16T00:22:43Z] done path=benchmark/Reg/deepregex/sygus/50.sl status=solve_timeout completed=141
+[2026-05-16T00:22:43Z] running path=benchmark/Reg/deepregex/sygus/51.sl
+[2026-05-16T00:30:35Z] done path=benchmark/Reg/deepregex/sygus/51.sl status=solved completed=142
+[2026-05-16T00:30:35Z] running path=benchmark/Reg/deepregex/sygus/52.sl
+[2026-05-16T00:40:35Z] done path=benchmark/Reg/deepregex/sygus/52.sl status=solve_timeout completed=143
+[2026-05-16T00:40:35Z] running path=benchmark/Reg/deepregex/sygus/53.sl
+[2026-05-16T00:50:36Z] done path=benchmark/Reg/deepregex/sygus/53.sl status=solve_timeout completed=144
+[2026-05-16T00:50:36Z] running path=benchmark/Reg/deepregex/sygus/54.sl
+[2026-05-16T00:50:37Z] done path=benchmark/Reg/deepregex/sygus/54.sl status=solved completed=145
+[2026-05-16T00:50:37Z] running path=benchmark/Reg/deepregex/sygus/55.sl
+[2026-05-16T00:54:45Z] done path=benchmark/Reg/deepregex/sygus/55.sl status=solved completed=146
+[2026-05-16T00:54:45Z] running path=benchmark/Reg/deepregex/sygus/56.sl
+[2026-05-16T01:04:46Z] done path=benchmark/Reg/deepregex/sygus/56.sl status=solve_timeout completed=147
+[2026-05-16T01:04:46Z] running path=benchmark/Reg/deepregex/sygus/57.sl
+[2026-05-16T01:14:47Z] done path=benchmark/Reg/deepregex/sygus/57.sl status=solve_timeout completed=148
+[2026-05-16T01:14:47Z] running path=benchmark/Reg/deepregex/sygus/58.sl
+[2026-05-16T01:14:47Z] done path=benchmark/Reg/deepregex/sygus/58.sl status=solved completed=149
+[2026-05-16T01:14:47Z] running path=benchmark/Reg/deepregex/sygus/59.sl
+[2026-05-16T01:15:11Z] done path=benchmark/Reg/deepregex/sygus/59.sl status=solved completed=150
+[2026-05-16T01:15:11Z] running path=benchmark/Reg/deepregex/sygus/5.sl
+[2026-05-16T01:15:12Z] done path=benchmark/Reg/deepregex/sygus/5.sl status=solved completed=151
+[2026-05-16T01:15:12Z] running path=benchmark/Reg/deepregex/sygus/60.sl
+[2026-05-16T01:15:13Z] done path=benchmark/Reg/deepregex/sygus/60.sl status=solved completed=152
+[2026-05-16T01:15:13Z] running path=benchmark/Reg/deepregex/sygus/61.sl
+[2026-05-16T01:15:57Z] done path=benchmark/Reg/deepregex/sygus/61.sl status=solved completed=153
+[2026-05-16T01:15:57Z] running path=benchmark/Reg/deepregex/sygus/62.sl
+[2026-05-16T01:15:58Z] done path=benchmark/Reg/deepregex/sygus/62.sl status=solved completed=154
+[2026-05-16T01:15:58Z] running path=benchmark/Reg/deepregex/sygus/63.sl
+[2026-05-16T01:25:59Z] done path=benchmark/Reg/deepregex/sygus/63.sl status=solve_timeout completed=155
+[2026-05-16T01:25:59Z] running path=benchmark/Reg/deepregex/sygus/64.sl
+[2026-05-16T01:35:59Z] done path=benchmark/Reg/deepregex/sygus/64.sl status=solve_timeout completed=156
+[2026-05-16T01:35:59Z] running path=benchmark/Reg/deepregex/sygus/65.sl
+[2026-05-16T01:46:00Z] done path=benchmark/Reg/deepregex/sygus/65.sl status=solve_timeout completed=157
+[2026-05-16T01:46:00Z] running path=benchmark/Reg/deepregex/sygus/66.sl
+[2026-05-16T01:46:01Z] done path=benchmark/Reg/deepregex/sygus/66.sl status=solved completed=158
+[2026-05-16T01:46:01Z] running path=benchmark/Reg/deepregex/sygus/67.sl
+[2026-05-16T01:56:02Z] done path=benchmark/Reg/deepregex/sygus/67.sl status=solve_timeout completed=159
+[2026-05-16T01:56:02Z] running path=benchmark/Reg/deepregex/sygus/68.sl
+[2026-05-16T02:06:03Z] done path=benchmark/Reg/deepregex/sygus/68.sl status=solve_timeout completed=160
+[2026-05-16T02:06:03Z] running path=benchmark/Reg/deepregex/sygus/69.sl
+[2026-05-16T02:06:03Z] done path=benchmark/Reg/deepregex/sygus/69.sl status=solved completed=161
+[2026-05-16T02:06:03Z] running path=benchmark/Reg/deepregex/sygus/6.sl
+[2026-05-16T02:06:03Z] done path=benchmark/Reg/deepregex/sygus/6.sl status=solved completed=162
+[2026-05-16T02:06:03Z] running path=benchmark/Reg/deepregex/sygus/70.sl
+[2026-05-16T02:16:04Z] done path=benchmark/Reg/deepregex/sygus/70.sl status=solve_timeout completed=163
+[2026-05-16T02:16:04Z] running path=benchmark/Reg/deepregex/sygus/72.sl
+[2026-05-16T02:26:05Z] done path=benchmark/Reg/deepregex/sygus/72.sl status=solve_timeout completed=164
+[2026-05-16T02:26:05Z] running path=benchmark/Reg/deepregex/sygus/73.sl
+[2026-05-16T02:36:06Z] done path=benchmark/Reg/deepregex/sygus/73.sl status=solve_timeout completed=165
+[2026-05-16T02:36:06Z] running path=benchmark/Reg/deepregex/sygus/74.sl
+[2026-05-16T02:36:06Z] done path=benchmark/Reg/deepregex/sygus/74.sl status=solved completed=166
+[2026-05-16T02:36:06Z] running path=benchmark/Reg/deepregex/sygus/75.sl
+[2026-05-16T02:36:06Z] done path=benchmark/Reg/deepregex/sygus/75.sl status=solved completed=167
+[2026-05-16T02:36:06Z] running path=benchmark/Reg/deepregex/sygus/76.sl
+[2026-05-16T02:36:10Z] done path=benchmark/Reg/deepregex/sygus/76.sl status=solved completed=168
+[2026-05-16T02:36:10Z] running path=benchmark/Reg/deepregex/sygus/77.sl
+[2026-05-16T02:36:36Z] done path=benchmark/Reg/deepregex/sygus/77.sl status=solved completed=169
+[2026-05-16T02:36:36Z] running path=benchmark/Reg/deepregex/sygus/78.sl
+[2026-05-16T02:36:55Z] done path=benchmark/Reg/deepregex/sygus/78.sl status=solved completed=170
+[2026-05-16T02:36:55Z] running path=benchmark/Reg/deepregex/sygus/79.sl
+[2026-05-16T02:36:56Z] done path=benchmark/Reg/deepregex/sygus/79.sl status=solved completed=171
+[2026-05-16T02:36:56Z] running path=benchmark/Reg/deepregex/sygus/7.sl
+[2026-05-16T02:37:28Z] done path=benchmark/Reg/deepregex/sygus/7.sl status=solved completed=172
+[2026-05-16T02:37:28Z] running path=benchmark/Reg/deepregex/sygus/80.sl
+[2026-05-16T02:37:28Z] done path=benchmark/Reg/deepregex/sygus/80.sl status=solved completed=173
+[2026-05-16T02:37:28Z] running path=benchmark/Reg/deepregex/sygus/81.sl
+[2026-05-16T02:37:28Z] done path=benchmark/Reg/deepregex/sygus/81.sl status=solved completed=174
+[2026-05-16T02:37:29Z] running path=benchmark/Reg/deepregex/sygus/82.sl
+[2026-05-16T02:37:29Z] done path=benchmark/Reg/deepregex/sygus/82.sl status=solved completed=175
+[2026-05-16T02:37:29Z] running path=benchmark/Reg/deepregex/sygus/83.sl
+[2026-05-16T02:47:30Z] done path=benchmark/Reg/deepregex/sygus/83.sl status=solve_timeout completed=176
+[2026-05-16T02:47:30Z] running path=benchmark/Reg/deepregex/sygus/84.sl
+[2026-05-16T02:57:30Z] done path=benchmark/Reg/deepregex/sygus/84.sl status=solve_timeout completed=177
+[2026-05-16T02:57:31Z] running path=benchmark/Reg/deepregex/sygus/86.sl
+[2026-05-16T02:57:31Z] done path=benchmark/Reg/deepregex/sygus/86.sl status=solved completed=178
+[2026-05-16T02:57:31Z] running path=benchmark/Reg/deepregex/sygus/87.sl
+[2026-05-16T02:57:31Z] done path=benchmark/Reg/deepregex/sygus/87.sl status=solved completed=179
+[2026-05-16T02:57:31Z] running path=benchmark/Reg/deepregex/sygus/88.sl
+[2026-05-16T02:57:52Z] done path=benchmark/Reg/deepregex/sygus/88.sl status=solved completed=180
+[2026-05-16T02:57:52Z] running path=benchmark/Reg/deepregex/sygus/89.sl
+[2026-05-16T02:57:53Z] done path=benchmark/Reg/deepregex/sygus/89.sl status=solved completed=181
+[2026-05-16T02:57:53Z] running path=benchmark/Reg/deepregex/sygus/8.sl
+[2026-05-16T02:57:54Z] done path=benchmark/Reg/deepregex/sygus/8.sl status=solved completed=182
+[2026-05-16T02:57:54Z] running path=benchmark/Reg/deepregex/sygus/90.sl
+[2026-05-16T02:57:56Z] done path=benchmark/Reg/deepregex/sygus/90.sl status=solved completed=183
+[2026-05-16T02:57:56Z] running path=benchmark/Reg/deepregex/sygus/91.sl
+[2026-05-16T02:57:56Z] done path=benchmark/Reg/deepregex/sygus/91.sl status=solved completed=184
+[2026-05-16T02:57:56Z] running path=benchmark/Reg/deepregex/sygus/92.sl
+[2026-05-16T03:07:57Z] done path=benchmark/Reg/deepregex/sygus/92.sl status=solve_timeout completed=185
+[2026-05-16T03:07:57Z] running path=benchmark/Reg/deepregex/sygus/94.sl
+[2026-05-16T03:07:58Z] done path=benchmark/Reg/deepregex/sygus/94.sl status=solved completed=186
+[2026-05-16T03:07:58Z] running path=benchmark/Reg/deepregex/sygus/95.sl
+[2026-05-16T03:08:40Z] done path=benchmark/Reg/deepregex/sygus/95.sl status=solved completed=187
+[2026-05-16T03:08:40Z] running path=benchmark/Reg/deepregex/sygus/96.sl
+[2026-05-16T03:18:41Z] done path=benchmark/Reg/deepregex/sygus/96.sl status=solve_timeout completed=188
+[2026-05-16T03:18:41Z] running path=benchmark/Reg/deepregex/sygus/97.sl
+[2026-05-16T03:28:42Z] done path=benchmark/Reg/deepregex/sygus/97.sl status=solve_timeout completed=189
+[2026-05-16T03:28:42Z] running path=benchmark/Reg/deepregex/sygus/98.sl
+[2026-05-16T03:38:43Z] done path=benchmark/Reg/deepregex/sygus/98.sl status=solve_timeout completed=190
+[2026-05-16T03:38:43Z] running path=benchmark/Reg/deepregex/sygus/9.sl
+[2026-05-16T03:38:43Z] done path=benchmark/Reg/deepregex/sygus/9.sl status=solved completed=191
+[2026-05-16T03:38:43Z] done completed=191

@@ -1,0 +1,4 @@
+[2026-05-15T15:58:21Z] start name=reg-deepregex-cvc5 solver=cvc5 root=/root/delis/benchmark/Reg/deepregex/sygus results=bench-results/reg-deepregex-cvc5.tsv rerun=false restart=false shard_index=0 shard_count=1 files=200
+[2026-05-15T15:58:23Z] resume last_in_progress=benchmark/Reg/deepregex/sygus/109.sl
+[2026-05-15T15:58:28Z] running folder total=200 pending=191 results=bench-results/reg-deepregex-cvc5.tsv shard_index=0 shard_count=1
+[2026-05-15T15:58:28Z] running path=benchmark/Reg/deepregex/sygus/109.sl

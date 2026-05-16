@@ -12,7 +12,11 @@ use crate::{
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
 use lexpr::Value;
-use std::{cell::RefCell, collections::HashMap, time::Instant};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant},
+};
 use sygus_parser::{
     BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar, SyGuSCmd,
     SyGuSGTerm, SyGuSTerm, Term,
@@ -62,7 +66,80 @@ struct NativeCompiler<'a> {
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
     ground_model_eval:
         RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
+    ground_model_eval_hits: RefCell<usize>,
+    ground_model_eval_misses: RefCell<usize>,
+    bool_eval_cache: RefCell<HashMap<BoolMemoKey, BoolExpr>>,
+    finite_eq_cache: RefCell<HashMap<FiniteEqMemoKey, BoolExpr>>,
+    quantifier_values_cache: RefCell<HashMap<QuantifierValuesMemoKey, Vec<AspectValue>>>,
+    guarded_projection_cache: RefCell<HashMap<GuardedProjectionMemoKey, Vec<usize>>>,
+    value_eval_cache: RefCell<HashMap<ExprEnvMemoKey, AspectValue>>,
+    int_eval_cache: RefCell<HashMap<ExprEnvMemoKey, isize>>,
+    aspect_eval_cache: RefCell<HashMap<AspectMemoKey, AspectKey>>,
+    value_for_sort_cache: RefCell<HashMap<ValueForSortMemoKey, AspectValue>>,
+    expr_symbol_cache: RefCell<HashMap<usize, Vec<String>>>,
     optimize: bool,
+}
+
+#[derive(Default)]
+struct ConstructorStats {
+    bits: usize,
+    eval_time: Duration,
+    lift_time: Duration,
+    fallback_time: Duration,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct EnvMemoKey {
+    aspects: Vec<(String, AspectKey)>,
+    values: Vec<(String, AspectValue)>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct BoolMemoKey {
+    expr_ptr: usize,
+    env: EnvMemoKey,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FiniteEqMemoKey {
+    expr_ptr: usize,
+    target: AspectValue,
+    env: EnvMemoKey,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct QuantifierValuesMemoKey {
+    expr_ptr: usize,
+    env: EnvMemoKey,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct GuardedProjectionMemoKey {
+    relation: String,
+    domain_expr_ptr: usize,
+    guard_expr_ptr: usize,
+    aspect_expr_ptr: usize,
+    env: EnvMemoKey,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ExprEnvMemoKey {
+    expr_ptr: usize,
+    env: EnvMemoKey,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct AspectMemoKey {
+    relation: String,
+    expr_ptr: usize,
+    env: EnvMemoKey,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ValueForSortMemoKey {
+    sort: String,
+    expr_ptr: usize,
+    env: EnvMemoKey,
 }
 
 pub fn compile(ctx: &CompileContext<'_>, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
@@ -135,6 +212,17 @@ impl<'a> NativeCompiler<'a> {
             synth_args: ctx_data.synth_args.clone(),
             bit_index,
             ground_model_eval: RefCell::new(HashMap::new()),
+            ground_model_eval_hits: RefCell::new(0),
+            ground_model_eval_misses: RefCell::new(0),
+            bool_eval_cache: RefCell::new(HashMap::new()),
+            finite_eq_cache: RefCell::new(HashMap::new()),
+            quantifier_values_cache: RefCell::new(HashMap::new()),
+            guarded_projection_cache: RefCell::new(HashMap::new()),
+            value_eval_cache: RefCell::new(HashMap::new()),
+            int_eval_cache: RefCell::new(HashMap::new()),
+            aspect_eval_cache: RefCell::new(HashMap::new()),
+            value_for_sort_cache: RefCell::new(HashMap::new()),
+            expr_symbol_cache: RefCell::new(HashMap::new()),
             optimize,
         })
     }
@@ -234,6 +322,7 @@ impl<'a> NativeCompiler<'a> {
     }
 
     fn constructor_fun(&self, cons: &TermConstructor) -> Result<SyGuSCmd, String> {
+        let mut stats = ConstructorStats::default();
         let mut bool_bits = Vec::new();
         for domain in self.ctx.domains_for_sort(&cons.result_sort)? {
             let spec = self.ctx.spec_for_relation(&domain.relation)?;
@@ -255,6 +344,10 @@ impl<'a> NativeCompiler<'a> {
                     cons.arg_sorts.len()
                 ));
             }
+            let body_is_ground = !case
+                .vars
+                .iter()
+                .any(|var| self.expr_symbols(&case.body).iter().any(|name| name == var));
             let mut env = Env::default();
             for (idx, var) in case.vars.iter().enumerate() {
                 env.children
@@ -262,7 +355,30 @@ impl<'a> NativeCompiler<'a> {
             }
             for bit in &domain.bits {
                 env.aspect.insert("asp".to_string(), bit.aspect.clone());
+                let eval_start = Instant::now();
                 let bool_expr = match (&domain.kind, &bit.value) {
+                    (SemanticKind::Bool, None) if body_is_ground => {
+                        match self.eval_bool(&case.body, &env)? {
+                            BoolExpr::Const(value) => BoolExpr::Const(value),
+                            BoolExpr::Dynamic(_) => {
+                                return Err(format!(
+                                    "ground Bool body unexpectedly lowered to dynamic term: {}",
+                                    case.body
+                                ));
+                            }
+                        }
+                    }
+                    (SemanticKind::FiniteValue { sort: _ }, Some(value)) if body_is_ground => {
+                        match self.eval_finite_eq(&case.body, value, &env)? {
+                            BoolExpr::Const(value) => BoolExpr::Const(value),
+                            BoolExpr::Dynamic(_) => {
+                                return Err(format!(
+                                    "ground finite body unexpectedly lowered to dynamic term: {}",
+                                    case.body
+                                ));
+                            }
+                        }
+                    }
                     (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
                     (SemanticKind::FiniteValue { sort: _ }, Some(value)) => {
                         self.eval_finite_eq(&case.body, value, &env)?
@@ -274,6 +390,8 @@ impl<'a> NativeCompiler<'a> {
                         ));
                     }
                 };
+                stats.eval_time += eval_start.elapsed();
+                stats.bits += 1;
                 bool_bits.push(bool_expr);
             }
         }
@@ -290,12 +408,17 @@ impl<'a> NativeCompiler<'a> {
                 BoolExpr::Dynamic(term) => BitwiseExpr::Expr(term.clone()),
             })
             .collect::<Vec<_>>();
-        let body = (if self.optimize {
+        let lift_start = Instant::now();
+        let lifted = if self.optimize {
             optim::try_lift_native_bv(&lift_bits, &arg_names)
         } else {
             None
-        })
-        .unwrap_or_else(|| {
+        };
+        stats.lift_time = lift_start.elapsed();
+        let body = if let Some(body) = lifted {
+            body
+        } else {
+            let fallback_start = Instant::now();
             let bits = bool_bits
                 .into_iter()
                 .map(|expr| match expr {
@@ -303,8 +426,22 @@ impl<'a> NativeCompiler<'a> {
                     BoolExpr::Dynamic(term) => bool_to_bit(term),
                 })
                 .collect::<Vec<_>>();
-            compact_bitvec(bits)
-        });
+            let body = compact_bitvec(bits);
+            stats.fallback_time = fallback_start.elapsed();
+            body
+        };
+        let cache_hits = *self.ground_model_eval_hits.borrow();
+        let cache_misses = *self.ground_model_eval_misses.borrow();
+        log::info!(
+            "native constructor {} stats: bits={}, eval={:?}, lift={:?}, fallback={:?}, ground_model_cache_hits={}, ground_model_cache_misses={}",
+            cons.name,
+            stats.bits,
+            stats.eval_time,
+            stats.lift_time,
+            stats.fallback_time,
+            cache_hits,
+            cache_misses,
+        );
         Ok(builder
             .ret(Sort::from_name(&cons.result_sort))
             .body(body)
@@ -312,6 +449,21 @@ impl<'a> NativeCompiler<'a> {
     }
 
     fn eval_bool(&self, expr: &Value, env: &Env) -> Result<BoolExpr, String> {
+        let memo_key = BoolMemoKey {
+            expr_ptr: expr as *const Value as usize,
+            env: self.memo_env_key(expr, env),
+        };
+        if let Some(cached) = self.bool_eval_cache.borrow().get(&memo_key) {
+            return Ok(cached.clone());
+        }
+        let result = self.eval_bool_uncached(expr, env)?;
+        self.bool_eval_cache
+            .borrow_mut()
+            .insert(memo_key, result.clone());
+        Ok(result)
+    }
+
+    fn eval_bool_uncached(&self, expr: &Value, env: &Env) -> Result<BoolExpr, String> {
         if let Some(value) = expr.as_bool() {
             return Ok(BoolExpr::Const(value));
         }
@@ -335,20 +487,10 @@ impl<'a> NativeCompiler<'a> {
                 BoolExpr::Dynamic(term) => BoolExpr::Dynamic(Bool::not(term)),
             }),
             "and" => {
-                let parts = items
-                    .iter()
-                    .skip(1)
-                    .map(|item| self.eval_bool(item, env))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(and_exprs(parts))
+                self.eval_bool_conjunction(&items[1..], env)
             }
             "or" => {
-                let parts = items
-                    .iter()
-                    .skip(1)
-                    .map(|item| self.eval_bool(item, env))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(or_exprs(parts))
+                self.eval_bool_disjunction(&items[1..], env)
             }
             "ite" if items.len() == 4 => match self.eval_bool(items[1], env)? {
                 BoolExpr::Const(true) => self.eval_bool(items[2], env),
@@ -401,17 +543,376 @@ impl<'a> NativeCompiler<'a> {
         let var = var
             .as_symbol()
             .ok_or_else(|| format!("quantifier variable must be a symbol: {var}"))?;
-        let mut parts = Vec::new();
+        if let Some(result) = self.eval_guarded_quantifier(op, var, domain_expr, body, env)? {
+            return Ok(result);
+        }
+        let mut next = env.clone();
+        let mut dynamic = Vec::new();
         for value in self.quantifier_values(domain_expr, env)? {
-            let mut next = env.clone();
             next.values.insert(var.to_string(), value);
-            parts.push(self.eval_bool(body, &next)?);
+            match (op, self.eval_bool(body, &next)?) {
+                ("exists", BoolExpr::Const(true)) => return Ok(BoolExpr::Const(true)),
+                ("exists", BoolExpr::Const(false)) => {}
+                ("exists", BoolExpr::Dynamic(term)) => dynamic.push(term),
+                ("forall", BoolExpr::Const(false)) => return Ok(BoolExpr::Const(false)),
+                ("forall", BoolExpr::Const(true)) => {}
+                ("forall", BoolExpr::Dynamic(term)) => dynamic.push(term),
+                _ => unreachable!(),
+            }
         }
         match op {
-            "forall" => Ok(and_exprs(parts)),
-            "exists" => Ok(or_exprs(parts)),
+            "forall" => Ok(match dynamic.len() {
+                0 => BoolExpr::Const(true),
+                1 => BoolExpr::Dynamic(dynamic.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::and(dynamic)),
+            }),
+            "exists" => Ok(match dynamic.len() {
+                0 => BoolExpr::Const(false),
+                1 => BoolExpr::Dynamic(dynamic.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::or(dynamic)),
+            }),
             _ => unreachable!(),
         }
+    }
+
+    fn eval_guarded_quantifier(
+        &self,
+        op: &str,
+        var: &str,
+        domain_expr: &Value,
+        body: &Value,
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        match op {
+            "exists" => self.eval_guarded_exists(var, domain_expr, body, env),
+            "forall" => self.eval_guarded_forall(var, domain_expr, body, env),
+            _ => Ok(None),
+        }
+    }
+
+    fn eval_guarded_exists(
+        &self,
+        var: &str,
+        domain_expr: &Value,
+        body: &Value,
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        let Some(items) = body.to_ref_vec() else {
+            return Ok(None);
+        };
+        if items.first().and_then(|item| item.as_symbol()) != Some("and") || items.len() <= 2 {
+            return Ok(None);
+        }
+        for (idx, guard) in items[1..].iter().enumerate() {
+            let mut rest = Vec::with_capacity(items.len().saturating_sub(2));
+            for (j, item) in items[1..].iter().enumerate() {
+                if j != idx {
+                    rest.push(*item);
+                }
+            }
+            if rest.len() == 1 {
+                if let Some(result) = self.lower_guarded_projection(
+                    "exists",
+                    var,
+                    domain_expr,
+                    guard,
+                    rest[0],
+                    env,
+                )? {
+                    return Ok(Some(result));
+                }
+            }
+            let Some(values) = self.const_guard_values(var, domain_expr, guard, true, env)? else {
+                continue;
+            };
+            let result = self.eval_quantifier_over_values("exists", var, &values, &rest, env)?;
+            return Ok(Some(result));
+        }
+        Ok(None)
+    }
+
+    fn eval_guarded_forall(
+        &self,
+        var: &str,
+        domain_expr: &Value,
+        body: &Value,
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        let Some(items) = body.to_ref_vec() else {
+            return Ok(None);
+        };
+        if items.first().and_then(|item| item.as_symbol()) != Some("or") || items.len() <= 2 {
+            return Ok(None);
+        }
+        for (idx, item) in items[1..].iter().enumerate() {
+            let Some(guard) = negated_guard(item) else {
+                continue;
+            };
+            let mut rest = Vec::with_capacity(items.len().saturating_sub(2));
+            for (j, disjunct) in items[1..].iter().enumerate() {
+                if j != idx {
+                    rest.push(*disjunct);
+                }
+            }
+            if rest.len() == 1 {
+                if let Some(result) = self.lower_guarded_projection(
+                    "forall",
+                    var,
+                    domain_expr,
+                    guard,
+                    rest[0],
+                    env,
+                )? {
+                    return Ok(Some(result));
+                }
+            }
+            let Some(values) = self.const_guard_values(var, domain_expr, guard, true, env)? else {
+                continue;
+            };
+            let result = self.eval_quantifier_over_values("forall", var, &values, &rest, env)?;
+            return Ok(Some(result));
+        }
+        Ok(None)
+    }
+
+    fn lower_guarded_projection(
+        &self,
+        op: &str,
+        var: &str,
+        domain_expr: &Value,
+        guard_expr: &Value,
+        rest_expr: &Value,
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        let Some(items) = rest_expr.to_ref_vec() else {
+            return Ok(None);
+        };
+        let Some(relation) = items.first().and_then(|item| item.as_symbol()) else {
+            return Ok(None);
+        };
+        if !self.ctx.has_relation(relation) {
+            return Ok(None);
+        }
+        let domain = self.ctx.domain_for_relation(relation)?;
+        if domain.kind != SemanticKind::Bool || items.len() != 3 {
+            return Ok(None);
+        }
+        let term_expr = items[1];
+        let aspect_expr = items[2];
+        let bits = self.guarded_projection_bits(
+            var,
+            domain_expr,
+            guard_expr,
+            relation,
+            aspect_expr,
+            env,
+        )?;
+        let mut terms = Vec::with_capacity(bits.len());
+        for bit in bits {
+            terms.push(self.semantic_term_bit(term_expr, bit, env)?);
+        }
+        Ok(Some(match op {
+            "exists" => match terms.len() {
+                0 => BoolExpr::Const(false),
+                1 => BoolExpr::Dynamic(terms.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::or(terms)),
+            },
+            "forall" => match terms.len() {
+                0 => BoolExpr::Const(true),
+                1 => BoolExpr::Dynamic(terms.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::and(terms)),
+            },
+            _ => unreachable!(),
+        }))
+    }
+
+    fn guarded_projection_bits(
+        &self,
+        var: &str,
+        domain_expr: &Value,
+        guard_expr: &Value,
+        relation: &str,
+        aspect_expr: &Value,
+        env: &Env,
+    ) -> Result<Vec<usize>, String> {
+        let key = GuardedProjectionMemoKey {
+            relation: relation.to_string(),
+            domain_expr_ptr: domain_expr as *const Value as usize,
+            guard_expr_ptr: guard_expr as *const Value as usize,
+            aspect_expr_ptr: aspect_expr as *const Value as usize,
+            env: self.memo_env_key(guard_expr, env),
+        };
+        if let Some(cached) = self.guarded_projection_cache.borrow().get(&key) {
+            return Ok(cached.clone());
+        }
+        let Some(values) = self.const_guard_values(var, domain_expr, guard_expr, true, env)? else {
+            return Err(format!(
+                "guarded projection expected constant guard: {}",
+                guard_expr
+            ));
+        };
+        let mut next = env.clone();
+        let mut bits = Vec::with_capacity(values.len());
+        for value in values {
+            next.values.insert(var.to_string(), value);
+            let aspect = self.cached_eval_aspect(aspect_expr, relation, &next)?;
+            bits.push(self.bit_for(relation, &aspect, None)?);
+        }
+        self.guarded_projection_cache
+            .borrow_mut()
+            .insert(key, bits.clone());
+        Ok(bits)
+    }
+
+    fn const_guard_values(
+        &self,
+        var: &str,
+        domain_expr: &Value,
+        guard: &Value,
+        want: bool,
+        env: &Env,
+    ) -> Result<Option<Vec<AspectValue>>, String> {
+        let mut next = env.clone();
+        let mut values = Vec::new();
+        for value in self.quantifier_values(domain_expr, env)? {
+            next.values.insert(var.to_string(), value.clone());
+            match self.eval_bool(guard, &next)? {
+                BoolExpr::Const(result) => {
+                    if result == want {
+                        values.push(value);
+                    }
+                }
+                BoolExpr::Dynamic(_) => return Ok(None),
+            }
+        }
+        Ok(Some(values))
+    }
+
+    fn eval_quantifier_over_values(
+        &self,
+        op: &str,
+        var: &str,
+        values: &[AspectValue],
+        body_items: &[&Value],
+        env: &Env,
+    ) -> Result<BoolExpr, String> {
+        if body_items.len() == 1 {
+            if let Some(result) =
+                self.lower_quantified_semantic_projection(op, var, values, body_items[0], env)?
+            {
+                return Ok(result);
+            }
+        }
+        let mut next = env.clone();
+        let mut dynamic = Vec::new();
+        for value in values {
+            next.values.insert(var.to_string(), value.clone());
+            let expr = match op {
+                "exists" => self.eval_bool_conjunction(body_items, &next)?,
+                "forall" => self.eval_bool_disjunction(body_items, &next)?,
+                _ => unreachable!(),
+            };
+            match (op, expr) {
+                ("exists", BoolExpr::Const(true)) => return Ok(BoolExpr::Const(true)),
+                ("exists", BoolExpr::Const(false)) => {}
+                ("exists", BoolExpr::Dynamic(term)) => dynamic.push(term),
+                ("forall", BoolExpr::Const(false)) => return Ok(BoolExpr::Const(false)),
+                ("forall", BoolExpr::Const(true)) => {}
+                ("forall", BoolExpr::Dynamic(term)) => dynamic.push(term),
+                _ => unreachable!(),
+            }
+        }
+        Ok(match op {
+            "exists" => match dynamic.len() {
+                0 => BoolExpr::Const(false),
+                1 => BoolExpr::Dynamic(dynamic.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::or(dynamic)),
+            },
+            "forall" => match dynamic.len() {
+                0 => BoolExpr::Const(true),
+                1 => BoolExpr::Dynamic(dynamic.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::and(dynamic)),
+            },
+            _ => unreachable!(),
+        })
+    }
+
+    fn lower_quantified_semantic_projection(
+        &self,
+        op: &str,
+        var: &str,
+        values: &[AspectValue],
+        expr: &Value,
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        let Some(items) = expr.to_ref_vec() else {
+            return Ok(None);
+        };
+        let Some(relation) = items.first().and_then(|item| item.as_symbol()) else {
+            return Ok(None);
+        };
+        if !self.ctx.has_relation(relation) {
+            return Ok(None);
+        }
+        let domain = self.ctx.domain_for_relation(relation)?;
+        if domain.kind != SemanticKind::Bool || items.len() != 3 {
+            return Ok(None);
+        }
+        let term_expr = items[1];
+        let aspect_expr = items[2];
+        let mut next = env.clone();
+        let mut terms = Vec::new();
+        for value in values {
+            next.values.insert(var.to_string(), value.clone());
+            let aspect = self.cached_eval_aspect(aspect_expr, relation, &next)?;
+            let bit = self.bit_for(relation, &aspect, None)?;
+            terms.push(self.semantic_term_bit(term_expr, bit, &next)?);
+        }
+        Ok(Some(match op {
+            "exists" => match terms.len() {
+                0 => BoolExpr::Const(false),
+                1 => BoolExpr::Dynamic(terms.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::or(terms)),
+            },
+            "forall" => match terms.len() {
+                0 => BoolExpr::Const(true),
+                1 => BoolExpr::Dynamic(terms.remove(0)),
+                _ => BoolExpr::Dynamic(Bool::and(terms)),
+            },
+            _ => unreachable!(),
+        }))
+    }
+
+    fn eval_bool_conjunction(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
+        let mut dynamic = Vec::new();
+        for item in items {
+            match self.eval_bool(item, env)? {
+                BoolExpr::Const(false) => return Ok(BoolExpr::Const(false)),
+                BoolExpr::Const(true) => {}
+                BoolExpr::Dynamic(term) => dynamic.push(term),
+            }
+        }
+        Ok(match dynamic.len() {
+            0 => BoolExpr::Const(true),
+            1 => BoolExpr::Dynamic(dynamic.remove(0)),
+            _ => BoolExpr::Dynamic(Bool::and(dynamic)),
+        })
+    }
+
+    fn eval_bool_disjunction(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
+        let mut dynamic = Vec::new();
+        for item in items {
+            match self.eval_bool(item, env)? {
+                BoolExpr::Const(true) => return Ok(BoolExpr::Const(true)),
+                BoolExpr::Const(false) => {}
+                BoolExpr::Dynamic(term) => dynamic.push(term),
+            }
+        }
+        Ok(match dynamic.len() {
+            0 => BoolExpr::Const(false),
+            1 => BoolExpr::Dynamic(dynamic.remove(0)),
+            _ => BoolExpr::Dynamic(Bool::or(dynamic)),
+        })
     }
 
     fn quantifier_values(
@@ -419,32 +920,44 @@ impl<'a> NativeCompiler<'a> {
         domain_expr: &Value,
         env: &Env,
     ) -> Result<Vec<AspectValue>, String> {
+        let memo_key = QuantifierValuesMemoKey {
+            expr_ptr: domain_expr as *const Value as usize,
+            env: self.memo_env_key(domain_expr, env),
+        };
+        if let Some(cached) = self.quantifier_values_cache.borrow().get(&memo_key) {
+            return Ok(cached.clone());
+        }
         let items = domain_expr
             .to_ref_vec()
             .ok_or_else(|| format!("unsupported domain expression: {domain_expr}"))?;
-        match items.first().and_then(|item| item.as_symbol()) {
+        let result = match items.first().and_then(|item| item.as_symbol()) {
             Some("int-range") if items.len() == 3 => {
                 let lo = self.ctx.eval_int_expr(items[1], env)?;
-                let hi = self.ctx.eval_int_expr(items[2], env)?;
+                let hi = self.cached_eval_int_expr(items[2], env)?;
                 if lo < 0 || hi < lo {
-                    return Ok(Vec::new());
+                    Vec::new()
+                } else {
+                    (lo as usize..=hi as usize).map(AspectValue::Int).collect()
                 }
-                Ok((lo as usize..=hi as usize).map(AspectValue::Int).collect())
             }
             _ => {
                 let (model, sort) = self.ctx.parse_domain_expr(domain_expr, env)?;
                 let model_ref = self.ctx.model(&model)?;
                 let values = crate::lang::eval::get_domain_for_sort(model_ref, &sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
-                Ok(values
+                values
                     .into_iter()
                     .map(|name| AspectValue::Univ {
                         sort: sort.clone(),
                         name,
                     })
-                    .collect())
+                    .collect()
             }
-        }
+        };
+        self.quantifier_values_cache
+            .borrow_mut()
+            .insert(memo_key, result.clone());
+        Ok(result)
     }
 
     fn eval_semantic_bool_call(
@@ -460,7 +973,7 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
+        let aspect = self.cached_eval_aspect(args[1], relation, env)?;
         let bit = self.bit_for(relation, &aspect, None)?;
         Ok(BoolExpr::Dynamic(
             self.semantic_term_bit(args[0], bit, env)?,
@@ -542,13 +1055,13 @@ impl<'a> NativeCompiler<'a> {
 
     fn eval_equality(&self, lhs: &Value, rhs: &Value, env: &Env) -> Result<BoolExpr, String> {
         if let (Ok(lhs_value), Ok(rhs_value)) =
-            (self.ctx.eval_value(lhs, env), self.ctx.eval_value(rhs, env))
+            (self.cached_eval_value(lhs, env), self.cached_eval_value(rhs, env))
         {
             return Ok(BoolExpr::Const(
                 self.ctx.values_equal(&lhs_value, &rhs_value, env)?,
             ));
         }
-        if self.ctx.eval_int_expr(lhs, env).is_ok() && self.ctx.eval_int_expr(rhs, env).is_ok() {
+        if self.cached_eval_int_expr(lhs, env).is_ok() && self.cached_eval_int_expr(rhs, env).is_ok() {
             return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
         }
         self.eval_finite_terms_equal(lhs, rhs, env)
@@ -564,8 +1077,8 @@ impl<'a> NativeCompiler<'a> {
     where
         F: FnOnce(isize, isize) -> bool,
     {
-        let lhs = self.ctx.eval_int_expr(lhs, env)?;
-        let rhs = self.ctx.eval_int_expr(rhs, env)?;
+        let lhs = self.cached_eval_int_expr(lhs, env)?;
+        let rhs = self.cached_eval_int_expr(rhs, env)?;
         Ok(BoolExpr::Const(cmp(lhs, rhs)))
     }
 
@@ -575,7 +1088,28 @@ impl<'a> NativeCompiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<BoolExpr, String> {
-        if let Ok(value) = self.ctx.eval_value(expr, env) {
+        let memo_key = FiniteEqMemoKey {
+            expr_ptr: expr as *const Value as usize,
+            target: target.clone(),
+            env: self.memo_env_key(expr, env),
+        };
+        if let Some(cached) = self.finite_eq_cache.borrow().get(&memo_key) {
+            return Ok(cached.clone());
+        }
+        let result = self.eval_finite_eq_uncached(expr, target, env)?;
+        self.finite_eq_cache
+            .borrow_mut()
+            .insert(memo_key, result.clone());
+        Ok(result)
+    }
+
+    fn eval_finite_eq_uncached(
+        &self,
+        expr: &Value,
+        target: &AspectValue,
+        env: &Env,
+    ) -> Result<BoolExpr, String> {
+        if let Ok(value) = self.cached_eval_value(expr, env) {
             return Ok(BoolExpr::Const(
                 self.ctx.value_matches_target(&value, target, env)?,
             ));
@@ -637,6 +1171,39 @@ impl<'a> NativeCompiler<'a> {
         Err(format!("unsupported finite expression: {expr}"))
     }
 
+    fn memo_env_key(&self, expr: &Value, env: &Env) -> EnvMemoKey {
+        let referenced = self.expr_symbols(expr);
+        let mut aspects = Vec::new();
+        let mut values = Vec::new();
+        for name in &referenced {
+            if let Some(aspect) = env.aspect.get(name) {
+                aspects.push((name.clone(), aspect.clone()));
+            }
+            if let Some(value) = env.values.get(name) {
+                values.push((name.clone(), value.clone()));
+            }
+        }
+        EnvMemoKey {
+            aspects,
+            values,
+        }
+    }
+
+    fn expr_symbols(&self, expr: &Value) -> Vec<String> {
+        let expr_ptr = expr as *const Value as usize;
+        if let Some(cached) = self.expr_symbol_cache.borrow().get(&expr_ptr) {
+            return cached.clone();
+        }
+        let mut symbols = HashSet::new();
+        collect_expr_symbols(expr, &mut symbols);
+        let mut symbols = symbols.into_iter().collect::<Vec<_>>();
+        symbols.sort();
+        self.expr_symbol_cache
+            .borrow_mut()
+            .insert(expr_ptr, symbols.clone());
+        symbols
+    }
+
     fn eval_semantic_finite_call_eq(
         &self,
         relation: &str,
@@ -651,7 +1218,7 @@ impl<'a> NativeCompiler<'a> {
         if args.len() != 2 {
             return Err(format!("semantic call {relation} expects term and aspect"));
         }
-        let aspect = self.ctx.eval_aspect(args[1], relation, env)?;
+        let aspect = self.cached_eval_aspect(args[1], relation, env)?;
         let bit = self.bit_for(relation, &aspect, Some(target))?;
         Ok(BoolExpr::Dynamic(
             self.semantic_term_bit(args[0], bit, env)?,
@@ -745,12 +1312,77 @@ impl<'a> NativeCompiler<'a> {
         args.iter()
             .zip(sig.arg_sorts.iter())
             .map(|arg| {
-                self.ctx
-                    .eval_value_for_sort(arg.0, &arg.1.to_string(), env)
+                self.cached_eval_value_for_sort(arg.0, &arg.1.to_string(), env)
                     .ok()
                     .map(|value| value.display())
             })
             .collect()
+    }
+
+    fn cached_eval_value(&self, expr: &Value, env: &Env) -> Result<AspectValue, String> {
+        let key = ExprEnvMemoKey {
+            expr_ptr: expr as *const Value as usize,
+            env: self.memo_env_key(expr, env),
+        };
+        if let Some(cached) = self.value_eval_cache.borrow().get(&key) {
+            return Ok(cached.clone());
+        }
+        let value = self.ctx.eval_value(expr, env)?;
+        self.value_eval_cache.borrow_mut().insert(key, value.clone());
+        Ok(value)
+    }
+
+    fn cached_eval_int_expr(&self, expr: &Value, env: &Env) -> Result<isize, String> {
+        let key = ExprEnvMemoKey {
+            expr_ptr: expr as *const Value as usize,
+            env: self.memo_env_key(expr, env),
+        };
+        if let Some(cached) = self.int_eval_cache.borrow().get(&key) {
+            return Ok(*cached);
+        }
+        let value = self.ctx.eval_int_expr(expr, env)?;
+        self.int_eval_cache.borrow_mut().insert(key, value);
+        Ok(value)
+    }
+
+    fn cached_eval_aspect(
+        &self,
+        expr: &Value,
+        relation: &str,
+        env: &Env,
+    ) -> Result<AspectKey, String> {
+        let key = AspectMemoKey {
+            relation: relation.to_string(),
+            expr_ptr: expr as *const Value as usize,
+            env: self.memo_env_key(expr, env),
+        };
+        if let Some(cached) = self.aspect_eval_cache.borrow().get(&key) {
+            return Ok(cached.clone());
+        }
+        let value = self.ctx.eval_aspect(expr, relation, env)?;
+        self.aspect_eval_cache.borrow_mut().insert(key, value.clone());
+        Ok(value)
+    }
+
+    fn cached_eval_value_for_sort(
+        &self,
+        expr: &Value,
+        sort: &str,
+        env: &Env,
+    ) -> Result<AspectValue, String> {
+        let key = ValueForSortMemoKey {
+            sort: sort.to_string(),
+            expr_ptr: expr as *const Value as usize,
+            env: self.memo_env_key(expr, env),
+        };
+        if let Some(cached) = self.value_for_sort_cache.borrow().get(&key) {
+            return Ok(cached.clone());
+        }
+        let value = self.ctx.eval_value_for_sort(expr, sort, env)?;
+        self.value_for_sort_cache
+            .borrow_mut()
+            .insert(key, value.clone());
+        Ok(value)
     }
 
     fn ground_model_value(
@@ -762,8 +1394,10 @@ impl<'a> NativeCompiler<'a> {
     ) -> Option<crate::lang::model::InterpedValue> {
         let key = (func.to_string(), model.to_string(), arg_names.to_vec());
         if let Some(value) = self.ground_model_eval.borrow().get(&key) {
+            *self.ground_model_eval_hits.borrow_mut() += 1;
             return value.clone();
         }
+        *self.ground_model_eval_misses.borrow_mut() += 1;
         let value = eval_symbols(func, arg_names, func_interps).cloned();
         self.ground_model_eval
             .borrow_mut()
@@ -788,6 +1422,14 @@ fn gterm(name: &str, args: Vec<String>) -> Result<SyGuSGTerm, String> {
             })
             .collect::<Result<Vec<_>, _>>()?,
     )))
+}
+
+fn negated_guard(expr: &Value) -> Option<&Value> {
+    let items = expr.to_ref_vec()?;
+    if items.len() == 2 && items.first().and_then(|item| item.as_symbol()) == Some("not") {
+        return Some(items[1]);
+    }
+    None
 }
 
 fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
@@ -890,4 +1532,16 @@ fn extract_arg_bit(arg_idx: usize, bit: usize) -> SyGuSTerm {
 
 fn bit_is_one(bit: SyGuSTerm) -> SyGuSTerm {
     Bool::eq(bit, BitVec::const_(1, 1))
+}
+
+fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {
+    if let Some(symbol) = expr.as_symbol() {
+        out.insert(symbol.to_string());
+        return;
+    }
+    if let Some(items) = expr.to_ref_vec() {
+        for item in items {
+            collect_expr_symbols(item, out);
+        }
+    }
 }
