@@ -5,9 +5,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 import tarfile
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from statistics import median
 
@@ -54,6 +53,7 @@ COMPARE_COLORS = {
     "Delis": "#1F4E79",
     "LearnCTL": "#A23B32",
     "Folseparators": "#2C6E49",
+    "cvc5": "#A23B32",
     "sample2LTL": "#A23B32",
 }
 
@@ -91,18 +91,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--learnctl-csv",
-        default="/Users/wuchentian/Codes/C++/learnctl/bench/bench_results_Naturalificas-MacBook.local.csv",
+        default="../bench-results/ctl-learnctl-artifact.csv",
         help="LearnCTL benchmark CSV for CTL comparisons.",
     )
     parser.add_argument(
-        "--folseparators-json",
-        default="/Users/wuchentian/Downloads/artifact-upload/560.tgz",
-        help="Folseparators benchmark source: results JSON or ACM artifact .tgz.",
+        "--folseparators-tsv",
+        default="../bench-results/fo-folseparators-artifact.tsv",
+        help="Folseparators benchmark TSV under bench-results.",
     )
     parser.add_argument(
         "--samples2ltl-csv",
-        default="/Users/wuchentian/Codes/Python/samples2LTL/experiments/dtSubset3Strategy2/statsSubset3Strategy2.csv",
-        help="sample2LTL benchmark CSV for LTL/sample2LTL comparisons.",
+        default="",
+        help="Optional sample2LTL benchmark CSV for LTL/sample2LTL comparisons.",
     )
     return parser.parse_args()
 
@@ -146,19 +146,47 @@ def infer_family(path: str, group: str) -> str:
     return "Other"
 
 
+def normalize_row(tsv_name: str, row: dict[str, str]) -> dict[str, str]:
+    normalized = dict(row)
+    normalized["_tsv"] = tsv_name
+    normalized.setdefault("group", Path(tsv_name).stem)
+
+    if "path" not in normalized or not normalized.get("path"):
+        if "case" in normalized and normalized["case"]:
+            normalized["path"] = normalized["case"]
+        else:
+            normalized["path"] = normalized["group"]
+
+    normalized.setdefault("status", "error")
+    normalized.setdefault("total_ms", "0")
+    normalized.setdefault("detail", normalized.get("error", ""))
+    status = (normalized.get("status") or "").strip()
+    error = (normalized.get("error") or "").strip().lower()
+    if status == "timeout":
+        normalized["status"] = "solve_timeout"
+    elif status == "failed" and error == "timeout":
+        normalized["status"] = "solve_timeout"
+    normalized["_family"] = infer_family(normalized["path"], normalized["group"])
+    return normalized
+
+
 def load_rows(results_dir: Path) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for tsv in sorted(results_dir.glob("*.tsv")):
         with tsv.open(newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             for row in reader:
-                row["_tsv"] = tsv.name
-                row["_family"] = infer_family(row["path"], row["group"])
-                rows.append(row)
+                rows.append(normalize_row(tsv.name, row))
     return rows
 
 
 def seconds(row: dict[str, str]) -> float:
+    solve_ms = row.get("solve_ms", "")
+    if solve_ms not in ("", None):
+        try:
+            return float(solve_ms) / 1000.0
+        except ValueError:
+            pass
     return float(row["total_ms"]) / 1000.0
 
 
@@ -171,6 +199,14 @@ def grouped(rows: list[dict[str, str]], field: str) -> dict[str, list[dict[str, 
 
 def resolved_times(rows: list[dict[str, str]]) -> list[float]:
     return sorted(seconds(row) for row in rows if row["status"] in RESOLVED_STATUSES)
+
+
+def cactus_times(
+    rows: list[dict[str, str]],
+) -> tuple[list[float], int, int]:
+    solved = sorted(seconds(row) for row in rows if row["status"] in RESOLVED_STATUSES)
+    timeouts = sorted(seconds(row) for row in rows if row["status"] in TIMEOUT_STATUSES)
+    return solved + timeouts, len(solved), len(timeouts)
 
 
 def status_counts(rows: list[dict[str, str]]) -> dict[str, int]:
@@ -188,6 +224,10 @@ def benchmark_leaf(row: dict[str, str]) -> str:
     return Path(row["path"]).name
 
 
+def benchmark_stem(row: dict[str, str]) -> str:
+    return Path(row["path"]).stem
+
+
 def best_solved_seconds(candidates: list[dict[str, str]]) -> float | None:
     solved = [seconds(row) for row in candidates if row["status"] == "solved"]
     return min(solved) if solved else None
@@ -197,6 +237,111 @@ def percent_xs(resolved_count: int, total_count: int) -> list[float]:
     if resolved_count <= 0 or total_count <= 0:
         return []
     return [100.0 * idx / total_count for idx in range(1, resolved_count + 1)]
+
+
+def draw_timeout_cutoff(
+    ax: plt.Axes,
+    cutoff_x: float | None,
+) -> None:
+    if cutoff_x is None:
+        return
+    ax.axvline(
+        cutoff_x,
+        color="#6B7280",
+        linestyle="--",
+        linewidth=1.0,
+        alpha=0.9,
+    )
+    ax.text(
+        cutoff_x,
+        0.02,
+        f"{cutoff_x:.1f}%",
+        transform=ax.get_xaxis_transform(),
+        rotation=90,
+        ha="right",
+        va="bottom",
+        fontsize=8.5,
+        color="#4B5563",
+        backgroundcolor="white",
+    )
+
+
+def plot_row_value(row: dict[str, str]) -> float:
+    return seconds(row)
+
+
+def suite_order_key(row: dict[str, str]) -> tuple[int, float, str]:
+    status = row["status"]
+    if status in RESOLVED_STATUSES:
+        return (0, plot_row_value(row), benchmark_leaf(row))
+    if status in TIMEOUT_STATUSES:
+        return (1, plot_row_value(row), benchmark_leaf(row))
+    return (2, float("inf"), benchmark_leaf(row))
+
+
+def sequence_points_from_rows(
+    rows: list[dict[str, str]],
+) -> tuple[list[float], list[float], int, int, float | None]:
+    ordered_rows = sorted(rows, key=suite_order_key)
+    total_count = len(ordered_rows)
+    xs: list[float] = []
+    ys: list[float] = []
+    solved_count = 0
+    timeout_count = 0
+    cutoff_x: float | None = None
+    for idx, row in enumerate(ordered_rows, start=1):
+        status = row["status"]
+        if status in RESOLVED_STATUSES:
+            solved_count += 1
+            xs.append(100.0 * idx / total_count)
+            ys.append(plot_row_value(row))
+        elif status in TIMEOUT_STATUSES:
+            timeout_count += 1
+            point_x = 100.0 * idx / total_count
+            if cutoff_x is None:
+                cutoff_x = point_x
+            xs.append(point_x)
+            ys.append(plot_row_value(row))
+    return xs, ys, solved_count, timeout_count, cutoff_x
+
+
+def sequence_points_from_entries(
+    entries: list[dict[str, float | str | None]],
+    total_count: int,
+) -> tuple[list[float], list[float], int, int, float | None]:
+    def entry_key(entry: dict[str, float | str | None]) -> tuple[int, float]:
+        status = entry["status"]
+        secs = entry["seconds"]
+        value = float(secs) if secs is not None else float("inf")
+        if status == "solved":
+            return (0, value)
+        if status in TIMEOUT_STATUSES:
+            return (1, value)
+        return (2, float("inf"))
+
+    ordered = sorted(entries, key=entry_key)
+    xs: list[float] = []
+    ys: list[float] = []
+    solved_count = 0
+    timeout_count = 0
+    cutoff_x: float | None = None
+    shown_idx = 0
+    for entry in ordered:
+        status = entry["status"]
+        secs = entry["seconds"]
+        if secs is None or status not in RESOLVED_STATUSES.union(TIMEOUT_STATUSES):
+            continue
+        shown_idx += 1
+        point_x = 100.0 * shown_idx / total_count
+        if status in RESOLVED_STATUSES:
+            solved_count += 1
+        elif status in TIMEOUT_STATUSES:
+            timeout_count += 1
+            if cutoff_x is None:
+                cutoff_x = point_x
+        xs.append(point_x)
+        ys.append(float(secs))
+    return xs, ys, solved_count, timeout_count, cutoff_x
 
 
 def prep_axes(ax: plt.Axes, title: str) -> None:
@@ -220,19 +365,24 @@ def plot_single_suite_cactus(
     color: str,
 ) -> None:
     total_count = len(rows)
-    times = resolved_times(rows)
+    xs, ys, solved_count, timeout_count, cutoff_x = sequence_points_from_rows(rows)
     fig, ax = plt.subplots(figsize=(8.6, 5.8), constrained_layout=True)
     prep_axes(ax, title)
-    if times:
-        ax.plot(
-            percent_xs(len(times), total_count),
-            times,
+    if ys:
+        ax.step(
+            xs,
+            ys,
+            where="post",
             linewidth=2.2,
             color=color,
-            label=f"Delis (n={total_count}, resolved={len(times)})",
+            label=f"Delis (n={total_count}, solved={solved_count}, timeout={timeout_count})",
         )
+        draw_timeout_cutoff(ax, cutoff_x)
         ax.legend(frameon=False, loc="upper left")
-    subtitle = f"resolved={len(times)} / total={total_count}"
+    subtitle = (
+        f"solved={solved_count} / timeout={timeout_count} / "
+        f"shown={len(ys)} / total={total_count}"
+    )
     ax.text(
         0.01,
         0.98,
@@ -285,17 +435,23 @@ def plot_parallel_levels(
     for level in level_order:
         ys = []
         solved = 0
+        timed_out = 0
         for leaf, _ in ordered_instances:
             row = instance_map[leaf].get(level)
-            ok = row and row["status"] == "solved"
-            ys.append(seconds(row) if ok else float("nan"))
-            solved += int(bool(ok))
+            if row and row["status"] == "solved":
+                ys.append(seconds(row))
+                solved += 1
+            elif row and row["status"] in TIMEOUT_STATUSES:
+                ys.append(seconds(row))
+                timed_out += 1
+            else:
+                ys.append(float("nan"))
         ax.scatter(
             xs,
             ys,
             s=10,
             color=LEVEL_COLORS[level],
-            label=f"{level} (resolved={solved}/{total_count})",
+            label=f"{level} (solved={solved}/{total_count}, timeout={timed_out})",
             alpha=0.9,
         )
 
@@ -531,35 +687,66 @@ def load_folseparators_rows(path: Path) -> list[dict]:
     return []
 
 
-def load_folseparators_series(path: Path) -> dict[str, dict[str, float | str | None]]:
-    rows = load_folseparators_rows(path)
-    if not rows:
+def best_series_update(
+    series: dict[str, dict[str, float | str | None]],
+    key: str,
+    candidate: dict[str, float | str | None],
+) -> None:
+    current = series.get(key)
+    if current is None:
+        series[key] = candidate
+        return
+    if candidate["status"] == "solved":
+        current_secs = current["seconds"]
+        cand_secs = candidate["seconds"]
+        if (
+            current["status"] != "solved"
+            or current_secs is None
+            or (cand_secs is not None and cand_secs < current_secs)
+        ):
+            series[key] = candidate
+
+
+def load_tsv_series(
+    path: Path,
+    key_field: str = "path",
+) -> dict[str, dict[str, float | str | None]]:
+    if not path.exists():
         return {}
     series: dict[str, dict[str, float | str | None]] = {}
-    for row in rows:
-        filename = f"{row['base']}-{row['conjecture']}.sl"
-        if row.get("success") and isinstance(row.get("stats"), dict):
-            secs = float(row["stats"].get("total_time", 0.0))
-            candidate = {"status": "solved", "seconds": secs}
-        elif row.get("killed"):
-            candidate = {
-                "status": "solve_timeout",
-                "seconds": float(row.get("timeout", 0)),
-            }
-        else:
-            candidate = {"status": "error", "seconds": None}
-        current = series.get(filename)
-        if current is None:
-            series[filename] = candidate
-        elif candidate["status"] == "solved":
-            current_secs = current["seconds"]
-            cand_secs = candidate["seconds"]
-            if (
-                current["status"] != "solved"
-                or current_secs is None
-                or (cand_secs is not None and cand_secs < current_secs)
-            ):
-                series[filename] = candidate
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for raw in reader:
+            row = normalize_row(path.name, raw)
+            key = Path(row.get(key_field, row["path"])).name
+            status = row["status"]
+            secs = (
+                seconds(row)
+                if status in RESOLVED_STATUSES or status in TIMEOUT_STATUSES
+                else None
+            )
+            best_series_update(series, key, {"status": status, "seconds": secs})
+    return series
+
+
+def load_folseparators_series_from_tsv(
+    path: Path,
+) -> dict[str, dict[str, float | str | None]]:
+    if not path.exists():
+        return {}
+    series: dict[str, dict[str, float | str | None]] = {}
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for raw in reader:
+            row = normalize_row(path.name, raw)
+            key = Path(row["path"]).name
+            status = row["status"]
+            secs = (
+                seconds(row)
+                if status in RESOLVED_STATUSES or status in TIMEOUT_STATUSES
+                else None
+            )
+            best_series_update(series, key, {"status": status, "seconds": secs})
     return series
 
 
@@ -589,6 +776,21 @@ def delis_series(
     return series
 
 
+def delis_series_by_stem(
+    rows: list[dict[str, str]],
+) -> dict[str, dict[str, float | str | None]]:
+    series: dict[str, dict[str, float | str | None]] = {}
+    for row in rows:
+        key = benchmark_stem(row)
+        secs = (
+            seconds(row)
+            if row["status"] in RESOLVED_STATUSES or row["status"] in TIMEOUT_STATUSES
+            else None
+        )
+        best_series_update(series, key, {"status": row["status"], "seconds": secs})
+    return series
+
+
 def comparable_order(
     series_map: dict[str, dict[str, dict[str, float | str | None]]],
 ) -> list[str]:
@@ -605,40 +807,61 @@ def comparable_order(
     return [key for key, _ in ordered]
 
 
+def comparison_keys(
+    series_map: dict[str, dict[str, dict[str, float | str | None]]],
+    mode: str,
+) -> list[str]:
+    key_sets = [set(series.keys()) for series in series_map.values() if series]
+    if not key_sets:
+        return []
+    if mode == "intersection":
+        return sorted(set.intersection(*key_sets))
+    return sorted(set.union(*key_sets))
+
+
 def plot_comparison_cactus(
     title: str,
     out_path: Path,
     series_map: dict[str, dict[str, dict[str, float | str | None]]],
     note: str = "",
+    universe: str = "union",
 ) -> None:
-    ordered_keys = comparable_order(series_map)
+    keys = comparison_keys(series_map, universe)
+    if not keys:
+        return
+    filtered_series_map = {
+        name: {key: value for key, value in series.items() if key in keys}
+        for name, series in series_map.items()
+    }
+    ordered_keys = comparable_order(filtered_series_map)
     if not ordered_keys:
         return
 
-    total_count = len(
-        set().union(*[set(series.keys()) for series in series_map.values()])
-    )
+    total_count = len(keys)
     if total_count == 0:
         return
 
     fig, ax = plt.subplots(figsize=(9.4, 6.0), constrained_layout=True)
     prep_axes(ax, title)
 
-    for name, series in series_map.items():
-        solved_times = sorted(
-            float(entry["seconds"])
-            for entry in series.values()
-            if entry["status"] == "solved" and entry["seconds"] is not None
+    for name, series in filtered_series_map.items():
+        entries = [series[key] for key in ordered_keys if key in series]
+        xs, ys, solved_count, timeout_count, cutoff_x = sequence_points_from_entries(
+            entries, total_count
         )
-        if not solved_times:
+        if not ys:
             continue
-        ax.plot(
-            percent_xs(len(solved_times), total_count),
-            solved_times,
+        ax.step(
+            xs,
+            ys,
+            where="post",
             linewidth=2.2,
             color=COMPARE_COLORS.get(name, "#374151"),
-            label=f"{name} (resolved={len(solved_times)}/{total_count})",
+            label=(
+                f"{name} (solved={solved_count}/{total_count}, timeout={timeout_count})"
+            ),
         )
+        draw_timeout_cutoff(ax, cutoff_x)
 
     if note:
         ax.text(
@@ -705,20 +928,25 @@ def main() -> None:
             out_dir / "fo-lfp-folseparators-parallel.pdf",
         )
 
-    learnctl_series = load_learnctl_series(Path(args.learnctl_csv))
-    delis_ctl_rows = by_group.get("ctl-learnctl-generated", [])
+    learnctl_series = (
+        load_learnctl_series(Path(args.learnctl_csv)) if args.learnctl_csv else {}
+    )
+    delis_ctl_rows = by_group.get("ctl-learnctl", [])
     if delis_ctl_rows and learnctl_series:
         plot_comparison_cactus(
             f"{args.title}: CTL LearnCTL Comparison",
-            out_dir / "ctl-learnctl-generated-comparison.pdf",
+            out_dir / "ctl-learnctl-comparison.pdf",
             {
                 "Delis": delis_series(delis_ctl_rows),
                 "LearnCTL": learnctl_series,
             },
-            note="x-axis is percentage of the currently known union of benchmark cases; missing/incomplete runs are skipped until present.",
         )
 
-    samples2ltl_series = load_samples2ltl_series(Path(args.samples2ltl_csv))
+    samples2ltl_series = (
+        load_samples2ltl_series(Path(args.samples2ltl_csv))
+        if args.samples2ltl_csv
+        else {}
+    )
     delis_samples2ltl_rows = by_group.get("ltl-sample2ltl", [])
     if delis_samples2ltl_rows and samples2ltl_series:
         plot_comparison_cactus(
@@ -728,10 +956,30 @@ def main() -> None:
                 "Delis": delis_series(delis_samples2ltl_rows),
                 "sample2LTL": samples2ltl_series,
             },
-            note="comparison uses the matched 5to10Traces decision-tree benchmark CSV; x-axis is percentage over the currently known union.",
         )
 
-    folseparators_series = load_folseparators_series(Path(args.folseparators_json))
+    reg_compare = [
+        ("reg-alpharegex", "reg-alpharegex-cvc5.tsv"),
+        ("reg-deepregex", "reg-deepregex-cvc5.tsv"),
+        ("reg-so", "reg-so-cvc5.tsv"),
+    ]
+    for group, baseline_tsv in reg_compare:
+        group_rows = by_group.get(group, [])
+        baseline_series = load_tsv_series(results_dir / baseline_tsv)
+        if not group_rows or not baseline_series:
+            continue
+        plot_comparison_cactus(
+            f"{args.title}: {group} vs cvc5",
+            out_dir / f"{suite_slug(group)}-cvc5-comparison.pdf",
+            {
+                "Delis": delis_series(group_rows),
+                "cvc5": baseline_series,
+            },
+        )
+
+    folseparators_series = load_folseparators_series_from_tsv(
+        (root / args.folseparators_tsv).resolve()
+    )
     for group in [
         "fo-folseparators-fo0",
         "fo-folseparators-fo1",
@@ -745,10 +993,10 @@ def main() -> None:
             f"{args.title}: {group} vs folseparators",
             out_dir / f"{suite_slug(group)}-comparison.pdf",
             {
-                "Delis": delis_series(group_rows),
+                "Delis": delis_series_by_stem(group_rows),
                 "Folseparators": folseparators_series,
             },
-            note="x-axis is percentage of the currently known union of benchmark cases; folseparators filenames are matched by normalized benchmark stem.",
+            universe="intersection",
         )
 
     plot_status_breakdown(

@@ -333,7 +333,7 @@ run_existing_groups() {
     "ltl-sample2ltl|benchmark/LTL/sample2LTL"
     "reg-deepregex|benchmark/Reg/deepregex"
     "reg-so|benchmark/Reg/so"
-    "ctl-learnctl-generated|benchmark/CTL/learnctl/generated"
+    "ctl-learnctl|benchmark/CTL/learnctl/generated"
     "fo-folseparators-fo1|benchmark/FO/folseparators/FO1"
     "fo-folseparators-fo0|benchmark/FO/folseparators/FO0"
     "fo-lfp-folseparators-fo1-lfp|benchmark/FO-LFP/folseparators/FO1-LFP"

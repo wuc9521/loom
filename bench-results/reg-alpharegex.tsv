@@ -1,0 +1,26 @@
+group	path	status	total_ms	sygus_ms	solve_ms	sygus_bytes	sygus_lines	solution_bytes	delis_exit_code	solver_exit_code	delis_args	solver	solver_args	solution_path	detail
+reg-alpharegex	benchmark/Reg/alpharegex/no01.sl	solved	42	11	31	85226	25	66	0					bench-results/artifacts/reg-alpharegex/no01.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no02.sl	solved	71	8	63	63551	20	81	0					bench-results/artifacts/reg-alpharegex/no02.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no03.sl	solved	189818	26	189792	195651	22	137	0					bench-results/artifacts/reg-alpharegex/no03.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no04.sl	solved	39	8	31	58579	20	81	0					bench-results/artifacts/reg-alpharegex/no04.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no05.sl	solved	122	9	113	74536	18	104	0					bench-results/artifacts/reg-alpharegex/no05.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no06.sl	solved	39	8	31	63550	16	89	0					bench-results/artifacts/reg-alpharegex/no06.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no07.sl	solve_timeout	601223	108	601115	607856	26	0							delis timed out after 601.115s
+reg-alpharegex	benchmark/Reg/alpharegex/no08.sl	solved	2277	110	2167	607662	25	102	0					bench-results/artifacts/reg-alpharegex/no08.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no09.sl	solved	38062	31	38031	220630	17	142	0					bench-results/artifacts/reg-alpharegex/no09.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no10.sl	solved	1244	29	1215	200590	28	110	0					bench-results/artifacts/reg-alpharegex/no10.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no11.sl	solved	85	22	63	156858	24	71	0					bench-results/artifacts/reg-alpharegex/no11.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no12.sl	solved	3194	75	3119	444837	22	107	0					bench-results/artifacts/reg-alpharegex/no12.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no13.sl	solved	136367	71	136296	437904	26	129	0					bench-results/artifacts/reg-alpharegex/no13.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no14.sl	solved	527	13	514	103702	21	122	0					bench-results/artifacts/reg-alpharegex/no14.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no15.sl	solved	35	4	31	29954	16	89	0					bench-results/artifacts/reg-alpharegex/no15.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no16.sl	solved	1378	13	1365	105848	22	121	0					bench-results/artifacts/reg-alpharegex/no16.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no17.sl	solved	63557	63	63494	402468	26	131	0					bench-results/artifacts/reg-alpharegex/no17.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no18.sl	solved	1949	83	1866	372177	25	105	0					bench-results/artifacts/reg-alpharegex/no18.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no19.sl	solved	102274	24	102250	181816	23	146	0					bench-results/artifacts/reg-alpharegex/no19.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no20.sl	solved	258	44	214	239688	26	90	0					bench-results/artifacts/reg-alpharegex/no20.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no21.sl	solved	17516	41	17475	216672	19	126	0					bench-results/artifacts/reg-alpharegex/no21.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no22.sl	solved	892	23	869	109586	24	118	0					bench-results/artifacts/reg-alpharegex/no22.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no23.sl	solved	14665	127	14538	488080	26	122	0					bench-results/artifacts/reg-alpharegex/no23.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no24.sl	solved	68137	105	68032	446765	29	134	0					bench-results/artifacts/reg-alpharegex/no24.sl	
+reg-alpharegex	benchmark/Reg/alpharegex/no25.sl	solved	57317	197	57120	719523	21	117	0					bench-results/artifacts/reg-alpharegex/no25.sl	
