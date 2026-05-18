@@ -1,3 +1,0 @@
-[2026-05-15T15:58:29Z] start name=reg-so-cvc5 solver=cvc5 root=/root/delis/benchmark/Reg/so/sygus results=bench-results/reg-so-cvc5.tsv rerun=false restart=false shard_index=0 shard_count=1 files=63
-[2026-05-15T15:58:31Z] running folder total=63 pending=63 results=bench-results/reg-so-cvc5.tsv shard_index=0 shard_count=1
-[2026-05-15T15:58:31Z] running path=benchmark/Reg/so/sygus/100.sl

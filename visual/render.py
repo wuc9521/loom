@@ -344,6 +344,48 @@ def sequence_points_from_entries(
     return xs, ys, solved_count, timeout_count, cutoff_x
 
 
+def sequence_points_from_entries_with_order(
+    entries: list[dict[str, float | str | None]],
+    total_count: int,
+    resolved_order: tuple[str, ...],
+) -> tuple[list[float], list[float], int, int, float | None]:
+    resolved_set = set(resolved_order)
+
+    def entry_key(entry: dict[str, float | str | None]) -> tuple[int, float]:
+        status = str(entry["status"])
+        secs = entry["seconds"]
+        value = float(secs) if secs is not None else float("inf")
+        if status in resolved_set:
+            return (0, value)
+        if status in TIMEOUT_STATUSES:
+            return (1, value)
+        return (2, float("inf"))
+
+    ordered = sorted(entries, key=entry_key)
+    xs: list[float] = []
+    ys: list[float] = []
+    resolved_count = 0
+    timeout_count = 0
+    cutoff_x: float | None = None
+    shown_idx = 0
+    for entry in ordered:
+        status = str(entry["status"])
+        secs = entry["seconds"]
+        if secs is None or status not in resolved_set.union(TIMEOUT_STATUSES):
+            continue
+        shown_idx += 1
+        point_x = 100.0 * shown_idx / total_count
+        if status in resolved_set:
+            resolved_count += 1
+        elif status in TIMEOUT_STATUSES:
+            timeout_count += 1
+            if cutoff_x is None:
+                cutoff_x = point_x
+        xs.append(point_x)
+        ys.append(float(secs))
+    return xs, ys, resolved_count, timeout_count, cutoff_x
+
+
 def prep_axes(ax: plt.Axes, title: str) -> None:
     ax.set_title(title, loc="left", fontweight="bold", pad=10)
     ax.set_xlabel("Benchmarks resolved (%)")
@@ -825,6 +867,7 @@ def plot_comparison_cactus(
     series_map: dict[str, dict[str, dict[str, float | str | None]]],
     note: str = "",
     universe: str = "union",
+    resolved_label: str = "solved",
 ) -> None:
     keys = comparison_keys(series_map, universe)
     if not keys:
@@ -858,7 +901,7 @@ def plot_comparison_cactus(
             linewidth=2.2,
             color=COMPARE_COLORS.get(name, "#374151"),
             label=(
-                f"{name} (solved={solved_count}/{total_count}, timeout={timeout_count})"
+                f"{name} ({resolved_label}={solved_count}/{total_count}, timeout={timeout_count})"
             ),
         )
         draw_timeout_cutoff(ax, cutoff_x)
@@ -875,6 +918,103 @@ def plot_comparison_cactus(
             color="#4B5563",
         )
     ax.legend(frameon=False, loc="upper left")
+    fig.savefig(out_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_fo_comparison_cactus(
+    title: str,
+    out_path: Path,
+    series_map: dict[str, dict[str, dict[str, float | str | None]]],
+    universe: str = "intersection",
+) -> None:
+    keys = comparison_keys(series_map, universe)
+    if not keys:
+        return
+    filtered_series_map = {
+        name: {key: value for key, value in series.items() if key in keys}
+        for name, series in series_map.items()
+    }
+
+    total_count = len(keys)
+    if total_count == 0:
+        return
+
+    fig, ax = plt.subplots(figsize=(9.2, 5.6), constrained_layout=True)
+    prep_axes(ax, title)
+
+    resolved_order = ("solved", "infeasible")
+    for name, series in filtered_series_map.items():
+        entries = list(series.values())
+        xs, ys, finished_count, timeout_count, cutoff_x = (
+            sequence_points_from_entries_with_order(
+                entries, total_count, resolved_order
+            )
+        )
+        if not ys:
+            continue
+        ax.step(
+            xs,
+            ys,
+            where="post",
+            linewidth=2.3,
+            color=COMPARE_COLORS.get(name, "#374151"),
+            label=f"{name} ({finished_count}/{total_count})",
+        )
+        draw_timeout_cutoff(ax, cutoff_x)
+
+    ax.legend(frameon=False, loc="upper left")
+    fig.savefig(out_path, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_fo_outcome_breakdown(
+    level_rows: dict[str, list[dict[str, str]]],
+    out_path: Path,
+    title: str,
+) -> None:
+    levels = [level for level in ["FO0", "FO1", "FO2", "FO3"] if level_rows.get(level)]
+    if not levels:
+        return
+
+    solved = []
+    infeasible = []
+    timeout = []
+    totals = []
+    for level in levels:
+        rows = level_rows[level]
+        counts = status_counts(rows)
+        totals.append(len(rows))
+        solved.append(counts["solved"])
+        infeasible.append(counts["infeasible"])
+        timeout.append(counts["solve_timeout"] + counts["sygus_timeout"])
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.4), constrained_layout=True)
+    x = list(range(len(levels)))
+    width = 0.62
+    ax.bar(x, solved, width=width, color="#1F4E79", label="solved")
+    ax.bar(
+        x,
+        infeasible,
+        width=width,
+        bottom=solved,
+        color="#9CA3AF",
+        label="infeasible",
+    )
+    ax.bar(
+        x,
+        timeout,
+        width=width,
+        bottom=[a + b for a, b in zip(solved, infeasible)],
+        color="#B45309",
+        label="timeout",
+    )
+    ax.set_title(title, loc="left", fontweight="bold", pad=10)
+    ax.set_ylabel("Benchmarks")
+    ax.set_xticks(x, levels)
+    ax.grid(axis="y", color="#D1D5DB", linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, ncol=3, loc="upper left")
     fig.savefig(out_path, format="pdf", bbox_inches="tight")
     plt.close(fig)
 
@@ -914,6 +1054,11 @@ def main() -> None:
             ["FO0", "FO1", "FO2", "FO3"],
             fo_levels,
             out_dir / "fo-folseparators-parallel.pdf",
+        )
+        plot_fo_outcome_breakdown(
+            fo_levels,
+            out_dir / "fo-folseparators-outcomes.pdf",
+            f"{args.title}: FO Folseparators Outcomes",
         )
 
     fo_lfp_levels = {
@@ -989,11 +1134,23 @@ def main() -> None:
         group_rows = by_group.get(group, [])
         if not group_rows or not folseparators_series:
             continue
-        plot_comparison_cactus(
+        plot_fo_comparison_cactus(
             f"{args.title}: {group} vs folseparators",
             out_dir / f"{suite_slug(group)}-comparison.pdf",
             {
                 "Delis": delis_series_by_stem(group_rows),
+                "Folseparators": folseparators_series,
+            },
+            universe="intersection",
+        )
+
+    fo2_rows = by_group.get("fo-folseparators-fo2", [])
+    if fo2_rows and folseparators_series:
+        plot_fo_comparison_cactus(
+            f"{args.title}: FO2 vs folseparators",
+            out_dir / "fo-folseparators-main-comparison.pdf",
+            {
+                "Delis": delis_series_by_stem(fo2_rows),
                 "Folseparators": folseparators_series,
             },
             universe="intersection",

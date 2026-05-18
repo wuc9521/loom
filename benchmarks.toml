@@ -76,7 +76,7 @@ path = "benchmark/Reg/so"
 recursive = false
 
 [[folders]]
-name = "ctl-learnctl-generated"
+name = "ctl-learnctl"
 path = "benchmark/CTL/learnctl/generated"
 recursive = false
 

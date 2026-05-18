@@ -1,5 +1,0 @@
-[2026-05-15T12:38:53Z] start name=reg-alpharegex-cvc5 solver=cvc5 root=/root/delis/benchmark/Reg/alpharegex/sygus results=bench-results/reg-alpharegex-cvc5.tsv rerun=false restart=false shard_index=0 shard_count=1 files=26
-[2026-05-15T12:38:54Z] running folder total=26 pending=26 results=bench-results/reg-alpharegex-cvc5.tsv shard_index=0 shard_count=1
-[2026-05-15T12:38:54Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_01.sl
-[2026-05-15T12:38:54Z] done path=benchmark/Reg/alpharegex/sygus/GCPE_01.sl status=solved completed=1
-[2026-05-15T12:38:54Z] running path=benchmark/Reg/alpharegex/sygus/GCPE_01_unsat.sl
