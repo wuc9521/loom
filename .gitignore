@@ -11,3 +11,4 @@ theory/
 tests
 tools
 dist
+**/__pycache__/

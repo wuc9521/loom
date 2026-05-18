@@ -1,0 +1,3 @@
+(
+(define-fun phi () Formula0 (fol.0.not (fol.0.and (fol.0.eq.abp.index_t fol.0.term.abp.sender_gen_i fol.0.term.abp.sender_i) (fol.0.exists.x0.abp.data_msg_t (fol.ctx-x0-abp.data_msg_t.and (fol.ctx-x0-abp.data_msg_t.atom.abp.data_msg.le fol.ctx-x0-abp.data_msg_t.var.x0.abp.data_msg_t fol.ctx-x0-abp.data_msg_t.var.x0.abp.data_msg_t) (fol.ctx-x0-abp.data_msg_t.or (fol.ctx-x0-abp.data_msg_t.and fol.ctx-x0-abp.data_msg_t.atom.abp.sender_bit (fol.ctx-x0-abp.data_msg_t.atom.abp.dbit fol.ctx-x0-abp.data_msg_t.var.x0.abp.data_msg_t)) (fol.ctx-x0-abp.data_msg_t.not (fol.ctx-x0-abp.data_msg_t.or fol.ctx-x0-abp.data_msg_t.atom.abp.sender_bit (fol.ctx-x0-abp.data_msg_t.atom.abp.dbit fol.ctx-x0-abp.data_msg_t.var.x0.abp.data_msg_t)))))))))
+)

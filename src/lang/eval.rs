@@ -1,8 +1,7 @@
 use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem};
 use std::{
     collections::HashMap,
-    hash::{Hash, Hasher},
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -11,7 +10,7 @@ struct SliceKey {
     len: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum FuncInterpIndex {
     Simple {
         interp_idx: usize,
@@ -19,22 +18,28 @@ enum FuncInterpIndex {
     Match {
         interp_idx: usize,
         default_case_idx: Option<usize>,
+        exact_case_idx: HashMap<Vec<String>, usize>,
     },
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 struct FuncInterpCache {
     by_name: HashMap<String, FuncInterpIndex>,
 }
 
 #[derive(Clone)]
 struct CachedFuncInterp {
-    fingerprint: u64,
-    cache: FuncInterpCache,
+    cache: Arc<FuncInterpCache>,
 }
 
 fn interp_cache() -> &'static Mutex<HashMap<SliceKey, CachedFuncInterp>> {
     static CACHE: OnceLock<Mutex<HashMap<SliceKey, CachedFuncInterp>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn model_domain_cache() -> &'static Mutex<HashMap<usize, Arc<HashMap<String, Vec<String>>>>> {
+    static CACHE: OnceLock<Mutex<HashMap<usize, Arc<HashMap<String, Vec<String>>>>>> =
+        OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -60,11 +65,22 @@ fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
                             .all(|elem| matches!(elem, PatternElem::Wildcard))
                     })
                 });
+                let exact_case_idx = cases
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, case)| {
+                        case.pattern
+                            .as_ref()
+                            .and_then(pattern_as_exact_tuple)
+                            .map(|tuple| (tuple, idx))
+                    })
+                    .collect::<HashMap<_, _>>();
                 by_name.insert(
                     name.clone(),
                     FuncInterpIndex::Match {
                         interp_idx,
                         default_case_idx,
+                        exact_case_idx,
                     },
                 );
             }
@@ -73,30 +89,23 @@ fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
     FuncInterpCache { by_name }
 }
 
-fn interp_fingerprint(func_interps: &[FuncInterp]) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    func_interps.len().hash(&mut hasher);
-    for interp in func_interps {
-        interp.to_string().hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-fn interp_cache_for(func_interps: &[FuncInterp]) -> FuncInterpCache {
+fn interp_cache_for(func_interps: &[FuncInterp]) -> Arc<FuncInterpCache> {
     let key = slice_key(func_interps);
-    let fingerprint = interp_fingerprint(func_interps);
     let mut cache = interp_cache().lock().expect("interp cache poisoned");
     let entry = cache.entry(key).or_insert_with(|| CachedFuncInterp {
-        fingerprint,
-        cache: build_interp_cache(func_interps),
+        cache: Arc::new(build_interp_cache(func_interps)),
     });
-    if entry.fingerprint != fingerprint {
-        *entry = CachedFuncInterp {
-            fingerprint,
-            cache: build_interp_cache(func_interps),
-        };
-    }
     entry.cache.clone()
+}
+
+fn pattern_as_exact_tuple(pat: &Pattern) -> Option<Vec<String>> {
+    pat.elements
+        .iter()
+        .map(|elem| match elem {
+            PatternElem::UnivElem(e) => Some(e.name.clone()),
+            PatternElem::Wildcard | PatternElem::Var(_) => None,
+        })
+        .collect()
 }
 
 fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
@@ -111,7 +120,14 @@ fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
 }
 
 fn cached_domain_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
-    build_model_domains(model).get(sort).cloned()
+    let key = model as *const Model as usize;
+    let mut cache = model_domain_cache()
+        .lock()
+        .expect("model domain cache poisoned");
+    let entry = cache
+        .entry(key)
+        .or_insert_with(|| Arc::new(build_model_domains(model)));
+    entry.get(sort).cloned()
 }
 
 pub fn pattern_match_symbols(tuple: &[String], pat: &Pattern) -> bool {
@@ -145,10 +161,14 @@ pub fn eval_symbols<'a>(
         FuncInterpIndex::Match {
             interp_idx,
             default_case_idx,
+            exact_case_idx,
         } => {
             let FuncInterp::MatchInterp(_, cases) = &func_interps[*interp_idx] else {
                 return None;
             };
+            if let Some(case_idx) = exact_case_idx.get(args) {
+                return cases.get(*case_idx).map(|case| &case.value);
+            }
             for case in cases {
                 if let Some(pat) = &case.pattern {
                     if pattern_match_symbols(args, pat) {

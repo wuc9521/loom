@@ -12,9 +12,14 @@ Usage:
 Options:
   --path PATH                  Benchmark file or folder. Required. Repeatable.
   --name NAME                  Benchmark group name. Default: ad-hoc
-  --delis PATH                 Delis binary. Default: $DELIS_BENCH_SOLVER or sibling delis
+  --delis PATH                 Delis binary. Default: $DELIS_BENCH_SOLVER or repo-local
+                              target/release/delis, then PATH.
   --mode MODE                  native | external_sygus. Default: native
   --delis-arg ARG             Extra argument passed to delis. Repeatable.
+  --capture-sygus-stats       In native mode, record `sygus_ms/sygus_bytes/sygus_lines`
+                              via `delis --sygus-stats` without storing the full SyGuS text.
+                              Default: on.
+  --no-capture-sygus-stats    Disable the native-mode SyGuS stats prepass.
   --recursive                  Recurse into benchmark folders.
   --sygus-solver CMD           External SyGuS solver. Default: cvc5
   --sygus-solver-arg ARG       Extra external solver arg. Repeatable.
@@ -62,13 +67,19 @@ resolve_delis_path() {
     printf '%s\n' "$DELIS_BENCH_SOLVER"
     return
   fi
+  local script_dir
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  local repo_root
+  repo_root=$(cd "$script_dir" && pwd)
+  if [[ -x "$repo_root/target/release/delis" ]]; then
+    printf '%s\n' "$repo_root/target/release/delis"
+    return
+  fi
   if command -v delis >/dev/null 2>&1; then
     command -v delis
     return
   fi
-  local script_dir
-  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-  printf '%s\n' "$(cd "$script_dir/.." && pwd)/target/debug/delis"
+  printf '%s\n' "$repo_root/target/release/delis"
 }
 
 abspath() {
@@ -322,7 +333,7 @@ run_existing_groups() {
     "ltl-sample2ltl|benchmark/LTL/sample2LTL"
     "reg-deepregex|benchmark/Reg/deepregex"
     "reg-so|benchmark/Reg/so"
-    "ctl-learnctl-generated|benchmark/CTL/learnctl/generated"
+    "ctl-learnctl|benchmark/CTL/learnctl/generated"
     "fo-folseparators-fo1|benchmark/FO/folseparators/FO1"
     "fo-folseparators-fo0|benchmark/FO/folseparators/FO0"
     "fo-lfp-folseparators-fo1-lfp|benchmark/FO-LFP/folseparators/FO1-LFP"
@@ -342,6 +353,7 @@ MODE="native"
 NAME="ad-hoc"
 DELIS_BIN=""
 RECURSIVE=0
+CAPTURE_SYGUS_STATS=1
 SYGUS_SOLVER=""
 SYGUS_TIMEOUT_SECS=600
 SOLVE_TIMEOUT_SECS=600
@@ -382,6 +394,14 @@ while (($#)); do
       (($# >= 2)) || die "--delis-arg requires a value"
       DELIS_ARGS+=("$2")
       shift 2
+      ;;
+    --capture-sygus-stats)
+      CAPTURE_SYGUS_STATS=1
+      shift
+      ;;
+    --no-capture-sygus-stats)
+      CAPTURE_SYGUS_STATS=0
+      shift
       ;;
     --recursive)
       RECURSIVE=1
@@ -454,6 +474,7 @@ if ((RUN_ALL_EXISTING)) || ((${#PATHS[@]} == 0)); then
   [[ -n "$DELIS_BIN" ]] && shared_args+=(--delis "$DELIS_BIN")
   shared_args+=(--mode "$MODE")
   ((RECURSIVE)) && shared_args+=(--recursive)
+  ((CAPTURE_SYGUS_STATS)) && shared_args+=(--capture-sygus-stats)
   [[ -n "$SYGUS_SOLVER" ]] && shared_args+=(--sygus-solver "$SYGUS_SOLVER")
   shared_args+=(--sygus-timeout-secs "$SYGUS_TIMEOUT_SECS" --solve-timeout-secs "$SOLVE_TIMEOUT_SECS")
   [[ -n "$RESULTS_DIR" ]] && shared_args+=(--results-dir "$RESULTS_DIR")
@@ -632,6 +653,40 @@ for file in "${FILES[@]}"; do
       native_cmd+=("${DELIS_ARGS[@]}")
     fi
     native_cmd+=("$file")
+    sygus_ms=0
+    sygus_bytes=0
+    sygus_lines=0
+    native_detail_prefix=""
+    if ((CAPTURE_SYGUS_STATS)); then
+      stats_cmd=("$DELIS_BIN")
+      if ((${#DELIS_ARGS[@]} > 0)); then
+        stats_cmd+=("${DELIS_ARGS[@]}")
+      fi
+      stats_cmd+=(--sygus-stats "$file")
+      stats_outputs=()
+      while IFS= read -r line; do
+        stats_outputs+=("$line")
+      done < <(run_command "$SYGUS_TIMEOUT_SECS" "" "${stats_cmd[@]}")
+      stats_meta=${stats_outputs[0]}
+      stats_stdout=${stats_outputs[1]}
+      stats_stderr=${stats_outputs[2]}
+      stats_timed_out=$(read_meta_value "$stats_meta" timed_out)
+      stats_code=$(read_meta_value "$stats_meta" returncode)
+      stats_stderr_summary=$(summarize_text_file "$stats_stderr")
+      if [[ "$stats_timed_out" == "1" ]]; then
+        native_detail_prefix="sygus-stats timed out"
+      elif [[ "$stats_code" != "0" ]]; then
+        native_detail_prefix="${stats_stderr_summary:-sygus-stats command failed}"
+      else
+        stats_line=$(head -n 1 "$stats_stdout" | tr -d '\r\n')
+        if [[ "$stats_line" == SYGUS_STATS$'\t'* ]]; then
+          IFS=$'\t' read -r _ sygus_ms sygus_bytes sygus_lines <<<"$stats_line"
+        else
+          native_detail_prefix="unexpected sygus-stats output"
+        fi
+      fi
+      rm -f "$stats_meta" "$stats_stdout" "$stats_stderr"
+    fi
     command_outputs=()
     while IFS= read -r line; do
       command_outputs+=("$line")
@@ -689,8 +744,19 @@ PY
       fi
       solution_path=""
     fi
-    row=$(printf '%s\t%s\t%s\t%s\t0\t%s\t0\t0\t%s\t%s\t\t%s\t\t\t%s\t%s' \
-      "$group_field" "$path_field" "$status" "$duration_ms" "$duration_ms" "$stdout_size" \
+    if [[ -n "$native_detail_prefix" ]]; then
+      if [[ -n "$detail" ]]; then
+        detail="$native_detail_prefix | $detail"
+      else
+        detail="$native_detail_prefix"
+      fi
+    fi
+    total_ms=$duration_ms
+    if ((CAPTURE_SYGUS_STATS)) && [[ "$sygus_ms" =~ ^[0-9]+$ ]]; then
+      total_ms=$((duration_ms + sygus_ms))
+    fi
+    row=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t%s\t\t\t%s\t%s' \
+      "$group_field" "$path_field" "$status" "$total_ms" "$sygus_ms" "$duration_ms" "$sygus_bytes" "$sygus_lines" "$stdout_size" \
       "${delis_exit_code:-}" "$delis_args_joined" "$solution_path" "$(sanitize_field "$detail")")
     rm -f "$meta_file" "$stdout_file" "$stderr_file"
   else
