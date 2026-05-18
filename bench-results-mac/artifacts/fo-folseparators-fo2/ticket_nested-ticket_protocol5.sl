@@ -1,3 +1,0 @@
-(
-(define-fun phi () Formula0 (fol.0.not (fol.0.exists.x0.ticket_protocol.thread (fol.ctx-x0-ticket_protocol.thread.and (fol.ctx-x0-ticket_protocol.thread.atom.ticket_protocol.pc1 fol.ctx-x0-ticket_protocol.thread.var.x0.ticket_protocol.thread) (fol.ctx-x0-ticket_protocol.thread.atom.ticket_protocol.pc2 fol.ctx-x0-ticket_protocol.thread.var.x0.ticket_protocol.thread)))))
-)

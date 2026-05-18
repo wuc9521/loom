@@ -1,9 +1,0 @@
-[2026-05-11T19:32:01Z] start name=ltl-learnltl-syslite mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/learnltl/syslite-comparison results=bench-results/ltl-learnltl-syslite.tsv rerun=false restart=true shard_index=1 shard_count=2 files=3
-[2026-05-11T19:32:10Z] running folder total=3 pending=3 results=bench-results/ltl-learnltl-syslite.tsv shard_index=1 shard_count=2
-[2026-05-11T19:32:12Z] running path=benchmark/LTL/learnltl/syslite-comparison/chinese_wall_policy_1250.sl
-[2026-05-11T19:32:30Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/chinese_wall_policy_1250.sl solved 5691 0 5691 0 0 78 0     bench-results/artifacts/ltl-learnltl-syslite/chinese_wall_policy_1250.sl 
-[2026-05-11T19:32:32Z] running path=benchmark/LTL/learnltl/syslite-comparison/financial_institute_1250.sl
-[2026-05-11T19:32:53Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/financial_institute_1250.sl solved 8195 0 8195 0 0 92 0     bench-results/artifacts/ltl-learnltl-syslite/financial_institute_1250.sl 
-[2026-05-11T19:32:55Z] running path=benchmark/LTL/learnltl/syslite-comparison/hippa_16450a2_1250.sl
-[2026-05-11T19:33:16Z] row ltl-learnltl-syslite benchmark/LTL/learnltl/syslite-comparison/hippa_16450a2_1250.sl solved 8492 0 8492 0 0 84 0     bench-results/artifacts/ltl-learnltl-syslite/hippa_16450a2_1250.sl 
-[2026-05-11T19:33:17Z] done completed_now=3 total=3

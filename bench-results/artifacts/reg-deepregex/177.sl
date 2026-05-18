@@ -1,3 +1,0 @@
-(
-(define-fun regex () RegLan (re.++ char.any (re.union char.lower (re.++ char.any (re.plus char.any)))))
-)

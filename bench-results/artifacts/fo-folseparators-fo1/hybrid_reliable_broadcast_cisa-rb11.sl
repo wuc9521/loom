@@ -1,3 +1,0 @@
-(
-(define-fun phi () Formula0 (fol.0.forall.x0.node (fol.ctx-x0-node.or (fol.ctx-x0-node.and (fol.ctx-x0-node.atom.rb.obedient fol.ctx-x0-node.var.x0.node) (fol.ctx-x0-node.or (fol.ctx-x0-node.atom.rb.rcv_init fol.ctx-x0-node.var.x0.node) (fol.ctx-x0-node.not (fol.ctx-x0-node.atom.rb.sent_msg_proj fol.ctx-x0-node.var.x0.node)))) (fol.ctx-x0-node.and (fol.ctx-x0-node.eq.node fol.ctx-x0-node.var.x0.node fol.ctx-x0-node.term.rb.tp_correctness.n0) (fol.ctx-x0-node.not (fol.ctx-x0-node.exists.x0.quorum_a (fol.ctx-x0-quorum_a.atom.member_a fol.ctx-x0-quorum_a.term.rb.tp_correctness.n0 fol.ctx-x0-quorum_a.var.x0.quorum_a)))))))
-)

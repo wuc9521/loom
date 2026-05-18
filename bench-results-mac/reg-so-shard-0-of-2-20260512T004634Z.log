@@ -1,3 +1,0 @@
-[2026-05-12T00:46:38Z] start name=reg-so mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/Reg/so results=bench-results/reg-so.tsv rerun=true restart=false shard_index=0 shard_count=2 files=32
-[2026-05-12T00:48:11Z] skipping folder total=32 pending=0 results=bench-results/reg-so.tsv shard_index=0 shard_count=2
-[2026-05-12T00:48:13Z] done pending=0

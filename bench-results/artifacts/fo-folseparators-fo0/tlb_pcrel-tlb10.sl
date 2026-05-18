@@ -1,3 +1,0 @@
-(
-(define-fun phi () Formula0 (fol.0.and (fol.0.or (fol.0.atom.tlb.pc_r7 fol.0.term.tlb.tp1.sk0) (fol.0.atom.tlb.plock fol.0.term.tlb.tp1.sk2)) (fol.0.or (fol.0.atom.tlb.pc_r5 fol.0.term.tlb.tp1.sk0) (fol.0.or (fol.0.atom.tlb.pc_r6 fol.0.term.tlb.tp1.sk0) (fol.0.and (fol.0.atom.tlb.pc_r7 fol.0.term.tlb.tp1.sk0) (fol.0.atom.tlb.plock fol.0.term.tlb.tp1.sk2))))))
-)

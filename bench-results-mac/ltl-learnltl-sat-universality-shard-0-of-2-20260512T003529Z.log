@@ -1,3 +1,0 @@
-[2026-05-12T00:35:33Z] start name=ltl-learnltl-sat-universality mode=native root=/Users/wuchentian/Codes/Rust/delis/benchmark/LTL/learnltl/sat-comparison/universality results=bench-results/ltl-learnltl-sat-universality.tsv rerun=true restart=false shard_index=0 shard_count=2 files=27
-[2026-05-12T00:36:50Z] skipping folder total=27 pending=0 results=bench-results/ltl-learnltl-sat-universality.tsv shard_index=0 shard_count=2
-[2026-05-12T00:36:51Z] done pending=0

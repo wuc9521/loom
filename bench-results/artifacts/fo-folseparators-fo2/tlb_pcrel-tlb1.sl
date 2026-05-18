@@ -1,3 +1,0 @@
-(
-(define-fun phi () Formula0 (fol.0.exists.x0.tlb.processor (fol.ctx-x0-tlb.processor.forall.x1.tlb.processor (fol.ctx-x0-tlb.processor-x1-tlb.processor.or (fol.ctx-x0-tlb.processor-x1-tlb.processor.eq.tlb.processor fol.ctx-x0-tlb.processor-x1-tlb.processor.var.x0.tlb.processor fol.ctx-x0-tlb.processor-x1-tlb.processor.var.x1.tlb.processor) (fol.ctx-x0-tlb.processor-x1-tlb.processor.not (fol.ctx-x0-tlb.processor-x1-tlb.processor.exists.x0.tlb.processor (fol.ctx-x0-tlb.processor-x1-tlb.processor.atom.tlb.currentcpu fol.ctx-x0-tlb.processor-x1-tlb.processor.var.x0.tlb.processor fol.ctx-x0-tlb.processor-x1-tlb.processor.var.x1.tlb.processor)))))))
-)

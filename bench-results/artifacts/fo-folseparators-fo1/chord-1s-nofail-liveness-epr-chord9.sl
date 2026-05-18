@@ -1,3 +1,0 @@
-(
-(define-fun phi () Formula0 (fol.0.forall.x0.chord.node (fol.ctx-x0-chord.node.or (fol.ctx-x0-chord.node.eq.chord.node fol.ctx-x0-chord.node.var.x0.chord.node fol.ctx-x0-chord.node.term.chord.tp1.n0) (fol.ctx-x0-chord.node.and (fol.ctx-x0-chord.node.atom.chord.prd fol.ctx-x0-chord.node.term.chord.tp1.n0 fol.ctx-x0-chord.node.var.x0.chord.node) (fol.ctx-x0-chord.node.not (fol.ctx-x0-chord.node.exists.x0.chord.node (fol.ctx-x0-chord.node.and (fol.ctx-x0-chord.node.atom.chord.prd fol.ctx-x0-chord.node.var.x0.chord.node fol.ctx-x0-chord.node.var.x0.chord.node) (fol.ctx-x0-chord.node.atom.chord.prd fol.ctx-x0-chord.node.var.x0.chord.node fol.ctx-x0-chord.node.term.chord.tp1.n0))))))))
-)
