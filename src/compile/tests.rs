@@ -98,6 +98,43 @@ fn cloned_models_preserve_stable_cache_identity() {
 }
 
 #[test]
+fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(define-model m)
+(declare-term-types ((Formula 0)) (((top) (bot))))
+(define-finite Asp
+  (record (model Model) (tag (enum p0 p1 n0 n1))))
+(define-semantics
+  ((Formula.Sem (f Formula) (asp Asp)))
+  ((match f
+     ((top) (or (= (tag asp) p0) (= (tag asp) p1)))
+     ((bot) false))))
+(synth-fun phi () Formula)
+(constraint (Formula.Sem phi (Asp m p0)))
+(constraint (Formula.Sem phi (Asp m p1)))
+(constraint (not (Formula.Sem phi (Asp m n0))))
+(constraint (not (Formula.Sem phi (Asp m n1))))
+(check-synth)
+"#,
+    );
+
+    let sygus = to_sygus(&problem, false).expect("native BV lowering should succeed");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(output.contains("(constraint (= ((_ extract 0 0) phi) #b1))"));
+    assert!(output.contains("(constraint (= ((_ extract 1 1) phi) #b1))"));
+    assert!(output.contains("(constraint (not (= ((_ extract 2 2) phi) #b1)))"));
+    assert!(output.contains("(constraint (not (= ((_ extract 3 3) phi) #b1)))"));
+}
+
+#[test]
 fn enumerates_subword_aspects_and_constraint_polarities() {
     let problem = parse(
         r#"
