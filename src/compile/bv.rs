@@ -253,12 +253,18 @@ impl<'a> NativeCompiler<'a> {
         }
         cmds.push(synth_cmd.build());
         let env = Env::default();
-        for cmd in &self.problem.cmds {
-            let term = match cmd {
-                DelisCmd::As(SyGuSCmd::Constraint(term)) => term,
-                DelisCmd::DeclareAxiom(_) => continue,
-                _ => continue,
-            };
+        let top_level_constraints = self
+            .problem
+            .cmds
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DelisCmd::As(SyGuSCmd::Constraint(term)) => Some(term),
+                DelisCmd::DeclareAxiom(_) => None,
+                _ => None,
+            })
+            .map(sygus_term_to_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        for term in &top_level_constraints {
             cmds.push(
                 Cmd::constraint()
                     .body(self.lower_top_level_constraint(term, &env)?)
@@ -269,8 +275,8 @@ impl<'a> NativeCompiler<'a> {
         Ok(cmds)
     }
 
-    fn lower_top_level_constraint(&self, term: &SyGuSTerm, env: &Env) -> Result<SyGuSTerm, String> {
-        match self.eval_bool(&sygus_term_to_value(term)?, env)? {
+    fn lower_top_level_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
+        match self.eval_bool(term, env)? {
             BoolExpr::Const(value) => Ok(SyGuSTerm::Literal(Literal::Bool(value))),
             BoolExpr::Dynamic(term) => Ok(term),
         }
