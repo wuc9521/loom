@@ -30,16 +30,71 @@ fn eval_symbols_matches_unary_model_interpretations() {
         })
         .expect("test model should exist");
 
-    let t0 = crate::lang::eval::eval_symbols("p0", &["$0".to_string()], &model.func_interps)
+    let t0 = crate::lang::eval::eval_symbols("p0", &["$0".to_string()], model)
         .expect("lookup for $0 should exist");
-    let t1 = crate::lang::eval::eval_symbols("p0", &["$1".to_string()], &model.func_interps)
+    let t1 = crate::lang::eval::eval_symbols("p0", &["$1".to_string()], model)
         .expect("lookup for $1 should exist");
-    let t2 = crate::lang::eval::eval_symbols("p0", &["$2".to_string()], &model.func_interps)
+    let t2 = crate::lang::eval::eval_symbols("p0", &["$2".to_string()], model)
         .expect("lookup for $2 should exist");
 
     assert!(crate::compile::semantic::interped_bool(t0));
     assert!(crate::compile::semantic::interped_bool(t1));
     assert!(!crate::compile::semantic::interped_bool(t2));
+}
+
+#[test]
+fn cloned_models_preserve_stable_cache_identity() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun p0 (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0 $1))
+  (interp-fun p0 (match (
+    (($0) true)
+    ((_) false)
+  ))))
+"#,
+    );
+
+    let model = problem
+        .cmds
+        .iter()
+        .find_map(|cmd| match cmd {
+            crate::parser::ast::DelisCmd::DefineModel(model) => Some(model),
+            _ => None,
+        })
+        .expect("test model should exist");
+    let cloned = model.clone();
+    let reparsed = parse(
+        r#"
+(set-logic ALL)
+(declare-sort Pos 0)
+(declare-fun p0 (Pos) Bool)
+(define-model w
+  (define-univ Pos ($0 $1))
+  (interp-fun p0 (match (
+    (($0) true)
+    ((_) false)
+  ))))
+"#,
+    );
+    let reparsed_model = reparsed
+        .cmds
+        .iter()
+        .find_map(|cmd| match cmd {
+            crate::parser::ast::DelisCmd::DefineModel(model) => Some(model),
+            _ => None,
+        })
+        .expect("reparsed model should exist");
+
+    assert_eq!(model.cache_id, cloned.cache_id);
+    assert_ne!(model.cache_id, reparsed_model.cache_id);
+    assert!(crate::compile::semantic::interped_bool(
+        crate::lang::eval::eval_symbols("p0", &["$0".to_string()], &cloned)
+            .expect("lookup for cloned model should exist")
+    ));
 }
 
 #[test]
