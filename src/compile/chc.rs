@@ -19,9 +19,9 @@ use crate::{
     parser::DelisProg,
 };
 use lexpr::Value;
+use rustc_hash::FxHashMap as HashMap;
 use std::{
     cell::RefCell,
-    collections::HashMap,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -178,7 +178,7 @@ impl<'a> ChcCompiler<'a> {
             .iter()
             .map(|cons| (cons.name.clone(), cons.result_sort.clone()))
             .collect::<HashMap<_, _>>();
-        let mut relation_sorts = HashMap::new();
+        let mut relation_sorts = HashMap::default();
         for spec in &program.semantics {
             let mut sorts = vec![spec.term_sort.clone()];
             let cases = ctx
@@ -200,10 +200,10 @@ impl<'a> ChcCompiler<'a> {
             sig,
             ctx,
             relation_sorts,
-            predicates: HashMap::new(),
+            predicates: HashMap::default(),
             next_helper_id: 0,
-            ground_model_eval: RefCell::new(HashMap::new()),
-            domain_values_cache: RefCell::new(HashMap::new()),
+            ground_model_eval: RefCell::new(HashMap::default()),
+            domain_values_cache: RefCell::new(HashMap::default()),
             quantifier_profile: RefCell::new(QuantifierProfile::default()),
             lowering_profile: RefCell::new(LoweringProfile::default()),
         }

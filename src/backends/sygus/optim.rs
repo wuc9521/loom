@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{BitVec, BuiltinOp, Literal, SyGuSTerm, Term};
 
 #[derive(Clone, Debug)]

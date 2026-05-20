@@ -1,7 +1,8 @@
 use crate::backends::smt2::ast::{HornAtom, HornProg, HornRule, HornTerm, PredicatePolarity};
 use crate::backends::sygus::optim::{self, BitwiseExpr};
 use crate::compile::{TermConstructor, TermSignature};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use sygus_parser::{BitVec, Bool, Cmd, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term};
 
@@ -62,7 +63,7 @@ pub fn sort_widths(program: &HornProg) -> HashMap<String, usize> {
 }
 
 pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
-    let mut live_preds = HashSet::new();
+    let mut live_preds = HashSet::default();
     for rule in &program.rules {
         live_preds.insert(rule.head.pred.clone());
         for atom in &rule.body_atoms {
@@ -74,7 +75,7 @@ pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
             live_preds.insert(atom.pred.clone());
         }
     }
-    let mut states_by_sort: HashMap<String, BTreeSet<String>> = HashMap::new();
+    let mut states_by_sort: HashMap<String, BTreeSet<String>> = HashMap::default();
     for (pred, info) in &program.predicates {
         if !live_preds.contains(pred) {
             continue;
@@ -284,7 +285,7 @@ fn build_constructor_plan(
             HornTerm::Var(name) if name == &cons.name && cons.arg_sorts.is_empty() => &[],
             _ => continue,
         };
-        let mut head_vars = HashMap::new();
+        let mut head_vars = HashMap::default();
         for (idx, arg) in head_args.iter().enumerate() {
             let HornTerm::Var(name) = arg else {
                 return Err(format!(
@@ -334,7 +335,7 @@ fn build_constructor_plan(
     }
 
     for clauses in plan.obligations.values_mut() {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         clauses.retain(|clause| seen.insert(clause.clone()));
     }
 
@@ -497,8 +498,8 @@ pub fn compile_one_way(
 
         let order_start = Instant::now();
         let mut order = Vec::new();
-        let mut visiting = HashSet::new();
-        let mut visited = HashSet::new();
+        let mut visiting = HashSet::default();
+        let mut visited = HashSet::default();
         for obligation in plan.obligations.keys().copied() {
             visit_obligation(obligation, &plan, &mut visiting, &mut visited, &mut order)
                 .unwrap_or_else(|err| panic!("{err} for constructor {}", cons.name));
@@ -506,8 +507,8 @@ pub fn compile_one_way(
         order_elapsed += order_start.elapsed();
 
         let resolve_start = Instant::now();
-        let mut const_helpers = HashMap::new();
-        let mut helper_names = HashMap::new();
+        let mut const_helpers = HashMap::default();
+        let mut helper_names = HashMap::default();
         let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
         // Distinct obligation RHS values: identical SyGuS term reuses one `let` binding.
         let mut distinct_obligations: Vec<(SyGuSTerm, String)> = Vec::new();

@@ -1,6 +1,6 @@
 use crate::{compile::types::AspectValue, lang::eval::get_domain_for_sort, lang::model::Model};
 use lexpr::Value;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
 
 pub fn sygus_term_to_value(term: &SyGuSTerm) -> Result<Value, String> {

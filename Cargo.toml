@@ -19,6 +19,7 @@ log = "0.4.22"
 pest = "2.8.1"
 pest_derive = "2.8.1"
 regex = "1.12.2"
+rustc-hash = "1.1.0"
 serde = {version = "1", features = ["derive"]}
 sygus-parser = {path = "../sygus-parser-rs"}
 toml = "1.1.2"

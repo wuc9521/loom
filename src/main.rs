@@ -6,8 +6,8 @@ use delis::{
     parser::{load_module_file, parse_commands, DelisCmd, DelisProg},
     process::{cleanup_children, register_pid, unregister_pid},
 };
+use rustc_hash::FxHashSet as HashSet;
 use std::{
-    collections::HashSet,
     io::{self, BufWriter, Read, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -555,7 +555,7 @@ mod tests {
 
 fn initial_cegis_constraints(polarities: &[Option<bool>], seed_size: usize) -> HashSet<usize> {
     let seed_size = seed_size.max(1);
-    let mut active = HashSet::new();
+    let mut active = HashSet::default();
     let target_pos = seed_size.div_ceil(2);
     let target_neg = seed_size / 2;
     for (target, class_target) in [(Some(true), target_pos), (Some(false), target_neg)] {

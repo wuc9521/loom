@@ -15,7 +15,7 @@ use crate::{
 };
 use itertools::Itertools;
 use lexpr::Value;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 
 pub trait EnvView {
     fn aspects(&self) -> &HashMap<String, AspectKey>;
@@ -91,7 +91,7 @@ impl<'a> SemanticContext<'a> {
             .iter()
             .map(|domain| (domain.relation.clone(), domain.clone()))
             .collect::<HashMap<_, _>>();
-        let mut domains_by_sort: HashMap<String, Vec<SemanticDomain>> = HashMap::new();
+        let mut domains_by_sort: HashMap<String, Vec<SemanticDomain>> = HashMap::default();
         for domain in &program.domains {
             domains_by_sort
                 .entry(domain.term_sort.clone())

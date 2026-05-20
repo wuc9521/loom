@@ -1,5 +1,6 @@
 use crate::backends::smt2::ast::{predicate_count, HornAtom, HornRule, HornTerm};
-use std::collections::{HashMap, HashSet, VecDeque};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::collections::VecDeque;
 
 #[derive(Clone, Copy)]
 struct ConstructorAtom<'a> {
@@ -93,7 +94,7 @@ fn match_constructor_atom(
         return None;
     }
 
-    let mut subst = HashMap::new();
+    let mut subst = HashMap::default();
     for (pattern_arg, candidate_arg) in pattern.args.iter().zip(candidate.args.iter()) {
         match pattern_arg {
             HornTerm::Var(name) => match subst.get(name) {

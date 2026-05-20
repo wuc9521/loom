@@ -12,9 +12,9 @@ use crate::{
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
 use lexpr::Value;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 use sygus_parser::{
@@ -187,8 +187,8 @@ impl<'a> NativeCompiler<'a> {
     fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
         let sig = ctx_data.sig.clone();
         let ctx = ctx_data.semantic_context()?;
-        let mut bit_index = HashMap::new();
-        let mut offsets = HashMap::new();
+        let mut bit_index = HashMap::default();
+        let mut offsets = HashMap::default();
         for domain in &ctx_data.semantic_program.domains {
             let offset = offsets.entry(domain.term_sort.clone()).or_insert(0);
             for bit in &domain.bits {
@@ -211,18 +211,18 @@ impl<'a> NativeCompiler<'a> {
             synth_name: ctx_data.synth_name.clone(),
             synth_args: ctx_data.synth_args.clone(),
             bit_index,
-            ground_model_eval: RefCell::new(HashMap::new()),
+            ground_model_eval: RefCell::new(HashMap::default()),
             ground_model_eval_hits: RefCell::new(0),
             ground_model_eval_misses: RefCell::new(0),
-            bool_eval_cache: RefCell::new(HashMap::new()),
-            finite_eq_cache: RefCell::new(HashMap::new()),
-            quantifier_values_cache: RefCell::new(HashMap::new()),
-            guarded_projection_cache: RefCell::new(HashMap::new()),
-            value_eval_cache: RefCell::new(HashMap::new()),
-            int_eval_cache: RefCell::new(HashMap::new()),
-            aspect_eval_cache: RefCell::new(HashMap::new()),
-            value_for_sort_cache: RefCell::new(HashMap::new()),
-            expr_symbol_cache: RefCell::new(HashMap::new()),
+            bool_eval_cache: RefCell::new(HashMap::default()),
+            finite_eq_cache: RefCell::new(HashMap::default()),
+            quantifier_values_cache: RefCell::new(HashMap::default()),
+            guarded_projection_cache: RefCell::new(HashMap::default()),
+            value_eval_cache: RefCell::new(HashMap::default()),
+            int_eval_cache: RefCell::new(HashMap::default()),
+            aspect_eval_cache: RefCell::new(HashMap::default()),
+            value_for_sort_cache: RefCell::new(HashMap::default()),
+            expr_symbol_cache: RefCell::new(HashMap::default()),
             optimize,
         })
     }
@@ -1194,7 +1194,7 @@ impl<'a> NativeCompiler<'a> {
         if let Some(cached) = self.expr_symbol_cache.borrow().get(&expr_ptr) {
             return cached.clone();
         }
-        let mut symbols = HashSet::new();
+        let mut symbols = HashSet::default();
         collect_expr_symbols(expr, &mut symbols);
         let mut symbols = symbols.into_iter().collect::<Vec<_>>();
         symbols.sort();
