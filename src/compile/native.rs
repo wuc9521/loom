@@ -332,7 +332,7 @@ impl<'a> SemanticContext<'a> {
                     }
                     if let Some(sig) = self.func_sigs.get(symbol) {
                         if sig.arg_sorts.is_empty() {
-                            let value = eval_symbols(symbol, &[], &model_ref.func_interps)
+                            let value = eval_symbols(symbol, &[], model_ref)
                                 .ok_or_else(|| {
                                     format!("model {model} has no value for {symbol}")
                                 })?;
@@ -531,7 +531,7 @@ impl<'a> SemanticContext<'a> {
                     .map(|value| value.display())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let value = eval_symbols(func, &arg_names, &model_ref.func_interps).ok_or_else(|| {
+        let value = eval_symbols(func, &arg_names, model_ref).ok_or_else(|| {
             format!(
                 "model {model} has no value for {func}({})",
                 arg_names.join(" ")
@@ -660,7 +660,7 @@ impl<'a> SemanticContext<'a> {
     ) -> Result<Option<bool>, String> {
         let model = self.current_model(env)?;
         let model_ref = self.model(&model)?;
-        Ok(eval_symbols(symbol, &[], &model_ref.func_interps)
+        Ok(eval_symbols(symbol, &[], model_ref)
             .map(|value| crate::compile::semantic::interped_value_matches(value, target)))
     }
 
@@ -698,7 +698,7 @@ impl<'a> SemanticContext<'a> {
                 .iter()
                 .map(|value| value.display())
                 .collect::<Vec<_>>();
-            let Some(value) = eval_symbols(func, &arg_names, &model_ref.func_interps) else {
+            let Some(value) = eval_symbols(func, &arg_names, model_ref) else {
                 continue;
             };
             if keep(value) {

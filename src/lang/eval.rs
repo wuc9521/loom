@@ -2,12 +2,6 @@ use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem}
 use rustc_hash::FxHashMap as HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct SliceKey {
-    ptr: usize,
-    len: usize,
-}
-
 #[derive(Clone)]
 enum FuncInterpIndex {
     Simple {
@@ -30,22 +24,15 @@ struct CachedFuncInterp {
     cache: Arc<FuncInterpCache>,
 }
 
-fn interp_cache() -> &'static Mutex<HashMap<SliceKey, CachedFuncInterp>> {
-    static CACHE: OnceLock<Mutex<HashMap<SliceKey, CachedFuncInterp>>> = OnceLock::new();
+fn interp_cache() -> &'static Mutex<HashMap<u64, CachedFuncInterp>> {
+    static CACHE: OnceLock<Mutex<HashMap<u64, CachedFuncInterp>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
 
-fn model_domain_cache() -> &'static Mutex<HashMap<usize, Arc<HashMap<String, Vec<String>>>>> {
-    static CACHE: OnceLock<Mutex<HashMap<usize, Arc<HashMap<String, Vec<String>>>>>> =
+fn model_domain_cache() -> &'static Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>> {
+    static CACHE: OnceLock<Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>>> =
         OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::default()))
-}
-
-fn slice_key(func_interps: &[FuncInterp]) -> SliceKey {
-    SliceKey {
-        ptr: func_interps.as_ptr() as usize,
-        len: func_interps.len(),
-    }
 }
 
 fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
@@ -87,11 +74,11 @@ fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
     FuncInterpCache { by_name }
 }
 
-fn interp_cache_for(func_interps: &[FuncInterp]) -> Arc<FuncInterpCache> {
-    let key = slice_key(func_interps);
+fn interp_cache_for(model: &Model) -> Arc<FuncInterpCache> {
+    let key = model.cache_id;
     let mut cache = interp_cache().lock().expect("interp cache poisoned");
     let entry = cache.entry(key).or_insert_with(|| CachedFuncInterp {
-        cache: Arc::new(build_interp_cache(func_interps)),
+        cache: Arc::new(build_interp_cache(&model.func_interps)),
     });
     entry.cache.clone()
 }
@@ -118,7 +105,7 @@ fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
 }
 
 fn cached_domain_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
-    let key = model as *const Model as usize;
+    let key = model.cache_id;
     let mut cache = model_domain_cache()
         .lock()
         .expect("model domain cache poisoned");
@@ -144,13 +131,13 @@ pub fn pattern_match_symbols(tuple: &[String], pat: &Pattern) -> bool {
 pub fn eval_symbols<'a>(
     func_name: &str,
     args: &[String],
-    func_interps: &'a [FuncInterp],
+    model: &'a Model,
 ) -> Option<&'a InterpedValue> {
-    let cache = interp_cache_for(func_interps);
+    let cache = interp_cache_for(model);
     let index = cache.by_name.get(func_name)?;
     match index {
         FuncInterpIndex::Simple { interp_idx } if args.is_empty() => {
-            match &func_interps[*interp_idx] {
+            match &model.func_interps[*interp_idx] {
                 FuncInterp::SimpleInterp(_, val) => Some(val),
                 FuncInterp::MatchInterp(..) => None,
             }
@@ -161,7 +148,7 @@ pub fn eval_symbols<'a>(
             default_case_idx,
             exact_case_idx,
         } => {
-            let FuncInterp::MatchInterp(_, cases) = &func_interps[*interp_idx] else {
+            let FuncInterp::MatchInterp(_, cases) = &model.func_interps[*interp_idx] else {
                 return None;
             };
             if let Some(case_idx) = exact_case_idx.get(args) {

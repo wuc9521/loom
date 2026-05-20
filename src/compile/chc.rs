@@ -844,7 +844,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
+            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
             let matched = value.as_ref().is_some_and(interped_bool);
             return Ok(BoolPair {
                 pos: bool_formula(matched),
@@ -997,7 +997,7 @@ impl<'a> ChcCompiler<'a> {
             }
             let model = self.ctx.current_model(env)?;
             let model_ref = self.ctx.model(&model)?;
-            if let Some(value) = eval_symbols(symbol, &[], &model_ref.func_interps) {
+            if let Some(value) = eval_symbols(symbol, &[], model_ref) {
                 return Ok(if interped_value_matches(value, target) == positive {
                     formula_true()
                 } else {
@@ -1106,7 +1106,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
+            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
             let matches = value
                 .as_ref()
                 .is_some_and(|value| interped_value_matches(value, target));
@@ -1415,13 +1415,13 @@ impl<'a> ChcCompiler<'a> {
         func: &str,
         model: &str,
         arg_names: &[String],
-        func_interps: &[crate::lang::model::FuncInterp],
+        model_ref: &crate::lang::model::Model,
     ) -> Option<crate::lang::model::InterpedValue> {
         let key = (func.to_string(), model.to_string(), arg_names.to_vec());
         if let Some(value) = self.ground_model_eval.borrow().get(&key) {
             return value.clone();
         }
-        let value = eval_symbols(func, arg_names, func_interps).cloned();
+        let value = eval_symbols(func, arg_names, model_ref).cloned();
         self.ground_model_eval
             .borrow_mut()
             .insert(key, value.clone());

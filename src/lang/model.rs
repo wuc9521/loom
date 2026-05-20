@@ -7,7 +7,13 @@ use crate::{
 use core::str;
 use derive_more::Display;
 use pest::iterators::Pair;
+use std::sync::atomic::{AtomicU64, Ordering};
 use sygus_parser::{Identifier, Literal, Sort, SyGuSTerm};
+
+fn next_model_cache_id() -> u64 {
+    static NEXT_MODEL_CACHE_ID: AtomicU64 = AtomicU64::new(1);
+    NEXT_MODEL_CACHE_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 // ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
@@ -18,6 +24,7 @@ use sygus_parser::{Identifier, Literal, Sort, SyGuSTerm};
     func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct Model {
+    pub cache_id: u64,
     pub name: String,
     pub univ_defs: Vec<DefineUniv>,
     pub func_interps: Vec<FuncInterp>,
@@ -26,6 +33,7 @@ pub struct Model {
 impl Model {
     pub fn new(name: &str) -> Self {
         Self {
+            cache_id: next_model_cache_id(),
             name: name.to_string(),
             univ_defs: Vec::new(),
             func_interps: Vec::new(),

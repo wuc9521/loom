@@ -1004,7 +1004,7 @@ impl<'a> NativeCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
+            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
             return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
         }
         let mut disjuncts = Vec::new();
@@ -1247,7 +1247,7 @@ impl<'a> NativeCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, &model_ref.func_interps);
+            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
             return Ok(BoolExpr::Const(
                 value
                     .as_ref()
@@ -1390,7 +1390,7 @@ impl<'a> NativeCompiler<'a> {
         func: &str,
         model: &str,
         arg_names: &[String],
-        func_interps: &[crate::lang::model::FuncInterp],
+        model_ref: &crate::lang::model::Model,
     ) -> Option<crate::lang::model::InterpedValue> {
         let key = (func.to_string(), model.to_string(), arg_names.to_vec());
         if let Some(value) = self.ground_model_eval.borrow().get(&key) {
@@ -1398,7 +1398,7 @@ impl<'a> NativeCompiler<'a> {
             return value.clone();
         }
         *self.ground_model_eval_misses.borrow_mut() += 1;
-        let value = eval_symbols(func, arg_names, func_interps).cloned();
+        let value = eval_symbols(func, arg_names, model_ref).cloned();
         self.ground_model_eval
             .borrow_mut()
             .insert(key, value.clone());
