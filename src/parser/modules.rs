@@ -1,6 +1,6 @@
 use crate::parser::ast::{parse, DelisCmd};
+use rustc_hash::FxHashSet as HashSet;
 use std::{
-    collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -150,7 +150,7 @@ fn validate_provides(path: &Path, source: &ModuleSource) -> Result<(), io::Error
 }
 
 fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
-    let mut names = HashSet::new();
+    let mut names = HashSet::default();
     for cmd in cmds {
         match cmd {
             DelisCmd::As(SyGuSCmd::DeclareSort(name, _)) => {

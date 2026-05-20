@@ -1,8 +1,6 @@
 use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
-};
+use rustc_hash::FxHashMap as HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct SliceKey {
@@ -34,13 +32,13 @@ struct CachedFuncInterp {
 
 fn interp_cache() -> &'static Mutex<HashMap<SliceKey, CachedFuncInterp>> {
     static CACHE: OnceLock<Mutex<HashMap<SliceKey, CachedFuncInterp>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
 
 fn model_domain_cache() -> &'static Mutex<HashMap<usize, Arc<HashMap<String, Vec<String>>>>> {
     static CACHE: OnceLock<Mutex<HashMap<usize, Arc<HashMap<String, Vec<String>>>>>> =
         OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
 
 fn slice_key(func_interps: &[FuncInterp]) -> SliceKey {
@@ -51,7 +49,7 @@ fn slice_key(func_interps: &[FuncInterp]) -> SliceKey {
 }
 
 fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
-    let mut by_name = HashMap::new();
+    let mut by_name = HashMap::default();
     for (interp_idx, interp) in func_interps.iter().enumerate() {
         match interp {
             FuncInterp::SimpleInterp(name, _) => {
@@ -109,7 +107,7 @@ fn pattern_as_exact_tuple(pat: &Pattern) -> Option<Vec<String>> {
 }
 
 fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
-    let mut domains = HashMap::new();
+    let mut domains = HashMap::default();
     for univ in &model.univ_defs {
         let entry = domains
             .entry(univ.sort.to_string())

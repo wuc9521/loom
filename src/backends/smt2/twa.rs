@@ -4,7 +4,7 @@ use crate::backends::smt2::ast::{
 };
 use crate::backends::smt2::saturate::saturate;
 use crate::compile::TermSignature;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sygus_parser::Sort;
 
 #[derive(Clone)]
@@ -26,9 +26,9 @@ impl<'a> Flattener<'a> {
     fn new(sigs: &'a HashMap<String, ConstructorSig>) -> Self {
         Self {
             sigs,
-            helper_by_pattern: HashMap::new(),
+            helper_by_pattern: HashMap::default(),
             helper_rules: Vec::new(),
-            helper_sorts: HashMap::new(),
+            helper_sorts: HashMap::default(),
             next_helper_id: 0,
             next_var_id: 0,
         }
@@ -173,7 +173,7 @@ fn constructor_sigs(sig: &TermSignature) -> HashMap<String, ConstructorSig> {
 }
 
 fn predicate_sorts(program: &HornProg) -> HashMap<String, String> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     for decl in &program.decls {
         let HornDecl::DeclareRel(name, args) = decl else {
             continue;
@@ -215,7 +215,7 @@ fn flatten_program(program: &HornProg, sig: &TermSignature) -> Result<HornProg, 
     }
     out.rules.extend(flattener.helper_rules.clone());
 
-    let mut declared = HashSet::new();
+    let mut declared = HashSet::default();
     for decl in &out.decls {
         if let HornDecl::DeclareRel(name, _) = decl {
             declared.insert(name.clone());

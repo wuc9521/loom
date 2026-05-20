@@ -1,5 +1,5 @@
 use crate::{compile, parser::DelisProg, sorts::SortEnv};
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::time::Instant;
 use sygus_parser::{
     GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSFile, SyGuSGTerm, SyGuSTerm,
@@ -142,7 +142,7 @@ impl EvalEnv {
     fn with_base(base: HashMap<String, EvalValue>) -> Self {
         Self {
             base,
-            scoped: HashMap::new(),
+            scoped: HashMap::default(),
             scopes: Vec::new(),
         }
     }
@@ -210,7 +210,7 @@ struct ClosureSolver<'a> {
 impl<'a> ClosureSolver<'a> {
     fn new(problem: &'a DelisProg, cmds: Vec<SyGuSCmd>) -> Result<Self, String> {
         let sort_env = SortEnv::from_cmds(&cmds);
-        let mut funcs = HashMap::new();
+        let mut funcs = HashMap::default();
         let mut synth = None;
         let mut constraints = Vec::new();
         for cmd in cmds {
@@ -247,7 +247,7 @@ impl<'a> ClosureSolver<'a> {
             nonterminals,
             nt_by_symbol,
             constraints,
-            processed: HashMap::new(),
+            processed: HashMap::default(),
         })
     }
 
@@ -320,13 +320,15 @@ impl<'a> ClosureSolver<'a> {
     }
 
     fn satisfies(&self, bits: &Bits) -> Result<bool, String> {
-        let mut env = EvalEnv::with_base(HashMap::from([(
+        let mut base = HashMap::default();
+        base.insert(
             self.synth_name.clone(),
             EvalValue::Bv(
                 bits.clone(),
                 self.nonterminals[self.nt_by_symbol[&self.start]].width,
             ),
-        )]));
+        );
+        let mut env = EvalEnv::with_base(base);
         for constraint in &self.constraints {
             if !self.evaluator().eval_bool(constraint, &mut env)? {
                 return Ok(false);
@@ -398,7 +400,7 @@ impl<'a> ClosureSolver<'a> {
                 args.len()
             ));
         }
-        let mut env = HashMap::new();
+        let mut env = HashMap::default();
         for (name, value) in func.args.iter().zip(args) {
             env.insert(name.clone(), EvalValue::Bv(value.bits.clone(), value.width));
         }
@@ -444,7 +446,7 @@ impl<'a> ClosureSolver<'a> {
             return Ok(false);
         }
         let generators = self.nonterminals[nt_idx].values.clone();
-        let mut signatures: HashMap<Vec<bool>, Vec<usize>> = HashMap::new();
+        let mut signatures: HashMap<Vec<bool>, Vec<usize>> = HashMap::default();
         for bit in 0..width {
             let sig = generators
                 .iter()
@@ -704,7 +706,7 @@ struct ConstraintVerifier {
 impl ConstraintVerifier {
     fn new(cmds: &[SyGuSCmd]) -> Result<Self, String> {
         let sort_env = SortEnv::from_cmds(cmds);
-        let mut funcs = HashMap::new();
+        let mut funcs = HashMap::default();
         let mut synth = None;
         let mut constraints = Vec::new();
         for cmd in cmds {
@@ -742,10 +744,12 @@ impl ConstraintVerifier {
         let bits = self
             .evaluator()
             .eval_bv(&body, &mut EvalEnv::default(), self.synth_width)?;
-        let mut env = EvalEnv::with_base(HashMap::from([(
+        let mut base = HashMap::default();
+        base.insert(
             self.synth_name.clone(),
             EvalValue::Bv(bits, self.synth_width),
-        )]));
+        );
+        let mut env = EvalEnv::with_base(base);
         let mut failing = Vec::new();
         for (idx, constraint) in self.constraints.iter().enumerate() {
             if !self.evaluator().eval_bool(constraint, &mut env)? {
@@ -765,7 +769,7 @@ fn build_nonterminals(
     sort_env: &SortEnv,
 ) -> Result<(Vec<Nonterminal>, HashMap<String, usize>, String), String> {
     let mut nonterminals = Vec::new();
-    let mut nt_by_symbol = HashMap::new();
+    let mut nt_by_symbol = HashMap::default();
     let start = grammar
         .grouped_rule_lists
         .first()
@@ -785,7 +789,7 @@ fn build_nonterminals(
         nonterminals.push(Nonterminal {
             width,
             values: Vec::new(),
-            seen: HashSet::new(),
+            seen: HashSet::default(),
             productions,
             bool_ops,
         });

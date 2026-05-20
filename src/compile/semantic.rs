@@ -1,6 +1,6 @@
 use crate::{compile::types::AspectValue, lang::model::InterpedValue};
 use lexpr::Value;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::Literal;
 
 #[derive(Clone)]
@@ -31,7 +31,7 @@ pub fn parse_cases(body: &Value) -> Result<HashMap<String, Case>, String> {
         .and_then(|v| v.as_symbol())
         .ok_or_else(|| format!("match scrutinee must be a symbol: {match_expr}"))?
         .to_string();
-    let mut cases = HashMap::new();
+    let mut cases = HashMap::default();
     for case in items.iter().skip(2) {
         let case_items = case
             .to_ref_vec()

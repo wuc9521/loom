@@ -2,6 +2,7 @@ use crate::backends::smt2::ast::HornProg;
 use crate::backends::smt2::twa::saturate_program;
 use crate::parser::DelisProg;
 use lexpr::Value;
+use rustc_hash::FxHashMap as HashMap;
 use std::time::Instant;
 use sygus_parser::{Sort, SyGuSCmd};
 
@@ -114,7 +115,7 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     let sort_aliases = layouts
         .keys()
         .map(|sort| (sort.clone(), Sort::from_name(sort)))
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<HashMap<_, _>>();
     let grammar = ctx
         .sig
         .bv_grammar_with_sorts(ctx.term_types, &sort_aliases)?;
@@ -137,8 +138,8 @@ fn complete_layouts(
     sig: &TermSignature,
     program: &types::SemanticProgram,
     semantic_cases: &context::SemanticCases,
-    mut layouts: std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>,
-) -> Result<std::collections::HashMap<String, crate::backends::sygus::bv::SortLayout>, String> {
+    mut layouts: HashMap<String, crate::backends::sygus::bv::SortLayout>,
+) -> Result<HashMap<String, crate::backends::sygus::bv::SortLayout>, String> {
     let fallback_template = if layouts.len() == 1 {
         layouts.values().next().cloned()
     } else {
@@ -148,7 +149,7 @@ fn complete_layouts(
         .constructors
         .iter()
         .map(|cons| (cons.name.clone(), cons.result_sort.clone()))
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<HashMap<_, _>>();
     for spec in &program.semantics {
         let Some(template) = layouts
             .get(&spec.term_sort)
@@ -178,8 +179,8 @@ fn complete_sort_widths(
     sig: &TermSignature,
     program: &types::SemanticProgram,
     semantic_cases: &context::SemanticCases,
-    widths: std::collections::HashMap<String, usize>,
-) -> Result<std::collections::HashMap<String, usize>, String> {
+    widths: HashMap<String, usize>,
+) -> Result<HashMap<String, usize>, String> {
     complete_layouts(
         sig,
         program,
@@ -194,7 +195,7 @@ fn complete_sort_widths(
                     .iter()
                     .enumerate()
                     .map(|(idx, state)| (state.clone(), idx))
-                    .collect::<std::collections::HashMap<_, _>>();
+                    .collect::<HashMap<_, _>>();
                 (
                     sort,
                     crate::backends::sygus::bv::SortLayout { states, index },

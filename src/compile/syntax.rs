@@ -3,7 +3,7 @@ use crate::{
     compile::AspectKey,
     parser::ast::TermTypes,
 };
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{
     DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSGTerm,
     SyGuSTerm,

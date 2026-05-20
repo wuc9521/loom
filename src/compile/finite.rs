@@ -15,7 +15,7 @@ use crate::{
 };
 use itertools::Itertools;
 use lexpr::Value;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sygus_parser::{Identifier, SyGuSTerm};
 
 type AspectAssignment = Vec<(String, AspectValue)>;
@@ -29,7 +29,7 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
         .filter(|domain| domain.kind == SemanticKind::Bool)
         .collect::<Vec<_>>();
     let mut bit_mappings = Vec::new();
-    let mut bit_by_aspect = HashMap::new();
+    let mut bit_by_aspect = HashMap::default();
     for domain in bool_domains {
         for domain_bit in &domain.bits {
             let bit = bit_mappings.len();
@@ -152,7 +152,7 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
     let semantic_constraints =
         collect_semantic_constraints(problem, &semantic_specs, &spaces_by_name, &models_by_name)?;
     let mut model_names = Vec::new();
-    let mut seen_model_names = HashSet::new();
+    let mut seen_model_names = HashSet::default();
     for constraint in &semantic_constraints {
         if models_by_name.contains_key(&constraint.model)
             && seen_model_names.insert(constraint.model.clone())
@@ -170,7 +170,7 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
         .iter()
         .map(|model| (model.name.clone(), universe_domains(model)))
         .collect::<HashMap<_, _>>();
-    let mut aspect_cache: HashMap<(String, String), Vec<AspectAssignment>> = HashMap::new();
+    let mut aspect_cache: HashMap<(String, String), Vec<AspectAssignment>> = HashMap::default();
 
     let mut domains = Vec::new();
     for spec in &semantic_specs {
@@ -268,7 +268,7 @@ fn referenced_models_in_constraints(
     spaces_by_name: &HashMap<String, &FiniteSpace>,
 ) -> Vec<String> {
     let mut out = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     for cmd in &problem.cmds {
         let term = match cmd {
             DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,

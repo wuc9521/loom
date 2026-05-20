@@ -1,7 +1,7 @@
 use crate::lang::model::{DefineUniv, Model};
 use crate::lang::signature::FuncSig;
 use crate::parser::ast::DelisCmd;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::SyGuSCmd;
 
 #[derive(Debug, Clone)]
@@ -19,7 +19,7 @@ pub struct Runtime {
 impl Runtime {
     pub fn new() -> Self {
         Self {
-            table: HashMap::new(),
+            table: HashMap::default(),
         }
     }
     pub fn insert(&mut self, name: String, sym: Symbol) {
@@ -53,7 +53,7 @@ pub enum SymbolInterp {
 impl ModelSymbolTable {
     pub fn new() -> Self {
         Self {
-            table: std::collections::HashMap::new(),
+            table: std::collections::HashMap::default(),
         }
     }
     pub fn insert(&mut self, name: String, interp: SymbolInterp) {

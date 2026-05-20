@@ -1,5 +1,5 @@
 use derive_more::Display;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sygus_parser::{DTConsDecl, Identifier, Sort, SortDecl, SyGuSTerm};
 
 /// Minimal term representation for CHC: variables and constructor applications only.
@@ -108,7 +108,7 @@ impl HornProg {
     }
 
     pub fn live_predicates(&self) -> HashSet<String> {
-        let mut live = HashSet::new();
+        let mut live = HashSet::default();
         for rule in &self.rules {
             live.insert(rule.head.pred.clone());
             for atom in &rule.body_atoms {
@@ -222,7 +222,7 @@ impl HornRule {
 }
 
 pub fn predicate_count(rules: &[HornRule]) -> usize {
-    let mut preds = HashSet::new();
+    let mut preds = HashSet::default();
     for rule in rules {
         preds.insert(rule.head.pred.clone());
         for atom in &rule.body_atoms {

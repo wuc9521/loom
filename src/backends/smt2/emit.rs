@@ -1,5 +1,6 @@
 use crate::backends::smt2::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm};
-use std::collections::{BTreeMap, HashMap};
+use rustc_hash::FxHashMap as HashMap;
+use std::collections::BTreeMap;
 use sygus_parser::{Bool, Literal, SExpr, Sort, SortedVar, SyGuSTerm, Term};
 
 fn assert() -> SExpr {
@@ -23,7 +24,7 @@ fn forall(vars: BTreeMap<String, Sort>, body: SyGuSTerm) -> SyGuSTerm {
 }
 
 fn constructor_signatures(program: &HornProg) -> HashMap<String, (Sort, Vec<Sort>)> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     for decl in &program.decls {
         let HornDecl::DeclareDatatypes(sorts, constructors) = decl else {
             continue;
@@ -40,7 +41,7 @@ fn constructor_signatures(program: &HornProg) -> HashMap<String, (Sort, Vec<Sort
 }
 
 fn predicate_arg_sorts(program: &HornProg) -> HashMap<String, Sort> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     for decl in &program.decls {
         let HornDecl::DeclareRel(name, args) = decl else {
             continue;
