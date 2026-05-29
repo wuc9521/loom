@@ -1,0 +1,37 @@
+delis = "delis"
+results_dir = "bench-results"
+solve_timeout_secs = 600
+jobs = 0
+
+# External-comparison manifest. These suites benchmark non-Delis tools or
+# Delis-generated SyGuS problems with an external solver.
+
+[[suites]]
+name = "reg-alpharegex-cvc5"
+path = "benchmark/Reg/alpharegex/sygus"
+recursive = false
+mode = "external_sygus"
+sygus_solver = "cvc5"
+
+[[suites]]
+name = "reg-deepregex-cvc5"
+path = "benchmark/Reg/deepregex/sygus"
+recursive = false
+mode = "external_sygus"
+sygus_solver = "cvc5"
+
+[[suites]]
+name = "reg-so-cvc5"
+path = "benchmark/Reg/so/sygus"
+recursive = false
+mode = "external_sygus"
+sygus_solver = "cvc5"
+
+[[suites]]
+name = "fo-folseparators-artifact"
+path = "benchmark-upstream/FO/folseparators/conjectures/extracted"
+recursive = false
+mode = "external_command"
+file_extensions = ["fol"]
+external_command = "scripts/external/folseparators-artifact.sh"
+solve_timeout_secs = 600

@@ -12,3 +12,6 @@ tests
 tools
 dist
 **/__pycache__/
+bench-results/runs/
+bench-results/latest-run.json
+bench-runner/target/

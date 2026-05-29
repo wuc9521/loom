@@ -1,9 +1,17 @@
 delis = "delis"
 results_dir = "bench-results"
 solve_timeout_secs = 600
+jobs = 0
+# Optional metadata label for the run directory naming heuristic.
+# run_label = "artifact"
+#
+# `[[suites]]` is the preferred spelling, but `[[folders]]` remains accepted
+# for compatibility with the older shell-based workflow.
 # Default mode is `native`, which benchmarks Delis itself.
 # Set `mode = "external_sygus"` and configure `sygus_solver` only for
 # explicit dump-and-solver experiments.
+# Use `mode = "external_command"` with `external_command` for direct
+# comparisons against non-Delis tools.
 
 [[folders]]
 name = "fo-finvar-popl22"

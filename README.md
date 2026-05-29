@@ -59,6 +59,95 @@ docker run --rm -v "$PWD/delis:/work" -w /work delis:latest ./benchmark/alphareg
 The runtime image installs `cvc5`, which is the default external solver used by
 Delis.
 
+Benchmark workflow
+
+The benchmarking entrypoint is the standalone crate in
+`bench-runner/`. This keeps benchmark orchestration independent from the
+solver's nightly-only dependencies and makes the workflow resumable and
+manifest-driven.
+
+Build the runner:
+
+```bash
+cargo build --manifest-path bench-runner/Cargo.toml --release
+```
+
+Inspect the configured suites:
+
+```bash
+./bench-runner/target/release/delis-bench list benchmarks.toml
+```
+
+Run all pending jobs with automatic parallelism:
+
+```bash
+./bench-runner/target/release/delis-bench run benchmarks.toml
+```
+
+Resume is automatic. The runner stores append-only state in
+`bench-results/runs/<run-id>/results.jsonl` and rewrites the top-level
+`bench-results/<suite>.tsv` exports after each completed job.
+
+Useful variants:
+
+```bash
+# Run a subset of suites.
+./bench-runner/target/release/delis-bench run benchmarks.toml --suite reg-so --suite reg-deepregex
+
+# Restrict to matching benchmark paths.
+./bench-runner/target/release/delis-bench run benchmarks.toml --filter no10.sl
+
+# Check the latest run state without executing new jobs.
+./bench-runner/target/release/delis-bench status benchmarks.toml
+
+# Force a fresh run lineage instead of resuming the latest compatible run.
+./bench-runner/target/release/delis-bench run benchmarks.toml --fresh
+```
+
+Manifest notes:
+
+- Top-level defaults live in `benchmarks.toml`.
+- `[[suites]]` is the preferred name, but the runner still accepts the old
+  `[[folders]]` entries for compatibility.
+- Each suite can override `mode`, `delis`, `delis_args`, `sygus_solver`,
+  `sygus_solver_args`, `solve_timeout_secs`, `sygus_timeout_secs`, and
+  `capture_sygus_stats`.
+- `mode = "external_sygus"` keeps Delis only as a SyGuS front-end and sends the
+  generated problem to the configured external solver.
+- `mode = "external_command"` runs an arbitrary wrapper command per benchmark
+  file. Use `file_extensions`, `working_dir`, `external_command`, and
+  `external_command_args` to describe the adapter.
+
+The legacy shell scripts (`bench.sh`, `bench-cvc5.sh`, `bench-syslite.sh`,
+`bench-samples2LTL.sh`, `bench-folseparators.sh`) are kept for now as
+special-purpose helpers, but the intended Delis benchmarking path is the new
+runner above.
+
+External comparisons
+
+The external-comparison manifest lives in `benchmarks-external.toml`.
+Currently it covers:
+
+- `reg-alpharegex-cvc5`, `reg-deepregex-cvc5`, `reg-so-cvc5`
+- `fo-folseparators-artifact`
+
+Set up comparison tools on a machine with:
+
+```bash
+scripts/setup-external-tools.sh --folseparators-artifact /path/to/560.tgz
+```
+
+Then run, for example:
+
+```bash
+./bench-runner/target/release/delis-bench run benchmarks-external.toml --suite reg-so-cvc5
+./bench-runner/target/release/delis-bench run benchmarks-external.toml --suite fo-folseparators-artifact
+```
+
+The folseparators source corpus is now tracked under
+`benchmark-upstream/FO/folseparators/`, recovered from the artifact Docker image.
+A repo and benchmark inventory lives in `benchmark-upstream/EXTERNAL_TOOLS.md`.
+
 Remote benchmarking
 
 For a remote server, the simplest workflow is to build the Docker image locally
@@ -102,10 +191,16 @@ Run the benchmark driver with the bundled manifest:
 docker run --rm --entrypoint /usr/local/bin/delis-bench delis:bench /app/benchmarks.toml
 ```
 
-Each folder writes its own TSV results file. By default, `delis-bench` resumes:
-if a file path is already present in that folder's TSV, it is skipped on later
-runs. To force a full rerun of one folder, set `rerun = true` in that folder's
-TOML entry.
+`delis-bench` keeps the canonical run ledger under
+`bench-results/runs/<run-id>/` and mirrors the latest per-suite TSV exports in
+the top-level `bench-results/` directory for plotting scripts.
+
+If you cloned this branch without populating the benchmark submodule, initialize
+it before running the manifest:
+
+```bash
+git submodule update --init --recursive
+```
 
 # TODO
 
