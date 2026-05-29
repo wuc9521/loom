@@ -133,6 +133,16 @@ pub fn resolve_relative(base: &Path, path: &Path) -> PathBuf {
     }
 }
 
+pub fn resolve_command_path(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    if path.parent().is_none() {
+        return path.to_path_buf();
+    }
+    base.join(path)
+}
+
 pub fn slugify(text: &str) -> String {
     let mut output = String::new();
     let mut last_dash = false;

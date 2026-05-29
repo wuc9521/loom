@@ -6,7 +6,10 @@ use std::{
 use crate::{
     cli::RunArgs,
     model::{EffectiveSuite, JobCollection, JobSpec, Manifest, SuiteKind},
-    util::{canonical_display, canonicalize_existing, default_solver_args, resolve_relative},
+    util::{
+        canonical_display, canonicalize_existing, default_solver_args, resolve_command_path,
+        resolve_relative,
+    },
 };
 
 pub fn materialize_suites(
@@ -24,7 +27,7 @@ pub fn materialize_suites(
         .delis
         .clone()
         .or_else(|| manifest.delis.clone())
-        .map(|path| resolve_relative(base_dir, &path))
+        .map(|path| resolve_command_path(base_dir, &path))
         .unwrap_or_else(|| base_dir.join("target/release/delis"));
     let mut suites = Vec::new();
     for suite in &manifest.suites {
@@ -45,13 +48,13 @@ pub fn materialize_suites(
             delis: suite
                 .delis
                 .clone()
-                .map(|path| resolve_relative(base_dir, &path))
+                .map(|path| resolve_command_path(base_dir, &path))
                 .unwrap_or_else(|| default_delis.clone()),
             delis_args: suite.delis_args.clone(),
             sygus_solver: suite
                 .sygus_solver
                 .clone()
-                .map(|path| resolve_relative(base_dir, &path)),
+                .map(|path| resolve_command_path(base_dir, &path)),
             sygus_solver_args: suite.sygus_solver_args.clone(),
             working_dir: suite
                 .working_dir
@@ -60,7 +63,7 @@ pub fn materialize_suites(
             external_command: suite
                 .external_command
                 .clone()
-                .map(|path| resolve_relative(base_dir, &path)),
+                .map(|path| resolve_command_path(base_dir, &path)),
             external_command_args: suite.external_command_args.clone(),
             solve_timeout_secs: suite
                 .solve_timeout_secs
