@@ -137,7 +137,7 @@ pub fn resolve_command_path(base: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
     }
-    if path.parent().is_none() {
+    if path.components().count() == 1 {
         return path.to_path_buf();
     }
     base.join(path)
