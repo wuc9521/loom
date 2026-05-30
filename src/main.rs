@@ -258,17 +258,8 @@ fn solve_with_sygus(
     let axiom_slice = (!axioms.is_empty()).then_some(axioms.as_slice());
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
-        let step_start = Instant::now();
-        let full_sygus_cmds =
-            compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
-        log::info!(
-            "sygus-backend: full to_sygus for verification completed in {:?}",
-            step_start.elapsed()
-        );
-        let step_start = Instant::now();
         let solved = cegis_solve(
             delis_file,
-            &full_sygus_cmds,
             backend,
             optimize,
             cegis_size,
@@ -278,7 +269,7 @@ fn solve_with_sygus(
         )?;
         log::info!(
             "sygus-backend: cegis completed in {:?}",
-            step_start.elapsed()
+            solve_start.elapsed()
         );
         solved
     } else {
@@ -368,7 +359,6 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
 
 fn cegis_solve(
     delis_file: &DelisProg,
-    full_cmds: &[SyGuSCmd],
     backend: &SygusBackend,
     optimize: bool,
     seed_size: usize,
@@ -406,12 +396,16 @@ fn cegis_solve(
         let round_start = Instant::now();
         let subset_cmds =
             compile::to_sygus(&reduced_problem, optimize).map_err(io::Error::other)?;
+        // Also compile the full problem so verification uses matching sort aliases.
+        let full_cmds =
+            compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
         log::info!(
             "cegis round {}: reduced compilation completed in {:?}",
             round,
             round_start.elapsed()
         );
         let output = solve_cmds_with_backend(backend, &subset_cmds, None, verbose, min, mitm)?;
+        log::info!("cegis round {}: raw solver output = {}", round, output.chars().take(300).collect::<String>());
         let trimmed = output.trim();
         if trimmed == "infeasible" {
             log::info!("cegis round {}: subset is infeasible", round);
@@ -422,7 +416,8 @@ fn cegis_solve(
             SygusBackend::External(_) => decode_response(delis_file, &output)?,
         };
         let failing =
-            compile::failing_constraint_indices(full_cmds, &decoded).map_err(io::Error::other)?;
+            compile::failing_constraint_indices(&full_cmds, &decoded).map_err(io::Error::other)?;
+        let failing: Vec<usize> = failing.into_iter().filter(|&idx| idx < constraint_count).collect();
         if failing.is_empty() {
             log::info!("cegis round {}: candidate satisfies all constraints", round);
             return Ok(decoded);

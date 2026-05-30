@@ -100,10 +100,6 @@ pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
         .collect()
 }
 
-fn obligation_binding_name(cons_name: &str, bit_idx: usize) -> String {
-    format!("__sygus_{}_b{}", cons_name.replace('.', "_"), bit_idx)
-}
-
 fn classify_atom(
     atom: &HornAtom,
     head_arg: &HornTerm,
@@ -437,7 +433,7 @@ pub fn compile_one_way(
                         {
                             name.clone()
                         } else {
-                            let name = obligation_binding_name(&cons.name, obligation.bit_idx);
+                            let name = format!("__sygus_{}_b{}", cons.name.replace('.', "_"), obligation.bit_idx);
                             distinct_obligations.push((body.clone(), name.clone()));
                             let_bindings.push((name.clone(), body));
                             name

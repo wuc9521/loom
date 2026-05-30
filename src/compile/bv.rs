@@ -33,6 +33,7 @@ struct Env {
     aspect: HashMap<String, AspectKey>,
     values: HashMap<String, AspectValue>,
     children: HashMap<String, ChildBinding>,
+    self_var: Option<String>,
 }
 
 impl EnvView for Env {
@@ -165,6 +166,12 @@ impl<'a> NativeCompiler<'a> {
         if let Some(child) = env.children.get(child_name) {
             return Ok(bit_is_one(extract_arg_bit(child.arg_idx, bit)));
         }
+        if env.self_var.as_deref() == Some(child_name) {
+            let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
+                "semantic body uses self-recursion but no aux synth-fun allocated".to_string()
+            })?;
+            return Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))));
+        }
         if child_name == self.synth_name {
             return Ok(bit_is_one(BitVec::extract(
                 bit,
@@ -194,7 +201,7 @@ impl<'a> NativeCompiler<'a> {
             }
             *offset += domain.bits.len();
         }
-        let aux_synth_name = if program_uses_parent(ctx_data) {
+        let aux_synth_name = if program_needs_aux(ctx_data) {
             Some("delis.closure.aux".to_string())
         } else {
             None
@@ -500,6 +507,7 @@ impl<'a> NativeCompiler<'a> {
                 .iter()
                 .any(|var| self.expr_symbols(&case.body).iter().any(|name| name == var));
             let mut env = Env::default();
+            env.self_var = Some(case.self_var.clone());
             for (idx, var) in case.vars.iter().enumerate() {
                 env.children
                     .insert(var.clone(), ChildBinding { arg_idx: idx });
@@ -581,12 +589,8 @@ impl<'a> NativeCompiler<'a> {
                 BoolExpr::Const(value) => BoolExpr::Const(!value),
                 BoolExpr::Dynamic(term) => BoolExpr::Dynamic(Bool::not(term)),
             }),
-            "and" => {
-                self.eval_bool_conjunction(&items[1..], env)
-            }
-            "or" => {
-                self.eval_bool_disjunction(&items[1..], env)
-            }
+            "and" => self.eval_and(&items[1..], env),
+            "or" => self.eval_or(&items[1..], env),
             "ite" if items.len() == 4 => match self.eval_bool(items[1], env)? {
                 BoolExpr::Const(true) => self.eval_bool(items[2], env),
                 BoolExpr::Const(false) => self.eval_bool(items[3], env),
@@ -913,8 +917,8 @@ impl<'a> NativeCompiler<'a> {
         for value in values {
             next.values.insert(var.to_string(), value.clone());
             let expr = match op {
-                "exists" => self.eval_bool_conjunction(body_items, &next)?,
-                "forall" => self.eval_bool_disjunction(body_items, &next)?,
+                "exists" => self.eval_and(body_items, &next)?,
+                "forall" => self.eval_or(body_items, &next)?,
                 _ => unreachable!(),
             };
             match (op, expr) {
@@ -988,7 +992,7 @@ impl<'a> NativeCompiler<'a> {
         }))
     }
 
-    fn eval_bool_conjunction(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
+    fn eval_and(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
         let mut dynamic = Vec::new();
         for item in items {
             match self.eval_bool(item, env)? {
@@ -1004,7 +1008,7 @@ impl<'a> NativeCompiler<'a> {
         })
     }
 
-    fn eval_bool_disjunction(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
+    fn eval_or(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
         let mut dynamic = Vec::new();
         for item in items {
             match self.eval_bool(item, env)? {
@@ -1659,13 +1663,32 @@ fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {
     }
 }
 
-/// True iff any semantic body uses `(parent ...)`.  When so, NativeCompiler
-/// allocates a single auxiliary synth-fun of the start sort and emits a
-/// closure constraint `(= g aux)`; `(parent n)` references in bodies become
-/// bit extractions from aux.
-fn program_uses_parent(ctx: &CompileContext<'_>) -> bool {
-    ctx.semantic_program
-        .semantics
+fn program_needs_aux(ctx: &CompileContext<'_>) -> bool {
+    ctx.semantic_program.semantics.iter().any(|spec| {
+        crate::compile::finite::contains_parent_navigation(&spec.body)
+            || contains_self_recursion(&spec.relation, &spec.body)
+    })
+}
+
+fn contains_self_recursion(relation: &str, body: &lexpr::Value) -> bool {
+    let Ok(cases) = crate::compile::semantic::parse_cases(body) else {
+        return false;
+    };
+    cases
+        .values()
+        .any(|case| contains_self_call(relation, &case.self_var, &case.body))
+}
+
+fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bool {
+    let Some(items) = expr.to_ref_vec() else {
+        return false;
+    };
+    if items.first().and_then(|item| item.as_symbol()) == Some(relation)
+        && items.get(1).and_then(|item| item.as_symbol()) == Some(self_var)
+    {
+        return true;
+    }
+    items
         .iter()
-        .any(|spec| crate::compile::finite::contains_parent_navigation(&spec.body))
+        .any(|item| contains_self_call(relation, self_var, item))
 }

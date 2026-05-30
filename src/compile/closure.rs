@@ -121,6 +121,7 @@ struct BoolOps {
     or_ctor: Option<String>,
 }
 
+#[derive(Clone)]
 struct DefineFun {
     args: Vec<String>,
     body: SyGuSTerm,
@@ -211,6 +212,12 @@ pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<V
     verifier.failing_constraint_indices(solution)
 }
 
+fn is_constant_grammar(grammar: &GrammarDef) -> bool {
+    grammar.grouped_rule_lists.len() == 1
+        && grammar.grouped_rule_lists[0].terms.len() == 1
+        && matches!(&grammar.grouped_rule_lists[0].terms[0], SyGuSGTerm::Constant(_))
+}
+
 struct ClosureSolver<'a> {
     problem: &'a DelisProg,
     synth_name: String,
@@ -242,12 +249,33 @@ impl<'a> ClosureSolver<'a> {
                         },
                     );
                 }
-                SyGuSCmd::SynthFun(name, _args, sort, grammar) => {
-                    let grammar =
-                        grammar.ok_or_else(|| "closure requires SyGuS grammar".to_string())?;
-                    synth = Some((name, sort, grammar));
+                SyGuSCmd::SynthFun(name, args, sort, grammar) => {
+                    let width = sort_env.bv_width(&sort)?;
+                    // Synth-funs are also available as zero-arity functions
+                    // so that define-fun bodies can reference them (e.g. the
+                    // aux closure placeholder).
+                    if grammar.as_ref().is_some_and(|g| is_constant_grammar(g)) {
+                        funcs.insert(
+                            name.clone(),
+                            DefineFun {
+                                args: Vec::new(),
+                                body: SyGuSTerm::Literal(Literal::BinConst(
+                                    "0".repeat(width),
+                                )),
+                                width,
+                            },
+                        );
+                    } else if args.is_empty() {
+                        let g = grammar.ok_or_else(|| "closure requires SyGuS grammar".to_string())?;
+                        synth = Some((name, sort, g));
+                    }
                 }
-                SyGuSCmd::Constraint(term) => constraints.push(term),
+                SyGuSCmd::Constraint(term) => {
+                    if is_closure_constraint(&term, &synth.as_ref().map(|(n, _, _)| n.clone())) {
+                        continue;
+                    }
+                    constraints.push(term);
+                }
                 _ => {}
             }
         }
@@ -712,6 +740,36 @@ impl<'a> EvalContext<'a> {
     }
 }
 
+fn is_closure_constraint(term: &SyGuSTerm, synth_name: &Option<String>) -> bool {
+    let Some(synth_name) = synth_name else {
+        return false;
+    };
+    // (= synth_name aux_name) where aux_name is a synth-fun with constant grammar
+    let SyGuSTerm::Application(id, args) = term else {
+        return false;
+    };
+    if args.len() != 2 {
+        return false;
+    }
+    let id_name = match id {
+        Identifier::Symbol(name) => name,
+        _ => return false,
+    };
+    if id_name != "=" {
+        return false;
+    }
+    // Check if one side is the synth-fun name and the other is a different identifier
+    let (a, b) = (&args[0], &args[1]);
+    let a_is_synth = matches!(a, SyGuSTerm::Identifier(Identifier::Symbol(n)) if n == synth_name);
+    let b_is_synth = matches!(b, SyGuSTerm::Identifier(Identifier::Symbol(n)) if n == synth_name);
+    if !a_is_synth && !b_is_synth {
+        return false;
+    }
+    // The other side must be a different identifier (the aux synth-fun)
+    let other = if a_is_synth { b } else { a };
+    matches!(other, SyGuSTerm::Identifier(Identifier::Symbol(_)))
+}
+
 struct ConstraintVerifier {
     synth_name: String,
     synth_width: usize,
@@ -738,10 +796,33 @@ impl ConstraintVerifier {
                         },
                     );
                 }
-                SyGuSCmd::SynthFun(name, _args, sort, _grammar) => {
-                    synth = Some((name.clone(), sort_env.bv_width(sort)?));
+                SyGuSCmd::SynthFun(name, args, sort, grammar) => {
+                    let width = sort_env.bv_width(sort)?;
+                    if grammar.as_ref().is_some_and(|g| is_constant_grammar(g)) {
+                        funcs.insert(
+                            name.clone(),
+                            DefineFun {
+                                args: Vec::new(),
+                                body: SyGuSTerm::Literal(Literal::BinConst(
+                                    "0".repeat(width),
+                                )),
+                                width,
+                            },
+                        );
+                    } else if args.is_empty() {
+                        // Only non-constant-grammar nullary synth-funs are the
+                        // actual synthesis targets.
+                        synth = Some((name.clone(), width));
+                    }
                 }
-                SyGuSCmd::Constraint(term) => constraints.push(term.clone()),
+                SyGuSCmd::Constraint(term) => {
+                    // Skip the closure constraint (= synth aux) — it's an
+                    // internal implementation detail, not a user constraint.
+                    if is_closure_constraint(term, &synth.as_ref().map(|(n, _)| n.clone())) {
+                        continue;
+                    }
+                    constraints.push(term.clone());
+                }
                 _ => {}
             }
         }
@@ -757,9 +838,13 @@ impl ConstraintVerifier {
 
     fn failing_constraint_indices(&self, solution: &str) -> Result<Vec<usize>, String> {
         let body = parse_solution_body(solution, &self.synth_name)?;
+        log::info!("verifier: solution body = {:?}", body);
         let bits = self
             .evaluator()
             .eval_bv(&body, &mut EvalEnv::default(), self.synth_width)?;
+        log::info!("verifier: synth_width = {}, bits.0.len() = {}", self.synth_width, bits.0.len());
+        let first_bits: String = (0..bits.0.len().min(60)).map(|i| if bits.get(i) { '1' } else { '0' }).collect();
+        log::info!("verifier: solution bits (LSB first, first 60) = {}", first_bits);
         let mut base = HashMap::default();
         base.insert(
             self.synth_name.clone(),
@@ -769,6 +854,7 @@ impl ConstraintVerifier {
         let mut failing = Vec::new();
         for (idx, constraint) in self.constraints.iter().enumerate() {
             if !self.evaluator().eval_bool(constraint, &mut env)? {
+                log::info!("verifier: constraint[{}] FAILS: {:?}", idx, constraint);
                 failing.push(idx);
             }
         }
