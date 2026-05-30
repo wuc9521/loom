@@ -18,8 +18,8 @@ use std::{
     time::{Duration, Instant},
 };
 use sygus_parser::{
-    BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar, SyGuSCmd,
-    SyGuSGTerm, SyGuSTerm, Term,
+    BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Index, Literal, Sort, SortedVar,
+    SyGuSCmd, SyGuSGTerm, SyGuSTerm, Term,
 };
 
 #[derive(Clone)]
@@ -83,14 +83,13 @@ struct NativeCompiler<'a> {
     value_for_sort_cache: RefCell<HashMap<ValueForSortMemoKey, AspectValue>>,
     expr_symbol_cache: RefCell<HashMap<usize, Vec<String>>>,
     optimize: bool,
+    dead_bit_remap: HashMap<String, Vec<Option<usize>>>,
 }
 
 #[derive(Default)]
 struct ConstructorStats {
     bits: usize,
     eval_time: Duration,
-    lift_time: Duration,
-    fallback_time: Duration,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -187,20 +186,6 @@ impl<'a> NativeCompiler<'a> {
         Err(format!("unknown semantic term variable {child_name}"))
     }
 
-    fn sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
-        self.sig
-            .sort_order()
-            .iter()
-            .map(|sort| {
-                Ok(SyGuSCmd::DefineSort(
-                    sort.clone(),
-                    Vec::new(),
-                    Sort::bitvec(self.sort_width(sort)?),
-                ))
-            })
-            .collect()
-    }
-
     fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
         let sig = ctx_data.sig.clone();
         let ctx = ctx_data.semantic_context()?;
@@ -247,30 +232,158 @@ impl<'a> NativeCompiler<'a> {
             value_for_sort_cache: RefCell::new(HashMap::default()),
             expr_symbol_cache: RefCell::new(HashMap::default()),
             optimize,
+            dead_bit_remap: HashMap::default(),
         })
     }
 
     fn compile(&mut self) -> Result<Vec<SyGuSCmd>, String> {
-        let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
-        cmds.extend(self.sort_alias_cmds()?);
         let grammar_start = Instant::now();
         let grammar = self.grammar()?;
         log::info!(
             "native grammar compilation completed in {:?}",
             grammar_start.elapsed()
         );
-        // Aux synth-fun declared first so constructor define-funs can
-        // reference it for (parent ...) bit extractions.
-        if let Some(aux_name) = self.aux_synth_name.clone() {
-            cmds.push(self.aux_synth_fun_cmd(&aux_name)?);
+
+        // Phase 1: evaluate all constructor bits
+        struct ConsResult {
+            name: String,
+            result_sort: String,
+            arg_sorts: Vec<String>,
+            bool_bits: Vec<BoolExpr>,
         }
+        let mut cons_results = Vec::new();
         for cons in &self.sig.constructors {
             let cons_start = Instant::now();
-            cmds.push(self.constructor_fun(cons)?);
+            let bool_bits = self.eval_constructor_bits(cons)?;
             log::info!(
                 "native constructor {} compiled in {:?}",
                 cons.name,
                 cons_start.elapsed()
+            );
+            cons_results.push(ConsResult {
+                name: cons.name.clone(),
+                result_sort: cons.result_sort.clone(),
+                arg_sorts: cons.arg_sorts.clone(),
+                bool_bits,
+            });
+        }
+
+        // Phase 2: dead-bit elimination per sort
+        if self.optimize {
+            for sort in self.sig.sort_order() {
+                let original_width = self.sort_width(sort)?;
+                let cons_for_sort: Vec<&ConsResult> = cons_results
+                    .iter()
+                    .filter(|c| c.result_sort == *sort)
+                    .collect();
+                if cons_for_sort.is_empty() {
+                    continue;
+                }
+                let mut remap = Vec::with_capacity(original_width);
+                let mut new_idx = 0usize;
+                for bit_pos in 0..original_width {
+                    let mut all_same_const = true;
+                    let mut const_val = None;
+                    for cr in &cons_for_sort {
+                        match &cr.bool_bits[bit_pos] {
+                            BoolExpr::Const(v) => {
+                                if let Some(prev) = const_val {
+                                    if prev != *v {
+                                        all_same_const = false;
+                                        break;
+                                    }
+                                } else {
+                                    const_val = Some(*v);
+                                }
+                            }
+                            BoolExpr::Dynamic(_) => {
+                                all_same_const = false;
+                                break;
+                            }
+                        }
+                    }
+                    if all_same_const && const_val.is_some() {
+                        remap.push(None);
+                    } else {
+                        remap.push(Some(new_idx));
+                        new_idx += 1;
+                    }
+                }
+                let eliminated = original_width - new_idx;
+                if eliminated > 0 {
+                    log::info!(
+                        "dead-bit elimination for sort {}: {}/{} bits eliminated",
+                        sort,
+                        eliminated,
+                        original_width
+                    );
+                }
+                self.dead_bit_remap.insert(sort.to_string(), remap);
+            }
+        }
+
+        // Phase 3: emit commands with remapped bits
+        let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
+        cmds.extend(self.remapped_sort_alias_cmds()?);
+        if let Some(aux_name) = self.aux_synth_name.clone() {
+            cmds.push(self.remapped_aux_synth_fun_cmd(&aux_name)?);
+        }
+        for cr in &cons_results {
+            let remap = self.dead_bit_remap.get(&cr.result_sort);
+            let alive_bits: Vec<BoolExpr> = cr
+                .bool_bits
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| {
+                    remap
+                        .map(|r| r[*i].is_some())
+                        .unwrap_or(true)
+                })
+                .map(|(_, expr)| expr.clone())
+                .collect();
+            let remapped_bits: Vec<BoolExpr> = alive_bits
+                .into_iter()
+                .map(|expr| match expr {
+                    BoolExpr::Dynamic(term) => {
+                        BoolExpr::Dynamic(self.remap_extract_indices(&term, &cr.result_sort))
+                    }
+                    c => c,
+                })
+                .collect();
+            let mut builder = Cmd::define_fun(&cr.name);
+            let arg_names = (0..cr.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
+            for (idx, sort) in cr.arg_sorts.iter().enumerate() {
+                builder = builder.arg(&arg_names[idx], Sort::from_name(sort));
+            }
+            let lift_bits = remapped_bits
+                .iter()
+                .map(|expr| match expr {
+                    BoolExpr::Const(value) => BitwiseExpr::Const(*value),
+                    BoolExpr::Dynamic(term) => BitwiseExpr::Expr(term.clone()),
+                })
+                .collect::<Vec<_>>();
+            let lifted = if self.optimize {
+                optim::try_lift_native_bv(&lift_bits, &arg_names)
+            } else {
+                None
+            };
+            let body = if let Some(body) = lifted {
+                body
+            } else {
+                let bits = remapped_bits
+                    .into_iter()
+                    .map(|expr| match expr {
+                        BoolExpr::Const(value) => BitExpr::Const(value),
+                        BoolExpr::Dynamic(term) => bool_to_bit(term),
+                    })
+                    .collect::<Vec<_>>();
+                compact_bitvec(bits)
+            };
+            cmds.push(
+                builder
+                    .ret(Sort::from_name(&cr.result_sort))
+                    .body(body)
+                    .build(),
             );
         }
         let mut synth_cmd = Cmd::synth_fun(&self.synth_name)
@@ -293,14 +406,10 @@ impl<'a> NativeCompiler<'a> {
             .map(sygus_term_to_value)
             .collect::<Result<Vec<_>, _>>()?;
         for term in &top_level_constraints {
-            cmds.push(
-                Cmd::constraint()
-                    .body(self.lower_top_level_constraint(term, &env)?)
-                    .build(),
-            );
+            let lowered = self.lower_top_level_constraint(term, &env)?;
+            let remapped = self.remap_extract_indices(&lowered, self.sig.start_sort());
+            cmds.push(Cmd::constraint().body(remapped).build());
         }
-        // Closure constraint: g = aux.  Both are BVs of the start sort's
-        // width; this forces aux to be a fixed point of g's productions.
         if let Some(aux_name) = &self.aux_synth_name {
             let closure = Bool::eq(
                 Term::var(&self.synth_name),
@@ -310,32 +419,6 @@ impl<'a> NativeCompiler<'a> {
         }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
-    }
-
-    /// Emit `(synth-fun aux () StartSort ((C StartSort ((Constant StartSort)))))`.
-    /// The solver picks any BV constant of the right width; the closure
-    /// constraint pins it to be g's LFP value.
-    fn aux_synth_fun_cmd(&self, aux_name: &str) -> Result<SyGuSCmd, String> {
-        let sort = Sort::from_name(self.sig.start_sort());
-        let sorted_var = SortedVar {
-            name: "C".to_string(),
-            sort: sort.clone(),
-        };
-        let constant_rule = SyGuSGTerm::Constant(sort.clone());
-        let grammar = GrammarDef {
-            sorted_vars: vec![sorted_var],
-            grouped_rule_lists: vec![GroupedRuleList {
-                symbol: "C".to_string(),
-                sort: sort.clone(),
-                terms: vec![constant_rule],
-            }],
-        };
-        Ok(SyGuSCmd::SynthFun(
-            aux_name.to_string(),
-            Vec::new(),
-            sort,
-            Some(grammar),
-        ))
     }
 
     fn lower_top_level_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
@@ -390,7 +473,7 @@ impl<'a> NativeCompiler<'a> {
         })
     }
 
-    fn constructor_fun(&self, cons: &TermConstructor) -> Result<SyGuSCmd, String> {
+    fn eval_constructor_bits(&self, cons: &TermConstructor) -> Result<Vec<BoolExpr>, String> {
         let mut stats = ConstructorStats::default();
         let mut bool_bits = Vec::new();
         for domain in self.ctx.domains_for_sort(&cons.result_sort)? {
@@ -426,11 +509,6 @@ impl<'a> NativeCompiler<'a> {
                 env.aspect.insert("asp".to_string(), bit.aspect.clone());
                 let eval_start = Instant::now();
                 let bool_expr = match (&domain.kind, &bit.value) {
-                    // A ground body (no child vars) USUALLY evaluates to a
-                    // constant; we used to error on Dynamic.  But with
-                    // `(parent ...)`, a ground body can legitimately reduce
-                    // to an aux-bit extraction, which is Dynamic.  Accept
-                    // either shape.
                     (SemanticKind::Bool, None) if body_is_ground => {
                         self.eval_bool(&case.body, &env)?
                     }
@@ -453,57 +531,17 @@ impl<'a> NativeCompiler<'a> {
                 bool_bits.push(bool_expr);
             }
         }
-
-        let mut builder = Cmd::define_fun(&cons.name);
-        let arg_names = (0..cons.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
-        for (idx, sort) in cons.arg_sorts.iter().enumerate() {
-            builder = builder.arg(&arg_names[idx], Sort::from_name(sort));
-        }
-        let lift_bits = bool_bits
-            .iter()
-            .map(|expr| match expr {
-                BoolExpr::Const(value) => BitwiseExpr::Const(*value),
-                BoolExpr::Dynamic(term) => BitwiseExpr::Expr(term.clone()),
-            })
-            .collect::<Vec<_>>();
-        let lift_start = Instant::now();
-        let lifted = if self.optimize {
-            optim::try_lift_native_bv(&lift_bits, &arg_names)
-        } else {
-            None
-        };
-        stats.lift_time = lift_start.elapsed();
-        let body = if let Some(body) = lifted {
-            body
-        } else {
-            let fallback_start = Instant::now();
-            let bits = bool_bits
-                .into_iter()
-                .map(|expr| match expr {
-                    BoolExpr::Const(value) => BitExpr::Const(value),
-                    BoolExpr::Dynamic(term) => bool_to_bit(term),
-                })
-                .collect::<Vec<_>>();
-            let body = compact_bitvec(bits);
-            stats.fallback_time = fallback_start.elapsed();
-            body
-        };
         let cache_hits = *self.ground_model_eval_hits.borrow();
         let cache_misses = *self.ground_model_eval_misses.borrow();
         log::info!(
-            "native constructor {} stats: bits={}, eval={:?}, lift={:?}, fallback={:?}, ground_model_cache_hits={}, ground_model_cache_misses={}",
+            "native constructor {} stats: bits={}, eval={:?}, ground_model_cache_hits={}, ground_model_cache_misses={}",
             cons.name,
             stats.bits,
             stats.eval_time,
-            stats.lift_time,
-            stats.fallback_time,
             cache_hits,
             cache_misses,
         );
-        Ok(builder
-            .ret(Sort::from_name(&cons.result_sort))
-            .body(body)
-            .build())
+        Ok(bool_bits)
     }
 
     fn eval_bool(&self, expr: &Value, env: &Env) -> Result<BoolExpr, String> {
@@ -1347,6 +1385,131 @@ impl<'a> NativeCompiler<'a> {
             .map(|domain| domain.bits.len())
             .sum::<usize>()
             .max(1))
+    }
+
+    fn remapped_sort_width(&self, sort: &str) -> Result<usize, String> {
+        if let Some(remap) = self.dead_bit_remap.get(sort) {
+            let alive = remap.iter().filter(|r| r.is_some()).count();
+            Ok(alive.max(1))
+        } else {
+            self.sort_width(sort)
+        }
+    }
+
+    fn remapped_sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
+        self.sig
+            .sort_order()
+            .iter()
+            .map(|sort| {
+                Ok(SyGuSCmd::DefineSort(
+                    sort.clone(),
+                    Vec::new(),
+                    Sort::bitvec(self.remapped_sort_width(sort)?),
+                ))
+            })
+            .collect()
+    }
+
+    fn remapped_aux_synth_fun_cmd(&self, aux_name: &str) -> Result<SyGuSCmd, String> {
+        let sort = Sort::from_name(self.sig.start_sort());
+        let sorted_var = SortedVar {
+            name: "C".to_string(),
+            sort: sort.clone(),
+        };
+        let constant_rule = SyGuSGTerm::Constant(sort.clone());
+        let grammar = GrammarDef {
+            sorted_vars: vec![sorted_var],
+            grouped_rule_lists: vec![GroupedRuleList {
+                symbol: "C".to_string(),
+                sort: sort.clone(),
+                terms: vec![constant_rule],
+            }],
+        };
+        Ok(SyGuSCmd::SynthFun(
+            aux_name.to_string(),
+            Vec::new(),
+            sort,
+            Some(grammar),
+        ))
+    }
+
+    fn remap_extract_indices(&self, term: &SyGuSTerm, context_sort: &str) -> SyGuSTerm {
+        match term {
+            SyGuSTerm::Application(Identifier::Indexed(sym, indices), args)
+                if sym == "extract" && args.len() == 1 =>
+            {
+                let (high, low) = match indices.as_slice() {
+                    [Index::Numeral(h), Index::Numeral(l)] => (*h, *l),
+                    _ => return term.clone(),
+                };
+                if high != low {
+                    return term.clone();
+                }
+                let old_bit = high;
+                let inner = &args[0];
+                let target_sort = self.extract_target_sort(inner, context_sort);
+                if let Some(remap) = target_sort.and_then(|s| self.dead_bit_remap.get(s)) {
+                    if let Some(Some(new_bit)) = remap.get(old_bit) {
+                        let remapped_inner = self.remap_extract_indices(inner, context_sort);
+                        return BitVec::extract(*new_bit, *new_bit, remapped_inner);
+                    }
+                }
+                let remapped_inner = self.remap_extract_indices(inner, context_sort);
+                BitVec::extract(old_bit, old_bit, remapped_inner)
+            }
+            SyGuSTerm::Application(id, args) => {
+                let remapped_args = args
+                    .iter()
+                    .map(|a| self.remap_extract_indices(a, context_sort))
+                    .collect();
+                SyGuSTerm::Application(id.clone(), remapped_args)
+            }
+            SyGuSTerm::Let(bindings, body) => {
+                let new_bindings = bindings
+                    .iter()
+                    .map(|vb| sygus_parser::VarBinding {
+                        name: vb.name.clone(),
+                        term: Box::new(self.remap_extract_indices(&vb.term, context_sort)),
+                    })
+                    .collect();
+                let new_body = self.remap_extract_indices(body, context_sort);
+                SyGuSTerm::Let(new_bindings, Box::new(new_body))
+            }
+            SyGuSTerm::Exists(vars, body) => {
+                let new_body = self.remap_extract_indices(body, context_sort);
+                SyGuSTerm::Exists(vars.clone(), Box::new(new_body))
+            }
+            SyGuSTerm::Forall(vars, body) => {
+                let new_body = self.remap_extract_indices(body, context_sort);
+                SyGuSTerm::Forall(vars.clone(), Box::new(new_body))
+            }
+            _ => term.clone(),
+        }
+    }
+
+    fn extract_target_sort<'b>(&'b self, inner: &SyGuSTerm, context_sort: &'b str) -> Option<&'b str> {
+        match inner {
+            SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
+                if name == &self.synth_name {
+                    return Some(self.sig.start_sort());
+                }
+                if self.aux_synth_name.as_deref() == Some(name) {
+                    return Some(self.sig.start_sort());
+                }
+                if let Some(idx) = name.strip_prefix("arg") {
+                    if let Ok(idx) = idx.parse::<usize>() {
+                        let cons = self.sig.constructors.iter().find(|c| {
+                            c.result_sort == context_sort && c.arg_sorts.len() > idx
+                        });
+                        if let Some(cons) = cons {
+                            return Some(&cons.arg_sorts[idx]);
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
     }
 
     fn bit_for(
