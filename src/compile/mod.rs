@@ -8,6 +8,7 @@ mod bv;
 mod chc;
 mod closure;
 mod context;
+pub(crate) mod emit;
 mod expr;
 mod finite;
 mod native;
@@ -16,9 +17,8 @@ mod syntax;
 mod types;
 
 use context::CompileContext;
-pub use finite::compile;
 pub use syntax::{TermConstructor, TermSignature};
-pub use types::{AspectKey, BitMapping, ConstraintBit, Encoding};
+pub use types::AspectKey;
 
 pub fn solve_by_closure(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
     closure::solve(problem, optimize)
@@ -230,15 +230,6 @@ fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bo
     items
         .iter()
         .any(|item| contains_self_call(relation, self_var, item))
-}
-
-pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
-    let ctx = CompileContext::new(problem)?;
-    Ok(ctx
-        .semantic_program
-        .domains
-        .iter()
-        .any(|domain| !matches!(domain.kind, types::SemanticKind::Bool)))
 }
 
 pub fn to_chc_ast(problem: &DelisProg) -> Result<HornProg, String> {

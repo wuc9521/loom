@@ -763,14 +763,6 @@ pub struct CLI {
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
 
-    /// Translate to Z3 fixedpoint CHC witness query and print to stdout
-    #[arg(long = "dump-chc-witness", default_value_t = false)]
-    dump_chc_witness: bool,
-
-    /// Solve using only the Z3 fixedpoint CHC witness path
-    #[arg(long = "chc-witness", default_value_t = false)]
-    chc_witness: bool,
-
     /// Use counterexample-guided subset solving for the external SyGuS backend,
     /// seeding with up to N constraints. Use `--cegis=0` to disable.
     #[arg(

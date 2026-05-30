@@ -1,10 +1,11 @@
 use crate::backends::smt2::ast::{HornAtom, HornProg, HornRule, HornTerm, PredicatePolarity};
 use crate::backends::sygus::optim::{self, BitwiseExpr};
+use crate::compile::emit::{arg_name, compact_bitvec, BoolExpr};
 use crate::compile::{TermConstructor, TermSignature};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
-use sygus_parser::{BitVec, Bool, Cmd, GrammarDef, Literal, Sort, SyGuSCmd, SyGuSTerm, Term};
+use sygus_parser::{BitVec, Bool, Cmd, GrammarDef, Sort, SyGuSCmd, SyGuSTerm, Term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum BitPolarity {
@@ -99,107 +100,8 @@ pub fn layouts_by_sort(program: &HornProg) -> HashMap<String, SortLayout> {
         .collect()
 }
 
-fn arg_name(idx: usize) -> String {
-    format!("arg{idx}")
-}
-
 fn obligation_binding_name(cons_name: &str, bit_idx: usize) -> String {
     format!("__sygus_{}_b{}", cons_name.replace('.', "_"), bit_idx)
-}
-
-fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
-    let bitstring = bits
-        .iter()
-        .rev()
-        .map(|bit| if *bit { '1' } else { '0' })
-        .collect::<String>();
-    Term::lit(Literal::BinConst(bitstring))
-}
-
-enum BitExpr {
-    Const(bool),
-    Dynamic(SyGuSTerm),
-}
-
-enum BoolExpr {
-    Const(bool),
-    Dynamic(SyGuSTerm),
-}
-
-fn compact_bitvec(bits: Vec<BitExpr>) -> SyGuSTerm {
-    let mut chunks = Vec::new();
-    let mut const_bits = Vec::new();
-
-    for bit in bits {
-        match bit {
-            BitExpr::Const(value) => const_bits.push(value),
-            BitExpr::Dynamic(term) => {
-                if !const_bits.is_empty() {
-                    chunks.push(bitvec_literal_from_lsb(&const_bits));
-                    const_bits.clear();
-                }
-                chunks.push(term);
-            }
-        }
-    }
-    if !const_bits.is_empty() {
-        chunks.push(bitvec_literal_from_lsb(&const_bits));
-    }
-
-    let mut body = chunks
-        .first()
-        .cloned()
-        .unwrap_or_else(|| BitVec::const_(0, 1));
-    for chunk in chunks.iter().skip(1) {
-        body = BitVec::concat(chunk.clone(), body);
-    }
-    body
-}
-
-fn bool_literal(term: &SyGuSTerm) -> Option<bool> {
-    match term {
-        SyGuSTerm::Literal(Literal::Bool(value)) => Some(*value),
-        _ => None,
-    }
-}
-
-fn bool_to_bit(cond: SyGuSTerm) -> BitExpr {
-    match bool_literal(&cond) {
-        Some(value) => BitExpr::Const(value),
-        None => BitExpr::Dynamic(Term::ite(cond, BitVec::const_(1, 1), BitVec::const_(0, 1))),
-    }
-}
-
-fn and_exprs(conjuncts: Vec<BoolExpr>) -> BoolExpr {
-    let mut dynamic = Vec::new();
-    for conjunct in conjuncts {
-        match conjunct {
-            BoolExpr::Const(false) => return BoolExpr::Const(false),
-            BoolExpr::Const(true) => {}
-            BoolExpr::Dynamic(term) => dynamic.push(term),
-        }
-    }
-    match dynamic.len() {
-        0 => BoolExpr::Const(true),
-        1 => BoolExpr::Dynamic(dynamic.remove(0)),
-        _ => BoolExpr::Dynamic(Bool::and(dynamic)),
-    }
-}
-
-fn or_exprs(disjuncts: Vec<BoolExpr>) -> BoolExpr {
-    let mut dynamic = Vec::new();
-    for disjunct in disjuncts {
-        match disjunct {
-            BoolExpr::Const(true) => return BoolExpr::Const(true),
-            BoolExpr::Const(false) => {}
-            BoolExpr::Dynamic(term) => dynamic.push(term),
-        }
-    }
-    match dynamic.len() {
-        0 => BoolExpr::Const(false),
-        1 => BoolExpr::Dynamic(dynamic.remove(0)),
-        _ => BoolExpr::Dynamic(Bool::or(dynamic)),
-    }
 }
 
 fn classify_atom(
@@ -417,7 +319,7 @@ fn clause_expr(
             ));
         }
     }
-    Ok(and_exprs(conjuncts))
+    Ok(BoolExpr::and(conjuncts))
 }
 
 fn obligation_expr_with_resolved_deps(
@@ -429,7 +331,7 @@ fn obligation_expr_with_resolved_deps(
         .iter()
         .map(|clause| clause_expr(clause, const_helpers, helper_names))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(or_exprs(disjuncts))
+    Ok(BoolExpr::or(disjuncts))
 }
 
 pub fn compile_one_way(
@@ -601,10 +503,7 @@ pub fn compile_one_way(
         .unwrap_or_else(|| {
             let bits = bool_bits
                 .into_iter()
-                .map(|expr| match expr {
-                    BoolExpr::Const(value) => BitExpr::Const(value),
-                    BoolExpr::Dynamic(term) => bool_to_bit(term),
-                })
+                .map(|expr| expr.to_bit())
                 .collect::<Vec<_>>();
             compact_bitvec(bits)
         });

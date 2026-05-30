@@ -20,6 +20,7 @@ use sygus_parser::{Identifier, SyGuSTerm};
 
 type AspectAssignment = Vec<(String, AspectValue)>;
 
+#[allow(dead_code)]
 pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     let program = compile_semantic_program(problem)?;
 

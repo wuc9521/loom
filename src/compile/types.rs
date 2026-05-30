@@ -17,12 +17,14 @@ impl AspectKey {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct BitMapping {
     pub aspect: AspectKey,
     pub bit: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Encoding {
     pub finite_spaces: Vec<String>,
@@ -32,6 +34,7 @@ pub struct Encoding {
     pub constraint_bits: Vec<ConstraintBit>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ConstraintBit {
     pub relation: String,
@@ -79,6 +82,7 @@ pub struct DomainBit {
     pub value: Option<AspectValue>,
 }
 
+#[allow(dead_code)]
 impl Encoding {
     pub fn to_comment_text(&self, target: &str) -> String {
         let mut lines = Vec::new();
