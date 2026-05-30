@@ -63,6 +63,11 @@ struct NativeCompiler<'a> {
     ctx: SemanticContext<'a>,
     synth_name: String,
     synth_args: Vec<sygus_parser::SortedVar>,
+    /// If `Some`, the program uses `(parent ...)` and we synthesize an
+    /// auxiliary constant of the same sort as g (the start sort). All
+    /// `(parent n)` references in semantic bodies extract bits from this
+    /// aux; the top-level closure constraint `(= g aux)` forces the LFP.
+    aux_synth_name: Option<String>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
     ground_model_eval:
         RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
@@ -154,6 +159,18 @@ impl<'a> NativeCompiler<'a> {
         bit: usize,
         env: &Env,
     ) -> Result<SyGuSTerm, String> {
+        // `(parent n)` — closure reference: extract the corresponding bit
+        // from the auxiliary synth-fun.  The top-level `(= g aux)` constraint
+        // forces the LFP, so the parent's evaluation at this aspect equals
+        // g's own evaluation.
+        if let Some(items) = term_expr.to_ref_vec() {
+            if items.first().and_then(|item| item.as_symbol()) == Some("parent") {
+                let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
+                    "semantic body uses (parent ...) but no aux synth-fun allocated".to_string()
+                })?;
+                return Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))));
+            }
+        }
         let child_name = term_expr
             .as_symbol()
             .ok_or_else(|| format!("semantic call term must be a symbol: {term_expr}"))?;
@@ -203,6 +220,11 @@ impl<'a> NativeCompiler<'a> {
             }
             *offset += domain.bits.len();
         }
+        let aux_synth_name = if program_uses_parent(ctx_data) {
+            Some("delis.closure.aux".to_string())
+        } else {
+            None
+        };
         Ok(Self {
             problem: ctx_data.problem,
             term_types: ctx_data.term_types,
@@ -210,6 +232,7 @@ impl<'a> NativeCompiler<'a> {
             ctx,
             synth_name: ctx_data.synth_name.clone(),
             synth_args: ctx_data.synth_args.clone(),
+            aux_synth_name,
             bit_index,
             ground_model_eval: RefCell::new(HashMap::default()),
             ground_model_eval_hits: RefCell::new(0),
@@ -236,6 +259,11 @@ impl<'a> NativeCompiler<'a> {
             "native grammar compilation completed in {:?}",
             grammar_start.elapsed()
         );
+        // Aux synth-fun declared first so constructor define-funs can
+        // reference it for (parent ...) bit extractions.
+        if let Some(aux_name) = self.aux_synth_name.clone() {
+            cmds.push(self.aux_synth_fun_cmd(&aux_name)?);
+        }
         for cons in &self.sig.constructors {
             let cons_start = Instant::now();
             cmds.push(self.constructor_fun(cons)?);
@@ -271,8 +299,43 @@ impl<'a> NativeCompiler<'a> {
                     .build(),
             );
         }
+        // Closure constraint: g = aux.  Both are BVs of the start sort's
+        // width; this forces aux to be a fixed point of g's productions.
+        if let Some(aux_name) = &self.aux_synth_name {
+            let closure = Bool::eq(
+                Term::var(&self.synth_name),
+                Term::var(aux_name),
+            );
+            cmds.push(Cmd::constraint().body(closure).build());
+        }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
+    }
+
+    /// Emit `(synth-fun aux () StartSort ((C StartSort ((Constant StartSort)))))`.
+    /// The solver picks any BV constant of the right width; the closure
+    /// constraint pins it to be g's LFP value.
+    fn aux_synth_fun_cmd(&self, aux_name: &str) -> Result<SyGuSCmd, String> {
+        let sort = Sort::from_name(self.sig.start_sort());
+        let sorted_var = SortedVar {
+            name: "C".to_string(),
+            sort: sort.clone(),
+        };
+        let constant_rule = SyGuSGTerm::Constant(sort.clone());
+        let grammar = GrammarDef {
+            sorted_vars: vec![sorted_var],
+            grouped_rule_lists: vec![GroupedRuleList {
+                symbol: "C".to_string(),
+                sort: sort.clone(),
+                terms: vec![constant_rule],
+            }],
+        };
+        Ok(SyGuSCmd::SynthFun(
+            aux_name.to_string(),
+            Vec::new(),
+            sort,
+            Some(grammar),
+        ))
     }
 
     fn lower_top_level_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
@@ -363,27 +426,16 @@ impl<'a> NativeCompiler<'a> {
                 env.aspect.insert("asp".to_string(), bit.aspect.clone());
                 let eval_start = Instant::now();
                 let bool_expr = match (&domain.kind, &bit.value) {
+                    // A ground body (no child vars) USUALLY evaluates to a
+                    // constant; we used to error on Dynamic.  But with
+                    // `(parent ...)`, a ground body can legitimately reduce
+                    // to an aux-bit extraction, which is Dynamic.  Accept
+                    // either shape.
                     (SemanticKind::Bool, None) if body_is_ground => {
-                        match self.eval_bool(&case.body, &env)? {
-                            BoolExpr::Const(value) => BoolExpr::Const(value),
-                            BoolExpr::Dynamic(_) => {
-                                return Err(format!(
-                                    "ground Bool body unexpectedly lowered to dynamic term: {}",
-                                    case.body
-                                ));
-                            }
-                        }
+                        self.eval_bool(&case.body, &env)?
                     }
                     (SemanticKind::FiniteValue { sort: _ }, Some(value)) if body_is_ground => {
-                        match self.eval_finite_eq(&case.body, value, &env)? {
-                            BoolExpr::Const(value) => BoolExpr::Const(value),
-                            BoolExpr::Dynamic(_) => {
-                                return Err(format!(
-                                    "ground finite body unexpectedly lowered to dynamic term: {}",
-                                    case.body
-                                ));
-                            }
-                        }
+                        self.eval_finite_eq(&case.body, value, &env)?
                     }
                     (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
                     (SemanticKind::FiniteValue { sort: _ }, Some(value)) => {
@@ -701,6 +753,16 @@ impl<'a> NativeCompiler<'a> {
         }
         let domain = self.ctx.domain_for_relation(relation)?;
         if domain.kind != SemanticKind::Bool || items.len() != 3 {
+            return Ok(None);
+        }
+        // Bail out cleanly if the guard isn't a compile-time constant.  The
+        // caller then falls through to the general quantifier lowering
+        // (eval_quantifier), which handles dynamic guards by enumerating
+        // values and combining the body's BoolExpr per value.
+        if self
+            .const_guard_values(var, domain_expr, guard_expr, true, env)?
+            .is_none()
+        {
             return Ok(None);
         }
         let term_expr = items[1];
@@ -1550,4 +1612,15 @@ fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {
             collect_expr_symbols(item, out);
         }
     }
+}
+
+/// True iff any semantic body uses `(parent ...)`.  When so, NativeCompiler
+/// allocates a single auxiliary synth-fun of the start sort and emits a
+/// closure constraint `(= g aux)`; `(parent n)` references in bodies become
+/// bit extractions from aux.
+fn program_uses_parent(ctx: &CompileContext<'_>) -> bool {
+    ctx.semantic_program
+        .semantics
+        .iter()
+        .any(|spec| crate::compile::finite::contains_parent_navigation(&spec.body))
 }

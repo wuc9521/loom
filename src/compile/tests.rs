@@ -390,9 +390,15 @@ fn detects_two_way_navigation() {
 "#,
     );
 
-    let summary = compile(&problem).expect("compilation should summarize");
-
-    assert!(summary.needs_saturation);
+    let semantic_program = super::finite::compile_semantic_program(&problem)
+        .expect("semantic program should compile");
+    assert!(
+        semantic_program
+            .semantics
+            .iter()
+            .any(|spec| super::finite::contains_parent_navigation(&spec.body)),
+        "expected a semantic spec that uses (parent ...)"
+    );
 }
 
 #[test]
@@ -955,8 +961,11 @@ fn allows_multiple_define_semantics_declarations() {
     assert_eq!(summary.semantic_domains.len(), 2);
 }
 
+// Multi-non-terminal CFG with (parent ...): out of scope for the native
+// multisynth path, which only handles a single recursive-ref constructor.
+// The CHC pipeline still compiles it (useful as a smoke test).
 #[test]
-fn typed_cfg_semantics_with_parent_navigation_compile_to_chc_and_sygus() {
+fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
     let problem = parse(
         r#"
 (set-logic ALL)
@@ -1022,10 +1031,8 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc_and_sygus() {
     );
 
     let chc = to_chc_ast(&problem).expect("typed CFG CHC should compile");
-    let sygus = to_sygus(&problem, false).expect("typed CFG SyGuS should compile");
 
     assert!(!chc.rules.is_empty());
-    assert!(!sygus.is_empty());
     let horn = crate::backends::smt2::emit::to_fixedpoint_query_text(&chc, "Goal");
     assert!(horn.contains("CFG.Sem"));
     assert!(horn.contains("Rhs.Sem"));

@@ -92,7 +92,6 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
         semantic_domains: program.domains,
         bit_mappings,
         constraint_bits,
-        needs_saturation: program.needs_saturation,
     })
 }
 
@@ -250,16 +249,11 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
         });
     }
 
-    let needs_saturation = semantic_specs
-        .iter()
-        .any(|spec| contains_parent_navigation(&spec.body));
-
     Ok(SemanticProgram {
         finite_spaces,
         semantics: semantic_specs,
         domains,
         constraints: semantic_constraints,
-        needs_saturation,
     })
 }
 
@@ -317,7 +311,7 @@ fn collect_models_in_term(
     }
 }
 
-fn contains_parent_navigation(expr: &Value) -> bool {
+pub fn contains_parent_navigation(expr: &Value) -> bool {
     let Some(items) = expr.to_ref_vec() else {
         return false;
     };

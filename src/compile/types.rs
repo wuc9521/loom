@@ -30,7 +30,6 @@ pub struct Encoding {
     pub semantic_domains: Vec<SemanticDomain>,
     pub bit_mappings: Vec<BitMapping>,
     pub constraint_bits: Vec<ConstraintBit>,
-    pub needs_saturation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +46,6 @@ pub struct SemanticProgram {
     pub semantics: Vec<SemanticSpec>,
     pub domains: Vec<SemanticDomain>,
     pub constraints: Vec<SemanticConstraint>,
-    pub needs_saturation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +101,6 @@ impl Encoding {
                 domain.bits.len()
             ));
         }
-        lines.push(format!("; needs-saturation: {}", self.needs_saturation));
         lines.push(format!("; bv-len: {}", self.bit_mappings.len()));
         for mapping in &self.bit_mappings {
             lines.push(format!(

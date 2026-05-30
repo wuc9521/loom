@@ -17,6 +17,7 @@ use std::{
 };
 use sygus_parser::{Sort, SyGuSCmd, SyGuSFile};
 
+#[allow(dead_code)]
 fn render_sygus_bytes(cmds: &[SyGuSCmd]) -> Result<Vec<u8>, io::Error> {
     let mut bytes = Vec::new();
     sygus_parser::writer::write_cmds(&mut bytes, cmds)?;
@@ -39,11 +40,9 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         }
         if args.dump_sygus || args.dump_sygus_stats {
             let compile_start = Instant::now();
-            let cmds = compile::to_sygus(delis_file, args.optimize).map_err(io::Error::other)?;
+            let sygus_bytes =
+                compile::to_sygus_bytes(delis_file, args.optimize).map_err(io::Error::other)?;
             log::info!("to_sygus completed in {:?}", compile_start.elapsed());
-            let render_start = Instant::now();
-            let sygus_bytes = render_sygus_bytes(&cmds)?;
-            log::info!("render SyGuS completed in {:?}", render_start.elapsed());
             if args.dump_sygus {
                 let stdout = io::stdout();
                 let mut stdout = BufWriter::new(stdout.lock());
@@ -260,7 +259,8 @@ fn solve_with_sygus(
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
         let step_start = Instant::now();
-        let full_sygus_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+        let full_sygus_cmds =
+            compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
         log::info!(
             "sygus-backend: full to_sygus for verification completed in {:?}",
             step_start.elapsed()
@@ -283,7 +283,8 @@ fn solve_with_sygus(
         solved
     } else {
         let step_start = Instant::now();
-        let sygus_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+        let sygus_cmds =
+            compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
         log::info!(
             "sygus-backend: to_sygus completed in {:?}",
             step_start.elapsed()
@@ -304,7 +305,47 @@ fn solve_with_sygus(
         "sygus-backend: solve completed in {:?}",
         solve_start.elapsed()
     );
-    Ok(decoded)
+    Ok(filter_user_synth_output(&decoded, delis_file))
+}
+
+/// Returns the user-requested synth-fun name from the .sl file's `(synth-fun X () ...)`.
+/// Used to filter out auxiliary synth-funs added by the CYK encoder.
+fn user_synth_name(delis_file: &DelisProg) -> Option<String> {
+    for cmd in &delis_file.cmds {
+        if let DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(name, _, _, _)) = cmd {
+            return Some(name.clone());
+        }
+    }
+    None
+}
+
+/// Filter the solver's output to keep only the user-requested synth-fun.
+/// The CYK encoding adds auxiliary synth-funs (e.g. `cfg.rhs.S`) that are
+/// implementation details; the user only asked for `g`.
+fn filter_user_synth_output(output: &str, delis_file: &DelisProg) -> String {
+    let Some(target) = user_synth_name(delis_file) else {
+        return output.to_string();
+    };
+    let mut out = String::new();
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("(define-fun ") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| !c.is_whitespace())
+                .collect();
+            if name != target {
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    // Drop trailing newline to match the original output's typical shape.
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    out
 }
 
 fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {

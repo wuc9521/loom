@@ -184,6 +184,22 @@ pub fn solve(problem: &DelisProg, optimize: bool) -> Result<Option<String>, Stri
     let start = Instant::now();
     let cmds = compile::to_sygus(problem, optimize)?;
     log::info!("closure: to_sygus completed in {:?}", start.elapsed());
+    // Multi-synth-fun problems (aux closure pattern emitted by NativeCompiler
+    // when (parent ...) is used) aren't supported by this enumerative
+    // backend — its eval expects every identifier to be a value, define-fun,
+    // or env binding, not a synth-fun reference. Bail to None so the parallel
+    // SyGuS backend handles it alone.
+    let synth_fun_count = cmds
+        .iter()
+        .filter(|cmd| matches!(cmd, SyGuSCmd::SynthFun(..)))
+        .count();
+    if synth_fun_count > 1 {
+        log::info!(
+            "closure: skipping (program has {} synth-funs; closure backend supports 1)",
+            synth_fun_count
+        );
+        return Ok(None);
+    }
     let start = Instant::now();
     let mut solver = ClosureSolver::new(problem, cmds)?;
     log::info!("closure: solver initialized in {:?}", start.elapsed());

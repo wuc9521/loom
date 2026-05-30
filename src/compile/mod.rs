@@ -1,7 +1,5 @@
 use crate::backends::smt2::ast::HornProg;
-use crate::backends::smt2::twa::saturate_program;
 use crate::parser::DelisProg;
-use lexpr::Value;
 use rustc_hash::FxHashMap as HashMap;
 use std::time::Instant;
 use sygus_parser::{Sort, SyGuSCmd};
@@ -45,15 +43,12 @@ pub fn bv_sz(problem: &DelisProg) -> Result<usize, String> {
         }
         return Ok(width);
     }
-    let mut program = chc::compile_with_context(
+    let program = chc::compile_with_context(
         ctx.problem,
         ctx.semantic_program.clone(),
         ctx.sig.clone(),
         ctx.semantic_cases.clone(),
     )?;
-    if ctx.semantic_program.needs_saturation {
-        program = saturate_program(&program, &ctx.sig)?;
-    }
     let widths = complete_sort_widths(
         &ctx.sig,
         &ctx.semantic_program,
@@ -86,15 +81,12 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     }
     log::info!("using CHC-to-BV SyGuS lowering");
     let chc_start = Instant::now();
-    let mut program = chc::compile_with_context(
+    let program = chc::compile_with_context(
         ctx.problem,
         ctx.semantic_program.clone(),
         ctx.sig.clone(),
         ctx.semantic_cases.clone(),
     )?;
-    if ctx.semantic_program.needs_saturation {
-        program = saturate_program(&program, &ctx.sig)?;
-    }
     log::info!("CHC lowering completed in {:?}", chc_start.elapsed());
     let layouts = complete_layouts(
         &ctx.sig,
@@ -212,30 +204,12 @@ fn complete_sort_widths(
 }
 
 fn supports_native_sygus(program: &types::SemanticProgram) -> bool {
-    if program.needs_saturation {
-        return false;
-    }
     !program.semantics.iter().any(|spec| {
-        contains_unsupported_native_feature(&spec.body)
-            || contains_current_term_recursion(&spec.relation, &spec.body)
+        contains_current_term_recursion(&spec.relation, &spec.body)
     })
 }
 
-fn contains_unsupported_native_feature(expr: &Value) -> bool {
-    if let Some(items) = expr.to_ref_vec() {
-        if let Some(op) = items.first().and_then(|item| item.as_symbol()) {
-            if op == "parent" {
-                return true;
-            }
-        }
-        return items
-            .iter()
-            .any(|item| contains_unsupported_native_feature(item));
-    }
-    false
-}
-
-fn contains_current_term_recursion(relation: &str, body: &Value) -> bool {
+fn contains_current_term_recursion(relation: &str, body: &lexpr::Value) -> bool {
     let Ok(cases) = semantic::parse_cases(body) else {
         return true;
     };
@@ -244,7 +218,7 @@ fn contains_current_term_recursion(relation: &str, body: &Value) -> bool {
         .any(|case| contains_self_call(relation, &case.self_var, &case.body))
 }
 
-fn contains_self_call(relation: &str, self_var: &str, expr: &Value) -> bool {
+fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bool {
     let Some(items) = expr.to_ref_vec() else {
         return false;
     };
@@ -270,6 +244,16 @@ pub fn uses_semantic_domains(problem: &DelisProg) -> Result<bool, String> {
 pub fn to_chc_ast(problem: &DelisProg) -> Result<HornProg, String> {
     let ctx = CompileContext::new(problem)?;
     chc::compile_with_context(problem, ctx.semantic_program, ctx.sig, ctx.semantic_cases)
+}
+
+/// Render the SyGuS-IF program as bytes.
+pub fn to_sygus_bytes(problem: &DelisProg, optimize: bool) -> Result<Vec<u8>, String> {
+    let cmds = to_sygus(problem, optimize)?;
+    let mut out = Vec::new();
+    sygus_parser::writer::write_cmds(&mut out, &cmds).map_err(|e| e.to_string())?;
+    use std::io::Write as _;
+    writeln!(&mut out).map_err(|e| e.to_string())?;
+    Ok(out)
 }
 
 #[cfg(test)]
