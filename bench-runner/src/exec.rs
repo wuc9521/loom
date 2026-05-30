@@ -17,9 +17,9 @@ use crate::{
         SuiteMode,
     },
     util::{
-        blank_to_none, combine_detail, count_lines, file_size, make_relative_string,
-        read_text_file, safe_relative_path, sanitize_field, suffix_with_summary,
-        summarize_text_file, temp_file_base, unix_now_secs,
+        blank_to_none, combine_detail, count_lines, display_relative_path, file_size,
+        make_relative_string, read_text_file, safe_relative_path, sanitize_field,
+        suffix_with_summary, summarize_text_file, temp_file_base, unix_now_secs,
     },
 };
 
@@ -198,10 +198,12 @@ fn execute_external_sygus_job(
         .sygus_solver
         .as_ref()
         .ok_or("external_sygus mode requires `sygus_solver`")?;
-    let sygus_abs = artifacts
-        .sygus_abs
-        .as_ref()
+    let persistent_sygus_abs = persistent_sygus_path(job)
+        .or_else(|| artifacts.sygus_abs.clone())
         .ok_or("missing SyGuS artifact path")?;
+    if let Some(parent) = persistent_sygus_abs.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let mut dump_command = Command::new(&job.delis);
     dump_command.args(&job.delis_args);
     dump_command.arg("--dump-sygus");
@@ -209,11 +211,12 @@ fn execute_external_sygus_job(
     let dump_outcome = run_command_with_output(
         &mut dump_command,
         None,
-        sygus_abs,
+        &persistent_sygus_abs,
         &artifacts.driver_stderr_abs,
         Duration::from_secs(job.sygus_timeout_secs),
     )?;
     let dump_stderr = summarize_text_file(&artifacts.driver_stderr_abs)?;
+    let sygus_rel = persistent_sygus_rel(run_id, job, &persistent_sygus_abs, &artifacts);
     if dump_outcome.timed_out {
         return Ok(JobRecord {
             run_id: run_id.to_string(),
@@ -222,7 +225,7 @@ fn execute_external_sygus_job(
             display_path: job.display_path.clone(),
             order_key: job.order_key.clone(),
             status: "sygus_timeout".to_string(),
-            total_ms: dump_outcome.duration_ms,
+            total_ms: 0,
             sygus_ms: dump_outcome.duration_ms,
             solve_ms: 0,
             sygus_bytes: 0,
@@ -236,7 +239,7 @@ fn execute_external_sygus_job(
             solution_path: None,
             stdout_path: None,
             stderr_path: Some(artifacts.driver_stderr_rel),
-            sygus_path: artifacts.sygus_rel.clone(),
+            sygus_path: sygus_rel.clone(),
             detail: format!(
                 "SyGuS dump timed out after {:.3}s{}",
                 dump_outcome.duration_ms as f64 / 1000.0,
@@ -253,7 +256,7 @@ fn execute_external_sygus_job(
             display_path: job.display_path.clone(),
             order_key: job.order_key.clone(),
             status: "error".to_string(),
-            total_ms: dump_outcome.duration_ms,
+            total_ms: 0,
             sygus_ms: dump_outcome.duration_ms,
             solve_ms: 0,
             sygus_bytes: 0,
@@ -267,7 +270,7 @@ fn execute_external_sygus_job(
             solution_path: None,
             stdout_path: None,
             stderr_path: Some(artifacts.driver_stderr_rel),
-            sygus_path: artifacts.sygus_rel.clone(),
+            sygus_path: sygus_rel.clone(),
             detail: if dump_stderr.is_empty() {
                 format!(
                     "delis --dump-sygus exited with status {}",
@@ -280,17 +283,18 @@ fn execute_external_sygus_job(
         });
     }
 
-    let sygus_bytes = file_size(sygus_abs)?;
-    let sygus_lines = count_lines(sygus_abs)?;
+    let sygus_bytes = file_size(&persistent_sygus_abs)?;
+    let sygus_lines = count_lines(&persistent_sygus_abs)?;
     let solution_abs = artifacts
         .solution_abs
         .as_ref()
         .ok_or("missing solution artifact path")?;
     let mut solver_command = Command::new(solver);
     solver_command.args(&job.sygus_solver_args);
+    solver_command.arg(&persistent_sygus_abs);
     let solver_outcome = run_command_with_output(
         &mut solver_command,
-        Some(sygus_abs),
+        None,
         solution_abs,
         &artifacts.solver_stdout_abs,
         Duration::from_secs(job.solve_timeout_secs),
@@ -343,7 +347,7 @@ fn execute_external_sygus_job(
         display_path: job.display_path.clone(),
         order_key: job.order_key.clone(),
         status,
-        total_ms: dump_outcome.duration_ms + solver_outcome.duration_ms,
+        total_ms: solver_outcome.duration_ms,
         sygus_ms: dump_outcome.duration_ms,
         solve_ms: solver_outcome.duration_ms,
         sygus_bytes,
@@ -357,7 +361,7 @@ fn execute_external_sygus_job(
         solution_path,
         stdout_path: Some(artifacts.solver_stdout_rel),
         stderr_path: Some(artifacts.driver_stderr_rel),
-        sygus_path: artifacts.sygus_rel.clone(),
+        sygus_path: sygus_rel,
         detail,
         completed_at_utc: unix_now_secs().to_string(),
     })
@@ -701,6 +705,42 @@ fn allocate_artifacts(
             .map(|path| sanitize_field(&make_relative_string(path, run_dir))),
         sygus_abs,
     })
+}
+
+fn persistent_sygus_path(job: &JobSpec) -> Option<std::path::PathBuf> {
+    let root = job.persistent_sygus_dir.as_ref()?;
+    Some(root.join(display_relative_path(&job.display_path)))
+}
+
+fn persistent_sygus_rel(
+    run_id: &str,
+    job: &JobSpec,
+    path: &Path,
+    artifacts: &ArtifactPaths,
+) -> Option<String> {
+    if let Some(root) = &job.persistent_sygus_dir {
+        if let Some(base) = root
+            .ancestors()
+            .find(|ancestor| ancestor.ends_with("benchmark"))
+        {
+            if let Ok(rel) = path.strip_prefix(base) {
+                return Some(sanitize_field(&format!(
+                    "benchmark/{}",
+                    rel.to_string_lossy()
+                )));
+            }
+        }
+        if let Ok(rel) = path.strip_prefix(root) {
+            return Some(sanitize_field(&rel.to_string_lossy()));
+        }
+    }
+    if let Some(rel) = &artifacts.sygus_rel {
+        return Some(rel.clone());
+    }
+    Some(sanitize_field(&format!(
+        "runs/{run_id}/artifacts/{}/{}.sygus2",
+        job.suite_name, job.display_path
+    )))
 }
 
 fn job_solver_name(job: &JobSpec) -> Option<String> {

@@ -110,10 +110,12 @@ Manifest notes:
 - `[[suites]]` is the preferred name, but the runner still accepts the old
   `[[folders]]` entries for compatibility.
 - Each suite can override `mode`, `delis`, `delis_args`, `sygus_solver`,
-  `sygus_solver_args`, `solve_timeout_secs`, `sygus_timeout_secs`, and
-  `capture_sygus_stats`.
-- `mode = "external_sygus"` keeps Delis only as a SyGuS front-end and sends the
-  generated problem to the configured external solver.
+  `sygus_solver_args`, `persistent_sygus_dir`, `solve_timeout_secs`,
+  `sygus_timeout_secs`, and `capture_sygus_stats`.
+- `mode = "external_sygus"` keeps Delis only as a SyGuS front-end. The runner
+  first materializes the generated SyGuS file, records that generation time in
+  `sygus_ms`, optionally keeps the file under `persistent_sygus_dir`, and then
+  times the external solver separately in `solve_ms` / `total_ms`.
 - `mode = "external_command"` runs an arbitrary wrapper command per benchmark
   file. Use `file_extensions`, `working_dir`, `external_command`, and
   `external_command_args` to describe the adapter.

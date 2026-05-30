@@ -56,6 +56,10 @@ pub fn materialize_suites(
                 .clone()
                 .map(|path| resolve_command_path(base_dir, &path)),
             sygus_solver_args: suite.sygus_solver_args.clone(),
+            persistent_sygus_dir: suite
+                .persistent_sygus_dir
+                .clone()
+                .map(|path| resolve_relative(base_dir, &path)),
             working_dir: suite
                 .working_dir
                 .clone()
@@ -117,6 +121,7 @@ pub fn collect_jobs(
                 } else {
                     suite.sygus_solver_args.clone()
                 },
+                persistent_sygus_dir: suite.persistent_sygus_dir.clone(),
                 working_dir: suite.working_dir.clone(),
                 external_command: suite.external_command.clone(),
                 external_command_args: suite.external_command_args.clone(),

@@ -39,6 +39,7 @@ pub struct SuiteManifest {
     pub sygus_solver: Option<PathBuf>,
     #[serde(default)]
     pub sygus_solver_args: Vec<String>,
+    pub persistent_sygus_dir: Option<PathBuf>,
     #[serde(default)]
     pub file_extensions: Vec<String>,
     pub working_dir: Option<PathBuf>,
@@ -77,6 +78,7 @@ pub struct EffectiveSuite {
     pub delis_args: Vec<String>,
     pub sygus_solver: Option<PathBuf>,
     pub sygus_solver_args: Vec<String>,
+    pub persistent_sygus_dir: Option<PathBuf>,
     pub working_dir: Option<PathBuf>,
     pub external_command: Option<PathBuf>,
     pub external_command_args: Vec<String>,
@@ -97,6 +99,7 @@ pub struct JobSpec {
     pub delis_args: Vec<String>,
     pub sygus_solver: Option<PathBuf>,
     pub sygus_solver_args: Vec<String>,
+    pub persistent_sygus_dir: Option<PathBuf>,
     pub working_dir: Option<PathBuf>,
     pub external_command: Option<PathBuf>,
     pub external_command_args: Vec<String>,

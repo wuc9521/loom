@@ -8,24 +8,27 @@ jobs = 0
 
 [[suites]]
 name = "reg-alpharegex-cvc5"
-path = "benchmark/Reg/alpharegex/sygus"
+path = "benchmark/Reg/alpharegex"
 recursive = false
 mode = "external_sygus"
 sygus_solver = "cvc5"
+persistent_sygus_dir = "benchmark/Reg/alpharegex/sygus"
 
 [[suites]]
 name = "reg-deepregex-cvc5"
-path = "benchmark/Reg/deepregex/sygus"
+path = "benchmark/Reg/deepregex"
 recursive = false
 mode = "external_sygus"
 sygus_solver = "cvc5"
+persistent_sygus_dir = "benchmark/Reg/deepregex/sygus"
 
 [[suites]]
 name = "reg-so-cvc5"
-path = "benchmark/Reg/so/sygus"
+path = "benchmark/Reg/so"
 recursive = false
 mode = "external_sygus"
 sygus_solver = "cvc5"
+persistent_sygus_dir = "benchmark/Reg/so/sygus"
 
 [[suites]]
 name = "fo-folseparators-artifact"

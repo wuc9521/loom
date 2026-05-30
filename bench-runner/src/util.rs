@@ -3,7 +3,7 @@ use std::{
     fs::{self, File},
     hash::{DefaultHasher, Hasher},
     io::{BufWriter, Read, Write},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
     thread,
     time::{SystemTime, UNIX_EPOCH},
@@ -167,6 +167,16 @@ pub fn safe_relative_path(text: &str) -> PathBuf {
             .replace('\\', "_");
         if !cleaned.is_empty() {
             path.push(cleaned);
+        }
+    }
+    path
+}
+
+pub fn display_relative_path(text: &str) -> PathBuf {
+    let mut path = PathBuf::new();
+    for component in Path::new(text).components() {
+        if let Component::Normal(part) = component {
+            path.push(part);
         }
     }
     path
