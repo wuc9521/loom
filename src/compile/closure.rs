@@ -1,4 +1,4 @@
-use crate::{compile, parser::DelisProg, sorts::SortEnv};
+use crate::{parser::DelisProg, sorts::SortEnv};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::time::Instant;
 use sygus_parser::{
@@ -182,9 +182,9 @@ impl EvalEnv {
     }
 }
 
-pub fn solve(problem: &DelisProg, optimize: bool) -> Result<Option<String>, String> {
+pub fn solve(problem: &DelisProg) -> Result<Option<String>, String> {
     let start = Instant::now();
-    let cmds = compile::to_sygus(problem, optimize)?;
+    let cmds = problem.to_sygus()?;
     log::info!("closure: to_sygus completed in {:?}", start.elapsed());
     // Multi-synth-fun problems (aux closure pattern emitted by NativeCompiler
     // when (parent ...) is used) aren't supported by this enumerative

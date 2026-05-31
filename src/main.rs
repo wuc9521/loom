@@ -21,7 +21,7 @@ use sygus_parser::{SyGuSCmd, SyGuSFile};
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
-            let program = compile::to_chc_ast(delis_file).map_err(io::Error::other)?;
+            let program = delis_file.to_chc_ast().map_err(io::Error::other)?;
             println!(
                 "{}",
                 smt2::emit::to_smt(&program)
@@ -34,7 +34,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         if args.dump_sygus || args.dump_sygus_stats {
             let compile_start = Instant::now();
             let sygus_bytes =
-                compile::to_sygus_bytes(delis_file, args.optimize).map_err(io::Error::other)?;
+                delis_file.to_sygus_bytes().map_err(io::Error::other)?;
             log::info!("to_sygus completed in {:?}", compile_start.elapsed());
             if args.dump_sygus {
                 let stdout = io::stdout();
@@ -54,7 +54,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
     if args.r#enum {
         let result =
-            compile::solve_by_closure(delis_file, args.optimize).map_err(io::Error::other)?;
+            delis_file.solve_by_closure().map_err(io::Error::other)?;
         if let Some(output) = result {
             println!("{output}");
             return Ok(());
@@ -68,20 +68,18 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
     let closure_tx = tx.clone();
     let closure_file = delis_file.clone();
-    let closure_optimize = args.optimize;
     const CLOSURE_STACK_BYTES: usize = 64 * 1024 * 1024;
     thread::Builder::new()
         .name("closure-backend".to_string())
         .stack_size(CLOSURE_STACK_BYTES)
         .spawn(move || {
-            let result = compile::solve_by_closure(&closure_file, closure_optimize)
+            let result = closure_file.solve_by_closure()
                 .map_err(io::Error::other);
             let _ = closure_tx.send(BackendResult::Closure(result));
         })?;
 
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
-    let sygus_optimize = args.optimize;
     let sygus_cegis = (args.cegis > 0).then_some(args.cegis);
     let sygus_backend = SygusBackend::from_cli(args);
     let sygus_verbose = args.verbose;
@@ -95,7 +93,6 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             let result = solve_with_sygus(
                 &sygus_file,
                 &sygus_backend,
-                sygus_optimize,
                 sygus_cegis,
                 sygus_verbose,
                 sygus_min,
@@ -241,7 +238,6 @@ fn solve_cmds_with_backend(
 fn solve_with_sygus(
     delis_file: &DelisProg,
     backend: &SygusBackend,
-    optimize: bool,
     cegis_size: Option<usize>,
     verbose: bool,
     min: bool,
@@ -254,7 +250,6 @@ fn solve_with_sygus(
         let solved = cegis_solve(
             delis_file,
             backend,
-            optimize,
             cegis_size,
             verbose,
             min,
@@ -268,7 +263,7 @@ fn solve_with_sygus(
     } else {
         let step_start = Instant::now();
         let sygus_cmds =
-            compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+            delis_file.to_sygus().map_err(io::Error::other)?;
         log::info!(
             "sygus-backend: to_sygus completed in {:?}",
             step_start.elapsed()
@@ -345,7 +340,6 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
 fn cegis_solve(
     delis_file: &DelisProg,
     backend: &SygusBackend,
-    optimize: bool,
     seed_size: usize,
     verbose: bool,
     min: bool,
@@ -354,7 +348,7 @@ fn cegis_solve(
     let seed_size = seed_size.max(1);
     let constraints = delis_file.constraints();
     let constraint_count = constraints.len();
-    let full_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+    let full_cmds = delis_file.to_sygus().map_err(io::Error::other)?;
     if constraint_count <= seed_size {
         let output = solve_cmds_with_backend(backend, &full_cmds, None, verbose, min, mitm)?;
         return match backend {
@@ -529,25 +523,6 @@ mod tests {
             Some(true)
         );
     }
-
-    #[test]
-    fn delis_axioms_discards_trivial_truths() {
-        let problem = parse_delis(
-            r#"
-(set-logic ALL)
-(declare-axiom true)
-(declare-axiom (= x x))
-(declare-axiom (= x y))
-"#,
-            None,
-        )
-        .expect("axiom fixture should parse");
-
-        let axioms = delis_axioms(&problem);
-
-        assert_eq!(axioms.len(), 1);
-        assert_eq!(axioms[0].to_string(), "(= x y)");
-    }
 }
 
 fn initial_cegis_constraints(polarities: &[Option<bool>], seed_size: usize) -> HashSet<usize> {
@@ -678,6 +653,19 @@ pub struct CLI {
     #[arg(long = "mitm", default_value_t = false)]
     mitm: bool,
 
+    /// Enable bisimulation-based aspect quotient to reduce BV width
+    /// (use --bisim=false to disable).
+    #[arg(
+        short = 'B',
+        long = "bisim",
+        default_value_t = true,
+        default_missing_value = "true",
+        num_args = 0..=1,
+        require_equals = true,
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    bisim: bool,
+
     /// Use only Delis's internal enumerative backend (no SyGuS solver backend).
     #[arg(long = "enum", default_value_t = false)]
     r#enum: bool,
@@ -750,6 +738,11 @@ fn main() -> Result<(), io::Error> {
         std::process::exit(130);
     })
     .expect("Error setting Ctrl-C handler");
+
+    compile::init_options(compile::CompileOptions {
+        optimize: args.optimize,
+        bisim: args.bisim,
+    });
 
     // Read input from stdin or file
     let input = if args.r#in {

@@ -250,6 +250,20 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
         });
     }
 
+    if super::opts().bisim {
+        let func_names: Vec<String> = problem
+            .cmds
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DelisCmd::DeclareFunc(sig) => {
+                    Some(sig.name.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        super::bisim::quotient_domains(&mut domains, &loaded_models, &func_names);
+    }
+
     Ok(SemanticProgram {
         finite_spaces,
         semantics: semantic_specs,

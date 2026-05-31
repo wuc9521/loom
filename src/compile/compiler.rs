@@ -252,7 +252,7 @@ impl<'a> Compiler<'a> {
                     *offset + bit.bit,
                 );
             }
-            *offset += domain.bits.len();
+            *offset += domain.width();
         }
         let aux_synth_name = if recurrence.requires_aux {
             Some(CLOSURE_AUX_NAME.to_string())
@@ -507,7 +507,18 @@ impl<'a> Compiler<'a> {
                 env.children
                     .insert(var.clone(), ChildBinding { arg_idx: idx });
             }
+            // Determine the canonical width of this domain. Under bisim
+            // quotient, multiple aspects may share the same bit index;
+            // equivalent aspects produce identical exprs, so it's safe to
+            // assign by `bit.bit` rather than by enumeration order.
+            let domain_width = domain.width();
+            let domain_start = bool_bits.len();
+            bool_bits.resize(domain_start + domain_width, BoolExpr::Const(false));
+            let mut filled = vec![false; domain_width];
             for bit in &domain.bits {
+                if filled[bit.bit] {
+                    continue;
+                }
                 env.aspect.insert("asp".to_string(), bit.aspect.clone());
                 let eval_start = Instant::now();
                 let bool_expr = match (&domain.kind, &bit.value) {
@@ -530,7 +541,8 @@ impl<'a> Compiler<'a> {
                 };
                 stats.eval_time += eval_start.elapsed();
                 stats.bits += 1;
-                bool_bits.push(bool_expr);
+                bool_bits[domain_start + bit.bit] = bool_expr;
+                filled[bit.bit] = true;
             }
         }
         let cache_hits = *self.ground_model_eval_hits.borrow();
@@ -1380,7 +1392,7 @@ impl<'a> Compiler<'a> {
             .ctx
             .domains_for_sort(sort)?
             .iter()
-            .map(|domain| domain.bits.len())
+            .map(|domain| domain.width())
             .sum::<usize>()
             .max(1))
     }

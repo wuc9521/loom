@@ -1,6 +1,14 @@
 use super::*;
 
+fn ensure_opts() {
+    init_options(CompileOptions {
+        optimize: false,
+        bisim: false,
+    });
+}
+
 fn parse(input: &str) -> DelisProg {
+    ensure_opts();
     crate::parser::ast::parse(input, None).expect("compilation smoke program should parse")
 }
 
@@ -121,7 +129,7 @@ fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("native BV lowering should succeed");
+    let sygus = to_sygus(&problem).expect("native BV lowering should succeed");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -239,7 +247,7 @@ fn enum_aspect_symbols_compare_as_finite_values() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("enum aspect equality should compile");
+    let sygus = to_sygus(&problem).expect("enum aspect equality should compile");
 
     assert!(!sygus.is_empty());
 }
@@ -321,7 +329,7 @@ fn semantic_predicates_use_aspect_projection() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("projected semantic predicates should compile");
+    let sygus = to_sygus(&problem).expect("projected semantic predicates should compile");
 
     assert!(!sygus.is_empty());
     let output = sygus
@@ -434,7 +442,7 @@ fn finite_aspects_and_predicates_use_declared_universe_sorts() {
     assert!(summary.constraint_bits[0].expected);
     assert!(!summary.constraint_bits[1].expected);
 
-    let sygus = to_sygus(&problem, false).expect("many-sorted predicates should lower to SyGuS");
+    let sygus = to_sygus(&problem).expect("many-sorted predicates should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 
@@ -471,7 +479,7 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("typed quantified domains should lower to SyGuS");
+    let sygus = to_sygus(&problem).expect("typed quantified domains should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 
@@ -514,7 +522,7 @@ fn model_terms_support_constants_functions_and_nested_applications() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("typed model terms should lower to SyGuS");
+    let sygus = to_sygus(&problem).expect("typed model terms should lower to SyGuS");
 
     assert!(!sygus.is_empty());
 }
@@ -549,7 +557,7 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("binary typed model terms should compile");
+    let sygus = to_sygus(&problem).expect("binary typed model terms should compile");
 
     assert!(!sygus.is_empty());
 }
@@ -656,7 +664,7 @@ fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("mixed semantic BV should compile");
+    let sygus = to_sygus(&problem).expect("mixed semantic BV should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -731,7 +739,7 @@ fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("multiple Formula domains should compile");
+    let sygus = to_sygus(&problem).expect("multiple Formula domains should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -769,7 +777,7 @@ fn semantic_bv_preserves_composite_top_level_constraints() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("composite top-level constraints should compile");
+    let sygus = to_sygus(&problem).expect("composite top-level constraints should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -830,7 +838,7 @@ fn sygus_unified_backend_supports_parent_with_finite_valued_semantics() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("parent + finite-valued semantics should compile");
+    let sygus = to_sygus(&problem).expect("parent + finite-valued semantics should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -1063,7 +1071,7 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 "#,
     );
 
-    let err = to_sygus(&problem, false).expect_err("wrong aspect constructor should be rejected");
+    let err = to_sygus(&problem).expect_err("wrong aspect constructor should be rejected");
 
     assert!(err.contains("aspect constructor must be ReAsp"));
 }
@@ -1092,7 +1100,7 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 "#,
     );
 
-    let err = to_sygus(&problem, false).expect_err("wrong aspect arity should be rejected");
+    let err = to_sygus(&problem).expect_err("wrong aspect arity should be rejected");
 
     assert!(err.contains("provides 1 scalar fields, expected 2"));
 }
@@ -1126,7 +1134,7 @@ fn finite_value_ite_is_supported_in_semantics() {
 "#,
     );
 
-    let sygus = to_sygus(&problem, false).expect("finite-valued ite should compile");
+    let sygus = to_sygus(&problem).expect("finite-valued ite should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)

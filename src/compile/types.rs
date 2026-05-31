@@ -75,6 +75,15 @@ pub struct SemanticDomain {
     pub bits: Vec<DomainBit>,
 }
 
+impl SemanticDomain {
+    /// Number of distinct BV positions occupied by this domain. Under the
+    /// bisim quotient, several `DomainBit` entries may map to the same
+    /// `bit` index, so this is `max(bit) + 1` rather than `bits.len()`.
+    pub fn width(&self) -> usize {
+        self.bits.iter().map(|b| b.bit + 1).max().unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DomainBit {
     pub bit: usize,
