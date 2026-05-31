@@ -1018,8 +1018,8 @@ fn build_nonterminals(
         let mut productions = Vec::new();
         let mut bool_ops = BoolOps::default();
         for term in group.terms {
-            let prod = production_from_gterm(term)?;
-            classify_bool_op(&mut bool_ops, &prod);
+            let prod = Production::from_gterm(term)?;
+            bool_ops.classify(&prod);
             productions.push(prod);
         }
         let idx = nonterminals.len();
@@ -1035,7 +1035,8 @@ fn build_nonterminals(
     Ok((nonterminals, nt_by_symbol, start))
 }
 
-fn production_from_gterm(term: SyGuSGTerm) -> Result<Production, String> {
+impl Production {
+    fn from_gterm(term: SyGuSGTerm) -> Result<Self, String> {
     let SyGuSGTerm::SyGuSTerm(term) = term else {
         return Err("closure does not support Constant/Variable grammar terms".to_string());
     };
@@ -1058,23 +1059,26 @@ fn production_from_gterm(term: SyGuSGTerm) -> Result<Production, String> {
         }),
         other => Err(format!("unsupported grammar term {other}")),
     }
+    }
 }
 
-fn classify_bool_op(ops: &mut BoolOps, prod: &Production) {
+impl BoolOps {
+    fn classify(&mut self, prod: &Production) {
     if !prod.args.is_empty() {
         if prod.args.len() == 1 && prod.ctor.ends_with(".not") {
-            ops.not_ctor = Some(prod.ctor.clone());
+            self.not_ctor = Some(prod.ctor.clone());
         } else if prod.args.len() == 2 && prod.ctor.ends_with(".and") {
-            ops.and_ctor = Some(prod.ctor.clone());
+            self.and_ctor = Some(prod.ctor.clone());
         } else if prod.args.len() == 2 && prod.ctor.ends_with(".or") {
-            ops.or_ctor = Some(prod.ctor.clone());
+            self.or_ctor = Some(prod.ctor.clone());
         }
         return;
     }
     if prod.ctor.ends_with(".true") {
-        ops.true_ctor = Some(prod.ctor.clone());
+        self.true_ctor = Some(prod.ctor.clone());
     } else if prod.ctor.ends_with(".false") {
-        ops.false_ctor = Some(prod.ctor.clone());
+        self.false_ctor = Some(prod.ctor.clone());
+    }
     }
 }
 

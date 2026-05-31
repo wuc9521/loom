@@ -2,7 +2,7 @@ use crate::{
     compile::optim,
     compile::{
         context::CompileContext,
-        emit::{arg_name, compact_bitvec, BoolExpr},
+        emit::{arg_name, BoolExpr},
         expr::sygus_term_to_value,
         eval_ctx::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
@@ -22,6 +22,10 @@ use sygus_parser::{
     BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar,
     SyGuSCmd, SyGuSGTerm, SyGuSTerm, Term,
 };
+
+const CLOSURE_AUX_NAME: &str = "delis.closure.aux";
+const SELF_BIT_PREFIX: &str = "delis.self.";
+
 
 #[derive(Clone)]
 struct ChildBinding {
@@ -251,7 +255,7 @@ impl<'a> Compiler<'a> {
             *offset += domain.bits.len();
         }
         let aux_synth_name = if recurrence.requires_aux {
-            Some("delis.closure.aux".to_string())
+            Some(CLOSURE_AUX_NAME.to_string())
         } else {
             None
         };
@@ -356,9 +360,9 @@ impl<'a> Compiler<'a> {
                 // (emitted by semantic_term_bit in SelfClosure mode). Wrap in
                 // a topo-sorted let-binding chain so the LFP is fully unrolled
                 // at compile time — no runtime synth-fun reference required.
-                build_self_closure_body(&remapped_bits)
+                BoolExpr::resolve_closure(&remapped_bits)
             } else {
-                compact_bitvec(remapped_bits)
+                BoolExpr::compact(remapped_bits)
             };
             cmds.push(
                 builder
@@ -1583,7 +1587,7 @@ fn bit_is_one(bit: SyGuSTerm) -> SyGuSTerm {
 /// stand for "the Bool value of bit `i` of the synth-fun's output". The
 /// post-pass in `compile()` resolves these into let-bindings.
 fn self_bit_name(bit: usize) -> String {
-    format!("__delis_self_b{bit}")
+    format!("{SELF_BIT_PREFIX}{bit}")
 }
 
 /// Walk a SyGuSTerm and collect bit indices `j` for any `__delis_self_b{j}`
@@ -1618,7 +1622,7 @@ fn collect_self_bit_deps(term: &SyGuSTerm, out: &mut HashSet<usize>) {
 fn parse_self_bit_index(id: &Identifier) -> Option<usize> {
     match id {
         Identifier::Symbol(name) => name
-            .strip_prefix("__delis_self_b")
+            .strip_prefix(SELF_BIT_PREFIX)
             .and_then(|s| s.parse::<usize>().ok()),
         _ => None,
     }
@@ -1664,7 +1668,8 @@ fn topo_sort_bits(deps: &[HashSet<usize>]) -> Result<Vec<usize>, String> {
 /// back to a plain `compact_bitvec`; otherwise it emits nested let-bindings
 /// in topological order so each `__delis_self_b{i}` variable is defined
 /// before any other binding (or the final body) references it.
-fn build_self_closure_body(bits: &[BoolExpr]) -> SyGuSTerm {
+impl BoolExpr {
+    pub fn resolve_closure(bits: &[Self]) -> SyGuSTerm {
     let n = bits.len();
     let deps: Vec<HashSet<usize>> = bits
         .iter()
@@ -1679,7 +1684,7 @@ fn build_self_closure_body(bits: &[BoolExpr]) -> SyGuSTerm {
     let has_self_refs = deps.iter().any(|d| !d.is_empty());
     if !has_self_refs {
         let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
-        return compact_bitvec(bit_exprs);
+        return BoolExpr::compact(bit_exprs);
     }
     let order = match topo_sort_bits(&deps) {
         Ok(o) => o,
@@ -1688,7 +1693,7 @@ fn build_self_closure_body(bits: &[BoolExpr]) -> SyGuSTerm {
                 "self-closure body: {msg}; falling back to runtime self-references"
             );
             let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
-            return compact_bitvec(bit_exprs);
+            return BoolExpr::compact(bit_exprs);
         }
     };
     // Single-pass resolution: walk bits in topo order, resolving
@@ -1702,7 +1707,8 @@ fn build_self_closure_body(bits: &[BoolExpr]) -> SyGuSTerm {
         };
     }
     let bit_exprs: Vec<BoolExpr> = resolved;
-    compact_bitvec(bit_exprs)
+    BoolExpr::compact(bit_exprs)
+    }
 }
 
 /// Resolve `__delis_self_b{j}` references in a SyGuSTerm by looking up
@@ -1714,7 +1720,7 @@ fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
     match term {
         SyGuSTerm::Literal(Literal::Bool(v)) => BoolExpr::Const(*v),
         SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
-            if let Some(idx) = name.strip_prefix("__delis_self_b") {
+            if let Some(idx) = name.strip_prefix(SELF_BIT_PREFIX) {
                 if let Ok(i) = idx.parse::<usize>() {
                     return resolved[i].clone();
                 }

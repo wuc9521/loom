@@ -107,7 +107,7 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
         .collect::<Vec<_>>();
     let finite_spaces = finite_cmds
         .iter()
-        .map(|cmd| parse_finite_space(cmd))
+        .map(|cmd| FiniteSpace::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
     let semantics = problem
         .cmds
@@ -127,7 +127,7 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
 
     let semantic_specs = semantics
         .iter()
-        .map(|cmd| parse_semantic_spec(cmd))
+        .map(|cmd| SemanticSpec::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
     let spaces_by_name = finite_spaces
         .iter()
@@ -516,7 +516,8 @@ fn parse_aspect_term(
     Ok((model_name, fields))
 }
 
-fn parse_finite_space(cmd: &crate::parser::ast::FiniteAspect) -> Result<FiniteSpace, String> {
+impl FiniteSpace {
+    fn from_cmd(cmd: &crate::parser::ast::FiniteAspect) -> Result<Self, String> {
     let record_src = cmd
         .body
         .first()
@@ -539,6 +540,7 @@ fn parse_finite_space(cmd: &crate::parser::ast::FiniteAspect) -> Result<FiniteSp
         fields,
         where_expr,
     })
+}
 }
 
 fn parse_record_fields(record: &Value) -> Result<Vec<FieldDecl>, String> {
@@ -724,7 +726,8 @@ fn model_universe_sorts(model: &crate::lang::model::Model) -> Vec<String> {
         .collect()
 }
 
-fn parse_semantic_spec(cmd: &crate::parser::ast::Semantics) -> Result<SemanticSpec, String> {
+impl SemanticSpec {
+    fn from_cmd(cmd: &crate::parser::ast::Semantics) -> Result<Self, String> {
     let header = lexpr::from_str(&cmd.header)
         .map_err(|e| format!("failed to parse define-semantics header: {e}"))?;
     let outer = header
@@ -788,4 +791,5 @@ fn parse_semantic_spec(cmd: &crate::parser::ast::Semantics) -> Result<SemanticSp
         return_kind,
         body,
     })
+}
 }

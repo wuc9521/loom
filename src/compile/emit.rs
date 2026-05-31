@@ -60,7 +60,8 @@ fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
     Term::lit(Literal::BinConst(bitstring))
 }
 
-pub fn compact_bitvec(bits: Vec<BoolExpr>) -> SyGuSTerm {
+impl BoolExpr {
+    pub fn compact(bits: Vec<Self>) -> SyGuSTerm {
     let mut chunks = Vec::new();
     let mut const_bits = Vec::new();
     for bit in bits {
@@ -90,4 +91,5 @@ pub fn compact_bitvec(bits: Vec<BoolExpr>) -> SyGuSTerm {
         body = BitVec::concat(chunk.clone(), body);
     }
     body
+    }
 }

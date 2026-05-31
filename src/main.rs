@@ -15,15 +15,8 @@ use std::{
     thread,
     time::Instant,
 };
-use sygus_parser::{Sort, SyGuSCmd, SyGuSFile};
+use sygus_parser::{SyGuSCmd, SyGuSFile};
 
-#[allow(dead_code)]
-fn render_sygus_bytes(cmds: &[SyGuSCmd]) -> Result<Vec<u8>, io::Error> {
-    let mut bytes = Vec::new();
-    sygus_parser::writer::write_cmds(&mut bytes, cmds)?;
-    writeln!(&mut bytes)?;
-    Ok(bytes)
-}
 
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
@@ -254,7 +247,7 @@ fn solve_with_sygus(
     min: bool,
     mitm: bool,
 ) -> Result<String, io::Error> {
-    let axioms = delis_axioms(delis_file);
+    let axioms = delis_file.axioms();
     let axiom_slice = (!axioms.is_empty()).then_some(axioms.as_slice());
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
@@ -301,20 +294,12 @@ fn solve_with_sygus(
 
 /// Returns the user-requested synth-fun name from the .sl file's `(synth-fun X () ...)`.
 /// Used to filter out auxiliary synth-funs added by the CYK encoder.
-fn user_synth_name(delis_file: &DelisProg) -> Option<String> {
-    for cmd in &delis_file.cmds {
-        if let DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(name, _, _, _)) = cmd {
-            return Some(name.clone());
-        }
-    }
-    None
-}
 
 /// Filter the solver's output to keep only the user-requested synth-fun.
 /// The CYK encoding adds auxiliary synth-funs (e.g. `cfg.rhs.S`) that are
 /// implementation details; the user only asked for `g`.
 fn filter_user_synth_output(output: &str, delis_file: &DelisProg) -> String {
-    let Some(target) = user_synth_name(delis_file) else {
+    let Some((target, _, _)) = delis_file.synth_signature() else {
         return output.to_string();
     };
     let mut out = String::new();
@@ -367,7 +352,7 @@ fn cegis_solve(
     mitm: bool,
 ) -> Result<String, io::Error> {
     let seed_size = seed_size.max(1);
-    let constraints = problem_constraints(delis_file);
+    let constraints = delis_file.constraints();
     let constraint_count = constraints.len();
     let full_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
     if constraint_count <= seed_size {
@@ -453,30 +438,7 @@ fn subset_sygus_problem(
     reduced
 }
 
-fn is_true_axiom_term(term: &sygus_parser::SyGuSTerm) -> bool {
-    match term {
-        sygus_parser::SyGuSTerm::Identifier(id) => id.get_name().eq_ignore_ascii_case("true"),
-        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::Bool(v)) => *v,
-        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => bits == "#b1",
-        sygus_parser::SyGuSTerm::Application(id, args)
-            if id.get_name() == "=" && args.len() == 2 =>
-        {
-            args[0] == args[1]
-        }
-        _ => false,
-    }
-}
 
-fn problem_constraints(problem: &DelisProg) -> Vec<sygus_parser::SyGuSTerm> {
-    problem
-        .cmds
-        .iter()
-        .filter_map(|cmd| match cmd {
-            DelisCmd::As(SyGuSCmd::Constraint(term)) => Some(term.clone()),
-            _ => None,
-        })
-        .collect()
-}
 
 fn constraint_polarity(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
     constraint_expected_truth(term, false)
@@ -640,31 +602,7 @@ fn add_counterexamples(
     active.len() - before
 }
 
-fn synth_signature(
-    delis_file: &DelisProg,
-) -> Result<(String, Vec<sygus_parser::SortedVar>, Sort), io::Error> {
-    delis_file
-        .cmds
-        .iter()
-        .find_map(|cmd| match cmd {
-            DelisCmd::As(SyGuSCmd::SynthFun(name, args, sort, _)) => {
-                Some((name.clone(), args.clone(), sort.clone()))
-            }
-            _ => None,
-        })
-        .ok_or_else(|| io::Error::other("missing synth-fun command"))
-}
 
-fn delis_axioms(problem: &DelisProg) -> Vec<sygus_parser::SyGuSTerm> {
-    problem
-        .cmds
-        .iter()
-        .filter_map(|cmd| match cmd {
-            DelisCmd::DeclareAxiom(term) if !is_true_axiom_term(term) => Some(term.clone()),
-            _ => None,
-        })
-        .collect()
-}
 
 fn decode_response(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
     let trimmed = output.trim();
@@ -676,7 +614,7 @@ fn decode_response(delis_file: &DelisProg, output: &str) -> Result<String, io::E
     let Ok(file) = SyGuSFile::from_str(content) else {
         return Ok(trimmed.to_string());
     };
-    let (synth_name, synth_args, synth_sort) = synth_signature(delis_file)?;
+    let (synth_name, synth_args, synth_sort) = delis_file.synth_signature().ok_or_else(|| io::Error::other("missing synth-fun"))?;
     let Some(SyGuSCmd::DefineFun(name, _args, _sort, body)) = file
         .cmds
         .into_iter()

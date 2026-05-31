@@ -301,6 +301,34 @@ impl DelisProg {
     pub fn push(&mut self, cmd: DelisCmd) {
         self.cmds.push(cmd);
     }
+    pub fn constraints(&self) -> Vec<sygus_parser::SyGuSTerm> {
+        self.cmds
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => Some(term.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+    pub fn synth_signature(
+        &self,
+    ) -> Option<(String, Vec<sygus_parser::SortedVar>, sygus_parser::Sort)> {
+        self.cmds.iter().find_map(|cmd| match cmd {
+            DelisCmd::As(sygus_parser::SyGuSCmd::SynthFun(name, args, sort, _)) => {
+                Some((name.clone(), args.clone(), sort.clone()))
+            }
+            _ => None,
+        })
+    }
+    pub fn axioms(&self) -> Vec<sygus_parser::SyGuSTerm> {
+        self.cmds
+            .iter()
+            .filter_map(|cmd| match cmd {
+                DelisCmd::DeclareAxiom(term) => Some(term.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl Default for DelisProg {
