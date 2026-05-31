@@ -2,7 +2,8 @@ use crate::{compile, parser::DelisProg, sorts::SortEnv};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::time::Instant;
 use sygus_parser::{
-    GrammarDef, Identifier, Index, Literal, Sort, SyGuSCmd, SyGuSFile, SyGuSGTerm, SyGuSTerm,
+    GrammarDef, Identifier, Index, Literal, Sort, SortedVar, SyGuSCmd, SyGuSFile, SyGuSGTerm,
+    SyGuSTerm,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -837,15 +838,90 @@ impl ConstraintVerifier {
     }
 
     fn failing_constraint_indices(&self, solution: &str) -> Result<Vec<usize>, String> {
-        let body = parse_solution_body(solution, &self.synth_name)?;
+        let define_funs = parse_solution_define_funs(solution)?;
+        let body = define_funs
+            .iter()
+            .find_map(|(name, _, body)| (name == &self.synth_name).then_some(body.clone()))
+            .or_else(|| define_funs.first().map(|(_, _, body)| body.clone()))
+            .ok_or_else(|| "solver response did not contain a define-fun".to_string())?;
         log::info!("verifier: solution body = {:?}", body);
-        let bits = self
-            .evaluator()
-            .eval_bv(&body, &mut EvalEnv::default(), self.synth_width)?;
-        log::info!("verifier: synth_width = {}, bits.0.len() = {}", self.synth_width, bits.0.len());
+        let mut base = HashMap::default();
+        let evaluator = self.evaluator();
+        let mut pending = define_funs
+            .iter()
+            .filter(|(name, args, _)| args.is_empty() && name != &self.synth_name)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut progress = true;
+        while progress && !pending.is_empty() {
+            progress = false;
+            let mut next_pending = Vec::new();
+            for (name, _args, def_body) in pending {
+                let mut local_env = EvalEnv::with_base(base.clone());
+                match evaluator.eval(&def_body, &mut local_env) {
+                    Ok(value) => {
+                        base.insert(name, value);
+                        progress = true;
+                    }
+                    Err(_) => next_pending.push((name, Vec::new(), def_body)),
+                }
+            }
+            pending = next_pending;
+        }
+        let requires_self_fixpoint = term_mentions_symbol(&body, &self.synth_name)
+            || pending
+                .iter()
+                .any(|(_, _, def_body)| term_mentions_symbol(def_body, &self.synth_name));
+        let requires_self_fixpoint = requires_self_fixpoint
+            || self
+                .funcs
+                .iter()
+                .any(|(name, func)| name != &self.synth_name && term_mentions_symbol(&func.body, &self.synth_name));
+        let bits = if requires_self_fixpoint {
+            let mut current = Bits::zero(self.synth_width);
+            let mut converged = None;
+            for _ in 0..=self.synth_width {
+                let mut iter_base = base.clone();
+                iter_base.insert(
+                    self.synth_name.clone(),
+                    EvalValue::Bv(current.clone(), self.synth_width),
+                );
+                let mut remaining = pending.clone();
+                let mut progress = true;
+                while progress && !remaining.is_empty() {
+                    progress = false;
+                    let mut next_remaining = Vec::new();
+                    for (name, _args, def_body) in remaining {
+                        let mut local_env = EvalEnv::with_base(iter_base.clone());
+                        match evaluator.eval(&def_body, &mut local_env) {
+                            Ok(value) => {
+                                iter_base.insert(name, value);
+                                progress = true;
+                            }
+                            Err(_) => next_remaining.push((name, Vec::new(), def_body)),
+                        }
+                    }
+                    remaining = next_remaining;
+                }
+                let next =
+                    evaluator.eval_bv(&body, &mut EvalEnv::with_base(iter_base), self.synth_width)?;
+                if next == current {
+                    converged = Some(next);
+                    break;
+                }
+                current = next;
+            }
+            converged.ok_or_else(|| "verifier: self-closure candidate did not converge".to_string())?
+        } else {
+            evaluator.eval_bv(&body, &mut EvalEnv::with_base(base.clone()), self.synth_width)?
+        };
+        log::info!(
+            "verifier: synth_width = {}, bits.0.len() = {}",
+            self.synth_width,
+            bits.0.len()
+        );
         let first_bits: String = (0..bits.0.len().min(60)).map(|i| if bits.get(i) { '1' } else { '0' }).collect();
         log::info!("verifier: solution bits (LSB first, first 60) = {}", first_bits);
-        let mut base = HashMap::default();
         base.insert(
             self.synth_name.clone(),
             EvalValue::Bv(bits, self.synth_width),
@@ -1009,7 +1085,9 @@ fn extract_indices(id: &Identifier) -> Option<(usize, usize)> {
     Some((high, low))
 }
 
-fn parse_solution_body(solution: &str, synth_name: &str) -> Result<SyGuSTerm, String> {
+fn parse_solution_define_funs(
+    solution: &str,
+) -> Result<Vec<(String, Vec<SortedVar>, SyGuSTerm)>, String> {
     let trimmed = solution.trim();
     let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
         &trimmed[1..trimmed.len() - 1]
@@ -1022,22 +1100,28 @@ fn parse_solution_body(solution: &str, synth_name: &str) -> Result<SyGuSTerm, St
         .cmds
         .into_iter()
         .filter_map(|cmd| match cmd {
-            SyGuSCmd::DefineFun(name, _args, _sort, body) => Some((name, body)),
+            SyGuSCmd::DefineFun(name, args, _sort, body) => Some((name, args, body)),
             _ => None,
         })
         .collect::<Vec<_>>();
     if define_funs.is_empty() {
         return Err("solver response did not contain a define-fun".to_string());
     }
-    if let Some((_, body)) = define_funs
-        .iter()
-        .find_map(|(name, body)| (name == synth_name).then_some((name, body)))
-    {
-        return Ok(body.clone());
+    Ok(define_funs)
+}
+
+fn term_mentions_symbol(term: &SyGuSTerm, target: &str) -> bool {
+    match term {
+        SyGuSTerm::Identifier(id) => id.get_name() == target,
+        SyGuSTerm::Application(id, args) => {
+            id.get_name() == target || args.iter().any(|arg| term_mentions_symbol(arg, target))
+        }
+        SyGuSTerm::Annotated(inner, _) => term_mentions_symbol(inner, target),
+        SyGuSTerm::Let(bindings, body) => {
+            bindings.iter().any(|binding| term_mentions_symbol(&binding.term, target))
+                || term_mentions_symbol(body, target)
+        }
+        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => term_mentions_symbol(body, target),
+        SyGuSTerm::Literal(_) => false,
     }
-    Ok(define_funs
-        .into_iter()
-        .next()
-        .map(|(_, body)| body)
-        .ok_or_else(|| "solver response did not contain a define-fun".to_string())?)
 }

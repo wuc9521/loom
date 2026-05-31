@@ -33,7 +33,27 @@ struct Env {
     aspect: HashMap<String, AspectKey>,
     values: HashMap<String, AspectValue>,
     children: HashMap<String, ChildBinding>,
+    relation: Option<String>,
     self_var: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FeedbackMode {
+    Direct,
+    SelfClosure,
+    ParentClosure,
+}
+
+struct FeedbackAnalysis {
+    relation_modes: HashMap<String, FeedbackMode>,
+    requires_aux: bool,
+}
+
+#[derive(Default)]
+struct RelationLocal {
+    has_parent: bool,
+    self_recursive: bool,
+    calls: HashSet<String>,
 }
 
 impl EnvView for Env {
@@ -51,6 +71,7 @@ struct NativeCompiler<'a> {
     term_types: &'a TermTypes,
     sig: TermSignature,
     ctx: SemanticContext<'a>,
+    feedback: FeedbackAnalysis,
     synth_name: String,
     synth_args: Vec<sygus_parser::SortedVar>,
     /// If `Some`, the program uses `(parent ...)` and we synthesize an
@@ -167,10 +188,30 @@ impl<'a> NativeCompiler<'a> {
             return Ok(bit_is_one(extract_arg_bit(child.arg_idx, bit)));
         }
         if env.self_var.as_deref() == Some(child_name) {
-            let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
-                "semantic body uses self-recursion but no aux synth-fun allocated".to_string()
-            })?;
-            return Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))));
+            let mode = env
+                .relation
+                .as_deref()
+                .and_then(|relation| self.feedback.relation_modes.get(relation))
+                .copied()
+                .unwrap_or(FeedbackMode::Direct);
+            return match mode {
+                FeedbackMode::Direct => Err(format!(
+                    "semantic body uses self recursion in direct component {}",
+                    env.relation.as_deref().unwrap_or("<unknown>")
+                )),
+                FeedbackMode::SelfClosure => Ok(bit_is_one(BitVec::extract(
+                    bit,
+                    bit,
+                    Term::var(&self.synth_name),
+                ))),
+                FeedbackMode::ParentClosure => {
+                    let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
+                        "semantic body uses self-recursion but no aux synth-fun allocated"
+                            .to_string()
+                    })?;
+                    Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))))
+                }
+            };
         }
         if child_name == self.synth_name {
             return Ok(bit_is_one(BitVec::extract(
@@ -185,6 +226,7 @@ impl<'a> NativeCompiler<'a> {
     fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
         let sig = ctx_data.sig.clone();
         let ctx = ctx_data.semantic_context()?;
+        let feedback = analyze_feedback(ctx_data)?;
         let mut bit_index = HashMap::default();
         let mut offsets = HashMap::default();
         for domain in &ctx_data.semantic_program.domains {
@@ -201,7 +243,7 @@ impl<'a> NativeCompiler<'a> {
             }
             *offset += domain.bits.len();
         }
-        let aux_synth_name = if program_needs_aux(ctx_data) {
+        let aux_synth_name = if feedback.requires_aux {
             Some("delis.closure.aux".to_string())
         } else {
             None
@@ -211,6 +253,7 @@ impl<'a> NativeCompiler<'a> {
             term_types: ctx_data.term_types,
             sig,
             ctx,
+            feedback,
             synth_name: ctx_data.synth_name.clone(),
             synth_args: ctx_data.synth_args.clone(),
             aux_synth_name,
@@ -507,6 +550,7 @@ impl<'a> NativeCompiler<'a> {
                 .iter()
                 .any(|var| self.expr_symbols(&case.body).iter().any(|name| name == var));
             let mut env = Env::default();
+            env.relation = Some(spec.relation.clone());
             env.self_var = Some(case.self_var.clone());
             for (idx, var) in case.vars.iter().enumerate() {
                 env.children
@@ -1663,20 +1707,53 @@ fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {
     }
 }
 
-fn program_needs_aux(ctx: &CompileContext<'_>) -> bool {
-    ctx.semantic_program.semantics.iter().any(|spec| {
-        crate::compile::finite::contains_parent_navigation(&spec.body)
-            || contains_self_recursion(&spec.relation, &spec.body)
-    })
-}
+fn analyze_feedback(ctx: &CompileContext<'_>) -> Result<FeedbackAnalysis, String> {
+    let relations = ctx
+        .semantic_program
+        .semantics
+        .iter()
+        .map(|spec| spec.relation.clone())
+        .collect::<Vec<_>>();
+    let relation_set = relations.iter().cloned().collect::<HashSet<_>>();
+    let mut locals = HashMap::<String, RelationLocal>::default();
+    for spec in &ctx.semantic_program.semantics {
+        let cases = crate::compile::semantic::parse_cases(&spec.body)?;
+        let entry = locals.entry(spec.relation.clone()).or_default();
+        entry.has_parent |= crate::compile::finite::contains_parent_navigation(&spec.body);
+        for case in cases.values() {
+            entry.self_recursive |= contains_self_call(&spec.relation, &case.self_var, &case.body);
+            collect_relation_calls(&case.body, &relation_set, &mut entry.calls);
+        }
+    }
 
-fn contains_self_recursion(relation: &str, body: &lexpr::Value) -> bool {
-    let Ok(cases) = crate::compile::semantic::parse_cases(body) else {
-        return false;
-    };
-    cases
-        .values()
-        .any(|case| contains_self_call(relation, &case.self_var, &case.body))
+    let components = strongly_connected_components(&relations, &locals);
+    let mut relation_modes = HashMap::default();
+    let mut requires_aux = false;
+    for component in components {
+        let mut has_parent = false;
+        let mut cyclic = component.len() > 1;
+        for relation in &component {
+            if let Some(local) = locals.get(relation) {
+                has_parent |= local.has_parent;
+                cyclic |= local.self_recursive;
+            }
+        }
+        let mode = if has_parent {
+            FeedbackMode::ParentClosure
+        } else if cyclic {
+            FeedbackMode::SelfClosure
+        } else {
+            FeedbackMode::Direct
+        };
+        requires_aux |= mode == FeedbackMode::ParentClosure;
+        for relation in component {
+            relation_modes.insert(relation, mode);
+        }
+    }
+    Ok(FeedbackAnalysis {
+        relation_modes,
+        requires_aux,
+    })
 }
 
 fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bool {
@@ -1691,4 +1768,86 @@ fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bo
     items
         .iter()
         .any(|item| contains_self_call(relation, self_var, item))
+}
+
+fn collect_relation_calls(expr: &lexpr::Value, relations: &HashSet<String>, out: &mut HashSet<String>) {
+    let Some(items) = expr.to_ref_vec() else {
+        return;
+    };
+    if let Some(symbol) = items.first().and_then(|item| item.as_symbol()) {
+        if relations.contains(symbol) {
+            out.insert(symbol.to_string());
+        }
+    }
+    for item in items {
+        collect_relation_calls(item, relations, out);
+    }
+}
+
+fn strongly_connected_components(
+    relations: &[String],
+    locals: &HashMap<String, RelationLocal>,
+) -> Vec<Vec<String>> {
+    struct Tarjan<'a> {
+        locals: &'a HashMap<String, RelationLocal>,
+        index: usize,
+        indices: HashMap<String, usize>,
+        lowlink: HashMap<String, usize>,
+        stack: Vec<String>,
+        on_stack: HashSet<String>,
+        components: Vec<Vec<String>>,
+    }
+
+    impl<'a> Tarjan<'a> {
+        fn visit(&mut self, relation: &str) {
+            self.indices.insert(relation.to_string(), self.index);
+            self.lowlink.insert(relation.to_string(), self.index);
+            self.index += 1;
+            self.stack.push(relation.to_string());
+            self.on_stack.insert(relation.to_string());
+
+            if let Some(local) = self.locals.get(relation) {
+                for next in &local.calls {
+                    if !self.indices.contains_key(next) {
+                        self.visit(next);
+                        let next_low = self.lowlink[next];
+                        let current = self.lowlink[relation];
+                        self.lowlink.insert(relation.to_string(), current.min(next_low));
+                    } else if self.on_stack.contains(next) {
+                        let next_index = self.indices[next];
+                        let current = self.lowlink[relation];
+                        self.lowlink.insert(relation.to_string(), current.min(next_index));
+                    }
+                }
+            }
+
+            if self.lowlink[relation] == self.indices[relation] {
+                let mut component = Vec::new();
+                while let Some(node) = self.stack.pop() {
+                    self.on_stack.remove(&node);
+                    component.push(node.clone());
+                    if node == relation {
+                        break;
+                    }
+                }
+                self.components.push(component);
+            }
+        }
+    }
+
+    let mut tarjan = Tarjan {
+        locals,
+        index: 0,
+        indices: HashMap::default(),
+        lowlink: HashMap::default(),
+        stack: Vec::new(),
+        on_stack: HashSet::default(),
+        components: Vec::new(),
+    };
+    for relation in relations {
+        if !tarjan.indices.contains_key(relation) {
+            tarjan.visit(relation);
+        }
+    }
+    tarjan.components
 }

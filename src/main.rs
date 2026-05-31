@@ -369,9 +369,9 @@ fn cegis_solve(
     let seed_size = seed_size.max(1);
     let constraints = problem_constraints(delis_file);
     let constraint_count = constraints.len();
+    let full_cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
     if constraint_count <= seed_size {
-        let cmds = compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
-        let output = solve_cmds_with_backend(backend, &cmds, None, verbose, min, mitm)?;
+        let output = solve_cmds_with_backend(backend, &full_cmds, None, verbose, min, mitm)?;
         return match backend {
             SygusBackend::InProcessDryadSynth => Ok(output),
             SygusBackend::External(_) => decode_response(delis_file, &output),
@@ -392,13 +392,8 @@ fn cegis_solve(
             active.len(),
             constraint_count
         );
-        let reduced_problem = subset_problem(delis_file, &active);
         let round_start = Instant::now();
-        let subset_cmds =
-            compile::to_sygus(&reduced_problem, optimize).map_err(io::Error::other)?;
-        // Also compile the full problem so verification uses matching sort aliases.
-        let full_cmds =
-            compile::to_sygus(delis_file, optimize).map_err(io::Error::other)?;
+        let subset_cmds = subset_sygus_problem(&full_cmds, &active, constraint_count);
         log::info!(
             "cegis round {}: reduced compilation completed in {:?}",
             round,
@@ -437,21 +432,25 @@ fn cegis_solve(
     }
 }
 
-fn subset_problem(problem: &DelisProg, active: &HashSet<usize>) -> DelisProg {
-    let mut cmds = Vec::with_capacity(problem.cmds.len());
+fn subset_sygus_problem(
+    cmds: &[SyGuSCmd],
+    active: &HashSet<usize>,
+    constraint_count: usize,
+) -> Vec<SyGuSCmd> {
+    let mut reduced = Vec::with_capacity(cmds.len());
     let mut constraint_idx = 0usize;
-    for cmd in &problem.cmds {
+    for cmd in cmds {
         match cmd {
-            DelisCmd::As(SyGuSCmd::Constraint(_)) => {
+            SyGuSCmd::Constraint(_) if constraint_idx < constraint_count => {
                 if active.contains(&constraint_idx) {
-                    cmds.push(cmd.clone());
+                    reduced.push(cmd.clone());
                 }
                 constraint_idx += 1;
             }
-            _ => cmds.push(cmd.clone()),
+            _ => reduced.push(cmd.clone()),
         }
     }
-    DelisProg { cmds }
+    reduced
 }
 
 fn is_true_axiom_term(term: &sygus_parser::SyGuSTerm) -> bool {
