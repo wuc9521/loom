@@ -3,19 +3,21 @@ use crate::parser::DelisProg;
 use std::time::Instant;
 use sygus_parser::SyGuSCmd;
 
-mod bv;
+mod compiler;
 mod chc;
 mod closure;
 mod context;
 pub(crate) mod emit;
 mod expr;
 mod finite;
-mod native;
+mod eval_ctx;
+pub(crate) mod optim;
 mod semantic;
 mod syntax;
 mod types;
 
 use context::CompileContext;
+pub use finite::compile;
 pub use syntax::{TermConstructor, TermSignature};
 pub use types::AspectKey;
 
@@ -51,7 +53,7 @@ pub fn to_sygus(problem: &DelisProg, optimize: bool) -> Result<Vec<SyGuSCmd>, St
     );
     log::info!("using native SyGuS BV lowering");
     let native_start = Instant::now();
-    let result = bv::compile(&ctx, optimize);
+    let result = compiler::compile(&ctx, optimize);
     log::info!(
         "native SyGuS BV lowering completed in {:?}",
         native_start.elapsed()

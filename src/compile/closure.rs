@@ -229,6 +229,15 @@ struct ClosureSolver<'a> {
     nt_by_symbol: HashMap<String, usize>,
     constraints: Vec<SyGuSTerm>,
     processed: HashMap<(usize, usize), HashSet<Vec<usize>>>,
+    /// True if any constructor's body references the synth-fun by name (e.g.
+    /// `re.*`'s body extracts bits of `r`). Such constructors encode a
+    /// finite-aspect least fixed point: their meaning at a given argument
+    /// tuple is the LFP of `body(args, r)` iterated from `r = 0` (Krogmeier
+    /// & Madhusudan 2023). The solver computes that LFP inline per
+    /// evaluation instead of treating `r` as an extra free input.
+    synth_self_ref: bool,
+    /// Index of the start NT (the synth-fun's nonterminal).
+    start_nt_idx: usize,
 }
 
 impl<'a> ClosureSolver<'a> {
@@ -283,6 +292,13 @@ impl<'a> ClosureSolver<'a> {
         let (synth_name, synth_sort, grammar) =
             synth.ok_or_else(|| "closure requires synth-fun".to_string())?;
         let (nonterminals, nt_by_symbol, start) = build_nonterminals(grammar, &sort_env)?;
+        let start_nt_idx = nt_by_symbol
+            .get(&start)
+            .copied()
+            .ok_or_else(|| format!("start nonterminal {start} not in grammar"))?;
+        let synth_self_ref = funcs
+            .values()
+            .any(|f| term_mentions_symbol(&f.body, &synth_name));
         Ok(Self {
             problem,
             synth_name,
@@ -293,6 +309,8 @@ impl<'a> ClosureSolver<'a> {
             nt_by_symbol,
             constraints,
             processed: HashMap::default(),
+            synth_self_ref,
+            start_nt_idx,
         })
     }
 
@@ -445,13 +463,12 @@ impl<'a> ClosureSolver<'a> {
                 args.len()
             ));
         }
-        let mut env = HashMap::default();
-        for (name, value) in func.args.iter().zip(args) {
-            env.insert(name.clone(), EvalValue::Bv(value.bits.clone(), value.width));
-        }
-        let bits = self
-            .evaluator()
-            .eval_bv(&func.body, &mut EvalEnv::with_base(env), func.width)?;
+        let needs_lfp = self.synth_self_ref && term_mentions_symbol(&func.body, &self.synth_name);
+        let bits = if needs_lfp {
+            self.eval_constructor_lfp(func, args)?
+        } else {
+            self.eval_constructor_once(func, args, None)?
+        };
         let term = if args.is_empty() {
             SyGuSTerm::Identifier(Identifier::Symbol(prod.ctor.clone()))
         } else {
@@ -461,6 +478,53 @@ impl<'a> ClosureSolver<'a> {
             )
         };
         Ok((bits, term))
+    }
+
+    /// Evaluate a constructor body once with the given args, optionally
+    /// binding the synth-fun's name to a given iterate.
+    fn eval_constructor_once(
+        &self,
+        func: &DefineFun,
+        args: &[Value],
+        self_binding: Option<&Bits>,
+    ) -> Result<Bits, String> {
+        let mut env = HashMap::default();
+        if let Some(bits) = self_binding {
+            let width = self.nonterminals[self.start_nt_idx].width;
+            env.insert(
+                self.synth_name.clone(),
+                EvalValue::Bv(bits.clone(), width),
+            );
+        }
+        for (name, value) in func.args.iter().zip(args) {
+            env.insert(name.clone(), EvalValue::Bv(value.bits.clone(), value.width));
+        }
+        self.evaluator()
+            .eval_bv(&func.body, &mut EvalEnv::with_base(env), func.width)
+    }
+
+    /// Compute the least fixed point of `body(args, r)` starting from
+    /// `r = 0`. The body is monotone in `r` under the finite-aspect
+    /// encoding, so iteration converges in at most `width + 1` steps.
+    fn eval_constructor_lfp(
+        &self,
+        func: &DefineFun,
+        args: &[Value],
+    ) -> Result<Bits, String> {
+        let width = self.nonterminals[self.start_nt_idx].width;
+        let mut current = Bits::zero(width);
+        for _ in 0..=width {
+            let next = self.eval_constructor_once(func, args, Some(&current))?;
+            if next == current {
+                return Ok(next);
+            }
+            current = next;
+        }
+        Err(format!(
+            "constructor {} LFP did not converge in {} steps",
+            self.synth_name,
+            width + 1
+        ))
     }
 
     fn insert_value(&mut self, nt_idx: usize, bits: Bits, term: SyGuSTerm) -> bool {
@@ -844,7 +908,6 @@ impl ConstraintVerifier {
             .find_map(|(name, _, body)| (name == &self.synth_name).then_some(body.clone()))
             .or_else(|| define_funs.first().map(|(_, _, body)| body.clone()))
             .ok_or_else(|| "solver response did not contain a define-fun".to_string())?;
-        log::info!("verifier: solution body = {:?}", body);
         let mut base = HashMap::default();
         let evaluator = self.evaluator();
         let mut pending = define_funs
@@ -920,8 +983,6 @@ impl ConstraintVerifier {
             self.synth_width,
             bits.0.len()
         );
-        let first_bits: String = (0..bits.0.len().min(60)).map(|i| if bits.get(i) { '1' } else { '0' }).collect();
-        log::info!("verifier: solution bits (LSB first, first 60) = {}", first_bits);
         base.insert(
             self.synth_name.clone(),
             EvalValue::Bv(bits, self.synth_width),
@@ -930,7 +991,6 @@ impl ConstraintVerifier {
         let mut failing = Vec::new();
         for (idx, constraint) in self.constraints.iter().enumerate() {
             if !self.evaluator().eval_bool(constraint, &mut env)? {
-                log::info!("verifier: constraint[{}] FAILS: {:?}", idx, constraint);
                 failing.push(idx);
             }
         }

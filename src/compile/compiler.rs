@@ -1,10 +1,10 @@
 use crate::{
-    backends::sygus::optim::{self, BitwiseExpr},
+    compile::optim,
     compile::{
         context::CompileContext,
         emit::{arg_name, compact_bitvec, BoolExpr},
         expr::sygus_term_to_value,
-        native::{EnvView, SemanticContext},
+        eval_ctx::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
         syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, SemanticKind},
@@ -19,7 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 use sygus_parser::{
-    BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Index, Literal, Sort, SortedVar,
+    BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar,
     SyGuSCmd, SyGuSGTerm, SyGuSTerm, Term,
 };
 
@@ -38,15 +38,17 @@ struct Env {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FeedbackMode {
+enum RecurrenceMode {
     Direct,
     SelfClosure,
     ParentClosure,
 }
 
-struct FeedbackAnalysis {
-    relation_modes: HashMap<String, FeedbackMode>,
+struct RecurrenceAnalysis {
+    relation_modes: HashMap<String, RecurrenceMode>,
     requires_aux: bool,
+    /// Term sorts whose semantic relation is in `SelfClosure` mode.
+    self_closure_sorts: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -66,12 +68,12 @@ impl EnvView for Env {
     }
 }
 
-struct NativeCompiler<'a> {
+struct Compiler<'a> {
     problem: &'a DelisProg,
     term_types: &'a TermTypes,
     sig: TermSignature,
     ctx: SemanticContext<'a>,
-    feedback: FeedbackAnalysis,
+    recurrence: RecurrenceAnalysis,
     synth_name: String,
     synth_args: Vec<sygus_parser::SortedVar>,
     /// If `Some`, the program uses `(parent ...)` and we synthesize an
@@ -94,7 +96,6 @@ struct NativeCompiler<'a> {
     value_for_sort_cache: RefCell<HashMap<ValueForSortMemoKey, AspectValue>>,
     expr_symbol_cache: RefCell<HashMap<usize, Vec<String>>>,
     optimize: bool,
-    dead_bit_remap: HashMap<String, Vec<Option<usize>>>,
 }
 
 #[derive(Default)]
@@ -158,11 +159,11 @@ struct ValueForSortMemoKey {
 }
 
 pub fn compile(ctx: &CompileContext<'_>, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
-    let mut compiler = NativeCompiler::from_context(ctx, optimize)?;
+    let mut compiler = Compiler::from_context(ctx, optimize)?;
     compiler.compile()
 }
 
-impl<'a> NativeCompiler<'a> {
+impl<'a> Compiler<'a> {
     fn semantic_term_bit(
         &self,
         term_expr: &Value,
@@ -191,20 +192,26 @@ impl<'a> NativeCompiler<'a> {
             let mode = env
                 .relation
                 .as_deref()
-                .and_then(|relation| self.feedback.relation_modes.get(relation))
+                .and_then(|relation| self.recurrence.relation_modes.get(relation))
                 .copied()
-                .unwrap_or(FeedbackMode::Direct);
+                .unwrap_or(RecurrenceMode::Direct);
             return match mode {
-                FeedbackMode::Direct => Err(format!(
+                RecurrenceMode::Direct => Err(format!(
                     "semantic body uses self recursion in direct component {}",
                     env.relation.as_deref().unwrap_or("<unknown>")
                 )),
-                FeedbackMode::SelfClosure => Ok(bit_is_one(BitVec::extract(
-                    bit,
-                    bit,
-                    Term::var(&self.synth_name),
-                ))),
-                FeedbackMode::ParentClosure => {
+                RecurrenceMode::SelfClosure => {
+                    // Emit a placeholder Bool variable instead of a runtime
+                    // (extract i synth-fun) reference. A post-pass in
+                    // `compile()` collects these placeholders, topo-sorts the
+                    // bit dependency graph, and wraps the constructor body in
+                    // nested let-bindings — statically unrolling the LFP so
+                    // dryadsynth-bv sees a pure nullary problem (no synth-fun
+                    // reference in any define-fun body). This mirrors what
+                    // the old CHC-saturation pipeline did.
+                    Ok(Term::var(&self_bit_name(bit)))
+                }
+                RecurrenceMode::ParentClosure => {
                     let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
                         "semantic body uses self-recursion but no aux synth-fun allocated"
                             .to_string()
@@ -226,7 +233,7 @@ impl<'a> NativeCompiler<'a> {
     fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
         let sig = ctx_data.sig.clone();
         let ctx = ctx_data.semantic_context()?;
-        let feedback = analyze_feedback(ctx_data)?;
+        let recurrence = analyze_recurrence(ctx_data)?;
         let mut bit_index = HashMap::default();
         let mut offsets = HashMap::default();
         for domain in &ctx_data.semantic_program.domains {
@@ -243,7 +250,7 @@ impl<'a> NativeCompiler<'a> {
             }
             *offset += domain.bits.len();
         }
-        let aux_synth_name = if feedback.requires_aux {
+        let aux_synth_name = if recurrence.requires_aux {
             Some("delis.closure.aux".to_string())
         } else {
             None
@@ -253,7 +260,7 @@ impl<'a> NativeCompiler<'a> {
             term_types: ctx_data.term_types,
             sig,
             ctx,
-            feedback,
+            recurrence,
             synth_name: ctx_data.synth_name.clone(),
             synth_args: ctx_data.synth_args.clone(),
             aux_synth_name,
@@ -271,7 +278,6 @@ impl<'a> NativeCompiler<'a> {
             value_for_sort_cache: RefCell::new(HashMap::default()),
             expr_symbol_cache: RefCell::new(HashMap::default()),
             optimize,
-            dead_bit_remap: HashMap::default(),
         })
     }
 
@@ -307,59 +313,6 @@ impl<'a> NativeCompiler<'a> {
             });
         }
 
-        // Phase 2: dead-bit elimination per sort
-        if self.optimize {
-            for sort in self.sig.sort_order() {
-                let original_width = self.sort_width(sort)?;
-                let cons_for_sort: Vec<&ConsResult> = cons_results
-                    .iter()
-                    .filter(|c| c.result_sort == *sort)
-                    .collect();
-                if cons_for_sort.is_empty() {
-                    continue;
-                }
-                let mut remap = Vec::with_capacity(original_width);
-                let mut new_idx = 0usize;
-                for bit_pos in 0..original_width {
-                    let mut all_same_const = true;
-                    let mut const_val = None;
-                    for cr in &cons_for_sort {
-                        match &cr.bool_bits[bit_pos] {
-                            BoolExpr::Const(v) => {
-                                if let Some(prev) = const_val {
-                                    if prev != *v {
-                                        all_same_const = false;
-                                        break;
-                                    }
-                                } else {
-                                    const_val = Some(*v);
-                                }
-                            }
-                            BoolExpr::Dynamic(_) => {
-                                all_same_const = false;
-                                break;
-                            }
-                        }
-                    }
-                    if all_same_const && const_val.is_some() {
-                        remap.push(None);
-                    } else {
-                        remap.push(Some(new_idx));
-                        new_idx += 1;
-                    }
-                }
-                let eliminated = original_width - new_idx;
-                if eliminated > 0 {
-                    log::info!(
-                        "dead-bit elimination for sort {}: {}/{} bits eliminated",
-                        sort,
-                        eliminated,
-                        original_width
-                    );
-                }
-                self.dead_bit_remap.insert(sort.to_string(), remap);
-            }
-        }
 
         // Phase 3: emit commands with remapped bits
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
@@ -368,18 +321,7 @@ impl<'a> NativeCompiler<'a> {
             cmds.push(self.remapped_aux_synth_fun_cmd(&aux_name)?);
         }
         for cr in &cons_results {
-            let remap = self.dead_bit_remap.get(&cr.result_sort);
-            let alive_bits: Vec<BoolExpr> = cr
-                .bool_bits
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| {
-                    remap
-                        .map(|r| r[*i].is_some())
-                        .unwrap_or(true)
-                })
-                .map(|(_, expr)| expr.clone())
-                .collect();
+            let alive_bits: Vec<BoolExpr> = cr.bool_bits.clone();
             let mut sort_map: HashMap<String, &str> = HashMap::default();
             for (idx, sort) in cr.arg_sorts.iter().enumerate() {
                 sort_map.insert(arg_name(idx), sort.as_str());
@@ -392,7 +334,7 @@ impl<'a> NativeCompiler<'a> {
                 .into_iter()
                 .map(|expr| match expr {
                     BoolExpr::Dynamic(term) => {
-                        BoolExpr::Dynamic(self.remap_extract_indices(&term, &sort_map))
+                        BoolExpr::Dynamic(term)
                     }
                     c => c,
                 })
@@ -402,26 +344,21 @@ impl<'a> NativeCompiler<'a> {
             for (idx, sort) in cr.arg_sorts.iter().enumerate() {
                 builder = builder.arg(&arg_names[idx], Sort::from_name(sort));
             }
-            let lift_bits = remapped_bits
-                .iter()
-                .map(|expr| match expr {
-                    BoolExpr::Const(value) => BitwiseExpr::Const(*value),
-                    BoolExpr::Dynamic(term) => BitwiseExpr::Expr(term.clone()),
-                })
-                .collect::<Vec<_>>();
             let lifted = if self.optimize {
-                optim::try_lift_native_bv(&lift_bits, &arg_names)
+                optim::try_lift_native_bv(&remapped_bits, &arg_names)
             } else {
                 None
             };
             let body = if let Some(body) = lifted {
                 body
+            } else if self.is_self_closure_sort(&cr.result_sort) {
+                // Constructor body may reference __delis_self_b{j} placeholders
+                // (emitted by semantic_term_bit in SelfClosure mode). Wrap in
+                // a topo-sorted let-binding chain so the LFP is fully unrolled
+                // at compile time — no runtime synth-fun reference required.
+                build_self_closure_body(&remapped_bits)
             } else {
-                let bits = remapped_bits
-                    .into_iter()
-                    .map(|expr| expr.to_bit())
-                    .collect::<Vec<_>>();
-                compact_bitvec(bits)
+                compact_bitvec(remapped_bits)
             };
             cmds.push(
                 builder
@@ -456,7 +393,7 @@ impl<'a> NativeCompiler<'a> {
             if let Some(aux) = &self.aux_synth_name {
                 constraint_sort_map.insert(aux.clone(), self.sig.start_sort());
             }
-            let remapped = self.remap_extract_indices(&lowered, &constraint_sort_map);
+            let remapped = lowered;
             cmds.push(Cmd::constraint().body(remapped).build());
         }
         if let Some(aux_name) = &self.aux_synth_name {
@@ -468,6 +405,16 @@ impl<'a> NativeCompiler<'a> {
         }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
+    }
+
+    /// True iff any semantic relation operating on `sort` is in
+    /// `RecurrenceMode::SelfClosure` mode. Constructors of such sorts produce
+    /// bool_bits that contain `__delis_self_b{j}` placeholders, which need
+    /// the `build_self_closure_body` post-pass to be wrapped in let-bindings.
+    fn is_self_closure_sort(&self, sort: &str) -> bool {
+        self.recurrence
+            .self_closure_sorts
+            .contains(sort)
     }
 
     fn lower_top_level_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
@@ -1434,14 +1381,6 @@ impl<'a> NativeCompiler<'a> {
             .max(1))
     }
 
-    fn remapped_sort_width(&self, sort: &str) -> Result<usize, String> {
-        if let Some(remap) = self.dead_bit_remap.get(sort) {
-            let alive = remap.iter().filter(|r| r.is_some()).count();
-            Ok(alive.max(1))
-        } else {
-            self.sort_width(sort)
-        }
-    }
 
     fn remapped_sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
         self.sig
@@ -1451,7 +1390,7 @@ impl<'a> NativeCompiler<'a> {
                 Ok(SyGuSCmd::DefineSort(
                     sort.clone(),
                     Vec::new(),
-                    Sort::bitvec(self.remapped_sort_width(sort)?),
+                    Sort::bitvec(self.sort_width(sort)?),
                 ))
             })
             .collect()
@@ -1480,61 +1419,6 @@ impl<'a> NativeCompiler<'a> {
         ))
     }
 
-    fn remap_extract_indices(&self, term: &SyGuSTerm, sort_map: &HashMap<String, &str>) -> SyGuSTerm {
-        match term {
-            SyGuSTerm::Application(Identifier::Indexed(sym, indices), args)
-                if sym == "extract" && args.len() == 1 =>
-            {
-                let (high, low) = match indices.as_slice() {
-                    [Index::Numeral(h), Index::Numeral(l)] => (*h, *l),
-                    _ => return term.clone(),
-                };
-                if high != low {
-                    return term.clone();
-                }
-                let old_bit = high;
-                let inner = &args[0];
-                let target_sort = inner
-                    .as_var_name()
-                    .and_then(|name| sort_map.get(name).copied());
-                if let Some(remap) = target_sort.and_then(|s| self.dead_bit_remap.get(s)) {
-                    if let Some(Some(new_bit)) = remap.get(old_bit) {
-                        let remapped_inner = self.remap_extract_indices(inner, sort_map);
-                        return BitVec::extract(*new_bit, *new_bit, remapped_inner);
-                    }
-                }
-                let remapped_inner = self.remap_extract_indices(inner, sort_map);
-                BitVec::extract(old_bit, old_bit, remapped_inner)
-            }
-            SyGuSTerm::Application(id, args) => {
-                let remapped_args = args
-                    .iter()
-                    .map(|a| self.remap_extract_indices(a, sort_map))
-                    .collect();
-                SyGuSTerm::Application(id.clone(), remapped_args)
-            }
-            SyGuSTerm::Let(bindings, body) => {
-                let new_bindings = bindings
-                    .iter()
-                    .map(|vb| sygus_parser::VarBinding {
-                        name: vb.name.clone(),
-                        term: Box::new(self.remap_extract_indices(&vb.term, sort_map)),
-                    })
-                    .collect();
-                let new_body = self.remap_extract_indices(body, sort_map);
-                SyGuSTerm::Let(new_bindings, Box::new(new_body))
-            }
-            SyGuSTerm::Exists(vars, body) => {
-                let new_body = self.remap_extract_indices(body, sort_map);
-                SyGuSTerm::Exists(vars.clone(), Box::new(new_body))
-            }
-            SyGuSTerm::Forall(vars, body) => {
-                let new_body = self.remap_extract_indices(body, sort_map);
-                SyGuSTerm::Forall(vars.clone(), Box::new(new_body))
-            }
-            _ => term.clone(),
-        }
-    }
 
     fn bit_for(
         &self,
@@ -1695,6 +1579,165 @@ fn bit_is_one(bit: SyGuSTerm) -> SyGuSTerm {
     Bool::eq(bit, BitVec::const_(1, 1))
 }
 
+/// Placeholder variable name used in `RecurrenceMode::SelfClosure` mode to
+/// stand for "the Bool value of bit `i` of the synth-fun's output". The
+/// post-pass in `compile()` resolves these into let-bindings.
+fn self_bit_name(bit: usize) -> String {
+    format!("__delis_self_b{bit}")
+}
+
+/// Walk a SyGuSTerm and collect bit indices `j` for any `__delis_self_b{j}`
+/// identifier appearing in it. These are the self-bit dependencies of the
+/// expression.
+fn collect_self_bit_deps(term: &SyGuSTerm, out: &mut HashSet<usize>) {
+    match term {
+        SyGuSTerm::Identifier(id) => {
+            if let Some(j) = parse_self_bit_index(id) {
+                out.insert(j);
+            }
+        }
+        SyGuSTerm::Application(_, args) => {
+            for a in args {
+                collect_self_bit_deps(a, out);
+            }
+        }
+        SyGuSTerm::Annotated(inner, _) => collect_self_bit_deps(inner, out),
+        SyGuSTerm::Let(bindings, body) => {
+            for b in bindings {
+                collect_self_bit_deps(&b.term, out);
+            }
+            collect_self_bit_deps(body, out);
+        }
+        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => {
+            collect_self_bit_deps(body, out)
+        }
+        SyGuSTerm::Literal(_) => {}
+    }
+}
+
+fn parse_self_bit_index(id: &Identifier) -> Option<usize> {
+    match id {
+        Identifier::Symbol(name) => name
+            .strip_prefix("__delis_self_b")
+            .and_then(|s| s.parse::<usize>().ok()),
+        _ => None,
+    }
+}
+
+/// Topological sort of bit dependencies. Returns bits in an order where
+/// every dependency precedes its dependents; `Err` on cyclic graphs.
+fn topo_sort_bits(deps: &[HashSet<usize>]) -> Result<Vec<usize>, String> {
+    let n = deps.len();
+    let mut in_deg = vec![0usize; n];
+    let mut rev: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, ds) in deps.iter().enumerate() {
+        for &j in ds {
+            if j >= n {
+                return Err(format!(
+                    "self-bit dep out of range: bit {i} references {j} but only {n} bits exist"
+                ));
+            }
+            in_deg[i] += 1;
+            rev[j].push(i);
+        }
+    }
+    let mut queue: std::collections::VecDeque<usize> =
+        (0..n).filter(|&i| in_deg[i] == 0).collect();
+    let mut order = Vec::with_capacity(n);
+    while let Some(i) = queue.pop_front() {
+        order.push(i);
+        for &k in &rev[i] {
+            in_deg[k] -= 1;
+            if in_deg[k] == 0 {
+                queue.push_back(k);
+            }
+        }
+    }
+    if order.len() != n {
+        return Err("cyclic self-bit dependency".to_string());
+    }
+    Ok(order)
+}
+
+/// Build a constructor body that statically unrolls the LFP introduced by
+/// `RecurrenceMode::SelfClosure`. If no bit has a self-dependency this falls
+/// back to a plain `compact_bitvec`; otherwise it emits nested let-bindings
+/// in topological order so each `__delis_self_b{i}` variable is defined
+/// before any other binding (or the final body) references it.
+fn build_self_closure_body(bits: &[BoolExpr]) -> SyGuSTerm {
+    let n = bits.len();
+    let deps: Vec<HashSet<usize>> = bits
+        .iter()
+        .map(|expr| {
+            let mut d = HashSet::default();
+            if let BoolExpr::Dynamic(t) = expr {
+                collect_self_bit_deps(t, &mut d);
+            }
+            d
+        })
+        .collect();
+    let has_self_refs = deps.iter().any(|d| !d.is_empty());
+    if !has_self_refs {
+        let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
+        return compact_bitvec(bit_exprs);
+    }
+    let order = match topo_sort_bits(&deps) {
+        Ok(o) => o,
+        Err(msg) => {
+            log::warn!(
+                "self-closure body: {msg}; falling back to runtime self-references"
+            );
+            let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
+            return compact_bitvec(bit_exprs);
+        }
+    };
+    // Single-pass resolution: walk bits in topo order, resolving
+    // __delis_self_b{j} references through the BoolExpr algebra.
+    // Constants fold away naturally via BoolExpr::and/or/not.
+    let mut resolved: Vec<BoolExpr> = vec![BoolExpr::Const(false); n];
+    for &i in &order {
+        resolved[i] = match &bits[i] {
+            BoolExpr::Const(v) => BoolExpr::Const(*v),
+            BoolExpr::Dynamic(t) => resolve_self_refs(t, &resolved),
+        };
+    }
+    let bit_exprs: Vec<BoolExpr> = resolved;
+    compact_bitvec(bit_exprs)
+}
+
+/// Resolve `__delis_self_b{j}` references in a SyGuSTerm by looking up
+/// their already-resolved BoolExpr values. Boolean operators are combined
+/// via BoolExpr::and/or/not which fold constants automatically.
+/// Non-self-ref subterms (e.g., `(= ((_ extract k k) arg0) #b1)`) become
+/// `BoolExpr::Dynamic(subterm)`.
+fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
+    match term {
+        SyGuSTerm::Literal(Literal::Bool(v)) => BoolExpr::Const(*v),
+        SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
+            if let Some(idx) = name.strip_prefix("__delis_self_b") {
+                if let Ok(i) = idx.parse::<usize>() {
+                    return resolved[i].clone();
+                }
+            }
+            BoolExpr::Dynamic(term.clone())
+        }
+        SyGuSTerm::Application(id, args) => {
+            let op = id.get_name();
+            match op {
+                "and" => BoolExpr::and(
+                    args.iter().map(|a| resolve_self_refs(a, resolved)).collect(),
+                ),
+                "or" => BoolExpr::or(
+                    args.iter().map(|a| resolve_self_refs(a, resolved)).collect(),
+                ),
+                "not" if args.len() == 1 => resolve_self_refs(&args[0], resolved).not(),
+                _ => BoolExpr::Dynamic(term.clone()),
+            }
+        }
+        _ => BoolExpr::Dynamic(term.clone()),
+    }
+}
+
 fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {
     if let Some(symbol) = expr.as_symbol() {
         out.insert(symbol.to_string());
@@ -1707,7 +1750,7 @@ fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {
     }
 }
 
-fn analyze_feedback(ctx: &CompileContext<'_>) -> Result<FeedbackAnalysis, String> {
+fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, String> {
     let relations = ctx
         .semantic_program
         .semantics
@@ -1739,20 +1782,27 @@ fn analyze_feedback(ctx: &CompileContext<'_>) -> Result<FeedbackAnalysis, String
             }
         }
         let mode = if has_parent {
-            FeedbackMode::ParentClosure
+            RecurrenceMode::ParentClosure
         } else if cyclic {
-            FeedbackMode::SelfClosure
+            RecurrenceMode::SelfClosure
         } else {
-            FeedbackMode::Direct
+            RecurrenceMode::Direct
         };
-        requires_aux |= mode == FeedbackMode::ParentClosure;
+        requires_aux |= mode == RecurrenceMode::ParentClosure;
         for relation in component {
             relation_modes.insert(relation, mode);
         }
     }
-    Ok(FeedbackAnalysis {
+    let mut self_closure_sorts: HashSet<String> = HashSet::default();
+    for spec in &ctx.semantic_program.semantics {
+        if relation_modes.get(&spec.relation).copied() == Some(RecurrenceMode::SelfClosure) {
+            self_closure_sorts.insert(spec.term_sort.clone());
+        }
+    }
+    Ok(RecurrenceAnalysis {
         relation_modes,
         requires_aux,
+        self_closure_sorts,
     })
 }
 

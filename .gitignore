@@ -12,3 +12,4 @@ tests
 tools
 dist
 **/__pycache__/
+.claude

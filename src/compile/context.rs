@@ -6,7 +6,7 @@ use crate::parser::{ast::TermTypes, DelisCmd, DelisProg};
 
 use super::{
     finite,
-    native::SemanticContext,
+    eval_ctx::SemanticContext,
     semantic::{self, Case},
     syntax::TermSignature,
     types::SemanticProgram,

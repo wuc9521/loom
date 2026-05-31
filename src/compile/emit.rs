@@ -1,12 +1,6 @@
 use sygus_parser::{BitVec, Bool, Literal, SyGuSTerm, Term};
 
 #[derive(Clone)]
-pub enum BitExpr {
-    Const(bool),
-    Dynamic(SyGuSTerm),
-}
-
-#[derive(Clone)]
 pub enum BoolExpr {
     Const(bool),
     Dynamic(SyGuSTerm),
@@ -51,18 +45,6 @@ impl BoolExpr {
             Self::Dynamic(term) => Self::Dynamic(Bool::not(term)),
         }
     }
-
-    pub fn to_bit(self) -> BitExpr {
-        match self {
-            Self::Const(value) => BitExpr::Const(value),
-            Self::Dynamic(term) => {
-                if let SyGuSTerm::Literal(Literal::Bool(value)) = &term {
-                    return BitExpr::Const(*value);
-                }
-                BitExpr::Dynamic(Term::ite(term, BitVec::const_(1, 1), BitVec::const_(0, 1)))
-            }
-        }
-    }
 }
 
 pub fn arg_name(idx: usize) -> String {
@@ -78,18 +60,22 @@ fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
     Term::lit(Literal::BinConst(bitstring))
 }
 
-pub fn compact_bitvec(bits: Vec<BitExpr>) -> SyGuSTerm {
+pub fn compact_bitvec(bits: Vec<BoolExpr>) -> SyGuSTerm {
     let mut chunks = Vec::new();
     let mut const_bits = Vec::new();
     for bit in bits {
         match bit {
-            BitExpr::Const(value) => const_bits.push(value),
-            BitExpr::Dynamic(term) => {
+            BoolExpr::Const(value) => const_bits.push(value),
+            BoolExpr::Dynamic(term) => {
                 if !const_bits.is_empty() {
                     chunks.push(bitvec_literal_from_lsb(&const_bits));
                     const_bits.clear();
                 }
-                chunks.push(term);
+                if let SyGuSTerm::Literal(Literal::Bool(value)) = &term {
+                    const_bits.push(*value);
+                } else {
+                    chunks.push(Term::ite(term, BitVec::const_(1, 1), BitVec::const_(0, 1)));
+                }
             }
         }
     }

@@ -1,11 +1,6 @@
+use super::emit::BoolExpr;
 use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{BitVec, BuiltinOp, Literal, SyGuSTerm, Term};
-
-#[derive(Clone, Debug)]
-pub enum BitwiseExpr<T> {
-    Const(bool),
-    Expr(T),
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct BitRef {
@@ -463,7 +458,7 @@ fn shift_formula_refs(formula: &BitFormula, expected_idx: usize) -> Option<BitFo
 }
 
 pub fn try_lift_native_bv(
-    bits: &[BitwiseExpr<SyGuSTerm>],
+    bits: &[BoolExpr],
     arg_names: &[String],
 ) -> Option<SyGuSTerm> {
     if bits.is_empty() {
@@ -478,8 +473,8 @@ pub fn try_lift_native_bv(
         .iter()
         .map(|expr| {
             let raw = match expr {
-                BitwiseExpr::Const(value) => BitFormula::Const(*value),
-                BitwiseExpr::Expr(term) => parse_bit_formula(term, &arg_index)?,
+                BoolExpr::Const(value) => BitFormula::Const(*value),
+                BoolExpr::Dynamic(term) => parse_bit_formula(term, &arg_index)?,
             };
             Some(normalize_formula(raw))
         })
@@ -531,7 +526,7 @@ mod tests {
     fn keeps_positional_binary_ops_compact() {
         let bits = (0..3)
             .map(|idx| {
-                BitwiseExpr::Expr(Term::app(
+                BoolExpr::Dynamic(Term::app(
                     "or",
                     vec![bit_eq("arg0", idx, true), bit_eq("arg1", idx, true)],
                 ))
@@ -544,7 +539,7 @@ mod tests {
     #[test]
     fn keeps_positional_not_compact() {
         let bits = (0..3)
-            .map(|idx| BitwiseExpr::Expr(bit_eq("arg0", idx, false)))
+            .map(|idx| BoolExpr::Dynamic(bit_eq("arg0", idx, false)))
             .collect();
 
         assert_eq!(lift(bits, &["arg0"]), "(bvnot arg0)");
@@ -553,9 +548,9 @@ mod tests {
     #[test]
     fn segments_mixed_positional_patterns() {
         let bits = vec![
-            BitwiseExpr::Expr(bit_eq("arg0", 0, true)),
-            BitwiseExpr::Expr(bit_eq("arg0", 1, false)),
-            BitwiseExpr::Const(true),
+            BoolExpr::Dynamic(bit_eq("arg0", 0, true)),
+            BoolExpr::Dynamic(bit_eq("arg0", 1, false)),
+            BoolExpr::Const(true),
         ];
 
         assert_eq!(
@@ -567,13 +562,13 @@ mod tests {
     #[test]
     fn folds_segmented_constants_into_one_literal() {
         let bits = vec![
-            BitwiseExpr::Const(false),
-            BitwiseExpr::Const(false),
-            BitwiseExpr::Const(false),
-            BitwiseExpr::Const(true),
-            BitwiseExpr::Const(true),
-            BitwiseExpr::Const(false),
-            BitwiseExpr::Const(false),
+            BoolExpr::Const(false),
+            BoolExpr::Const(false),
+            BoolExpr::Const(false),
+            BoolExpr::Const(true),
+            BoolExpr::Const(true),
+            BoolExpr::Const(false),
+            BoolExpr::Const(false),
         ];
 
         assert_eq!(lift(bits, &["arg0"]), "#b0011000");
@@ -582,13 +577,13 @@ mod tests {
     #[test]
     fn lifts_distinct_semantic_slices() {
         let sem_bits = (0..3).map(|idx| {
-            BitwiseExpr::Expr(Term::app(
+            BoolExpr::Dynamic(Term::app(
                 "or",
                 vec![bit_eq("arg0", idx, true), bit_eq("arg1", idx, true)],
             ))
         });
         let valid_bits = (3..6).map(|idx| {
-            BitwiseExpr::Expr(Term::app(
+            BoolExpr::Dynamic(Term::app(
                 "and",
                 vec![bit_eq("arg0", idx, true), bit_eq("arg1", idx, true)],
             ))
@@ -603,7 +598,7 @@ mod tests {
 
     #[test]
     fn leaves_boolean_connectives_to_fallback() {
-        let bit = BitwiseExpr::Expr(Term::app(
+        let bit = BoolExpr::Dynamic(Term::app(
             "and",
             vec![bit_eq("arg0", 0, true), bit_eq("arg1", 2, true)],
         ));
@@ -616,11 +611,11 @@ mod tests {
     #[test]
     fn merges_adjacent_constants_and_extracts() {
         let bits = vec![
-            BitwiseExpr::Const(true),
-            BitwiseExpr::Const(false),
-            BitwiseExpr::Expr(bit_eq("arg0", 2, true)),
-            BitwiseExpr::Expr(bit_eq("arg0", 3, true)),
-            BitwiseExpr::Expr(bit_eq("arg1", 0, true)),
+            BoolExpr::Const(true),
+            BoolExpr::Const(false),
+            BoolExpr::Dynamic(bit_eq("arg0", 2, true)),
+            BoolExpr::Dynamic(bit_eq("arg0", 3, true)),
+            BoolExpr::Dynamic(bit_eq("arg1", 0, true)),
         ];
 
         assert_eq!(

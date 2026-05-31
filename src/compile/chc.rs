@@ -7,7 +7,7 @@ use crate::{
         },
     },
     compile::{
-        native::{EnvView, SemanticContext},
+        eval_ctx::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
         syntax::{state_name, TermConstructor, TermSignature},
         types::{
