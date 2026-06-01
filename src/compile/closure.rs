@@ -182,30 +182,32 @@ impl EvalEnv {
     }
 }
 
-pub fn solve(problem: &DelisProg) -> Result<Option<String>, String> {
-    let start = Instant::now();
-    let cmds = problem.to_sygus()?;
-    log::info!("closure: to_sygus completed in {:?}", start.elapsed());
-    // Multi-synth-fun problems (aux closure pattern emitted by NativeCompiler
-    // when (parent ...) is used) aren't supported by this enumerative
-    // backend — its eval expects every identifier to be a value, define-fun,
-    // or env binding, not a synth-fun reference. Bail to None so the parallel
-    // SyGuS backend handles it alone.
-    let synth_fun_count = cmds
-        .iter()
-        .filter(|cmd| matches!(cmd, SyGuSCmd::SynthFun(..)))
-        .count();
-    if synth_fun_count > 1 {
-        log::info!(
-            "closure: skipping (program has {} synth-funs; closure backend supports 1)",
-            synth_fun_count
-        );
-        return Ok(None);
+impl DelisProg {
+    pub fn solve_by_closure(&self) -> Result<Option<String>, String> {
+        let start = Instant::now();
+        let cmds = self.to_sygus()?;
+        log::info!("closure: to_sygus completed in {:?}", start.elapsed());
+        // Multi-synth-fun problems (aux closure pattern emitted by NativeCompiler
+        // when (parent ...) is used) aren't supported by this enumerative
+        // backend — its eval expects every identifier to be a value, define-fun,
+        // or env binding, not a synth-fun reference. Bail to None so the parallel
+        // SyGuS backend handles it alone.
+        let synth_fun_count = cmds
+            .iter()
+            .filter(|cmd| matches!(cmd, SyGuSCmd::SynthFun(..)))
+            .count();
+        if synth_fun_count > 1 {
+            log::info!(
+                "closure: skipping (program has {} synth-funs; closure backend supports 1)",
+                synth_fun_count
+            );
+            return Ok(None);
+        }
+        let start = Instant::now();
+        let mut solver = ClosureSolver::new(self, cmds)?;
+        log::info!("closure: solver initialized in {:?}", start.elapsed());
+        Ok(Some(solver.solve()?))
     }
-    let start = Instant::now();
-    let mut solver = ClosureSolver::new(problem, cmds)?;
-    log::info!("closure: solver initialized in {:?}", start.elapsed());
-    Ok(Some(solver.solve()?))
 }
 
 pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {

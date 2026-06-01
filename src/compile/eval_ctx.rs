@@ -7,7 +7,6 @@ use crate::{
         },
     },
     lang::{
-        eval::{eval_symbols, get_domain_for_sort},
         model::{InterpedValue, Model},
         signature::FuncSig,
     },
@@ -43,7 +42,7 @@ impl<'a> SemanticContext<'a> {
         if let Some(symbol) = arg.as_symbol() {
             let model_ref = self.model(model)?;
             if sort != "Int"
-                && get_domain_for_sort(model_ref, sort)
+                && model_ref.domain_for_sort(sort)
                     .is_some_and(|domain| domain.iter().any(|elem| elem == symbol))
             {
                 return Ok(AspectValue::Univ {
@@ -169,7 +168,7 @@ impl<'a> SemanticContext<'a> {
             .iter()
             .map(|sort| {
                 let sort = sort.to_string();
-                get_domain_for_sort(model, &sort)
+                model.domain_for_sort(&sort)
                     .ok_or_else(|| format!("model {} has no universe for sort {sort}", model.name))
                     .map(|values| {
                         values
@@ -332,7 +331,7 @@ impl<'a> SemanticContext<'a> {
                     }
                     if let Some(sig) = self.func_sigs.get(symbol) {
                         if sig.arg_sorts.is_empty() {
-                            let value = eval_symbols(symbol, &[], model_ref)
+                            let value = model_ref.eval_symbols(symbol, &[])
                                 .ok_or_else(|| {
                                     format!("model {model} has no value for {symbol}")
                                 })?;
@@ -484,7 +483,7 @@ impl<'a> SemanticContext<'a> {
                     .ok_or_else(|| format!("size sort must be a symbol: {sort_expr}"))?;
                 let model = self.eval_model_name(model_expr, env)?;
                 let model_ref = self.model(&model)?;
-                let values = get_domain_for_sort(model_ref, sort)
+                let values = model_ref.domain_for_sort(sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
                 Ok(values.len() as isize)
             }
@@ -531,7 +530,7 @@ impl<'a> SemanticContext<'a> {
                     .map(|value| value.display())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let value = eval_symbols(func, &arg_names, model_ref).ok_or_else(|| {
+        let value = model_ref.eval_symbols(func, &arg_names).ok_or_else(|| {
             format!(
                 "model {model} has no value for {func}({})",
                 arg_names.join(" ")
@@ -553,7 +552,7 @@ impl<'a> SemanticContext<'a> {
         if let AspectValue::Int(idx) = &value {
             let model = self.current_model(env)?;
             let model_ref = self.model(&model)?;
-            if let Some(domain) = get_domain_for_sort(model_ref, sort) {
+            if let Some(domain) = model_ref.domain_for_sort(sort) {
                 if let Some(name) = domain.get(*idx) {
                     return Ok(AspectValue::Univ {
                         sort: sort.to_string(),
@@ -565,7 +564,7 @@ impl<'a> SemanticContext<'a> {
         if matches!(&value, AspectValue::Symbol(_)) {
             let model = self.current_model(env)?;
             let model_ref = self.model(&model)?;
-            if get_domain_for_sort(model_ref, sort)
+            if model_ref.domain_for_sort(sort)
                 .is_some_and(|domain| domain.contains(&value.display()))
             {
                 return Ok(AspectValue::Univ {
@@ -643,7 +642,7 @@ impl<'a> SemanticContext<'a> {
             (AspectValue::Int(idx), AspectValue::Univ { sort, name }) => {
                 let model = self.current_model(env)?;
                 let model_ref = self.model(&model)?;
-                let Some(domain) = get_domain_for_sort(model_ref, sort) else {
+                let Some(domain) = model_ref.domain_for_sort(sort) else {
                     return Ok(false);
                 };
                 Ok(domain.get(*idx).is_some_and(|candidate| candidate == name))
@@ -660,7 +659,7 @@ impl<'a> SemanticContext<'a> {
     ) -> Result<Option<bool>, String> {
         let model = self.current_model(env)?;
         let model_ref = self.model(&model)?;
-        Ok(eval_symbols(symbol, &[], model_ref)
+        Ok(model_ref.eval_symbols(symbol, &[])
             .map(|value| crate::compile::semantic::interped_value_matches(value, target)))
     }
 
@@ -698,7 +697,7 @@ impl<'a> SemanticContext<'a> {
                 .iter()
                 .map(|value| value.display())
                 .collect::<Vec<_>>();
-            let Some(value) = eval_symbols(func, &arg_names, model_ref) else {
+            let Some(value) = model_ref.eval_symbols(func, &arg_names) else {
                 continue;
             };
             if keep(value) {

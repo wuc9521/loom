@@ -1,9 +1,8 @@
 use clap::Parser as ClapParser;
 use delis::{
-    backends::smt2,
     compile,
     lang::runtime::Session,
-    parser::{load_module_file, parse_commands, DelisCmd, DelisProg},
+    parser::{load_module_file, DelisCmd, DelisProg},
     process::{cleanup_children, register_pid, unregister_pid},
 };
 use rustc_hash::FxHashSet as HashSet;
@@ -15,7 +14,7 @@ use std::{
     thread,
     time::Instant,
 };
-use sygus_parser::{SyGuSCmd, SyGuSFile};
+use sygus_parser::SyGuSCmd;
 
 
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
@@ -24,7 +23,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             let program = delis_file.to_chc_ast().map_err(io::Error::other)?;
             println!(
                 "{}",
-                smt2::emit::to_smt(&program)
+                program.to_smt()
                     .iter()
                     .map(|sexpr| sexpr.to_string())
                     .collect::<Vec<_>>()
@@ -277,46 +276,14 @@ fn solve_with_sygus(
         );
         match backend {
             SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => decode_response(delis_file, &output)?,
+            SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other)?,
         }
     };
     log::info!(
         "sygus-backend: solve completed in {:?}",
         solve_start.elapsed()
     );
-    Ok(filter_user_synth_output(&decoded, delis_file))
-}
-
-/// Returns the user-requested synth-fun name from the .sl file's `(synth-fun X () ...)`.
-/// Used to filter out auxiliary synth-funs added by the CYK encoder.
-
-/// Filter the solver's output to keep only the user-requested synth-fun.
-/// The CYK encoding adds auxiliary synth-funs (e.g. `cfg.rhs.S`) that are
-/// implementation details; the user only asked for `g`.
-fn filter_user_synth_output(output: &str, delis_file: &DelisProg) -> String {
-    let Some((target, _, _)) = delis_file.synth_signature() else {
-        return output.to_string();
-    };
-    let mut out = String::new();
-    for line in output.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("(define-fun ") {
-            let name: String = rest
-                .chars()
-                .take_while(|c| !c.is_whitespace())
-                .collect();
-            if name != target {
-                continue;
-            }
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    // Drop trailing newline to match the original output's typical shape.
-    if out.ends_with('\n') {
-        out.pop();
-    }
-    out
+    Ok(delis_file.filter_synth_output(&decoded))
 }
 
 fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
@@ -353,7 +320,7 @@ fn cegis_solve(
         let output = solve_cmds_with_backend(backend, &full_cmds, None, verbose, min, mitm)?;
         return match backend {
             SygusBackend::InProcessDryadSynth => Ok(output),
-            SygusBackend::External(_) => decode_response(delis_file, &output),
+            SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other),
         };
     }
 
@@ -387,7 +354,7 @@ fn cegis_solve(
         }
         let decoded = match backend {
             SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => decode_response(delis_file, &output)?,
+            SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other)?,
         };
         let failing =
             compile::failing_constraint_indices(&full_cmds, &decoded).map_err(io::Error::other)?;
@@ -472,7 +439,6 @@ fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use delis::parser::ast::parse as parse_delis;
     use sygus_parser::ast::{Identifier, Literal, SyGuSTerm};
 
     fn app(name: &str, args: Vec<SyGuSTerm>) -> SyGuSTerm {
@@ -579,32 +545,6 @@ fn add_counterexamples(
 
 
 
-fn decode_response(delis_file: &DelisProg, output: &str) -> Result<String, io::Error> {
-    let trimmed = output.trim();
-    let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
-        &trimmed[1..trimmed.len() - 1]
-    } else {
-        trimmed
-    };
-    let Ok(file) = SyGuSFile::from_str(content) else {
-        return Ok(trimmed.to_string());
-    };
-    let (synth_name, synth_args, synth_sort) = delis_file.synth_signature().ok_or_else(|| io::Error::other("missing synth-fun"))?;
-    let Some(SyGuSCmd::DefineFun(name, _args, _sort, body)) = file
-        .cmds
-        .into_iter()
-        .find(|cmd| matches!(cmd, SyGuSCmd::DefineFun(..)))
-    else {
-        return Ok(trimmed.to_string());
-    };
-    let decoded = SyGuSCmd::DefineFun(
-        if name == synth_name { name } else { synth_name },
-        synth_args,
-        synth_sort,
-        body,
-    );
-    Ok(format!("(\n{}\n)", decoded))
-}
 
 /// CLI application for parsing your custom language
 #[derive(clap::Parser, Debug)]
@@ -761,7 +701,7 @@ fn main() -> Result<(), io::Error> {
         load_module_file(file_path)?
     };
     let mut session = Session::new();
-    let results = parse_commands(&input, Some(&mut session.runtime));
+    let results = DelisProg::parse_cmds(&input, Some(&mut session.runtime));
     let mut delis_cmd_vec: Vec<DelisCmd> = vec![];
     for res in results {
         match res {

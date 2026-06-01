@@ -10,7 +10,7 @@ use derive_more::Display;
 use itertools::Itertools;
 use pest::iterators::Pair;
 use pest::Parser;
-use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd, SyGuSTerm};
+use sygus_parser::{Identifier, Sort, SortDecl, SyGuSCmd, SyGuSFile, SyGuSTerm};
 
 #[derive(Clone, Debug, Display)]
 #[display(
@@ -329,6 +329,65 @@ impl DelisProg {
             })
             .collect()
     }
+
+    /// Filter the solver's output to keep only the user-requested synth-fun.
+    /// The CYK encoding adds auxiliary synth-funs (e.g. `cfg.rhs.S`) that are
+    /// implementation details; the user only asked for `g`.
+    pub fn filter_synth_output(&self, output: &str) -> String {
+        let Some((target, _, _)) = self.synth_signature() else {
+            return output.to_string();
+        };
+        let mut out = String::new();
+        for line in output.lines() {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("(define-fun ") {
+                let name: String = rest
+                    .chars()
+                    .take_while(|c| !c.is_whitespace())
+                    .collect();
+                if name != target {
+                    continue;
+                }
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        if out.ends_with('\n') {
+            out.pop();
+        }
+        out
+    }
+
+    /// Decode a SyGuS solver response, rewriting its synth-fun signature to
+    /// match this program's `(synth-fun ...)` declaration.
+    pub fn decode_response(&self, output: &str) -> Result<String, String> {
+        let trimmed = output.trim();
+        let content = if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            &trimmed[1..trimmed.len() - 1]
+        } else {
+            trimmed
+        };
+        let Ok(file) = SyGuSFile::from_str(content) else {
+            return Ok(trimmed.to_string());
+        };
+        let (synth_name, synth_args, synth_sort) = self
+            .synth_signature()
+            .ok_or_else(|| "missing synth-fun".to_string())?;
+        let Some(SyGuSCmd::DefineFun(name, _args, _sort, body)) = file
+            .cmds
+            .into_iter()
+            .find(|cmd| matches!(cmd, SyGuSCmd::DefineFun(..)))
+        else {
+            return Ok(trimmed.to_string());
+        };
+        let decoded = SyGuSCmd::DefineFun(
+            if name == synth_name { name } else { synth_name },
+            synth_args,
+            synth_sort,
+            body,
+        );
+        Ok(format!("(\n{}\n)", decoded))
+    }
 }
 
 impl Default for DelisProg {
@@ -404,50 +463,54 @@ fn parse_delis_cmd_pair(cmd: Pair<'_, Rule>) -> Result<DelisCmd, DelisParseError
     }
 }
 
-pub fn parse(
-    content: &str,
-    mut runtime: Option<&mut Runtime>,
-) -> Result<DelisProg, DelisParseError> {
-    let mut parsed = DelisParser::parse(Rule::DelisProg, content)?;
-    let file = parsed.next().ok_or_else(|| {
-        DelisParseError::InvalidSyntax("parser returned empty Delis program".to_string())
-    })?;
-    let mut ls_file = DelisProg::new();
-    for wrapper in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {
-        let cmd = wrapper.into_inner().next().ok_or_else(|| {
-            DelisParseError::InvalidSyntax("empty command wrapper in DelisProg".to_string())
+impl DelisProg {
+    pub fn parse(
+        content: &str,
+        mut runtime: Option<&mut Runtime>,
+    ) -> Result<DelisProg, DelisParseError> {
+        let mut parsed = DelisParser::parse(Rule::DelisProg, content)?;
+        let file = parsed.next().ok_or_else(|| {
+            DelisParseError::InvalidSyntax("parser returned empty Delis program".to_string())
         })?;
+        let mut ls_file = DelisProg::new();
+        for wrapper in file.into_inner().filter(|c| c.as_rule() != Rule::EOI) {
+            let cmd = wrapper.into_inner().next().ok_or_else(|| {
+                DelisParseError::InvalidSyntax("empty command wrapper in DelisProg".to_string())
+            })?;
+            let parsed_cmd = parse_delis_cmd_pair(cmd)?;
+            update_runtime(&mut runtime, &parsed_cmd);
+            ls_file.push(parsed_cmd);
+        }
+        Ok(ls_file)
+    }
+
+    pub fn parse_cmds(
+        input: &str,
+        runtime: Option<&mut Runtime>,
+    ) -> Vec<Result<DelisCmd, DelisParseError>> {
+        match DelisProg::parse(input, runtime) {
+            Ok(ls_file) => ls_file.cmds.into_iter().map(Ok).collect(),
+            Err(e) => vec![Err(e)],
+        }
+    }
+}
+
+impl DelisCmd {
+    pub fn parse(
+        input: &str,
+        mut runtime: Option<&mut Runtime>,
+    ) -> Result<DelisCmd, DelisParseError> {
+        let mut pairs = DelisParser::parse(Rule::DelisCmd, input)?;
+        let wrapper = pairs
+            .next()
+            .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
+        let cmd = wrapper
+            .into_inner()
+            .next()
+            .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
         let parsed_cmd = parse_delis_cmd_pair(cmd)?;
         update_runtime(&mut runtime, &parsed_cmd);
-        ls_file.push(parsed_cmd);
-    }
-    Ok(ls_file)
-}
-
-pub fn parse_command(
-    input: &str,
-    mut runtime: Option<&mut Runtime>,
-) -> Result<DelisCmd, DelisParseError> {
-    let mut pairs = DelisParser::parse(Rule::DelisCmd, input)?;
-    let wrapper = pairs
-        .next()
-        .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
-    let cmd = wrapper
-        .into_inner()
-        .next()
-        .ok_or_else(|| DelisParseError::InvalidSyntax("Empty command".to_string()))?;
-    let parsed_cmd = parse_delis_cmd_pair(cmd)?;
-    update_runtime(&mut runtime, &parsed_cmd);
-    Ok(parsed_cmd)
-}
-
-pub fn parse_commands(
-    input: &str,
-    runtime: Option<&mut Runtime>,
-) -> Vec<Result<DelisCmd, DelisParseError>> {
-    match parse(input, runtime) {
-        Ok(ls_file) => ls_file.cmds.into_iter().map(Ok).collect(),
-        Err(e) => vec![Err(e)],
+        Ok(parsed_cmd)
     }
 }
 
@@ -467,7 +530,7 @@ mod tests {
 
     #[test]
     fn parses_define_finite() {
-        let cmd = parse_command(
+        let cmd = DelisCmd::parse(
             "(define-finite ReAsp (record (model Model) (i Int) (j Int)) :where (<= i j))",
             None,
         )
@@ -487,7 +550,7 @@ mod tests {
 
     #[test]
     fn parses_define_semantics() {
-        let cmd = parse_command(
+        let cmd = DelisCmd::parse(
             "(define-semantics ((Regex.Sem (r Regex) (asp ReAsp))) ((match r ((a) true))))",
             None,
         )
@@ -505,7 +568,7 @@ mod tests {
 
     #[test]
     fn parses_define_semantics_returns() {
-        let cmd = parse_command(
+        let cmd = DelisCmd::parse(
             "(define-semantics ((Term.Sem (t Term) (asp EnvAsp))) :returns U ((match t ((x) (x asp)))))",
             None,
         )
@@ -525,7 +588,7 @@ mod tests {
 
     #[test]
     fn parses_declare_axiom() {
-        let cmd = parse_command("(declare-axiom (= (re.opt x) (re.union re.eps x)))", None)
+        let cmd = DelisCmd::parse("(declare-axiom (= (re.opt x) (re.union re.eps x)))", None)
             .expect("declare-axiom should parse");
 
         match cmd {
@@ -538,7 +601,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_define_fun_rec() {
-        let err = parse_command("(define-fun-rec f ((x Int)) Int x)", None)
+        let err = DelisCmd::parse("(define-fun-rec f ((x Int)) Int x)", None)
             .expect_err("define-fun-rec is not a supported Delis command");
 
         assert!(err.to_string().contains("Pest parser error"));
@@ -546,7 +609,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_define_semantics_shape() {
-        let err = parse_command("(define-semantics ((Regex.Sem (r Regex))))", None)
+        let err = DelisCmd::parse("(define-semantics ((Regex.Sem (r Regex))))", None)
             .expect_err("define-semantics must include a match body");
 
         assert!(err.to_string().contains("Pest parser error"));
@@ -554,7 +617,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_define_finite_shape() {
-        let err = parse_command("(define-finite ReAsp (not-a-record (i Int)))", None)
+        let err = DelisCmd::parse("(define-finite ReAsp (not-a-record (i Int)))", None)
             .expect_err("define-finite must include a record body");
 
         assert!(err.to_string().contains("Pest parser error"));

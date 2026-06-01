@@ -7,6 +7,7 @@ use crate::{
         },
     },
     compile::{
+        context::CompileContext,
         eval_ctx::{EnvView, SemanticContext},
         semantic::{interped_bool, interped_value_matches},
         syntax::{state_name, TermConstructor, TermSignature},
@@ -15,7 +16,6 @@ use crate::{
             SemanticProgram,
         },
     },
-    lang::eval::{eval_symbols, get_domain_for_sort},
     parser::DelisProg,
 };
 use lexpr::Value;
@@ -142,13 +142,11 @@ impl EnvView for Env {
     }
 }
 
-pub fn compile_with_context(
-    problem: &DelisProg,
-    program: SemanticProgram,
-    sig: TermSignature,
-    semantic_cases: HashMap<String, HashMap<String, crate::compile::semantic::Case>>,
-) -> Result<HornProg, String> {
-    ChcCompiler::new(problem, program, sig, semantic_cases)?.compile()
+impl<'a> CompileContext<'a> {
+    pub fn compile_chc(self) -> Result<HornProg, String> {
+        ChcCompiler::new(self.problem, self.semantic_program, self.sig, self.semantic_cases)?
+            .compile()
+    }
 }
 
 struct ChcCompiler<'a> {
@@ -894,7 +892,7 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for equality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = get_domain_for_sort(model_ref, &sort)
+        let values = model_ref.domain_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut out = formula_false();
         for name in values {
@@ -926,7 +924,7 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for inequality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = get_domain_for_sort(model_ref, &sort)
+        let values = model_ref.domain_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut out = formula_false();
         for lhs_name in &values {
@@ -997,7 +995,7 @@ impl<'a> ChcCompiler<'a> {
             }
             let model = self.ctx.current_model(env)?;
             let model_ref = self.ctx.model(&model)?;
-            if let Some(value) = eval_symbols(symbol, &[], model_ref) {
+            if let Some(value) = model_ref.eval_symbols(symbol, &[]) {
                 return Ok(if interped_value_matches(value, target) == positive {
                     formula_true()
                 } else {
@@ -1333,7 +1331,7 @@ impl<'a> ChcCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = get_domain_for_sort(model_ref, sort)
+        let values = model_ref.domain_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         values
             .into_iter()
@@ -1421,7 +1419,7 @@ impl<'a> ChcCompiler<'a> {
         if let Some(value) = self.ground_model_eval.borrow().get(&key) {
             return value.clone();
         }
-        let value = eval_symbols(func, arg_names, model_ref).cloned();
+        let value = model_ref.eval_symbols(func, arg_names).cloned();
         self.ground_model_eval
             .borrow_mut()
             .insert(key, value.clone());
@@ -1434,7 +1432,7 @@ impl<'a> ChcCompiler<'a> {
             return Ok(values.clone());
         }
         let model_ref = self.ctx.model(model)?;
-        let values = get_domain_for_sort(model_ref, sort)
+        let values = model_ref.domain_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?
             .into_iter()
             .map(|name| AspectValue::Univ {

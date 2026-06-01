@@ -1,4 +1,4 @@
-use crate::parser::ast::{parse, DelisCmd};
+use crate::parser::ast::{DelisCmd, DelisProg};
 use rustc_hash::FxHashSet as HashSet;
 use std::{
     fs, io,
@@ -119,7 +119,7 @@ fn validate_provides(path: &Path, source: &ModuleSource) -> Result<(), io::Error
     if source.provides.is_empty() {
         return Ok(());
     }
-    let prog = parse(&source.body, None).map_err(|e| {
+    let prog = DelisProg::parse(&source.body, None).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(

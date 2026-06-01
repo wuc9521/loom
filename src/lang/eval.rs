@@ -128,61 +128,58 @@ pub fn pattern_match_symbols(tuple: &[String], pat: &Pattern) -> bool {
     true
 }
 
-pub fn eval_symbols<'a>(
-    func_name: &str,
-    args: &[String],
-    model: &'a Model,
-) -> Option<&'a InterpedValue> {
-    let cache = interp_cache_for(model);
-    let index = cache.by_name.get(func_name)?;
-    match index {
-        FuncInterpIndex::Simple { interp_idx } if args.is_empty() => {
-            match &model.func_interps[*interp_idx] {
-                FuncInterp::SimpleInterp(_, val) => Some(val),
-                FuncInterp::MatchInterp(..) => None,
-            }
-        }
-        FuncInterpIndex::Simple { .. } => None,
-        FuncInterpIndex::Match {
-            interp_idx,
-            default_case_idx,
-            exact_case_idx,
-        } => {
-            let FuncInterp::MatchInterp(_, cases) = &model.func_interps[*interp_idx] else {
-                return None;
-            };
-            if let Some(case_idx) = exact_case_idx.get(args) {
-                return cases.get(*case_idx).map(|case| &case.value);
-            }
-            for case in cases {
-                if let Some(pat) = &case.pattern {
-                    if pattern_match_symbols(args, pat) {
-                        return Some(&case.value);
-                    }
+impl Model {
+    pub fn eval_symbols(&self, func_name: &str, args: &[String]) -> Option<&InterpedValue> {
+        let cache = interp_cache_for(self);
+        let index = cache.by_name.get(func_name)?;
+        match index {
+            FuncInterpIndex::Simple { interp_idx } if args.is_empty() => {
+                match &self.func_interps[*interp_idx] {
+                    FuncInterp::SimpleInterp(_, val) => Some(val),
+                    FuncInterp::MatchInterp(..) => None,
                 }
             }
-            default_case_idx.and_then(|idx| cases.get(idx).map(|case| &case.value))
+            FuncInterpIndex::Simple { .. } => None,
+            FuncInterpIndex::Match {
+                interp_idx,
+                default_case_idx,
+                exact_case_idx,
+            } => {
+                let FuncInterp::MatchInterp(_, cases) = &self.func_interps[*interp_idx] else {
+                    return None;
+                };
+                if let Some(case_idx) = exact_case_idx.get(args) {
+                    return cases.get(*case_idx).map(|case| &case.value);
+                }
+                for case in cases {
+                    if let Some(pat) = &case.pattern {
+                        if pattern_match_symbols(args, pat) {
+                            return Some(&case.value);
+                        }
+                    }
+                }
+                default_case_idx.and_then(|idx| cases.get(idx).map(|case| &case.value))
+            }
         }
     }
-}
 
-pub fn get_domain_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
-    cached_domain_for_sort(model, sort)
-}
+    pub fn domain_for_sort(&self, sort: &str) -> Option<Vec<String>> {
+        cached_domain_for_sort(self, sort)
+    }
 
-pub fn element_belongs_to_sort(model: &Model, sort: &str, elem: &str) -> bool {
-    get_domain_for_sort(model, sort)
-        .map(|domain| domain.iter().any(|candidate| candidate == elem))
-        .unwrap_or(false)
-}
+    pub fn contains_element(&self, sort: &str, elem: &str) -> bool {
+        self.domain_for_sort(sort)
+            .map(|domain| domain.iter().any(|candidate| candidate == elem))
+            .unwrap_or(false)
+    }
 
-pub fn max_domain_len(model: &Model) -> usize {
-    model
-        .univ_defs
-        .iter()
-        .map(|univ| univ.elems.len())
-        .max()
-        .unwrap_or(0)
+    pub fn max_domain_len(&self) -> usize {
+        self.univ_defs
+            .iter()
+            .map(|univ| univ.elems.len())
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 pub fn collect_loaded_models<'a>(

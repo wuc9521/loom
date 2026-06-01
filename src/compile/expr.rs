@@ -1,4 +1,4 @@
-use crate::{compile::types::AspectValue, lang::eval::get_domain_for_sort, lang::model::Model};
+use crate::{compile::types::AspectValue, lang::model::Model};
 use lexpr::Value;
 use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
@@ -197,7 +197,7 @@ fn sorted_model_domain_expr(
     let model = models
         .get(&model_name)
         .ok_or_else(|| format!("unknown model {model_name}"))?;
-    let domain = get_domain_for_sort(model, &sort)
+    let domain = model.domain_for_sort(&sort)
         .ok_or_else(|| format!("model {model_name} has no universe for sort {sort}"))?;
     Ok((sort, model_name, domain))
 }

@@ -9,7 +9,6 @@ use crate::{
         syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, SemanticKind},
     },
-    lang::eval::eval_symbols,
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
 use lexpr::Value;
@@ -162,9 +161,11 @@ struct ValueForSortMemoKey {
     env: EnvMemoKey,
 }
 
-pub fn compile(ctx: &CompileContext<'_>, optimize: bool) -> Result<Vec<SyGuSCmd>, String> {
-    let mut compiler = Compiler::from_context(ctx, optimize)?;
-    compiler.compile()
+impl<'a> CompileContext<'a> {
+    pub fn compile(&self) -> Result<Vec<SyGuSCmd>, String> {
+        let mut compiler = Compiler::from_context(self, super::opts().optimize)?;
+        compiler.compile()
+    }
 }
 
 impl<'a> Compiler<'a> {
@@ -319,11 +320,15 @@ impl<'a> Compiler<'a> {
 
 
         // Phase 3: emit commands with remapped bits
+        let phase3_start = Instant::now();
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
         cmds.extend(self.remapped_sort_alias_cmds()?);
         if let Some(aux_name) = self.aux_synth_name.clone() {
             cmds.push(self.remapped_aux_synth_fun_cmd(&aux_name)?);
         }
+        let mut total_lift = Duration::default();
+        let mut total_compact = Duration::default();
+        let mut total_closure = Duration::default();
         for cr in &cons_results {
             let alive_bits: Vec<BoolExpr> = cr.bool_bits.clone();
             let mut sort_map: HashMap<String, &str> = HashMap::default();
@@ -348,11 +353,15 @@ impl<'a> Compiler<'a> {
             for (idx, sort) in cr.arg_sorts.iter().enumerate() {
                 builder = builder.arg(&arg_names[idx], Sort::from_name(sort));
             }
+            let lift_start = Instant::now();
             let lifted = if self.optimize {
                 optim::try_lift_native_bv(&remapped_bits, &arg_names)
             } else {
                 None
             };
+            let lift_elapsed = lift_start.elapsed();
+            total_lift += lift_elapsed;
+            let body_start = Instant::now();
             let body = if let Some(body) = lifted {
                 body
             } else if self.is_self_closure_sort(&cr.result_sort) {
@@ -364,6 +373,18 @@ impl<'a> Compiler<'a> {
             } else {
                 BoolExpr::compact(remapped_bits)
             };
+            let body_elapsed = body_start.elapsed();
+            if self.is_self_closure_sort(&cr.result_sort) {
+                total_closure += body_elapsed;
+            } else {
+                total_compact += body_elapsed;
+            }
+            log::info!(
+                "phase3 emit {}: lift={:?} body={:?}",
+                cr.name,
+                lift_elapsed,
+                body_elapsed
+            );
             cmds.push(
                 builder
                     .ret(Sort::from_name(&cr.result_sort))
@@ -371,6 +392,13 @@ impl<'a> Compiler<'a> {
                     .build(),
             );
         }
+        log::info!(
+            "phase3 totals: lift={:?} compact={:?} closure={:?} elapsed={:?}",
+            total_lift,
+            total_compact,
+            total_closure,
+            phase3_start.elapsed()
+        );
         let mut synth_cmd = Cmd::synth_fun(&self.synth_name)
             .ret(Sort::from_name(self.sig.start_sort()))
             .grammar(grammar);
@@ -390,6 +418,7 @@ impl<'a> Compiler<'a> {
             })
             .map(sygus_term_to_value)
             .collect::<Result<Vec<_>, _>>()?;
+        let constraints_start = Instant::now();
         for term in &top_level_constraints {
             let lowered = self.lower_top_level_constraint(term, &env)?;
             let mut constraint_sort_map: HashMap<String, &str> = HashMap::default();
@@ -400,6 +429,10 @@ impl<'a> Compiler<'a> {
             let remapped = lowered;
             cmds.push(Cmd::constraint().body(remapped).build());
         }
+        log::info!(
+            "phase3 top-level constraints completed in {:?}",
+            constraints_start.elapsed()
+        );
         if let Some(aux_name) = &self.aux_synth_name {
             let closure = Bool::eq(
                 Term::var(&self.synth_name),
@@ -1059,7 +1092,7 @@ impl<'a> Compiler<'a> {
             _ => {
                 let (model, sort) = self.ctx.parse_domain_expr(domain_expr, env)?;
                 let model_ref = self.ctx.model(&model)?;
-                let values = crate::lang::eval::get_domain_for_sort(model_ref, &sort)
+                let values = model_ref.domain_for_sort(&sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
                 values
                     .into_iter()
@@ -1151,7 +1184,7 @@ impl<'a> Compiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for equality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = crate::lang::eval::get_domain_for_sort(model_ref, &sort)
+        let values = model_ref.domain_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let disjuncts = values
             .into_iter()
@@ -1553,7 +1586,7 @@ impl<'a> Compiler<'a> {
             return value.clone();
         }
         *self.ground_model_eval_misses.borrow_mut() += 1;
-        let value = eval_symbols(func, arg_names, model_ref).cloned();
+        let value = model_ref.eval_symbols(func, arg_names).cloned();
         self.ground_model_eval
             .borrow_mut()
             .insert(key, value.clone());
@@ -1682,44 +1715,77 @@ fn topo_sort_bits(deps: &[HashSet<usize>]) -> Result<Vec<usize>, String> {
 /// before any other binding (or the final body) references it.
 impl BoolExpr {
     pub fn resolve_closure(bits: &[Self]) -> SyGuSTerm {
-    let n = bits.len();
-    let deps: Vec<HashSet<usize>> = bits
-        .iter()
-        .map(|expr| {
-            let mut d = HashSet::default();
-            if let BoolExpr::Dynamic(t) = expr {
-                collect_self_bit_deps(t, &mut d);
-            }
-            d
-        })
-        .collect();
-    let has_self_refs = deps.iter().any(|d| !d.is_empty());
-    if !has_self_refs {
-        let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
-        return BoolExpr::compact(bit_exprs);
-    }
-    let order = match topo_sort_bits(&deps) {
-        Ok(o) => o,
-        Err(msg) => {
-            log::warn!(
-                "self-closure body: {msg}; falling back to runtime self-references"
-            );
+        let n = bits.len();
+        let deps: Vec<HashSet<usize>> = bits
+            .iter()
+            .map(|expr| {
+                let mut d = HashSet::default();
+                if let BoolExpr::Dynamic(t) = expr {
+                    collect_self_bit_deps(t, &mut d);
+                }
+                d
+            })
+            .collect();
+        let has_self_refs = deps.iter().any(|d| !d.is_empty());
+        if !has_self_refs {
             let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
             return BoolExpr::compact(bit_exprs);
         }
-    };
-    // Single-pass resolution: walk bits in topo order, resolving
-    // __delis_self_b{j} references through the BoolExpr algebra.
-    // Constants fold away naturally via BoolExpr::and/or/not.
-    let mut resolved: Vec<BoolExpr> = vec![BoolExpr::Const(false); n];
-    for &i in &order {
-        resolved[i] = match &bits[i] {
-            BoolExpr::Const(v) => BoolExpr::Const(*v),
-            BoolExpr::Dynamic(t) => resolve_self_refs(t, &resolved),
+        let order = match topo_sort_bits(&deps) {
+            Ok(o) => o,
+            Err(msg) => {
+                log::warn!(
+                    "self-closure body: {msg}; falling back to runtime self-references"
+                );
+                let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
+                return BoolExpr::compact(bit_exprs);
+            }
         };
-    }
-    let bit_exprs: Vec<BoolExpr> = resolved;
-    BoolExpr::compact(bit_exprs)
+        // Determine which bits are referenced by other bits — only those
+        // need `let`-bindings to avoid exponential subexpression duplication.
+        let mut ref_count = vec![0usize; n];
+        for d in &deps {
+            for &j in d {
+                ref_count[j] += 1;
+            }
+        }
+        // Walk bits in topo order, building each as a BoolExpr. Bits that are
+        // referenced more than once are materialized as let-bound names so
+        // the surrounding term tree reuses them by reference, not by cloning.
+        let mut resolved: Vec<BoolExpr> = vec![BoolExpr::Const(false); n];
+        let mut bindings: Vec<(String, SyGuSTerm)> = Vec::new();
+        for &i in &order {
+            let computed = match &bits[i] {
+                BoolExpr::Const(v) => BoolExpr::Const(*v),
+                BoolExpr::Dynamic(t) => resolve_self_refs(t, &resolved),
+            };
+            // Only let-bind dynamic terms that are referenced more than once.
+            // Constants and unreferenced terms are inlined as before.
+            match computed {
+                BoolExpr::Const(_) => resolved[i] = computed,
+                BoolExpr::Dynamic(term) if ref_count[i] >= 2 => {
+                    let name = format!("delis.share.b{i}");
+                    bindings.push((name.clone(), term));
+                    resolved[i] = BoolExpr::Dynamic(Term::var(&name));
+                }
+                expr => resolved[i] = expr,
+            }
+        }
+        let body = BoolExpr::compact(resolved);
+        if bindings.is_empty() {
+            body
+        } else {
+            // Each let-binding references at most earlier let-vars (topo order),
+            // so a single nested let chain — innermost binding outermost — works.
+            // We emit one let with all bindings since they're sequential in topo
+            // order and SyGuS `let` semantics allow this when no name shadowing
+            // exists between siblings.
+            let mut out = body;
+            for (name, term) in bindings.into_iter().rev() {
+                out = Term::let_binding(vec![(name, term)], out);
+            }
+            out
+        }
     }
 }
 

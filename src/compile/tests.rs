@@ -9,7 +9,7 @@ fn ensure_opts() {
 
 fn parse(input: &str) -> DelisProg {
     ensure_opts();
-    crate::parser::ast::parse(input, None).expect("compilation smoke program should parse")
+    crate::parser::DelisProg::parse(input, None).expect("compilation smoke program should parse")
 }
 
 #[test]
@@ -38,11 +38,11 @@ fn eval_symbols_matches_unary_model_interpretations() {
         })
         .expect("test model should exist");
 
-    let t0 = crate::lang::eval::eval_symbols("p0", &["$0".to_string()], model)
+    let t0 = model.eval_symbols("p0", &["$0".to_string()])
         .expect("lookup for $0 should exist");
-    let t1 = crate::lang::eval::eval_symbols("p0", &["$1".to_string()], model)
+    let t1 = model.eval_symbols("p0", &["$1".to_string()])
         .expect("lookup for $1 should exist");
-    let t2 = crate::lang::eval::eval_symbols("p0", &["$2".to_string()], model)
+    let t2 = model.eval_symbols("p0", &["$2".to_string()])
         .expect("lookup for $2 should exist");
 
     assert!(crate::compile::semantic::interped_bool(t0));
@@ -100,7 +100,7 @@ fn cloned_models_preserve_stable_cache_identity() {
     assert_eq!(model.cache_id, cloned.cache_id);
     assert_ne!(model.cache_id, reparsed_model.cache_id);
     assert!(crate::compile::semantic::interped_bool(
-        crate::lang::eval::eval_symbols("p0", &["$0".to_string()], &cloned)
+        cloned.eval_symbols("p0", &["$0".to_string()])
             .expect("lookup for cloned model should exist")
     ));
 }
@@ -129,7 +129,7 @@ fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("native BV lowering should succeed");
+    let sygus = problem.to_sygus().expect("native BV lowering should succeed");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -169,10 +169,10 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 "#,
     );
 
-    let summary = compile(&problem).expect("compilation should summarize");
+    let summary = problem.encode().expect("compilation should summarize");
 
     assert_eq!(summary.bit_mappings.len(), 16);
-    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 16);
+    assert_eq!(problem.bv_sz().expect("BV length should compile"), 16);
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert_eq!(summary.constraint_bits[0].model, "w1");
@@ -206,7 +206,7 @@ fn finite_aspect_fields_are_not_named_primitives() {
 "#,
     );
 
-    let summary = compile(&problem).expect("compilation should summarize");
+    let summary = problem.encode().expect("compilation should summarize");
 
     assert_eq!(summary.bit_mappings.len(), 6);
     assert_eq!(summary.constraint_bits.len(), 1);
@@ -247,7 +247,7 @@ fn enum_aspect_symbols_compare_as_finite_values() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("enum aspect equality should compile");
+    let sygus = problem.to_sygus().expect("enum aspect equality should compile");
 
     assert!(!sygus.is_empty());
 }
@@ -279,7 +279,7 @@ fn parses_direct_semantic_constraints() {
 "#,
     );
 
-    let summary = compile(&problem).expect("compilation should summarize");
+    let summary = problem.encode().expect("compilation should summarize");
 
     assert_eq!(summary.bit_mappings.len(), 16);
     assert_eq!(summary.constraint_bits.len(), 2);
@@ -329,7 +329,7 @@ fn semantic_predicates_use_aspect_projection() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("projected semantic predicates should compile");
+    let sygus = problem.to_sygus().expect("projected semantic predicates should compile");
 
     assert!(!sygus.is_empty());
     let output = sygus
@@ -367,7 +367,7 @@ fn finite_compilation_loads_models_referenced_only_by_axioms() {
 "#,
     );
 
-    let summary = compile(&problem).expect("axiom-referenced model should be enumerated");
+    let summary = problem.encode().expect("axiom-referenced model should be enumerated");
 
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
     assert_eq!(summary.constraint_bits.len(), 0);
@@ -398,7 +398,7 @@ fn detects_two_way_navigation() {
 "#,
     );
 
-    let semantic_program = super::finite::compile_semantic_program(&problem)
+    let semantic_program = problem.semantic_program()
         .expect("semantic program should compile");
     assert!(
         semantic_program
@@ -435,14 +435,14 @@ fn finite_aspects_and_predicates_use_declared_universe_sorts() {
 "#,
     );
 
-    let summary = compile(&problem).expect("many-sorted finite aspects should compile");
+    let summary = problem.encode().expect("many-sorted finite aspects should compile");
 
     assert_eq!(summary.bit_mappings.len(), 2);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert!(summary.constraint_bits[0].expected);
     assert!(!summary.constraint_bits[1].expected);
 
-    let sygus = to_sygus(&problem).expect("many-sorted predicates should lower to SyGuS");
+    let sygus = problem.to_sygus().expect("many-sorted predicates should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 
@@ -479,7 +479,7 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("typed quantified domains should lower to SyGuS");
+    let sygus = problem.to_sygus().expect("typed quantified domains should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 
@@ -522,7 +522,7 @@ fn model_terms_support_constants_functions_and_nested_applications() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("typed model terms should lower to SyGuS");
+    let sygus = problem.to_sygus().expect("typed model terms should lower to SyGuS");
 
     assert!(!sygus.is_empty());
 }
@@ -557,7 +557,7 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("binary typed model terms should compile");
+    let sygus = problem.to_sygus().expect("binary typed model terms should compile");
 
     assert!(!sygus.is_empty());
 }
@@ -591,7 +591,7 @@ fn builds_separate_bool_and_finite_value_semantic_domains() {
 "#,
     );
 
-    let summary = compile(&problem).expect("mixed semantic domains should compile");
+    let summary = problem.encode().expect("mixed semantic domains should compile");
 
     let term_domain = summary
         .semantic_domains
@@ -664,14 +664,14 @@ fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("mixed semantic BV should compile");
+    let sygus = problem.to_sygus().expect("mixed semantic BV should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 2);
+    assert_eq!(problem.bv_sz().expect("BV length should compile"), 2);
     assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
     assert!(!output.contains("(and ((_ extract"));
 }
@@ -699,7 +699,7 @@ fn union_finite_fields_enumerate_bot_plus_model_domains() {
 "#,
     );
 
-    let summary = compile(&problem).expect("union finite fields should compile");
+    let summary = problem.encode().expect("union finite fields should compile");
 
     assert_eq!(summary.bit_mappings.len(), 9);
     assert_eq!(summary.constraint_bits[0].bit, 0);
@@ -739,14 +739,14 @@ fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("multiple Formula domains should compile");
+    let sygus = problem.to_sygus().expect("multiple Formula domains should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 6);
+    assert_eq!(problem.bv_sz().expect("BV length should compile"), 6);
     assert!(output.contains("(synth-fun phi () (_ BitVec 6)"));
     assert_eq!(output.matches("(constraint ").count(), 2);
 }
@@ -777,7 +777,7 @@ fn semantic_bv_preserves_composite_top_level_constraints() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("composite top-level constraints should compile");
+    let sygus = problem.to_sygus().expect("composite top-level constraints should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -838,7 +838,7 @@ fn sygus_unified_backend_supports_parent_with_finite_valued_semantics() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("parent + finite-valued semantics should compile");
+    let sygus = problem.to_sygus().expect("parent + finite-valued semantics should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -883,8 +883,8 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
 "#,
     );
 
-    let chc = to_chc_ast(&problem).expect("multiple Formula CHC domains should compile");
-    let output = crate::backends::smt2::emit::to_fixedpoint_query_text(&chc, "Goal");
+    let chc = problem.to_chc_ast().expect("multiple Formula CHC domains should compile");
+    let output = chc.to_fixedpoint_query_text("Goal");
 
     assert!(output.contains("qFormula.Sem.m.xv.bot.Formula"));
     assert!(output.contains("qFormula.Valid.m.xv.bot.Formula"));
@@ -913,7 +913,7 @@ fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
 "#,
     );
 
-    let err = compile(&problem).expect_err("unknown finite field sort should be rejected");
+    let err = problem.encode().expect_err("unknown finite field sort should be rejected");
 
     assert!(err.contains("unsupported finite field sort Color"));
 }
@@ -936,7 +936,7 @@ fn allows_multiple_finite_aspect_spaces() {
 "#,
     );
 
-    let summary = compile(&problem).expect("multiple aspect spaces should be summarized");
+    let summary = problem.encode().expect("multiple aspect spaces should be summarized");
 
     assert_eq!(summary.finite_spaces, vec!["FirstAsp", "SecondAsp"]);
     assert_eq!(summary.semantic_domains.len(), 1);
@@ -963,7 +963,7 @@ fn allows_multiple_define_semantics_declarations() {
 "#,
     );
 
-    let summary = compile(&problem).expect("multiple semantics should be summarized");
+    let summary = problem.encode().expect("multiple semantics should be summarized");
 
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem", "Regex.Other"]);
     assert_eq!(summary.semantic_domains.len(), 2);
@@ -1038,10 +1038,10 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
 "#,
     );
 
-    let chc = to_chc_ast(&problem).expect("typed CFG CHC should compile");
+    let chc = problem.to_chc_ast().expect("typed CFG CHC should compile");
 
     assert!(!chc.rules.is_empty());
-    let horn = crate::backends::smt2::emit::to_fixedpoint_query_text(&chc, "Goal");
+    let horn = chc.to_fixedpoint_query_text("Goal");
     assert!(horn.contains("CFG.Sem"));
     assert!(horn.contains("Rhs.Sem"));
     assert!(horn.contains("Rules.Sem"));
@@ -1071,7 +1071,7 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 "#,
     );
 
-    let err = to_sygus(&problem).expect_err("wrong aspect constructor should be rejected");
+    let err = problem.to_sygus().expect_err("wrong aspect constructor should be rejected");
 
     assert!(err.contains("aspect constructor must be ReAsp"));
 }
@@ -1100,7 +1100,7 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 "#,
     );
 
-    let err = to_sygus(&problem).expect_err("wrong aspect arity should be rejected");
+    let err = problem.to_sygus().expect_err("wrong aspect arity should be rejected");
 
     assert!(err.contains("provides 1 scalar fields, expected 2"));
 }
@@ -1134,13 +1134,13 @@ fn finite_value_ite_is_supported_in_semantics() {
 "#,
     );
 
-    let sygus = to_sygus(&problem).expect("finite-valued ite should compile");
+    let sygus = problem.to_sygus().expect("finite-valued ite should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert_eq!(bv_sz(&problem).expect("BV length should compile"), 2);
+    assert_eq!(problem.bv_sz().expect("BV length should compile"), 2);
     assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
 }

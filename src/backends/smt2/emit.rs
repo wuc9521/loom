@@ -23,34 +23,36 @@ fn forall(vars: BTreeMap<String, Sort>, body: SyGuSTerm) -> SyGuSTerm {
     )
 }
 
-fn constructor_signatures(program: &HornProg) -> HashMap<String, (Sort, Vec<Sort>)> {
-    let mut out = HashMap::default();
-    for decl in &program.decls {
-        let HornDecl::DeclareDatatypes(sorts, constructors) = decl else {
-            continue;
-        };
-        for (sort_decl, sort_ctors) in sorts.iter().zip(constructors.iter()) {
-            let result_sort = Sort::from_name(&sort_decl.symbol);
-            for cons in sort_ctors {
-                let arg_sorts = cons.args.iter().map(|arg| arg.sort.clone()).collect();
-                out.insert(cons.name.clone(), (result_sort.clone(), arg_sorts));
+impl HornProg {
+    fn constructor_signatures(&self) -> HashMap<String, (Sort, Vec<Sort>)> {
+        let mut out = HashMap::default();
+        for decl in &self.decls {
+            let HornDecl::DeclareDatatypes(sorts, constructors) = decl else {
+                continue;
+            };
+            for (sort_decl, sort_ctors) in sorts.iter().zip(constructors.iter()) {
+                let result_sort = Sort::from_name(&sort_decl.symbol);
+                for cons in sort_ctors {
+                    let arg_sorts = cons.args.iter().map(|arg| arg.sort.clone()).collect();
+                    out.insert(cons.name.clone(), (result_sort.clone(), arg_sorts));
+                }
             }
         }
+        out
     }
-    out
-}
 
-fn predicate_arg_sorts(program: &HornProg) -> HashMap<String, Sort> {
-    let mut out = HashMap::default();
-    for decl in &program.decls {
-        let HornDecl::DeclareRel(name, args) = decl else {
-            continue;
-        };
-        if let Some(first) = args.first() {
-            out.insert(name.clone(), first.clone());
+    fn predicate_arg_sorts(&self) -> HashMap<String, Sort> {
+        let mut out = HashMap::default();
+        for decl in &self.decls {
+            let HornDecl::DeclareRel(name, args) = decl else {
+                continue;
+            };
+            if let Some(first) = args.first() {
+                out.insert(name.clone(), first.clone());
+            }
         }
+        out
     }
-    out
 }
 
 fn infer_term_var_sorts(
@@ -260,27 +262,29 @@ impl HornDecl {
     }
 }
 
-pub fn to_smt(program: &HornProg) -> Vec<SExpr> {
-    let predicate_sorts = predicate_arg_sorts(program);
-    let constructors = constructor_signatures(program);
-    let mut out = Vec::new();
-    for decl in &program.decls {
-        if matches!(decl, HornDecl::DeclareVar(..)) {
-            continue;
+impl HornProg {
+    pub fn to_smt(&self) -> Vec<SExpr> {
+        let predicate_sorts = self.predicate_arg_sorts();
+        let constructors = self.constructor_signatures();
+        let mut out = Vec::new();
+        for decl in &self.decls {
+            if matches!(decl, HornDecl::DeclareVar(..)) {
+                continue;
+            }
+            out.push(decl.to_sexpr());
         }
-        out.push(decl.to_sexpr());
+        for rule in &self.rules {
+            out.push(rule.to_sexpr(&predicate_sorts, &constructors));
+        }
+        for query in &self.queries {
+            out.push(query.to_sexpr(&predicate_sorts, &constructors));
+        }
+        for cmd in &self.tail {
+            out.push(cmd.to_sexpr());
+        }
+        out.push(SExpr::SExprList(vec![check_sat()]));
+        out
     }
-    for rule in &program.rules {
-        out.push(rule.to_sexpr(&predicate_sorts, &constructors));
-    }
-    for query in &program.queries {
-        out.push(query.to_sexpr(&predicate_sorts, &constructors));
-    }
-    for cmd in &program.tail {
-        out.push(cmd.to_sexpr());
-    }
-    out.push(SExpr::SExprList(vec![check_sat()]));
-    out
 }
 
 fn decl_to_fixedpoint_string(decl: &HornDecl) -> String {
@@ -298,14 +302,16 @@ fn decl_to_fixedpoint_string(decl: &HornDecl) -> String {
     }
 }
 
-pub fn to_fixedpoint_query_text(program: &HornProg, relation: &str) -> String {
-    let mut out = Vec::new();
-    for decl in &program.decls {
-        out.push(decl_to_fixedpoint_string(decl));
+impl HornProg {
+    pub fn to_fixedpoint_query_text(&self, relation: &str) -> String {
+        let mut out = Vec::new();
+        for decl in &self.decls {
+            out.push(decl_to_fixedpoint_string(decl));
+        }
+        for rule in &self.rules {
+            out.push(rule.to_fixedpoint_string());
+        }
+        out.push(format!("(query {relation} :print-answer true)"));
+        out.join("\n")
     }
-    for rule in &program.rules {
-        out.push(rule.to_fixedpoint_string());
-    }
-    out.push(format!("(query {relation} :print-answer true)"));
-    out.join("\n")
 }

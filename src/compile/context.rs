@@ -5,7 +5,6 @@ use sygus_parser::SortedVar;
 use crate::parser::{ast::TermTypes, DelisCmd, DelisProg};
 
 use super::{
-    finite,
     eval_ctx::SemanticContext,
     semantic::{self, Case},
     syntax::TermSignature,
@@ -45,7 +44,7 @@ impl<'a> CompileContext<'a> {
             })
             .ok_or_else(|| "SyGuS compilation requires synth-fun".to_string())?;
         let sig = TermSignature::from_declare_term_types(term_types)?;
-        let semantic_program = finite::compile_semantic_program(problem)?;
+        let semantic_program = problem.semantic_program()?;
         let semantic_cases = semantic_program
             .semantics
             .iter()

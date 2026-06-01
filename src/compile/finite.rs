@@ -8,7 +8,7 @@ use crate::{
         },
     },
     lang::{
-        eval::{collect_loaded_models, max_domain_len},
+        eval::collect_loaded_models,
         model::Model,
     },
     parser::{DelisCmd, DelisProg},
@@ -20,9 +20,15 @@ use sygus_parser::{Identifier, SyGuSTerm};
 
 type AspectAssignment = Vec<(String, AspectValue)>;
 
-#[allow(dead_code)]
-pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
-    let program = compile_semantic_program(problem)?;
+impl DelisProg {
+    #[allow(dead_code)]
+    pub fn encode(&self) -> Result<Encoding, String> {
+        encode(self)
+    }
+}
+
+fn encode(problem: &DelisProg) -> Result<Encoding, String> {
+    let program = problem.semantic_program()?;
 
     let bool_domains = program
         .domains
@@ -96,7 +102,13 @@ pub fn compile(problem: &DelisProg) -> Result<Encoding, String> {
     })
 }
 
-pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, String> {
+impl DelisProg {
+    pub fn semantic_program(&self) -> Result<SemanticProgram, String> {
+        compile_semantic_program(self)
+    }
+}
+
+fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, String> {
     let finite_cmds = problem
         .cmds
         .iter()
@@ -250,6 +262,13 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
         });
     }
 
+    let mut program = SemanticProgram {
+        finite_spaces,
+        semantics: semantic_specs,
+        domains,
+        constraints: semantic_constraints,
+    };
+
     if super::opts().bisim {
         let func_names: Vec<String> = problem
             .cmds
@@ -261,15 +280,10 @@ pub fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, 
                 _ => None,
             })
             .collect();
-        super::bisim::quotient_domains(&mut domains, &loaded_models, &func_names);
+        program.quotient_by_bisim(&loaded_models, &func_names);
     }
 
-    Ok(SemanticProgram {
-        finite_spaces,
-        semantics: semantic_specs,
-        domains,
-        constraints: semantic_constraints,
-    })
+    Ok(program)
 }
 
 fn referenced_models_in_constraints(
@@ -636,7 +650,7 @@ fn enumerate_aspects(
     domains_by_sort: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<AspectAssignment>, String> {
     let universe_sorts = model_universe_sorts(model);
-    let int_bound = max_domain_len(model);
+    let int_bound = model.max_domain_len();
     let domains = space
         .fields
         .iter()

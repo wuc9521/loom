@@ -19,7 +19,6 @@ mod syntax;
 mod types;
 
 use context::CompileContext;
-pub use finite::compile;
 pub use syntax::{TermConstructor, TermSignature};
 pub use types::AspectKey;
 
@@ -53,10 +52,6 @@ pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<V
 }
 
 impl DelisProg {
-    pub fn solve_by_closure(&self) -> Result<Option<String>, String> {
-        closure::solve(self)
-    }
-
     pub fn bv_sz(&self) -> Result<usize, String> {
         let ctx = CompileContext::new(self)?;
         let width = ctx
@@ -81,7 +76,7 @@ impl DelisProg {
         );
         log::info!("using native SyGuS BV lowering");
         let native_start = Instant::now();
-        let result = compiler::compile(&ctx, opts().optimize);
+        let result = ctx.compile();
         log::info!(
             "native SyGuS BV lowering completed in {:?}",
             native_start.elapsed()
@@ -90,8 +85,7 @@ impl DelisProg {
     }
 
     pub fn to_chc_ast(&self) -> Result<HornProg, String> {
-        let ctx = CompileContext::new(self)?;
-        chc::compile_with_context(self, ctx.semantic_program, ctx.sig, ctx.semantic_cases)
+        CompileContext::new(self)?.compile_chc()
     }
 
     pub fn to_sygus_bytes(&self) -> Result<Vec<u8>, String> {
