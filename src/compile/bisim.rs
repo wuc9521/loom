@@ -143,36 +143,84 @@ impl SemanticProgram {
             domain_kinds: &domain_kinds,
         };
 
+        // Refinement only ever *splits* classes — it cannot merge two
+        // already-distinct classes. So the only aspects whose class can
+        // possibly change are those currently sharing a class with at least
+        // one other aspect. Singleton-class aspects are at their final
+        // position after the leaf seed; re-signaturing them is pure waste.
+        //
+        // We track membership and only re-signature aspects in multi-aspect
+        // classes. When a class splits, the resulting sub-classes inherit
+        // multi-aspect status only if they still have >1 member; singleton
+        // sub-classes drop out of the worklist.
+        let mut class_members: HashMap<ClassId, Vec<ClassKey>> = HashMap::default();
+        for (key, &cid) in &classes {
+            class_members.entry(cid).or_default().push(key.clone());
+        }
+        let mut multi_aspect: Vec<ClassId> = class_members
+            .iter()
+            .filter(|(_, members)| members.len() > 1)
+            .map(|(&id, _)| id)
+            .collect();
+        let mut next_class_id = classes
+            .values()
+            .max()
+            .copied()
+            .map(|m| m + 1)
+            .unwrap_or(0);
+
         let mut iters = 0usize;
         const MAX_ITERS: usize = 64;
-        loop {
+        while !multi_aspect.is_empty() {
             iters += 1;
-            let mut sig_to_class: HashMap<Vec<u8>, ClassId> = HashMap::default();
-            let mut new_classes: HashMap<ClassKey, ClassId> = HashMap::default();
-            for domain in &self.domains {
-                for bit in &domain.bits {
-                    let sig = refiner.signature(
-                        &domain.relation,
-                        &bit.aspect,
-                        &bit.value,
-                        &classes,
-                    );
-                    let next_id = sig_to_class.len();
-                    let class = *sig_to_class.entry(sig).or_insert(next_id);
-                    new_classes.insert(
-                        (
-                            domain.relation.clone(),
-                            bit.aspect.clone(),
-                            bit.value.clone(),
-                        ),
-                        class,
-                    );
+            let mut any_split = false;
+            let mut next_multi: Vec<ClassId> = Vec::new();
+            for cid in std::mem::take(&mut multi_aspect) {
+                let members = match class_members.get(&cid) {
+                    Some(m) if m.len() > 1 => m.clone(),
+                    _ => continue,
+                };
+                // Group members of this class by their refined signature.
+                let mut by_sig: HashMap<Vec<u8>, Vec<ClassKey>> = HashMap::default();
+                for member in &members {
+                    let sig =
+                        refiner.signature(&member.0, &member.1, &member.2, &classes);
+                    by_sig.entry(sig).or_default().push(member.clone());
+                }
+                if by_sig.len() == 1 {
+                    // No split: the class is stable under current partition.
+                    // It might still split in a later iter if a referenced
+                    // class splits, so keep it in the worklist.
+                    next_multi.push(cid);
+                    continue;
+                }
+                any_split = true;
+                // First group keeps `cid`; remaining groups get fresh IDs.
+                let mut groups: Vec<Vec<ClassKey>> = by_sig.into_values().collect();
+                groups.sort_by(|a, b| a.first().cmp(&b.first()));
+                let first = groups.remove(0);
+                if first.len() > 1 {
+                    next_multi.push(cid);
+                }
+                class_members.insert(cid, first);
+                for group in groups {
+                    let new_id = next_class_id;
+                    next_class_id += 1;
+                    for key in &group {
+                        classes.insert(key.clone(), new_id);
+                    }
+                    if group.len() > 1 {
+                        next_multi.push(new_id);
+                    }
+                    class_members.insert(new_id, group);
                 }
             }
-            if new_classes == classes {
+            if !any_split {
+                // Stable: this iter produced no splits, so no referenced
+                // class can change either. Done.
                 break;
             }
-            classes = new_classes;
+            multi_aspect = next_multi;
             if iters >= MAX_ITERS {
                 log::warn!(
                     "bisim: refinement did not converge in {} iterations; using current partition",

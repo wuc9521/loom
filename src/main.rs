@@ -5,15 +5,16 @@ use delis::{
     parser::{load_module_file, DelisCmd, DelisProg},
     process::{cleanup_children, register_pid, unregister_pid},
 };
-use rustc_hash::FxHashSet as HashSet;
 use std::{
     io::{self, BufWriter, Read, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::mpsc,
+    sync::{mpsc, Arc},
     thread,
     time::Instant,
 };
+
+mod cegis;
 use sygus_parser::SyGuSCmd;
 
 
@@ -63,22 +64,38 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         ));
     }
 
+    // Build the SemanticProgram (the expensive piece — runs bisim) ONCE,
+    // then lower it to SyGuS BV cmds ONCE, and share the result with both
+    // backends via Arc. Earlier each backend independently called
+    // `to_sygus_with`, paying the constructor-compile cost twice in parallel
+    // (visible as two identical `native SyGuS BV lowering completed in ...`
+    // log lines). Sharing collapses that into a single compile.
+    let semantic_program = delis_file.semantic_program().map_err(io::Error::other)?;
+    let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(
+        delis_file
+            .to_sygus_with(semantic_program)
+            .map_err(io::Error::other)?,
+    );
+
     let (tx, rx) = mpsc::channel();
 
     let closure_tx = tx.clone();
     let closure_file = delis_file.clone();
+    let closure_cmds = sygus_cmds.clone();
     const CLOSURE_STACK_BYTES: usize = 64 * 1024 * 1024;
     thread::Builder::new()
         .name("closure-backend".to_string())
         .stack_size(CLOSURE_STACK_BYTES)
         .spawn(move || {
-            let result = closure_file.solve_by_closure()
+            let result = closure_file
+                .solve_by_closure_with_cmds((*closure_cmds).clone())
                 .map_err(io::Error::other);
             let _ = closure_tx.send(BackendResult::Closure(result));
         })?;
 
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
+    let sygus_cmds_for_sygus = sygus_cmds.clone();
     let sygus_cegis = (args.cegis > 0).then_some(args.cegis);
     let sygus_backend = SygusBackend::from_cli(args);
     let sygus_verbose = args.verbose;
@@ -96,6 +113,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
                 sygus_verbose,
                 sygus_min,
                 sygus_mitm,
+                sygus_cmds_for_sygus,
             );
             let _ = sygus_tx.send(BackendResult::Sygus(result));
         })?;
@@ -212,7 +230,7 @@ fn solve_cmds_with_backend(
     backend: &SygusBackend,
     cmds: &[SyGuSCmd],
     axioms: Option<&[sygus_parser::SyGuSTerm]>,
-    verbose: bool,
+    verbose: u8,
     min: bool,
     mitm: bool,
 ) -> Result<String, io::Error> {
@@ -222,7 +240,7 @@ fn solve_cmds_with_backend(
             None,
             "",
             axioms,
-            if verbose { 1 } else { 0 },
+            verbose,
             min,
             mitm,
         )
@@ -238,35 +256,33 @@ fn solve_with_sygus(
     delis_file: &DelisProg,
     backend: &SygusBackend,
     cegis_size: Option<usize>,
-    verbose: bool,
+    verbose: u8,
     min: bool,
     mitm: bool,
+    sygus_cmds: Arc<Vec<SyGuSCmd>>,
 ) -> Result<String, io::Error> {
     let axioms = delis_file.axioms();
     let axiom_slice = (!axioms.is_empty()).then_some(axioms.as_slice());
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
-        let solved = cegis_solve(
-            delis_file,
-            backend,
-            cegis_size,
-            verbose,
-            min,
-            mitm,
-        )?;
+        let solved = cegis::cegis_solve(delis_file, cegis_size, &sygus_cmds, |cmds| {
+            let output = solve_cmds_with_backend(backend, cmds, None, verbose, min, mitm)?;
+            if output.trim() == "infeasible" {
+                return Ok("infeasible".to_string());
+            }
+            match backend {
+                SygusBackend::InProcessDryadSynth => Ok(output),
+                SygusBackend::External(_) => {
+                    delis_file.decode_response(&output).map_err(io::Error::other)
+                }
+            }
+        })?;
         log::info!(
             "sygus-backend: cegis completed in {:?}",
             solve_start.elapsed()
         );
         solved
     } else {
-        let step_start = Instant::now();
-        let sygus_cmds =
-            delis_file.to_sygus().map_err(io::Error::other)?;
-        log::info!(
-            "sygus-backend: to_sygus completed in {:?}",
-            step_start.elapsed()
-        );
         let step_start = Instant::now();
         let output =
             solve_cmds_with_backend(backend, &sygus_cmds, axiom_slice, verbose, min, mitm)?;
@@ -304,248 +320,6 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn cegis_solve(
-    delis_file: &DelisProg,
-    backend: &SygusBackend,
-    seed_size: usize,
-    verbose: bool,
-    min: bool,
-    mitm: bool,
-) -> Result<String, io::Error> {
-    let seed_size = seed_size.max(1);
-    let constraints = delis_file.constraints();
-    let constraint_count = constraints.len();
-    let full_cmds = delis_file.to_sygus().map_err(io::Error::other)?;
-    if constraint_count <= seed_size {
-        let output = solve_cmds_with_backend(backend, &full_cmds, None, verbose, min, mitm)?;
-        return match backend {
-            SygusBackend::InProcessDryadSynth => Ok(output),
-            SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other),
-        };
-    }
-
-    let polarities = constraints
-        .iter()
-        .map(|term| constraint_polarity(term))
-        .collect::<Vec<_>>();
-    let mut active = initial_cegis_constraints(&polarities, seed_size);
-    let mut round = 0usize;
-    loop {
-        round += 1;
-        log::info!(
-            "cegis round {}: solving with {}/{} constraints",
-            round,
-            active.len(),
-            constraint_count
-        );
-        let round_start = Instant::now();
-        let subset_cmds = subset_sygus_problem(&full_cmds, &active, constraint_count);
-        log::info!(
-            "cegis round {}: reduced compilation completed in {:?}",
-            round,
-            round_start.elapsed()
-        );
-        let output = solve_cmds_with_backend(backend, &subset_cmds, None, verbose, min, mitm)?;
-        log::info!("cegis round {}: raw solver output = {}", round, output.chars().take(300).collect::<String>());
-        let trimmed = output.trim();
-        if trimmed == "infeasible" {
-            log::info!("cegis round {}: subset is infeasible", round);
-            return Ok("infeasible".to_string());
-        }
-        let decoded = match backend {
-            SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other)?,
-        };
-        let failing =
-            compile::failing_constraint_indices(&full_cmds, &decoded).map_err(io::Error::other)?;
-        let failing: Vec<usize> = failing.into_iter().filter(|&idx| idx < constraint_count).collect();
-        if failing.is_empty() {
-            log::info!("cegis round {}: candidate satisfies all constraints", round);
-            return Ok(decoded);
-        }
-        let added = add_counterexamples(&mut active, &failing, &polarities);
-        log::info!(
-            "cegis round {}: candidate failed {} constraints, added {}",
-            round,
-            failing.len(),
-            added
-        );
-        if added == 0 {
-            return Err(io::Error::other(
-                "CEGIS made no progress while verification still fails",
-            ));
-        }
-    }
-}
-
-fn subset_sygus_problem(
-    cmds: &[SyGuSCmd],
-    active: &HashSet<usize>,
-    constraint_count: usize,
-) -> Vec<SyGuSCmd> {
-    let mut reduced = Vec::with_capacity(cmds.len());
-    let mut constraint_idx = 0usize;
-    for cmd in cmds {
-        match cmd {
-            SyGuSCmd::Constraint(_) if constraint_idx < constraint_count => {
-                if active.contains(&constraint_idx) {
-                    reduced.push(cmd.clone());
-                }
-                constraint_idx += 1;
-            }
-            _ => reduced.push(cmd.clone()),
-        }
-    }
-    reduced
-}
-
-
-
-fn constraint_polarity(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
-    constraint_expected_truth(term, false)
-}
-
-fn constraint_expected_truth(term: &sygus_parser::SyGuSTerm, negated: bool) -> Option<bool> {
-    if let sygus_parser::SyGuSTerm::Application(id, args) = term {
-        if id.get_name() == "not" && args.len() == 1 {
-            return constraint_expected_truth(&args[0], !negated);
-        }
-        if id.get_name() == "=" && args.len() == 2 {
-            if let Some(value) = binary_truth_value(&args[0]) {
-                return constraint_expected_truth(&args[1], negated ^ !value);
-            }
-            if let Some(value) = binary_truth_value(&args[1]) {
-                return constraint_expected_truth(&args[0], negated ^ !value);
-            }
-        }
-    }
-    Some(!negated)
-}
-
-fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
-    match term {
-        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::Bool(value)) => Some(*value),
-        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => {
-            match bits.as_str() {
-                "#b1" => Some(true),
-                "#b0" => Some(false),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sygus_parser::ast::{Identifier, Literal, SyGuSTerm};
-
-    fn app(name: &str, args: Vec<SyGuSTerm>) -> SyGuSTerm {
-        SyGuSTerm::Application(Identifier::from_str(name).unwrap(), args)
-    }
-
-    fn bool_lit(value: bool) -> SyGuSTerm {
-        SyGuSTerm::Literal(Literal::Bool(value))
-    }
-
-    fn bin_lit(bits: &str) -> SyGuSTerm {
-        SyGuSTerm::Literal(Literal::BinConst(bits.into()))
-    }
-
-    fn atom(name: &str) -> SyGuSTerm {
-        app(name, vec![])
-    }
-
-    #[test]
-    fn constraint_polarity_handles_nested_negation_and_truth_equalities() {
-        assert_eq!(constraint_polarity(&atom("p")), Some(true));
-        assert_eq!(
-            constraint_polarity(&app("not", vec![atom("p")])),
-            Some(false)
-        );
-        assert_eq!(
-            constraint_polarity(&app("not", vec![app("not", vec![atom("p")])])),
-            Some(true)
-        );
-        assert_eq!(
-            constraint_polarity(&app("=", vec![atom("p"), bool_lit(true)])),
-            Some(true)
-        );
-        assert_eq!(
-            constraint_polarity(&app("=", vec![atom("p"), bool_lit(false)])),
-            Some(false)
-        );
-        assert_eq!(
-            constraint_polarity(&app("=", vec![atom("p"), bin_lit("#b1")])),
-            Some(true)
-        );
-        assert_eq!(
-            constraint_polarity(&app("=", vec![atom("p"), bin_lit("#b0")])),
-            Some(false)
-        );
-        assert_eq!(
-            constraint_polarity(&app("not", vec![app("=", vec![atom("p"), bin_lit("#b0")])])),
-            Some(true)
-        );
-    }
-}
-
-fn initial_cegis_constraints(polarities: &[Option<bool>], seed_size: usize) -> HashSet<usize> {
-    let seed_size = seed_size.max(1);
-    let mut active = HashSet::default();
-    let target_pos = seed_size.div_ceil(2);
-    let target_neg = seed_size / 2;
-    for (target, class_target) in [(Some(true), target_pos), (Some(false), target_neg)] {
-        let mut class_count = 0usize;
-        for (idx, polarity) in polarities.iter().enumerate() {
-            if *polarity == target && !active.contains(&idx) {
-                active.insert(idx);
-                class_count += 1;
-                if active.len() >= seed_size {
-                    return active;
-                }
-                if class_count >= class_target {
-                    break;
-                }
-            }
-        }
-    }
-    for idx in 0..polarities.len() {
-        if active.len() >= seed_size {
-            break;
-        }
-        active.insert(idx);
-    }
-    active
-}
-
-fn add_counterexamples(
-    active: &mut HashSet<usize>,
-    failing: &[usize],
-    polarities: &[Option<bool>],
-) -> usize {
-    let before = active.len();
-    for target in [Some(true), Some(false)] {
-        if let Some(idx) = failing
-            .iter()
-            .copied()
-            .find(|idx| !active.contains(idx) && polarities[*idx] == target)
-        {
-            active.insert(idx);
-        }
-    }
-    if active.len() == before {
-        if let Some(idx) = failing.iter().copied().find(|idx| !active.contains(idx)) {
-            active.insert(idx);
-        }
-    }
-    active.len() - before
-}
-
-
-
-
 /// CLI application for parsing your custom language
 #[derive(clap::Parser, Debug)]
 #[command(
@@ -562,9 +336,9 @@ pub struct CLI {
     #[arg(short, long)]
     r#in: bool,
 
-    /// Enable verbose output
-    #[arg(short, long, default_value_t = false)]
-    verbose: bool,
+    /// Increase log verbosity (use `-v` for INFO, `-vv` for DEBUG).
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    verbose: u8,
 
     /// Enable SyGuS optimization passes (use -O=false or --optimize=false to disable)
     #[arg(
@@ -645,31 +419,31 @@ fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     env_logger::Builder::from_default_env()
         .format(|buf, record| {
-            let level = match record.level() {
-                log::Level::Error => "\x1b[31mERROR\x1b[0m",
-                log::Level::Warn => "\x1b[33mWARN\x1b[0m",
-                log::Level::Info => "\x1b[34mINFO\x1b[0m",
-                log::Level::Debug => "\x1b[35mDEBUG\x1b[0m",
-                log::Level::Trace => "\x1b[36mTRACE\x1b[0m",
+            let level = record.level();
+            let prefix = match level {
+                log::Level::Error => "error: ",
+                log::Level::Warn => "warning: ",
+                log::Level::Info => "",
+                log::Level::Debug => "debug: ",
+                log::Level::Trace => "trace: ",
             };
-            let msg = if record.target() == "parsed" {
-                format!("\x1b[32m{}\x1b[0m", record.args())
+            if level >= log::Level::Debug {
+                writeln!(
+                    buf,
+                    "{}{} ({}:{})",
+                    prefix,
+                    record.args(),
+                    record.file().unwrap_or("?"),
+                    record.line().unwrap_or(0)
+                )
             } else {
-                record.args().to_string()
-            };
-            writeln!(
-                buf,
-                "{} {} {}:{}",
-                level,
-                msg,
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0)
-            )
+                writeln!(buf, "{}{}", prefix, record.args())
+            }
         })
-        .filter_level(if args.verbose {
-            log::LevelFilter::Debug
-        } else {
-            log::LevelFilter::Warn
+        .filter_level(match args.verbose {
+            0 => log::LevelFilter::Warn,
+            1 => log::LevelFilter::Info,
+            _ => log::LevelFilter::Debug,
         })
         .init();
 

@@ -156,8 +156,6 @@ struct ChcCompiler<'a> {
     relation_sorts: HashMap<String, Vec<String>>,
     predicates: HashMap<(String, String, AspectKey, Option<AspectValue>), Pred>,
     next_helper_id: usize,
-    ground_model_eval:
-        RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
     domain_values_cache: RefCell<HashMap<(String, String), Vec<AspectValue>>>,
     quantifier_profile: RefCell<QuantifierProfile>,
     lowering_profile: RefCell<LoweringProfile>,
@@ -200,7 +198,6 @@ impl<'a> ChcCompiler<'a> {
             relation_sorts,
             predicates: HashMap::default(),
             next_helper_id: 0,
-            ground_model_eval: RefCell::new(HashMap::default()),
             domain_values_cache: RefCell::new(HashMap::default()),
             quantifier_profile: RefCell::new(QuantifierProfile::default()),
             lowering_profile: RefCell::new(LoweringProfile::default()),
@@ -842,7 +839,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
+            let value = self.ctx.eval_model_symbols(model_ref, func, &arg_names);
             let matched = value.as_ref().is_some_and(interped_bool);
             return Ok(BoolPair {
                 pos: bool_formula(matched),
@@ -995,8 +992,8 @@ impl<'a> ChcCompiler<'a> {
             }
             let model = self.ctx.current_model(env)?;
             let model_ref = self.ctx.model(&model)?;
-            if let Some(value) = model_ref.eval_symbols(symbol, &[]) {
-                return Ok(if interped_value_matches(value, target) == positive {
+            if let Some(value) = self.ctx.eval_model_symbols(model_ref, symbol, &[]) {
+                return Ok(if interped_value_matches(&value, target) == positive {
                     formula_true()
                 } else {
                     formula_false()
@@ -1104,7 +1101,7 @@ impl<'a> ChcCompiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
+            let value = self.ctx.eval_model_symbols(model_ref, func, &arg_names);
             let matches = value
                 .as_ref()
                 .is_some_and(|value| interped_value_matches(value, target));
@@ -1406,24 +1403,6 @@ impl<'a> ChcCompiler<'a> {
                     .map(|value| value.display())
             })
             .collect()
-    }
-
-    fn ground_model_value(
-        &self,
-        func: &str,
-        model: &str,
-        arg_names: &[String],
-        model_ref: &crate::lang::model::Model,
-    ) -> Option<crate::lang::model::InterpedValue> {
-        let key = (func.to_string(), model.to_string(), arg_names.to_vec());
-        if let Some(value) = self.ground_model_eval.borrow().get(&key) {
-            return value.clone();
-        }
-        let value = model_ref.eval_symbols(func, arg_names).cloned();
-        self.ground_model_eval
-            .borrow_mut()
-            .insert(key, value.clone());
-        value
     }
 
     fn cached_domain_values(&self, model: &str, sort: &str) -> Result<Vec<AspectValue>, String> {

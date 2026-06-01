@@ -17,7 +17,7 @@ mod eval_ctx;
 pub(crate) mod optim;
 mod semantic;
 mod syntax;
-mod types;
+pub mod types;
 
 use context::CompileContext;
 pub use syntax::{TermConstructor, TermSignature};
@@ -96,11 +96,19 @@ impl DelisProg {
 
     pub fn to_sygus(&self) -> Result<Vec<SyGuSCmd>, String> {
         let semantic_start = Instant::now();
-        let ctx = CompileContext::new(self)?;
+        let program = self.semantic_program()?;
         log::info!(
             "compile_semantic_program completed in {:?}",
             semantic_start.elapsed()
         );
+        self.to_sygus_with(program)
+    }
+
+    /// Like `to_sygus`, but reuses an already-built `SemanticProgram` so
+    /// bisim isn't re-run. Use from `main::solve` to share one compile
+    /// between the parallel closure and sygus backends.
+    pub fn to_sygus_with(&self, program: types::SemanticProgram) -> Result<Vec<SyGuSCmd>, String> {
+        let ctx = CompileContext::with_program(self, program)?;
         log::info!("using native SyGuS BV lowering");
         let native_start = Instant::now();
         let result = ctx.compile();

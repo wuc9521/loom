@@ -25,6 +25,17 @@ pub struct CompileContext<'a> {
 
 impl<'a> CompileContext<'a> {
     pub fn new(problem: &'a DelisProg) -> Result<Self, String> {
+        let semantic_program = problem.semantic_program()?;
+        Self::with_program(problem, semantic_program)
+    }
+
+    /// Like `new`, but reuses a pre-built `SemanticProgram` instead of
+    /// re-running `compile_semantic_program` (which includes bisim).
+    /// Lets the two parallel backends share one compile.
+    pub fn with_program(
+        problem: &'a DelisProg,
+        semantic_program: SemanticProgram,
+    ) -> Result<Self, String> {
         let term_types = problem
             .cmds
             .iter()
@@ -44,7 +55,6 @@ impl<'a> CompileContext<'a> {
             })
             .ok_or_else(|| "SyGuS compilation requires synth-fun".to_string())?;
         let sig = TermSignature::from_declare_term_types(term_types)?;
-        let semantic_program = problem.semantic_program()?;
         let semantic_cases = semantic_program
             .semantics
             .iter()

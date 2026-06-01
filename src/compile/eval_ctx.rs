@@ -15,10 +15,18 @@ use crate::{
 use itertools::Itertools;
 use lexpr::Value;
 use rustc_hash::FxHashMap as HashMap;
+use std::cell::{Cell, RefCell};
 
 pub trait EnvView {
     fn aspects(&self) -> &HashMap<String, AspectKey>;
     fn values(&self) -> &HashMap<String, AspectValue>;
+}
+
+#[derive(Hash, Eq, PartialEq, Clone)]
+struct EvalKey {
+    cache_id: u64,
+    func: String,
+    args: Vec<String>,
 }
 
 pub struct SemanticContext<'a> {
@@ -29,6 +37,9 @@ pub struct SemanticContext<'a> {
     domains_by_relation: HashMap<String, SemanticDomain>,
     domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
     cases: HashMap<String, HashMap<String, Case>>,
+    eval_cache: RefCell<HashMap<EvalKey, Option<InterpedValue>>>,
+    eval_hits: Cell<usize>,
+    eval_misses: Cell<usize>,
 }
 
 impl<'a> SemanticContext<'a> {
@@ -105,7 +116,45 @@ impl<'a> SemanticContext<'a> {
             domains_by_relation,
             domains_by_sort,
             cases: cases.clone(),
+            eval_cache: RefCell::new(HashMap::default()),
+            eval_hits: Cell::new(0),
+            eval_misses: Cell::new(0),
         })
+    }
+
+    /// Cached wrapper over `Model::eval_symbols`. All semantic and compile
+    /// paths that ground a model function should go through this; the cache
+    /// is keyed by `(model.cache_id, func, args)`, so calls on the same model
+    /// with the same arguments are evaluated at most once per
+    /// `SemanticContext`. Returns an owned `InterpedValue` so the cache can
+    /// outlive any one borrow.
+    pub fn eval_model_symbols(
+        &self,
+        model: &Model,
+        func: &str,
+        args: &[String],
+    ) -> Option<InterpedValue> {
+        let key = EvalKey {
+            cache_id: model.cache_id,
+            func: func.to_string(),
+            args: args.to_vec(),
+        };
+        if let Some(cached) = self.eval_cache.borrow().get(&key) {
+            self.eval_hits.set(self.eval_hits.get() + 1);
+            return cached.clone();
+        }
+        self.eval_misses.set(self.eval_misses.get() + 1);
+        let value = model.eval_symbols(func, args).cloned();
+        self.eval_cache.borrow_mut().insert(key, value.clone());
+        value
+    }
+
+    pub fn eval_cache_hits(&self) -> usize {
+        self.eval_hits.get()
+    }
+
+    pub fn eval_cache_misses(&self) -> usize {
+        self.eval_misses.get()
     }
 
     pub fn cases(&self) -> &HashMap<String, HashMap<String, Case>> {
@@ -331,11 +380,12 @@ impl<'a> SemanticContext<'a> {
                     }
                     if let Some(sig) = self.func_sigs.get(symbol) {
                         if sig.arg_sorts.is_empty() {
-                            let value = model_ref.eval_symbols(symbol, &[])
+                            let value = self
+                                .eval_model_symbols(model_ref, symbol, &[])
                                 .ok_or_else(|| {
                                     format!("model {model} has no value for {symbol}")
                                 })?;
-                            return interped_aspect_value(&sig.ret_sort.to_string(), value);
+                            return interped_aspect_value(&sig.ret_sort.to_string(), &value);
                         }
                     }
                 }
@@ -530,13 +580,15 @@ impl<'a> SemanticContext<'a> {
                     .map(|value| value.display())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let value = model_ref.eval_symbols(func, &arg_names).ok_or_else(|| {
-            format!(
-                "model {model} has no value for {func}({})",
-                arg_names.join(" ")
-            )
-        })?;
-        interped_aspect_value(&sig.ret_sort.to_string(), value)
+        let value = self
+            .eval_model_symbols(model_ref, func, &arg_names)
+            .ok_or_else(|| {
+                format!(
+                    "model {model} has no value for {func}({})",
+                    arg_names.join(" ")
+                )
+            })?;
+        interped_aspect_value(&sig.ret_sort.to_string(), &value)
     }
 
     pub fn eval_value_for_sort(
@@ -659,8 +711,9 @@ impl<'a> SemanticContext<'a> {
     ) -> Result<Option<bool>, String> {
         let model = self.current_model(env)?;
         let model_ref = self.model(&model)?;
-        Ok(model_ref.eval_symbols(symbol, &[])
-            .map(|value| crate::compile::semantic::interped_value_matches(value, target)))
+        Ok(self
+            .eval_model_symbols(model_ref, symbol, &[])
+            .map(|value| crate::compile::semantic::interped_value_matches(&value, target)))
     }
 
     pub fn matching_model_call_tuples<F>(
@@ -697,10 +750,10 @@ impl<'a> SemanticContext<'a> {
                 .iter()
                 .map(|value| value.display())
                 .collect::<Vec<_>>();
-            let Some(value) = model_ref.eval_symbols(func, &arg_names) else {
+            let Some(value) = self.eval_model_symbols(model_ref, func, &arg_names) else {
                 continue;
             };
-            if keep(value) {
+            if keep(&value) {
                 out.push(tuple.into_iter().cloned().collect());
             }
         }

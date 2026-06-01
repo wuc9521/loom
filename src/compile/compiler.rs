@@ -85,10 +85,6 @@ struct Compiler<'a> {
     /// aux; the top-level closure constraint `(= g aux)` forces the LFP.
     aux_synth_name: Option<String>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
-    ground_model_eval:
-        RefCell<HashMap<(String, String, Vec<String>), Option<crate::lang::model::InterpedValue>>>,
-    ground_model_eval_hits: RefCell<usize>,
-    ground_model_eval_misses: RefCell<usize>,
     bool_eval_cache: RefCell<HashMap<BoolMemoKey, BoolExpr>>,
     finite_eq_cache: RefCell<HashMap<FiniteEqMemoKey, BoolExpr>>,
     quantifier_values_cache: RefCell<HashMap<QuantifierValuesMemoKey, Vec<AspectValue>>>,
@@ -270,9 +266,6 @@ impl<'a> Compiler<'a> {
             synth_args: ctx_data.synth_args.clone(),
             aux_synth_name,
             bit_index,
-            ground_model_eval: RefCell::new(HashMap::default()),
-            ground_model_eval_hits: RefCell::new(0),
-            ground_model_eval_misses: RefCell::new(0),
             bool_eval_cache: RefCell::new(HashMap::default()),
             finite_eq_cache: RefCell::new(HashMap::default()),
             quantifier_values_cache: RefCell::new(HashMap::default()),
@@ -578,15 +571,13 @@ impl<'a> Compiler<'a> {
                 filled[bit.bit] = true;
             }
         }
-        let cache_hits = *self.ground_model_eval_hits.borrow();
-        let cache_misses = *self.ground_model_eval_misses.borrow();
         log::info!(
             "native constructor {} stats: bits={}, eval={:?}, ground_model_cache_hits={}, ground_model_cache_misses={}",
             cons.name,
             stats.bits,
             stats.eval_time,
-            cache_hits,
-            cache_misses,
+            self.ctx.eval_cache_hits(),
+            self.ctx.eval_cache_misses(),
         );
         Ok(bool_bits)
     }
@@ -1153,7 +1144,7 @@ impl<'a> Compiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
+            let value = self.ctx.eval_model_symbols(model_ref, func, &arg_names);
             return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
         }
         let mut disjuncts = Vec::new();
@@ -1396,7 +1387,7 @@ impl<'a> Compiler<'a> {
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
         if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ground_model_value(func, &model, &arg_names, model_ref);
+            let value = self.ctx.eval_model_symbols(model_ref, func, &arg_names);
             return Ok(BoolExpr::Const(
                 value
                     .as_ref()
@@ -1573,25 +1564,6 @@ impl<'a> Compiler<'a> {
         Ok(value)
     }
 
-    fn ground_model_value(
-        &self,
-        func: &str,
-        model: &str,
-        arg_names: &[String],
-        model_ref: &crate::lang::model::Model,
-    ) -> Option<crate::lang::model::InterpedValue> {
-        let key = (func.to_string(), model.to_string(), arg_names.to_vec());
-        if let Some(value) = self.ground_model_eval.borrow().get(&key) {
-            *self.ground_model_eval_hits.borrow_mut() += 1;
-            return value.clone();
-        }
-        *self.ground_model_eval_misses.borrow_mut() += 1;
-        let value = model_ref.eval_symbols(func, arg_names).cloned();
-        self.ground_model_eval
-            .borrow_mut()
-            .insert(key, value.clone());
-        value
-    }
 }
 
 fn gterm(name: &str, args: Vec<String>) -> Result<SyGuSGTerm, String> {

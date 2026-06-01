@@ -184,9 +184,16 @@ impl EvalEnv {
 
 impl DelisProg {
     pub fn solve_by_closure(&self) -> Result<Option<String>, String> {
-        let start = Instant::now();
         let cmds = self.to_sygus()?;
-        log::info!("closure: to_sygus completed in {:?}", start.elapsed());
+        self.solve_by_closure_with_cmds(cmds)
+    }
+
+    /// Solve from pre-built SyGuS BV cmds. Used when the SyGuS lowering is
+    /// shared with the parallel SyGuS backend — see `main::solve`.
+    pub fn solve_by_closure_with_cmds(
+        &self,
+        cmds: Vec<SyGuSCmd>,
+    ) -> Result<Option<String>, String> {
         // Multi-synth-fun problems (aux closure pattern emitted by NativeCompiler
         // when (parent ...) is used) aren't supported by this enumerative
         // backend — its eval expects every identifier to be a value, define-fun,
