@@ -468,10 +468,10 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
   ((FO.Sem (phi Formula) (asp FoAsp)))
   ((match phi
      ((fol.exists.a x)
-      (exists ((v (domain (A (model asp)))))
+      (exists ((v (univ (A (model asp)))))
         (FO.Sem x (FoAsp (model asp) (y asp)))))
      ((P.x.y)
-      (exists ((v (domain (A (model asp)))))
+      (exists ((v (univ (A (model asp)))))
         (P v (y asp)))))))
 (synth-fun phi () Formula)
 (constraint (FO.Sem phi (FoAsp m $b0)))
@@ -656,7 +656,7 @@ fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
   ((match phi
      ((atom a b) (R (TermU.Sem a asp) (TermU.Sem b asp)))
      ((exists.x body)
-      (exists ((v (domain (U (model asp)))))
+      (exists ((v (univ (U (model asp)))))
         (Formula.Sem body (EnvAsp (model asp) v)))))))
 (synth-fun phi () Formula)
 (constraint (Formula.Sem phi (EnvAsp m $0)))

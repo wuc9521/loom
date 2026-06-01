@@ -722,7 +722,7 @@ impl<'a> ChcCompiler<'a> {
                 Ok((lo as usize..=hi as usize).map(AspectValue::Int).collect())
             }
             _ => {
-                let (model, sort) = self.ctx.parse_domain_expr(domain_expr, env)?;
+                let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
                 self.cached_domain_values(&model, &sort)
             }
         }
@@ -892,7 +892,7 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for equality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.domain_for_sort(&sort)
+        let values = model_ref.univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut out = formula_false();
         for name in values {
@@ -924,7 +924,7 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for inequality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.domain_for_sort(&sort)
+        let values = model_ref.univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let mut out = formula_false();
         for lhs_name in &values {
@@ -1331,7 +1331,7 @@ impl<'a> ChcCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.domain_for_sort(sort)
+        let values = model_ref.univ_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         values
             .into_iter()
@@ -1432,7 +1432,7 @@ impl<'a> ChcCompiler<'a> {
             return Ok(values.clone());
         }
         let model_ref = self.ctx.model(model)?;
-        let values = model_ref.domain_for_sort(sort)
+        let values = model_ref.univ_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?
             .into_iter()
             .map(|name| AspectValue::Univ {

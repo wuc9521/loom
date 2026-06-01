@@ -1,5 +1,6 @@
 use crate::backends::smt2::ast::HornProg;
 use crate::parser::DelisProg;
+use std::cell::Cell;
 use std::sync::OnceLock;
 use std::time::Instant;
 use sygus_parser::SyGuSCmd;
@@ -39,12 +40,38 @@ impl Default for CompileOptions {
 
 static COMPILE_OPTS: OnceLock<CompileOptions> = OnceLock::new();
 
+thread_local! {
+    static OPTS_OVERRIDE: Cell<Option<CompileOptions>> = const { Cell::new(None) };
+}
+
 pub fn init_options(opts: CompileOptions) {
     COMPILE_OPTS.set(opts).ok();
 }
 
-pub fn opts() -> &'static CompileOptions {
-    COMPILE_OPTS.get().expect("compile options not initialized")
+pub fn opts() -> CompileOptions {
+    if let Some(o) = OPTS_OVERRIDE.with(|c| {
+        let v = c.take();
+        c.set(v.clone());
+        v
+    }) {
+        return o;
+    }
+    COMPILE_OPTS
+        .get()
+        .cloned()
+        .unwrap_or_else(CompileOptions::default)
+}
+
+/// Run `f` with `opts` as the effective `CompileOptions` for this thread only.
+/// Restores the previous override on return.
+pub fn with_options<F, R>(opts: CompileOptions, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let previous = OPTS_OVERRIDE.with(|c| c.replace(Some(opts)));
+    let result = f();
+    OPTS_OVERRIDE.with(|c| c.set(previous));
+    result
 }
 
 pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {

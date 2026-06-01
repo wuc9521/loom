@@ -29,7 +29,7 @@ fn interp_cache() -> &'static Mutex<HashMap<u64, CachedFuncInterp>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
 
-fn model_domain_cache() -> &'static Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>> {
+fn model_univ_cache() -> &'static Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>> {
     static CACHE: OnceLock<Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>>> =
         OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::default()))
@@ -93,25 +93,25 @@ fn pattern_as_exact_tuple(pat: &Pattern) -> Option<Vec<String>> {
         .collect()
 }
 
-fn build_model_domains(model: &Model) -> HashMap<String, Vec<String>> {
-    let mut domains = HashMap::default();
+fn build_model_univs(model: &Model) -> HashMap<String, Vec<String>> {
+    let mut univs = HashMap::default();
     for univ in &model.univ_defs {
-        let entry = domains
+        let entry = univs
             .entry(univ.sort.to_string())
             .or_insert_with(Vec::new);
         entry.extend(univ.elems.iter().map(|elem| elem.name.clone()));
     }
-    domains
+    univs
 }
 
-fn cached_domain_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
+fn cached_univ_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
     let key = model.cache_id;
-    let mut cache = model_domain_cache()
+    let mut cache = model_univ_cache()
         .lock()
-        .expect("model domain cache poisoned");
+        .expect("model univ cache poisoned");
     let entry = cache
         .entry(key)
-        .or_insert_with(|| Arc::new(build_model_domains(model)));
+        .or_insert_with(|| Arc::new(build_model_univs(model)));
     entry.get(sort).cloned()
 }
 
@@ -163,17 +163,17 @@ impl Model {
         }
     }
 
-    pub fn domain_for_sort(&self, sort: &str) -> Option<Vec<String>> {
-        cached_domain_for_sort(self, sort)
+    pub fn univ_for_sort(&self, sort: &str) -> Option<Vec<String>> {
+        cached_univ_for_sort(self, sort)
     }
 
     pub fn contains_element(&self, sort: &str, elem: &str) -> bool {
-        self.domain_for_sort(sort)
-            .map(|domain| domain.iter().any(|candidate| candidate == elem))
+        self.univ_for_sort(sort)
+            .map(|univ| univ.iter().any(|candidate| candidate == elem))
             .unwrap_or(false)
     }
 
-    pub fn max_domain_len(&self) -> usize {
+    pub fn max_univ_len(&self) -> usize {
         self.univ_defs
             .iter()
             .map(|univ| univ.elems.len())

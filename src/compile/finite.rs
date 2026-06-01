@@ -178,9 +178,9 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         }
     }
     let loaded_models = collect_loaded_models(&model_names, &models_by_name);
-    let model_domains = loaded_models
+    let model_univs = loaded_models
         .iter()
-        .map(|model| (model.name.clone(), universe_domains(model)))
+        .map(|model| (model.name.clone(), univs_by_sort(model)))
         .collect::<HashMap<_, _>>();
     let mut aspect_cache: HashMap<(String, String), Vec<AspectAssignment>> = HashMap::default();
 
@@ -195,9 +195,9 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
             let assignments = if let Some(assignments) = aspect_cache.get(&cache_key) {
                 assignments
             } else {
-                let model_domain_map = model_domains.get(&model.name).ok_or_else(|| {
+                let model_univ_map = model_univs.get(&model.name).ok_or_else(|| {
                     format!(
-                        "internal error: missing cached domains for model {}",
+                        "internal error: missing cached univs for model {}",
                         model.name
                     )
                 })?;
@@ -206,7 +206,7 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
                     model.name.as_str(),
                     model,
                     &models_by_name,
-                    model_domain_map,
+                    model_univ_map,
                 )?;
                 aspect_cache.entry(cache_key).or_insert(assignments)
             };
@@ -230,9 +230,9 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
                         });
                     }
                     SemanticKind::FiniteValue { sort } => {
-                        let values = model_domains
+                        let values = model_univs
                             .get(&model.name)
-                            .and_then(|domains| domains.get(sort))
+                            .and_then(|univs| univs.get(sort))
                             .ok_or_else(|| {
                                 format!(
                                     "model {} has no universe for return sort {} of semantics {}",
@@ -270,17 +270,8 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
     };
 
     if super::opts().bisim {
-        let func_names: Vec<String> = problem
-            .cmds
-            .iter()
-            .filter_map(|cmd| match cmd {
-                DelisCmd::DeclareFunc(sig) => {
-                    Some(sig.name.clone())
-                }
-                _ => None,
-            })
-            .collect();
-        program.quotient_by_bisim(&loaded_models, &func_names);
+        let _ = &loaded_models; // models are reachable via the SemanticContext built inside bisim
+        program.quotient_by_bisim(problem);
     }
 
     Ok(program)
@@ -448,7 +439,7 @@ fn parse_aspect_term(
         .get(&model_name)
         .ok_or_else(|| format!("constraint references unknown model {model_name}"))?;
     let universe_sorts = model_universe_sorts(model);
-    let domains = universe_domains(model);
+    let univs = univs_by_sort(model);
 
     let mut assignment = Vec::new();
     for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
@@ -464,15 +455,15 @@ fn parse_aspect_term(
                 }
                 AspectValue::Int(value as usize)
             }
-            FieldDomain::Sort(sort) if domains.contains_key(sort) => {
-                let domain = domains.get(sort).ok_or_else(|| {
+            FieldDomain::Sort(sort) if univs.contains_key(sort) => {
+                let univ = univs.get(sort).ok_or_else(|| {
                     format!(
                         "universe sort {sort} not found while evaluating aspect {}",
                         field.name
                     )
                 })?;
                 let value = arg.to_string();
-                if !domain.contains(&value) {
+                if !univ.contains(&value) {
                     return Err(format!(
                         "aspect field {} expected an element of universe sort {} but got {value}",
                         field.name, sort
@@ -509,9 +500,9 @@ fn parse_aspect_term(
                     let Some(sort) = sorts
                         .iter()
                         .find(|sort| {
-                            domains
+                            univs
                                 .get(*sort)
-                                .is_some_and(|domain| domain.contains(&value))
+                                .is_some_and(|univ| univ.contains(&value))
                         })
                         .cloned()
                     else {
@@ -650,7 +641,7 @@ fn enumerate_aspects(
     domains_by_sort: &HashMap<String, Vec<String>>,
 ) -> Result<Vec<AspectAssignment>, String> {
     let universe_sorts = model_universe_sorts(model);
-    let int_bound = model.max_domain_len();
+    let int_bound = model.max_univ_len();
     let domains = space
         .fields
         .iter()
@@ -733,7 +724,7 @@ fn enumerate_aspects(
     Ok(assignments)
 }
 
-fn universe_domains(model: &crate::lang::model::Model) -> HashMap<String, Vec<String>> {
+fn univs_by_sort(model: &crate::lang::model::Model) -> HashMap<String, Vec<String>> {
     model
         .univ_defs
         .iter()

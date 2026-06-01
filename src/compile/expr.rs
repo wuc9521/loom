@@ -176,30 +176,30 @@ fn model_name_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<String
     }
 }
 
-fn sorted_model_domain_expr(
+fn sorted_model_univ_expr(
     expr: &Value,
     env: &[(String, AspectValue)],
     models: &HashMap<String, &Model>,
 ) -> Result<(String, String, Vec<String>), String> {
     let items = expr.to_ref_vec().ok_or_else(|| {
-        format!("expected sorted model domain expression (Sort model), got {expr}")
+        format!("expected sorted model univ expression (Sort model), got {expr}")
     })?;
     let [sort_expr, model_expr] = items.as_slice() else {
         return Err(format!(
-            "sorted model domain expression must have shape (Sort model), got {expr}"
+            "sorted model univ expression must have shape (Sort model), got {expr}"
         ));
     };
     let sort = sort_expr
         .as_symbol()
-        .ok_or_else(|| format!("domain sort must be a symbol: {sort_expr}"))?
+        .ok_or_else(|| format!("univ sort must be a symbol: {sort_expr}"))?
         .to_string();
     let model_name = model_name_expr(model_expr, env)?;
     let model = models
         .get(&model_name)
         .ok_or_else(|| format!("unknown model {model_name}"))?;
-    let domain = model.domain_for_sort(&sort)
+    let univ = model.univ_for_sort(&sort)
         .ok_or_else(|| format!("model {model_name} has no universe for sort {sort}"))?;
-    Ok((sort, model_name, domain))
+    Ok((sort, model_name, univ))
 }
 
 fn enum_value_expr(
@@ -278,8 +278,8 @@ fn eval_int(
                 .try_fold(init, |acc, expr| Ok(acc - eval_int(expr, env, models)?))
         }
         "size" if list.len() == 2 => {
-            let (_sort, _model_name, domain) = sorted_model_domain_expr(list[1], env, models)?;
-            Ok(domain.len() as isize)
+            let (_sort, _model_name, univ) = sorted_model_univ_expr(list[1], env, models)?;
+            Ok(univ.len() as isize)
         }
         _ => Err(format!("unsupported integer operator {op} in {expr}")),
     }

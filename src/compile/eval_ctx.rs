@@ -42,8 +42,8 @@ impl<'a> SemanticContext<'a> {
         if let Some(symbol) = arg.as_symbol() {
             let model_ref = self.model(model)?;
             if sort != "Int"
-                && model_ref.domain_for_sort(sort)
-                    .is_some_and(|domain| domain.iter().any(|elem| elem == symbol))
+                && model_ref.univ_for_sort(sort)
+                    .is_some_and(|univ| univ.iter().any(|elem| elem == symbol))
             {
                 return Ok(AspectValue::Univ {
                     sort: sort.to_string(),
@@ -159,7 +159,7 @@ impl<'a> SemanticContext<'a> {
             .ok_or_else(|| format!("unknown model {name}"))
     }
 
-    pub fn argument_domains(
+    pub fn argument_univs(
         &self,
         sig: &FuncSig,
         model: &Model,
@@ -168,7 +168,7 @@ impl<'a> SemanticContext<'a> {
             .iter()
             .map(|sort| {
                 let sort = sort.to_string();
-                model.domain_for_sort(&sort)
+                model.univ_for_sort(&sort)
                     .ok_or_else(|| format!("model {} has no universe for sort {sort}", model.name))
                     .map(|values| {
                         values
@@ -183,7 +183,7 @@ impl<'a> SemanticContext<'a> {
             .collect()
     }
 
-    pub fn parse_domain_expr(
+    pub fn parse_univ_expr(
         &self,
         expr: &Value,
         env: &impl EnvView,
@@ -192,7 +192,7 @@ impl<'a> SemanticContext<'a> {
             .to_ref_vec()
             .ok_or_else(|| format!("domain expression must be a list: {expr}"))?;
         match items.as_slice() {
-            [domain, sort_app] if domain.as_symbol() == Some("domain") => {
+            [domain, sort_app] if domain.as_symbol() == Some("univ") => {
                 let sort_items = sort_app.to_ref_vec().ok_or_else(|| {
                     format!("domain argument must be a sort application: {sort_app}")
                 })?;
@@ -483,7 +483,7 @@ impl<'a> SemanticContext<'a> {
                     .ok_or_else(|| format!("size sort must be a symbol: {sort_expr}"))?;
                 let model = self.eval_model_name(model_expr, env)?;
                 let model_ref = self.model(&model)?;
-                let values = model_ref.domain_for_sort(sort)
+                let values = model_ref.univ_for_sort(sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
                 Ok(values.len() as isize)
             }
@@ -552,8 +552,8 @@ impl<'a> SemanticContext<'a> {
         if let AspectValue::Int(idx) = &value {
             let model = self.current_model(env)?;
             let model_ref = self.model(&model)?;
-            if let Some(domain) = model_ref.domain_for_sort(sort) {
-                if let Some(name) = domain.get(*idx) {
+            if let Some(univ) = model_ref.univ_for_sort(sort) {
+                if let Some(name) = univ.get(*idx) {
                     return Ok(AspectValue::Univ {
                         sort: sort.to_string(),
                         name: name.clone(),
@@ -564,8 +564,8 @@ impl<'a> SemanticContext<'a> {
         if matches!(&value, AspectValue::Symbol(_)) {
             let model = self.current_model(env)?;
             let model_ref = self.model(&model)?;
-            if model_ref.domain_for_sort(sort)
-                .is_some_and(|domain| domain.contains(&value.display()))
+            if model_ref.univ_for_sort(sort)
+                .is_some_and(|univ| univ.contains(&value.display()))
             {
                 return Ok(AspectValue::Univ {
                     sort: sort.to_string(),
@@ -642,10 +642,10 @@ impl<'a> SemanticContext<'a> {
             (AspectValue::Int(idx), AspectValue::Univ { sort, name }) => {
                 let model = self.current_model(env)?;
                 let model_ref = self.model(&model)?;
-                let Some(domain) = model_ref.domain_for_sort(sort) else {
+                let Some(univ) = model_ref.univ_for_sort(sort) else {
                     return Ok(false);
                 };
-                Ok(domain.get(*idx).is_some_and(|candidate| candidate == name))
+                Ok(univ.get(*idx).is_some_and(|candidate| candidate == name))
             }
             _ => Ok(value == target),
         }
@@ -686,9 +686,9 @@ impl<'a> SemanticContext<'a> {
         }
         let model = self.current_model(env)?;
         let model_ref = self.model(&model)?;
-        let domains = self.argument_domains(sig, model_ref)?;
+        let univs = self.argument_univs(sig, model_ref)?;
         let mut out = Vec::new();
-        for tuple in domains
+        for tuple in univs
             .iter()
             .map(|values| values.iter())
             .multi_cartesian_product()
