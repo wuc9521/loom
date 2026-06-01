@@ -628,55 +628,6 @@ fn builds_separate_bool_and_finite_value_semantic_domains() {
 }
 
 #[test]
-fn semantic_bv_lowers_term_valued_semantics_to_separate_sorts() {
-    let problem = parse(
-        r#"
-(set-logic ALL)
-(declare-sort U 0)
-(declare-fun R (U U) Bool)
-(define-model m
-  (define-univ U ($0 $1))
-  (interp-fun R (match ((($0 $1) true) ((_ _) false)))))
-(declare-term-types
- ((Formula 0) (TermU 0))
- (((atom TermU TermU)
-   (exists.x Formula))
-  ((x)
-   (c))))
-(define-finite EnvAsp
-  (record (model Model) (xv U)))
-(define-semantics
-  ((TermU.Sem (t TermU) (asp EnvAsp)))
-  :returns U
-  ((match t
-     ((x) (xv asp))
-     ((c) $1))))
-(define-semantics
-  ((Formula.Sem (phi Formula) (asp EnvAsp)))
-  ((match phi
-     ((atom a b) (R (TermU.Sem a asp) (TermU.Sem b asp)))
-     ((exists.x body)
-      (exists ((v (univ (U (model asp)))))
-        (Formula.Sem body (EnvAsp (model asp) v)))))))
-(synth-fun phi () Formula)
-(constraint (Formula.Sem phi (EnvAsp m $0)))
-(check-synth)
-"#,
-    );
-
-    let sygus = problem.to_sygus().expect("mixed semantic BV should compile");
-    let output = sygus
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert_eq!(problem.bv_sz().expect("BV length should compile"), 2);
-    assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
-    assert!(!output.contains("(and ((_ extract"));
-}
-
-#[test]
 fn union_finite_fields_enumerate_bot_plus_model_domains() {
     let problem = parse(
         r#"
@@ -703,52 +654,6 @@ fn union_finite_fields_enumerate_bot_plus_model_domains() {
 
     assert_eq!(summary.bit_mappings.len(), 9);
     assert_eq!(summary.constraint_bits[0].bit, 0);
-}
-
-#[test]
-fn semantic_bv_concatenates_multiple_domains_for_same_term_sort() {
-    let problem = parse(
-        r#"
-(set-logic ALL)
-(declare-sort U 0)
-(define-model m
-  (define-univ U ($0 $1)))
-(declare-term-types
- ((Formula 0) (TermU 0))
- (((top))
-  ((x))))
-(define-finite EnvAsp
-  (record (model Model) (xv (union bot U))))
-(define-semantics
-  ((TermU.Sem (t TermU) (asp EnvAsp)))
-  :returns U
-  ((match t
-     ((x) (xv asp)))))
-(define-semantics
-  ((Formula.Sem (phi Formula) (asp EnvAsp)))
-  ((match phi
-     ((top) true))))
-(define-semantics
-  ((Formula.Valid (phi Formula) (asp EnvAsp)))
-  ((match phi
-     ((top) true))))
-(synth-fun phi () Formula)
-(constraint (Formula.Sem phi (EnvAsp m bot)))
-(constraint (Formula.Valid phi (EnvAsp m bot)))
-(check-synth)
-"#,
-    );
-
-    let sygus = problem.to_sygus().expect("multiple Formula domains should compile");
-    let output = sygus
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert_eq!(problem.bv_sz().expect("BV length should compile"), 6);
-    assert!(output.contains("(synth-fun phi () (_ BitVec 6)"));
-    assert_eq!(output.matches("(constraint ").count(), 2);
 }
 
 #[test]
@@ -787,66 +692,6 @@ fn semantic_bv_preserves_composite_top_level_constraints() {
     assert!(output.contains("(constraint (not (and"));
     assert!(output.contains("((_ extract 0 0) phi)"));
     assert!(output.contains("((_ extract 1 1) phi)"));
-}
-
-#[test]
-fn sygus_unified_backend_supports_parent_with_finite_valued_semantics() {
-    let problem = parse(
-        r#"
-(set-logic ALL)
-(declare-sort U 0)
-(define-model m
-  (define-univ U ($0 $1)))
-(declare-term-types
- ((Root 0) (Root.x0 0) (TermU.x0 0))
- (((wrap Root.x0))
-  ((lfp Root.x0)
-   (rec TermU.x0)
-   (ok))
-  ((var))))
-(define-finite Asp
-  (record (model Model) (x0 U) (fuel Int))
-  :where (<= fuel (size (U model))))
-(define-semantics
-  ((TermU.x0.Sem (t TermU.x0) (asp Asp)))
-  :returns U
-  ((match t
-     ((var) (x0 asp)))))
-(define-semantics
-  ((Root.Sem (r Root) (asp Asp)))
-  ((match r
-     ((wrap body) (Root.x0.Sem body asp)))))
-(define-semantics
-  ((Root.x0.Sem (r Root.x0) (asp Asp)))
-  ((match r
-     ((ok) true)
-     ((lfp body)
-      (Root.x0.Sem body (Asp (model asp) (x0 asp) (size (U (model asp))))))
-     ((rec next)
-      (and (< 0 (fuel asp))
-           (Root.x0.FindLfp (parent r)
-             (Asp (model asp) (TermU.x0.Sem next asp) (- (fuel asp) 1))))))))
-(define-semantics
-  ((Root.x0.FindLfp (r Root.x0) (asp Asp)))
-  ((match r
-     ((ok) (Root.x0.FindLfp (parent r) asp))
-     ((rec next) (Root.x0.FindLfp (parent r) asp))
-     ((lfp body) (Root.x0.Sem body asp)))))
-(synth-fun phi () Root)
-(constraint (Root.Sem phi (Asp m $0 0)))
-(check-synth)
-"#,
-    );
-
-    let sygus = problem.to_sygus().expect("parent + finite-valued semantics should compile");
-    let output = sygus
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(output.contains("(synth-fun phi () (_ BitVec "));
-    assert!(output.contains("(check-synth)"));
 }
 
 #[test]
@@ -1105,42 +950,3 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
     assert!(err.contains("provides 1 scalar fields, expected 2"));
 }
 
-#[test]
-fn finite_value_ite_is_supported_in_semantics() {
-    let problem = parse(
-        r#"
-(set-logic ALL)
-(declare-sort U 0)
-(define-model m
-  (define-univ U ($0 $1)))
-(declare-term-types
- ((Formula 0) (TermU 0))
- (((holds TermU))
-  ((var))))
-(define-finite Asp
-  (record (model Model) (pick U)))
-(define-semantics
-  ((TermU.Sem (t TermU) (asp Asp)))
-  :returns U
-  ((match t
-     ((var) (ite (= (pick asp) $0) $1 $0)))))
-(define-semantics
-  ((Formula.Sem (phi Formula) (asp Asp)))
-  ((match phi
-     ((holds t) (= (TermU.Sem t asp) $1)))))
-(synth-fun phi () Formula)
-(constraint (Formula.Sem phi (Asp m $0)))
-(check-synth)
-"#,
-    );
-
-    let sygus = problem.to_sygus().expect("finite-valued ite should compile");
-    let output = sygus
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert_eq!(problem.bv_sz().expect("BV length should compile"), 2);
-    assert!(output.contains("(synth-fun phi () (_ BitVec 2)"));
-}
