@@ -282,10 +282,7 @@ impl<'a> Compiler<'a> {
     fn compile(&mut self) -> Result<Vec<SyGuSCmd>, String> {
         let grammar_start = Instant::now();
         let grammar = self.grammar()?;
-        log::info!(
-            "native grammar compilation completed in {:?}",
-            grammar_start.elapsed()
-        );
+        log::debug!("grammar built in {:?}", grammar_start.elapsed());
 
         // Phase 1: evaluate all constructor bits
         struct ConsResult {
@@ -298,8 +295,8 @@ impl<'a> Compiler<'a> {
         for cons in &self.sig.constructors {
             let cons_start = Instant::now();
             let bool_bits = self.eval_constructor_bits(cons)?;
-            log::info!(
-                "native constructor {} compiled in {:?}",
+            log::debug!(
+                "constructor {}: compiled in {:?}",
                 cons.name,
                 cons_start.elapsed()
             );
@@ -313,7 +310,7 @@ impl<'a> Compiler<'a> {
 
 
         // Phase 3: emit commands with remapped bits
-        let phase3_start = Instant::now();
+        let emit_start = Instant::now();
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
         cmds.extend(self.remapped_sort_alias_cmds()?);
         if let Some(aux_name) = self.aux_synth_name.clone() {
@@ -372,8 +369,8 @@ impl<'a> Compiler<'a> {
             } else {
                 total_compact += body_elapsed;
             }
-            log::info!(
-                "phase3 emit {}: lift={:?} body={:?}",
+            log::debug!(
+                "emit {}: lift={:?} body={:?}",
                 cr.name,
                 lift_elapsed,
                 body_elapsed
@@ -385,12 +382,12 @@ impl<'a> Compiler<'a> {
                     .build(),
             );
         }
-        log::info!(
-            "phase3 totals: lift={:?} compact={:?} closure={:?} elapsed={:?}",
+        log::debug!(
+            "emit totals: lift={:?} compact={:?} closure={:?} elapsed={:?}",
             total_lift,
             total_compact,
             total_closure,
-            phase3_start.elapsed()
+            emit_start.elapsed()
         );
         let mut synth_cmd = Cmd::synth_fun(&self.synth_name)
             .ret(Sort::from_name(self.sig.start_sort()))
@@ -422,8 +419,8 @@ impl<'a> Compiler<'a> {
             let remapped = lowered;
             cmds.push(Cmd::constraint().body(remapped).build());
         }
-        log::info!(
-            "phase3 top-level constraints completed in {:?}",
+        log::debug!(
+            "top-level constraints emitted in {:?}",
             constraints_start.elapsed()
         );
         if let Some(aux_name) = &self.aux_synth_name {
@@ -571,13 +568,13 @@ impl<'a> Compiler<'a> {
                 filled[bit.bit] = true;
             }
         }
-        log::info!(
-            "native constructor {} stats: bits={}, eval={:?}, ground_model_cache_hits={}, ground_model_cache_misses={}",
+        log::debug!(
+            "constructor {}: bits={} eval={:?} cache hits={}/{}",
             cons.name,
             stats.bits,
             stats.eval_time,
             self.ctx.eval_cache_hits(),
-            self.ctx.eval_cache_misses(),
+            self.ctx.eval_cache_hits() + self.ctx.eval_cache_misses(),
         );
         Ok(bool_bits)
     }

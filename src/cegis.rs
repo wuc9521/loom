@@ -45,26 +45,26 @@ where
     loop {
         round += 1;
         log::info!(
-            "cegis round {}: solving with {}/{} constraints",
+            "cegis round {}: {}/{} active",
             round,
             active.len(),
             constraint_count
         );
         let round_start = Instant::now();
         let subset_cmds = subset_sygus_problem(full_cmds, &active, constraint_count);
-        log::info!(
-            "cegis round {}: reduced compilation completed in {:?}",
+        log::debug!(
+            "cegis round {}: subset built in {:?}",
             round,
             round_start.elapsed()
         );
         let decoded = solve_subset(&subset_cmds)?;
-        log::info!(
-            "cegis round {}: raw solver output = {}",
+        log::debug!(
+            "cegis round {}: raw output = {}",
             round,
             decoded.chars().take(300).collect::<String>()
         );
         if decoded.trim() == "infeasible" {
-            log::info!("cegis round {}: subset is infeasible", round);
+            log::info!("cegis round {}: subset infeasible", round);
             return Ok("infeasible".to_string());
         }
         let failing =
@@ -74,12 +74,12 @@ where
             .filter(|&idx| idx < constraint_count)
             .collect();
         if failing.is_empty() {
-            log::info!("cegis round {}: candidate satisfies all constraints", round);
+            log::info!("cegis round {}: solved", round);
             return Ok(decoded);
         }
         let added = feedback.extend_active(&mut active, &failing);
         log::info!(
-            "cegis round {}: candidate failed {} constraints, added {}",
+            "cegis round {}: {} failed, +{}",
             round,
             failing.len(),
             added

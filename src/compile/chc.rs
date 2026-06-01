@@ -78,7 +78,7 @@ fn log_quantifier_bucket(cons: &str, label: &str, timing: &QuantifierTiming) {
     if timing.calls == 0 {
         return;
     }
-    log::info!(
+    log::debug!(
         "CHC quantifier {} {}: calls={}, iterations={}, domain={:?}, clone={:?}, body={:?}, combine={:?}, total={:?}",
         cons,
         label,
@@ -112,7 +112,7 @@ fn log_stage_timing(cons: &str, label: &str, timing: &StageTiming) {
     if timing.calls == 0 {
         return;
     }
-    log::info!(
+    log::debug!(
         "CHC stage {} {}: calls={}, total={:?}, avg={:?}",
         cons,
         label,
@@ -377,7 +377,7 @@ impl<'a> ChcCompiler<'a> {
         log_stage_timing(&cons.name, "aspect_variants", &lowering.aspect_variants);
         log_stage_timing(&cons.name, "child_terms", &lowering.child_terms);
         log_stage_timing(&cons.name, "pred_for", &lowering.pred_for);
-        log::info!(
+        log::debug!(
             "CHC constructor {} compiled in {:?}",
             cons.name,
             start.elapsed(),

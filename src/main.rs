@@ -35,7 +35,6 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             let compile_start = Instant::now();
             let sygus_bytes =
                 delis_file.to_sygus_bytes().map_err(io::Error::other)?;
-            log::info!("to_sygus completed in {:?}", compile_start.elapsed());
             if args.dump_sygus {
                 let stdout = io::stdout();
                 let mut stdout = BufWriter::new(stdout.lock());
@@ -277,28 +276,17 @@ fn solve_with_sygus(
                 }
             }
         })?;
-        log::info!(
-            "sygus-backend: cegis completed in {:?}",
-            solve_start.elapsed()
-        );
+        log::info!("cegis: solved in {:?}", solve_start.elapsed());
         solved
     } else {
-        let step_start = Instant::now();
         let output =
             solve_cmds_with_backend(backend, &sygus_cmds, axiom_slice, verbose, min, mitm)?;
-        log::info!(
-            "sygus-backend: backend solve completed in {:?}",
-            step_start.elapsed()
-        );
+        log::info!("sygus backend: solved in {:?}", solve_start.elapsed());
         match backend {
             SygusBackend::InProcessDryadSynth => output,
             SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other)?,
         }
     };
-    log::info!(
-        "sygus-backend: solve completed in {:?}",
-        solve_start.elapsed()
-    );
     Ok(delis_file.filter_synth_output(&decoded))
 }
 

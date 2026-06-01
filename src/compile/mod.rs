@@ -98,7 +98,7 @@ impl DelisProg {
         let semantic_start = Instant::now();
         let program = self.semantic_program()?;
         log::info!(
-            "compile_semantic_program completed in {:?}",
+            "semantic program built in {:?}",
             semantic_start.elapsed()
         );
         self.to_sygus_with(program)
@@ -109,13 +109,9 @@ impl DelisProg {
     /// between the parallel closure and sygus backends.
     pub fn to_sygus_with(&self, program: types::SemanticProgram) -> Result<Vec<SyGuSCmd>, String> {
         let ctx = CompileContext::with_program(self, program)?;
-        log::info!("using native SyGuS BV lowering");
-        let native_start = Instant::now();
+        let encode_start = Instant::now();
         let result = ctx.compile();
-        log::info!(
-            "native SyGuS BV lowering completed in {:?}",
-            native_start.elapsed()
-        );
+        log::info!("encoded to SyGuS BV in {:?}", encode_start.elapsed());
         result
     }
 

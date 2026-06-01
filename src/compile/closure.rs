@@ -212,7 +212,7 @@ impl DelisProg {
         }
         let start = Instant::now();
         let mut solver = ClosureSolver::new(self, cmds)?;
-        log::info!("closure: solver initialized in {:?}", start.elapsed());
+        log::debug!("closure: solver initialized in {:?}", start.elapsed());
         Ok(Some(solver.solve()?))
     }
 }
@@ -326,7 +326,7 @@ impl<'a> ClosureSolver<'a> {
     fn solve(&mut self) -> Result<String, String> {
         let start = Instant::now();
         let mut iteration = 0usize;
-        log::info!("closure: solve started");
+        log::debug!("closure: solve started");
         loop {
             iteration += 1;
             let mut changed = false;
@@ -337,7 +337,7 @@ impl<'a> ClosureSolver<'a> {
                     changed |= self.apply_production(nt_idx, prod_idx)?;
                     if let Some(term) = self.satisfying_start_term()? {
                         log::info!(
-                            "closure: satisfying start term found in iteration {} after {:?}",
+                            "closure: solved at iteration {} in {:?}",
                             iteration,
                             start.elapsed()
                         );
@@ -347,7 +347,7 @@ impl<'a> ClosureSolver<'a> {
             }
             if let Some(term) = self.satisfying_start_term()? {
                 log::info!(
-                    "closure: satisfying start term found at iteration boundary {} after {:?}",
+                    "closure: solved at iteration-boundary {} in {:?}",
                     iteration,
                     start.elapsed()
                 );
@@ -355,15 +355,15 @@ impl<'a> ClosureSolver<'a> {
             }
             if !changed {
                 log::info!(
-                    "closure: fixed point reached after {} iterations in {:?}",
+                    "closure: infeasible (fixed point at iteration {} after {:?})",
                     iteration,
                     start.elapsed()
                 );
                 return Ok("infeasible".to_string());
             }
             if iteration <= 5 || iteration % 25 == 0 {
-                log::info!(
-                    "closure: completed iteration {} in {:?}",
+                log::debug!(
+                    "closure: iteration {} in {:?}",
                     iteration,
                     start.elapsed()
                 );
@@ -987,8 +987,8 @@ impl ConstraintVerifier {
         } else {
             evaluator.eval_bv(&body, &mut EvalEnv::with_base(base.clone()), self.synth_width)?
         };
-        log::info!(
-            "verifier: synth_width = {}, bits.0.len() = {}",
+        log::debug!(
+            "verifier: synth_width={} bits={}",
             self.synth_width,
             bits.0.len()
         );
