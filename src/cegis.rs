@@ -96,9 +96,9 @@ where
 ///
 /// Replaces the old "add 1 positive + 1 negative per round" rule with three
 /// principled signals:
-///   P1 — batch size = ⌈√|failing|⌉.  Strong candidate (few failing) → small
+///   P1 — batch size = ⌈√|failing|⌉.  Strong candidate (few failing) -> small
 ///        batch, each constraint does precise work.  Weak candidate (many
-///        failing) → big batch injected, so the synthesizer stops picking
+///        failing) -> big batch injected, so the synthesizer stops picking
 ///        cheap candidates that don't generalize.  Purely a function of the
 ///        observed signal, not an offline heuristic about model size.
 ///   P2 — stagnation backstop.  If two consecutive rounds make ≤10% progress
@@ -167,7 +167,7 @@ impl CegisFeedback {
                     let next = self.batch_multiplier.saturating_mul(2).min(16);
                     if next != self.batch_multiplier {
                         log::info!(
-                            "cegis: plateau detected ({} → {} failing for 3 rounds); batch_multiplier {} → {}",
+                            "cegis: plateau detected ({} -> {} failing for 3 rounds); batch_multiplier {} -> {}",
                             prev, curr, self.batch_multiplier, next
                         );
                     }
