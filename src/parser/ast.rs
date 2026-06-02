@@ -531,14 +531,14 @@ mod tests {
     #[test]
     fn parses_define_finite() {
         let cmd = DelisCmd::parse(
-            "(define-finite ReAsp (record (model Model) (i Int) (j Int)) :where (<= i j))",
+            "(define-finite RegLan.Asp (record (model Model) (i Int) (j Int)) :where (<= i j))",
             None,
         )
         .expect("define-finite should parse");
 
         match cmd {
             DelisCmd::FiniteAspect(cmd) => {
-                assert_eq!(cmd.name, "ReAsp");
+                assert_eq!(cmd.name, "RegLan.Asp");
                 assert_eq!(cmd.body.len(), 3);
                 assert_eq!(cmd.body[0], "(record (model Model) (i Int) (j Int))");
                 assert_eq!(cmd.body[1], ":where");
@@ -551,14 +551,14 @@ mod tests {
     #[test]
     fn parses_define_semantics() {
         let cmd = DelisCmd::parse(
-            "(define-semantics ((Regex.Sem (r Regex) (asp ReAsp))) ((match r ((a) true))))",
+            "(define-semantics ((Regex.Sem (r Regex) (asp RegLan.Asp))) ((match r ((a) true))))",
             None,
         )
         .expect("define-semantics should parse");
 
         match cmd {
             DelisCmd::Semantics(cmd) => {
-                assert_eq!(cmd.header, "((Regex.Sem (r Regex) (asp ReAsp)))");
+                assert_eq!(cmd.header, "((Regex.Sem (r Regex) (asp RegLan.Asp)))");
                 assert_eq!(cmd.body, "((match r ((a) true)))");
                 assert_eq!(cmd.return_sort, None);
             }
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_define_finite_shape() {
-        let err = DelisCmd::parse("(define-finite ReAsp (not-a-record (i Int)))", None)
+        let err = DelisCmd::parse("(define-finite RegLan.Asp (not-a-record (i Int)))", None)
             .expect_err("define-finite must include a record body");
 
         assert!(err.to_string().contains("Pest parser error"));

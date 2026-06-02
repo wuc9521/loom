@@ -29,8 +29,14 @@ fn interp_cache() -> &'static Mutex<HashMap<u64, CachedFuncInterp>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
 
-fn model_univ_cache() -> &'static Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>> {
-    static CACHE: OnceLock<Mutex<HashMap<u64, Arc<HashMap<String, Vec<String>>>>>> =
+/// Each model's universes are stored as `Arc<Vec<String>>` per sort so that
+/// downstream lookups can hand callers a cheap reference-counted clone
+/// instead of duplicating the element list. Cloning a `Vec<String>` of N
+/// elements allocates N+1 times; cloning an Arc is one atomic increment.
+/// On test_col this is hot — bisim's eval path calls `univ_for_sort` 15M+
+/// times.
+fn model_univ_cache() -> &'static Mutex<HashMap<u64, Arc<HashMap<String, Arc<Vec<String>>>>>> {
+    static CACHE: OnceLock<Mutex<HashMap<u64, Arc<HashMap<String, Arc<Vec<String>>>>>>> =
         OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::default()))
 }
@@ -93,18 +99,24 @@ fn pattern_as_exact_tuple(pat: &Pattern) -> Option<Vec<String>> {
         .collect()
 }
 
-fn build_model_univs(model: &Model) -> HashMap<String, Vec<String>> {
-    let mut univs = HashMap::default();
+fn build_model_univs(model: &Model) -> HashMap<String, Arc<Vec<String>>> {
+    let mut buckets: HashMap<String, Vec<String>> = HashMap::default();
     for univ in &model.univ_defs {
-        let entry = univs
+        let entry = buckets
             .entry(univ.sort.to_string())
             .or_insert_with(Vec::new);
         entry.extend(univ.elems.iter().map(|elem| elem.name.clone()));
     }
-    univs
+    buckets
+        .into_iter()
+        .map(|(k, v)| (k, Arc::new(v)))
+        .collect()
 }
 
-fn cached_univ_for_sort(model: &Model, sort: &str) -> Option<Vec<String>> {
+/// Returns the cached universe list for `sort` as a cheap `Arc<Vec<String>>`
+/// clone. Used directly on the hot path; callers that want an owned
+/// `Vec<String>` go through `Model::univ_for_sort`.
+fn cached_univ_arc(model: &Model, sort: &str) -> Option<Arc<Vec<String>>> {
     let key = model.cache_id;
     let mut cache = model_univ_cache()
         .lock()
@@ -163,14 +175,36 @@ impl Model {
         }
     }
 
+    /// Returns the universe element list for `sort`. Clones the cached
+    /// `Vec<String>` — callers in hot loops should prefer `univ_contains` /
+    /// `univ_element_at` to avoid this clone, or `univ_for_sort_arc` to
+    /// share via reference counting.
     pub fn univ_for_sort(&self, sort: &str) -> Option<Vec<String>> {
-        cached_univ_for_sort(self, sort)
+        cached_univ_arc(self, sort).map(|arc| (*arc).clone())
+    }
+
+    /// Cheap shared borrow of the cached universe list (one atomic
+    /// refcount bump per call).
+    pub fn univ_for_sort_arc(&self, sort: &str) -> Option<Arc<Vec<String>>> {
+        cached_univ_arc(self, sort)
+    }
+
+    /// Membership check without cloning the whole list.
+    pub fn univ_contains(&self, sort: &str, elem: &str) -> bool {
+        cached_univ_arc(self, sort)
+            .map(|arc| arc.iter().any(|c| c == elem))
+            .unwrap_or(false)
+    }
+
+    /// Returns the element at `idx` in the universe (cloned String, since
+    /// the borrow can't outlive the cache lookup). One String alloc instead
+    /// of N+1.
+    pub fn univ_element_at(&self, sort: &str, idx: usize) -> Option<String> {
+        cached_univ_arc(self, sort).and_then(|arc| arc.get(idx).cloned())
     }
 
     pub fn contains_element(&self, sort: &str, elem: &str) -> bool {
-        self.univ_for_sort(sort)
-            .map(|univ| univ.iter().any(|candidate| candidate == elem))
-            .unwrap_or(false)
+        self.univ_contains(sort, elem)
     }
 
     pub fn max_univ_len(&self) -> usize {

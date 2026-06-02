@@ -45,9 +45,9 @@ fn eval_symbols_matches_unary_model_interpretations() {
     let t2 = model.eval_symbols("p0", &["$2".to_string()])
         .expect("lookup for $2 should exist");
 
-    assert!(crate::compile::semantic::interped_bool(t0));
-    assert!(crate::compile::semantic::interped_bool(t1));
-    assert!(!crate::compile::semantic::interped_bool(t2));
+    assert!(crate::compile::semantics::interped_bool(t0));
+    assert!(crate::compile::semantics::interped_bool(t1));
+    assert!(!crate::compile::semantics::interped_bool(t2));
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn cloned_models_preserve_stable_cache_identity() {
 
     assert_eq!(model.cache_id, cloned.cache_id);
     assert_ne!(model.cache_id, reparsed_model.cache_id);
-    assert!(crate::compile::semantic::interped_bool(
+    assert!(crate::compile::semantics::interped_bool(
         cloned.eval_symbols("p0", &["$0".to_string()])
             .expect("lookup for cloned model should exist")
     ));
@@ -156,15 +156,15 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
   (define-univ Pos ($0 $1 $2))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite ReAsp
+(define-finite RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
-  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w1 0 (size (Pos w1)))))
-(constraint (not (Regex.Sem r (ReAsp w5 0 (size (Pos w5))))))
+(constraint (Regex.Sem r (RegLan.Asp w1 0 (size (Pos w1)))))
+(constraint (not (Regex.Sem r (RegLan.Asp w5 0 (size (Pos w5))))))
 (check-synth)
 "#,
     );
@@ -266,15 +266,15 @@ fn parses_direct_semantic_constraints() {
   (define-univ Pos ($0 $1 $2))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite ReAsp
+(define-finite RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
-  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w1 0 (size (Pos w1)))))
-(constraint (not (Regex.Sem r (ReAsp w5 0 (size (Pos w5))))))
+(constraint (Regex.Sem r (RegLan.Asp w1 0 (size (Pos w1)))))
+(constraint (not (Regex.Sem r (RegLan.Asp w5 0 (size (Pos w5))))))
 (check-synth)
 "#,
     );
@@ -310,21 +310,21 @@ fn semantic_predicates_use_aspect_projection() {
   (interp-fun a (match ((($0) true) (($1) true) ((_) false))))
   (interp-fun b (match (((_) false)))))
 (declare-term-types ((Regex 0)) (((a) (b) (re.++ Regex Regex))))
-(define-finite ReAsp
+(define-finite RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
-  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r
  ((a) (and (= (j asp) (+ (i asp) 1)) (a (i asp))))
  ((b) (and (= (j asp) (+ (i asp) 1)) (b (i asp))))
  ((re.++ x y)
   (exists ((k (int-range (i asp) (j asp))))
-    (and (Regex.Sem x (ReAsp (model asp) (i asp) k))
-         (Regex.Sem y (ReAsp (model asp) k (j asp)))))))))
+    (and (Regex.Sem x (RegLan.Asp (model asp) (i asp) k))
+         (Regex.Sem y (RegLan.Asp (model asp) k (j asp)))))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w1 0 (size (Pos w1)))))
-(constraint (not (Regex.Sem r (ReAsp w5 0 (size (Pos w5))))))
+(constraint (Regex.Sem r (RegLan.Asp w1 0 (size (Pos w1)))))
+(constraint (not (Regex.Sem r (RegLan.Asp w5 0 (size (Pos w5))))))
 (check-synth)
 "#,
     );
@@ -404,7 +404,7 @@ fn detects_two_way_navigation() {
         semantic_program
             .semantics
             .iter()
-            .any(|spec| super::finite::contains_parent_navigation(&spec.body)),
+            .any(|spec| super::aspects::contains_parent_navigation(&spec.body)),
         "expected a semantic spec that uses (parent ...)"
     );
 }
@@ -422,15 +422,15 @@ fn finite_aspects_and_predicates_use_declared_universe_sorts() {
   (define-univ A ($a0 $a1))
   (interp-fun P (match ((($a0 $b0) true) ((_ _) false)))))
 (declare-term-types ((Formula 0)) (((P.x.y))))
-(define-finite FoAsp
+(define-finite FO.Asp
   (record (model Model) (x A) (y B)))
 (define-semantics
-  ((FO.Sem (phi Formula) (asp FoAsp)))
+  ((FO.Sem (phi Formula) (asp FO.Asp)))
   ((match phi
      ((P.x.y) (P (x asp) (y asp))))))
 (synth-fun phi () Formula)
-(constraint (FO.Sem phi (FoAsp m $a0 $b0)))
-(constraint (not (FO.Sem phi (FoAsp m $a1 $b0))))
+(constraint (FO.Sem phi (FO.Asp m $a0 $b0)))
+(constraint (not (FO.Sem phi (FO.Asp m $a1 $b0))))
 (check-synth)
 "#,
     );
@@ -462,19 +462,19 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
  ((Formula 0))
  (((fol.exists.a Formula)
    (P.x.y))))
-(define-finite FoAsp
+(define-finite FO.Asp
   (record (model Model) (y B)))
 (define-semantics
-  ((FO.Sem (phi Formula) (asp FoAsp)))
+  ((FO.Sem (phi Formula) (asp FO.Asp)))
   ((match phi
      ((fol.exists.a x)
       (exists ((v (univ (A (model asp)))))
-        (FO.Sem x (FoAsp (model asp) (y asp)))))
+        (FO.Sem x (FO.Asp (model asp) (y asp)))))
      ((P.x.y)
       (exists ((v (univ (A (model asp)))))
         (P v (y asp)))))))
 (synth-fun phi () Formula)
-(constraint (FO.Sem phi (FoAsp m $b0)))
+(constraint (FO.Sem phi (FO.Asp m $b0)))
 (check-synth)
 "#,
     );
@@ -508,16 +508,16 @@ fn model_terms_support_constants_functions_and_nested_applications() {
  (((flag.atom)
    (nested.pred)
    (nested.eq))))
-(define-finite FoAsp
+(define-finite FO.Asp
   (record (model Model)))
 (define-semantics
-  ((FO.Sem (phi Formula) (asp FoAsp)))
+  ((FO.Sem (phi Formula) (asp FO.Asp)))
   ((match phi
      ((flag.atom) (flag))
      ((nested.pred) (P (g (f c))))
      ((nested.eq) (= (g (f c)) @A.1)))))
 (synth-fun phi () Formula)
-(constraint (FO.Sem phi (FoAsp m)))
+(constraint (FO.Sem phi (FO.Asp m)))
 (check-synth)
 "#,
     );
@@ -544,15 +544,15 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 (declare-term-types
  ((Formula 0))
  (((binary.term))))
-(define-finite FoAsp
+(define-finite FO.Asp
   (record (model Model) (x A) (y B)))
 (define-semantics
-  ((FO.Sem (phi Formula) (asp FoAsp)))
+  ((FO.Sem (phi Formula) (asp FO.Asp)))
   ((match phi
      ((binary.term) (R (h (x asp) (y asp)) (y asp))))))
 (synth-fun phi () Formula)
-(constraint (FO.Sem phi (FoAsp m @a0 @b0)))
-(constraint (not (FO.Sem phi (FoAsp m @a1 @b0))))
+(constraint (FO.Sem phi (FO.Asp m @a0 @b0)))
+(constraint (not (FO.Sem phi (FO.Asp m @a1 @b0))))
 (check-synth)
 "#,
     );
@@ -796,12 +796,12 @@ fn allows_multiple_define_semantics_declarations() {
 (declare-sort Pos 0)
 (define-model w (define-univ Pos ($0)))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite ReAsp (record (model Model)))
+(define-finite RegLan.Asp (record (model Model)))
 (define-semantics
-  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
 (define-semantics
-  ((Regex.Other (r Regex) (asp ReAsp)))
+  ((Regex.Other (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
 (check-synth)
@@ -903,22 +903,22 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
   (define-univ Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite ReAsp
+(define-finite RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
-  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r
      ((a) (Regex.Sem r (WrongAsp (model asp) (i asp) (j asp)))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w 0 (size (Pos w)))))
+(constraint (Regex.Sem r (RegLan.Asp w 0 (size (Pos w)))))
 (check-synth)
 "#,
     );
 
     let err = problem.to_sygus().expect_err("wrong aspect constructor should be rejected");
 
-    assert!(err.contains("aspect constructor must be ReAsp"));
+    assert!(err.contains("aspect constructor must be RegLan.Asp"));
 }
 
 #[test]
@@ -932,15 +932,15 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
   (define-univ Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite ReAsp
+(define-finite RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
-  ((Regex.Sem (r Regex) (asp ReAsp)))
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r
-     ((a) (Regex.Sem r (ReAsp (model asp) (i asp)))))))
+     ((a) (Regex.Sem r (RegLan.Asp (model asp) (i asp)))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (ReAsp w 0 (size (Pos w)))))
+(constraint (Regex.Sem r (RegLan.Asp w 0 (size (Pos w)))))
 (check-synth)
 "#,
     );
@@ -948,5 +948,44 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
     let err = problem.to_sygus().expect_err("wrong aspect arity should be rejected");
 
     assert!(err.contains("provides 1 scalar fields, expected 2"));
+}
+
+#[test]
+fn aspect_field_accepts_model_function_expression() {
+    let problem = parse(
+        r#"
+(set-logic ALL)
+(declare-sort U 0)
+(declare-sort Ctr 0)
+(declare-fun a (U) Bool)
+(declare-fun initial () U)
+(declare-fun bound (U) Ctr)
+(define-model m
+  (define-univ U (s0 s1 s2))
+  (define-univ Ctr ($0 $1 $2))
+  (interp-fun a (match (((s0) true) ((_) false))))
+  (interp-fun initial (s0))
+  (interp-fun bound (match (((s0) $2) ((s1) $1) ((s2) $0)))))
+(declare-term-types ((F 0)) (((ap.a) (f.not F))))
+(define-finite Asp
+  (record (model Model) (state U) (depth Ctr)))
+(define-semantics
+  ((F.Sem (f F) (asp Asp)))
+  ((match f
+     ((ap.a) (a (state asp)))
+     ((f.not x) (not (F.Sem x asp))))))
+(synth-fun phi () F)
+(constraint (F.Sem phi (Asp m initial (bound initial))))
+(check-synth)
+"#,
+    );
+
+    let summary = problem.encode().expect("function-expr aspect should compile");
+
+    assert_eq!(summary.constraint_bits.len(), 1);
+    assert_eq!(summary.constraint_bits[0].model, "m");
+    assert!(summary.constraint_bits[0].expected);
+    let key = &summary.bit_mappings[summary.constraint_bits[0].bit].aspect;
+    assert_eq!(key.display_fields(), "state=s0,depth=$2");
 }
 

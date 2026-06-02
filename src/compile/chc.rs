@@ -9,7 +9,7 @@ use crate::{
     compile::{
         context::CompileContext,
         eval_ctx::{EnvView, SemanticContext},
-        semantic::{interped_bool, interped_value_matches},
+        semantics::{interped_bool, interped_value_matches},
         syntax::{state_name, TermConstructor, TermSignature},
         types::{
             AspectKey, AspectValue, FieldDecl, FieldDomain, SemanticDomain, SemanticKind,
@@ -18,11 +18,12 @@ use crate::{
     },
     parser::DelisProg,
 };
-use lexpr::Value;
+use sygus_parser::SExpr as Value;
 use rustc_hash::FxHashMap as HashMap;
 use std::{
     cell::RefCell,
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use sygus_parser::Sort;
@@ -166,7 +167,7 @@ impl<'a> ChcCompiler<'a> {
         problem: &'a DelisProg,
         program: SemanticProgram,
         sig: TermSignature,
-        semantic_cases: HashMap<String, HashMap<String, crate::compile::semantic::Case>>,
+        semantic_cases: HashMap<String, HashMap<String, crate::compile::semantics::Case>>,
     ) -> Result<Self, String> {
         let ctx = SemanticContext::with_cases(problem, &program, &semantic_cases)?;
         let constructor_sorts = sig
@@ -891,11 +892,12 @@ impl<'a> ChcCompiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         let values = model_ref.univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+        let sort_arc: Arc<str> = Arc::from(sort.as_str());
         let mut out = formula_false();
         for name in values {
             let value = AspectValue::Univ {
-                sort: sort.clone(),
-                name,
+                sort: sort_arc.clone(),
+                name: Arc::from(name),
             };
             out = formula_or(
                 out,
@@ -923,6 +925,7 @@ impl<'a> ChcCompiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         let values = model_ref.univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+        let sort_arc: Arc<str> = Arc::from(sort.as_str());
         let mut out = formula_false();
         for lhs_name in &values {
             for rhs_name in &values {
@@ -930,12 +933,12 @@ impl<'a> ChcCompiler<'a> {
                     continue;
                 }
                 let lhs_value = AspectValue::Univ {
-                    sort: sort.clone(),
-                    name: lhs_name.clone(),
+                    sort: sort_arc.clone(),
+                    name: Arc::from(lhs_name.as_str()),
                 };
                 let rhs_value = AspectValue::Univ {
-                    sort: sort.clone(),
-                    name: rhs_name.clone(),
+                    sort: sort_arc.clone(),
+                    name: Arc::from(rhs_name.as_str()),
                 };
                 out = formula_or(
                     out,
@@ -1301,7 +1304,9 @@ impl<'a> ChcCompiler<'a> {
                 if let Ok(value) = self.ctx.eval_value(arg, env) {
                     let ok = match &value {
                         AspectValue::Symbol(symbol) => symbol == bot,
-                        AspectValue::Univ { sort, .. } => sorts.contains(sort),
+                        AspectValue::Univ { sort, .. } => {
+                            sorts.iter().any(|s| s.as_str() == &**sort)
+                        }
                         _ => false,
                     };
                     if ok {
@@ -1330,12 +1335,13 @@ impl<'a> ChcCompiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         let values = model_ref.univ_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+        let sort_arc: Arc<str> = Arc::from(sort);
         values
             .into_iter()
             .map(|name| {
                 let value = AspectValue::Univ {
-                    sort: sort.to_string(),
-                    name,
+                    sort: sort_arc.clone(),
+                    name: Arc::from(name),
                 };
                 Ok((self.eval_finite_eq(expr, &value, env)?, value))
             })
@@ -1411,12 +1417,13 @@ impl<'a> ChcCompiler<'a> {
             return Ok(values.clone());
         }
         let model_ref = self.ctx.model(model)?;
+        let sort_arc: Arc<str> = Arc::from(sort);
         let values = model_ref.univ_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?
             .into_iter()
             .map(|name| AspectValue::Univ {
-                sort: sort.to_string(),
-                name,
+                sort: sort_arc.clone(),
+                name: Arc::from(name),
             })
             .collect::<Vec<_>>();
         self.domain_values_cache

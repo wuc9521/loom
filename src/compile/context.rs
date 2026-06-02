@@ -6,7 +6,7 @@ use crate::parser::{ast::TermTypes, DelisCmd, DelisProg};
 
 use super::{
     eval_ctx::SemanticContext,
-    semantic::{self, Case},
+    semantics::{self, Case},
     syntax::TermSignature,
     types::SemanticProgram,
 };
@@ -59,7 +59,7 @@ impl<'a> CompileContext<'a> {
             .semantics
             .iter()
             .map(|spec| {
-                semantic::parse_cases(&spec.body).map(|cases| (spec.relation.clone(), cases))
+                semantics::parse_cases(&spec.body).map(|cases| (spec.relation.clone(), cases))
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
         Ok(Self {

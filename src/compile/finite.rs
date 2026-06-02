@@ -462,13 +462,7 @@ fn parse_aspect_term(
                         field.name
                     )
                 })?;
-                let value = arg.to_string();
-                if !univ.contains(&value) {
-                    return Err(format!(
-                        "aspect field {} expected an element of universe sort {} but got {value}",
-                        field.name, sort
-                    ));
-                }
+                let value = eval_univ_expr(arg, sort, univ, model, &field.name)?;
                 AspectValue::Univ {
                     sort: sort.clone(),
                     name: value,
@@ -533,6 +527,59 @@ fn parse_aspect_term(
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
     Ok((model_name, fields))
+}
+
+fn eval_univ_expr(
+    arg: &SyGuSTerm,
+    sort: &str,
+    univ: &[String],
+    model: &Model,
+    field_name: &str,
+) -> Result<String, String> {
+    let literal = arg.to_string();
+    if univ.contains(&literal) {
+        return Ok(literal);
+    }
+    let value = eval_model_expr(arg, model)?;
+    if univ.contains(&value) {
+        Ok(value)
+    } else {
+        Err(format!(
+            "aspect field {field_name} expected an element of {sort}, got {value} (from {arg})"
+        ))
+    }
+}
+
+fn eval_model_expr(term: &SyGuSTerm, model: &Model) -> Result<String, String> {
+    match term {
+        SyGuSTerm::Identifier(id) => {
+            let name = id.to_string();
+            match model.eval_symbols(&name, &[]) {
+                Some(val) => Ok(val.to_string()),
+                None => Ok(name),
+            }
+        }
+        SyGuSTerm::Literal(_) => Ok(term.to_string()),
+        SyGuSTerm::Application(func, args) => {
+            let func_name = func.to_string();
+            let resolved: Vec<String> = args
+                .iter()
+                .map(|a| eval_model_expr(a, model))
+                .collect::<Result<_, _>>()?;
+            model
+                .eval_symbols(&func_name, &resolved)
+                .map(|v| v.to_string())
+                .ok_or_else(|| {
+                    format!(
+                        "function {} undefined for [{}] in model {}",
+                        func_name,
+                        resolved.join(", "),
+                        model.name
+                    )
+                })
+        }
+        _ => Ok(term.to_string()),
+    }
 }
 
 impl FiniteSpace {

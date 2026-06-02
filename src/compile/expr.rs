@@ -1,5 +1,5 @@
 use crate::{compile::types::AspectValue, lang::model::Model};
-use lexpr::Value;
+use sygus_parser::SExpr as Value;
 use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
 
@@ -50,7 +50,7 @@ pub fn eval_sygus_int(
     env: &[(String, AspectValue)],
     models: &HashMap<String, &Model>,
 ) -> Result<isize, String> {
-    let expr = lexpr::from_str(&term.to_string())
+    let expr = sygus_parser::SExpr::from_str(&term.to_string())
         .map_err(|e| format!("failed to parse integer aspect expression {term}: {e}"))?;
     eval_int(&expr, env, models)
 }

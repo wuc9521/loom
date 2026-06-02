@@ -1,4 +1,4 @@
-use lexpr::Value;
+use sygus_parser::SExpr as Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AspectKey {
@@ -169,11 +169,18 @@ pub struct FiniteSpace {
     pub where_expr: Option<Value>,
 }
 
+/// `Univ` uses `Arc<str>` for its two fields because this is the only
+/// variant cloned in the bisim hot loop — every `env.values.get(symbol)
+/// .cloned()` plus every quantifier-binding push. With `String`, that's
+/// two heap allocations per clone; with `Arc<str>`, it's two atomic
+/// refcount bumps. Symbol/Model stay `String` since they're constructed
+/// in cold paths and consumed in compile/output code that already expects
+/// `String`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AspectValue {
     Model(String),
     Int(usize),
-    Univ { sort: String, name: String },
+    Univ { sort: std::sync::Arc<str>, name: std::sync::Arc<str> },
     Symbol(String),
 }
 
@@ -181,7 +188,7 @@ impl AspectValue {
     pub fn display(&self) -> String {
         match self {
             AspectValue::Model(value) | AspectValue::Symbol(value) => value.clone(),
-            AspectValue::Univ { name, .. } => name.clone(),
+            AspectValue::Univ { name, .. } => name.to_string(),
             AspectValue::Int(value) => value.to_string(),
         }
     }

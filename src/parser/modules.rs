@@ -194,7 +194,7 @@ fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
 }
 
 fn semantics_name(header: Option<&String>) -> Option<String> {
-    let value = lexpr::from_str(header?).ok()?;
+    let value = sygus_parser::SExpr::from_str(header?).ok()?;
     let outer = value.to_ref_vec()?;
     let signature = if outer.len() == 1 { outer[0] } else { &value };
     let items = signature.to_ref_vec()?;

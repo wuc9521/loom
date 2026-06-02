@@ -1,6 +1,6 @@
 use crate::{
     compile::{
-        semantic::Case,
+        semantics::Case,
         types::{
             AspectKey, AspectValue, FiniteSpace, SemanticDomain, SemanticKind, SemanticProgram,
             SemanticSpec,
@@ -13,9 +13,11 @@ use crate::{
     parser::{DelisCmd, DelisProg},
 };
 use itertools::Itertools;
-use lexpr::Value;
-use rustc_hash::FxHashMap as HashMap;
+use rustc_hash::{FxHashMap as HashMap, FxHasher};
 use std::cell::{Cell, RefCell};
+use std::hash::Hasher;
+use std::sync::Arc;
+use sygus_parser::SExpr as Value;
 
 pub trait EnvView {
     fn aspects(&self) -> &HashMap<String, AspectKey>;
@@ -38,6 +40,13 @@ pub struct SemanticContext<'a> {
     domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
     cases: HashMap<String, HashMap<String, Case>>,
     eval_cache: RefCell<HashMap<EvalKey, Option<InterpedValue>>>,
+    /// Hash-keyed cache used by `eval_model_value_call`. Mirrors `eval_cache`
+    /// but is keyed by a u64 hash of `(model.cache_id, func_bytes, arg
+    /// values)` so cache hits don't have to materialise `EvalKey { func:
+    /// String, args: Vec<String> }`. On test_col the wrapping bisim walk
+    /// hits this cache 100% of the time — the cache key allocations
+    /// previously dominated `eval_model_value_call`.
+    eval_cache_hashed: RefCell<HashMap<u64, Option<InterpedValue>>>,
     eval_hits: Cell<usize>,
     eval_misses: Cell<usize>,
 }
@@ -50,16 +59,52 @@ impl<'a> SemanticContext<'a> {
         model: &str,
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
+        let model_ref = self.model(model)?;
         if let Some(symbol) = arg.as_symbol() {
-            let model_ref = self.model(model)?;
             if sort != "Int"
-                && model_ref.univ_for_sort(sort)
+                && model_ref
+                    .univ_for_sort(sort)
                     .is_some_and(|univ| univ.iter().any(|elem| elem == symbol))
             {
                 return Ok(AspectValue::Univ {
-                    sort: sort.to_string(),
-                    name: symbol.to_string(),
+                    sort: Arc::from(sort),
+                    name: Arc::from(symbol),
                 });
+            }
+            if let Some(sig) = self.func_sigs.get(symbol) {
+                if sig.arg_sorts.is_empty() {
+                    let value = self
+                        .eval_model_symbols(model_ref, symbol, &[])
+                        .ok_or_else(|| {
+                            format!("model {model} has no value for {symbol}")
+                        })?;
+                    return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+                }
+            }
+        }
+        if let Some(items) = arg.to_ref_vec() {
+            if let Some(op) = items.first().and_then(|v| v.as_symbol()) {
+                if self.func_sigs.contains_key(op) {
+                    let sig = &self.func_sigs[op];
+                    let arg_values = items[1..]
+                        .iter()
+                        .zip(sig.arg_sorts.iter())
+                        .map(|(a, s)| {
+                            self.eval_explicit_aspect_field(a, &s.to_string(), model, env)
+                                .map(|v| v.display())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let value = self
+                        .eval_model_symbols(model_ref, op, &arg_values)
+                        .ok_or_else(|| {
+                            format!(
+                                "model {model} has no value for {}({})",
+                                op,
+                                arg_values.join(" ")
+                            )
+                        })?;
+                    return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+                }
             }
         }
         self.eval_value_for_sort(arg, sort, env)
@@ -117,6 +162,7 @@ impl<'a> SemanticContext<'a> {
             domains_by_sort,
             cases: cases.clone(),
             eval_cache: RefCell::new(HashMap::default()),
+            eval_cache_hashed: RefCell::new(HashMap::default()),
             eval_hits: Cell::new(0),
             eval_misses: Cell::new(0),
         })
@@ -194,10 +240,15 @@ impl<'a> SemanticContext<'a> {
             .ok_or_else(|| format!("no semantic spec for relation {relation}"))
     }
 
-    pub fn current_model(&self, env: &impl EnvView) -> Result<String, String> {
+    /// Returns the current aspect's model name without cloning.
+    ///
+    /// The borrowed `&str` is tied to `env`'s lifetime, so callers must not
+    /// outlive `env`. Saves one allocation per call — hot enough on the bisim
+    /// path to show up at 0.7% self time on test_col before this change.
+    pub fn current_model<'e>(&self, env: &'e impl EnvView) -> Result<&'e str, String> {
         env.aspects()
             .get("asp")
-            .map(|aspect| aspect.model.clone())
+            .map(|aspect| aspect.model.as_str())
             .ok_or_else(|| "no current aspect in semantic environment".to_string())
     }
 
@@ -217,14 +268,15 @@ impl<'a> SemanticContext<'a> {
             .iter()
             .map(|sort| {
                 let sort = sort.to_string();
+                let sort_arc: Arc<str> = Arc::from(sort.as_str());
                 model.univ_for_sort(&sort)
                     .ok_or_else(|| format!("model {} has no universe for sort {sort}", model.name))
                     .map(|values| {
                         values
                             .into_iter()
                             .map(|name| AspectValue::Univ {
-                                sort: sort.clone(),
-                                name,
+                                sort: sort_arc.clone(),
+                                name: Arc::from(name),
                             })
                             .collect()
                     })
@@ -310,7 +362,7 @@ impl<'a> SemanticContext<'a> {
                         self.eval_value_for_sort(arg, sort, env)?
                     };
                     match &value {
-                        AspectValue::Univ { sort: actual, .. } if actual == sort => {}
+                        AspectValue::Univ { sort: actual, .. } if actual.as_ref() == sort.as_str() => {}
                         AspectValue::Int(_) if sort == "Int" => {}
                         _ => {
                             return Err(format!(
@@ -338,7 +390,8 @@ impl<'a> SemanticContext<'a> {
                     let value = self.eval_value(arg, env)?;
                     match &value {
                         AspectValue::Symbol(symbol) if symbol == bot => {}
-                        AspectValue::Univ { sort, .. } if sorts.contains(sort) => {}
+                        AspectValue::Univ { sort, .. }
+                            if sorts.iter().any(|s| s.as_str() == &**sort) => {}
                         _ => {
                             return Err(format!(
                                 "aspect field {} expected {} or one of ({}) but got {}",
@@ -369,12 +422,12 @@ impl<'a> SemanticContext<'a> {
                 return Ok(value.clone());
             }
             if let Ok(model) = self.current_model(env) {
-                if let Some(model_ref) = self.models.get(&model) {
+                if let Some(model_ref) = self.models.get(model) {
                     for univ in &model_ref.univ_defs {
                         if univ.elems.iter().any(|elem| elem.name == symbol) {
                             return Ok(AspectValue::Univ {
-                                sort: univ.sort.to_string(),
-                                name: symbol.to_string(),
+                                sort: Arc::from(univ.sort.to_string()),
+                                name: Arc::from(symbol),
                             });
                         }
                     }
@@ -427,7 +480,9 @@ impl<'a> SemanticContext<'a> {
             }
             _ => {}
         }
-        Err(format!("unsupported value expression: {expr}"))
+        // Hot path: bisim::Refiner::walk probes eval_value and discards Err.
+        // Formatting `{expr}` via lexpr Display::fmt was ~15% of bisim time.
+        Err(String::new())
     }
 
     pub fn eval_bool_value(&self, expr: &Value, env: &impl EnvView) -> Result<bool, String> {
@@ -438,16 +493,16 @@ impl<'a> SemanticContext<'a> {
             return match symbol {
                 "true" => Ok(true),
                 "false" => Ok(false),
-                _ => Err(format!("expected Bool expression, got {expr}")),
+                _ => Err(String::new()),
             };
         }
         let items = expr
             .to_ref_vec()
-            .ok_or_else(|| format!("expected Bool expression, got {expr}"))?;
+            .ok_or_else(String::new)?;
         let op = items
             .first()
             .and_then(|item| item.as_symbol())
-            .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
+            .ok_or_else(String::new)?;
         match op {
             "not" if items.len() == 2 => Ok(!self.eval_bool_value(items[1], env)?),
             "and" => items[1..]
@@ -484,7 +539,7 @@ impl<'a> SemanticContext<'a> {
                     self.eval_bool_value(items[3], env)
                 }
             }
-            _ => Err(format!("unsupported Bool expression: {expr}")),
+            _ => Err(String::new()),
         }
     }
 
@@ -571,24 +626,95 @@ impl<'a> SemanticContext<'a> {
             ));
         }
         let model = self.current_model(env)?;
-        let model_ref = self.model(&model)?;
-        let arg_names = args
-            .iter()
-            .zip(sig.arg_sorts.iter())
-            .map(|(arg, sort)| {
-                self.eval_value_for_sort(arg, &sort.to_string(), env)
-                    .map(|value| value.display())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let value = self
-            .eval_model_symbols(model_ref, func, &arg_names)
-            .ok_or_else(|| {
-                format!(
-                    "model {model} has no value for {func}({})",
-                    arg_names.join(" ")
-                )
-            })?;
-        interped_aspect_value(&sig.ret_sort.to_string(), &value)
+        let model_ref = self.model(model)?;
+
+        // Resolve args to AspectValues. We need these regardless of cache
+        // outcome (they're how we hash the key), but they're typically just
+        // a HashMap lookup + clone of a value already in `env.values`, not a
+        // recursive eval. The `as_simple_name()` fast path avoids a per-arg
+        // `sort.to_string()` allocation for `Sort::Simple` — the common case
+        // for declared funcs whose args are over simple sorts like `Pos`.
+        let mut arg_values: Vec<AspectValue> = Vec::with_capacity(args.len());
+        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
+            let owned_sort_name;
+            let sort_str: &str = if let Some(s) = sort.as_simple_name() {
+                s
+            } else {
+                owned_sort_name = sort.to_string();
+                &owned_sort_name
+            };
+            arg_values.push(self.eval_value_for_sort(arg, sort_str, env)?);
+        }
+
+        // Hash-keyed cache probe. Sidesteps the `EvalKey { func: String,
+        // args: Vec<String> }` allocation that every probe through
+        // `eval_model_symbols` requires.
+        let mut h = FxHasher::default();
+        h.write_u64(model_ref.cache_id);
+        h.write(func.as_bytes());
+        h.write_u8(0); // separator between func name and args
+        for v in &arg_values {
+            Self::hash_aspect_value(&mut h, v);
+        }
+        let key_hash = h.finish();
+
+        let cached = self.eval_cache_hashed.borrow().get(&key_hash).cloned();
+        let interped = if let Some(cached) = cached {
+            self.eval_hits.set(self.eval_hits.get() + 1);
+            cached
+        } else {
+            self.eval_misses.set(self.eval_misses.get() + 1);
+            // Cache miss: materialise the String args for `Model::eval_symbols`
+            // (its inner exact-case index is `HashMap<Vec<String>, _>` so we
+            // can't avoid this on the miss path).
+            let arg_strings: Vec<String> =
+                arg_values.iter().map(|v| v.display()).collect();
+            let value = model_ref.eval_symbols(func, &arg_strings).cloned();
+            self.eval_cache_hashed
+                .borrow_mut()
+                .insert(key_hash, value.clone());
+            value
+        };
+
+        let value = interped.ok_or_else(|| {
+            // Format the friendly arg list lazily so the alloc only happens
+            // on real errors.
+            let parts: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
+            format!("model {model} has no value for {func}({})", parts.join(" "))
+        })?;
+        let owned_ret;
+        let ret_str: &str = if let Some(s) = sig.ret_sort.as_simple_name() {
+            s
+        } else {
+            owned_ret = sig.ret_sort.to_string();
+            &owned_ret
+        };
+        interped_aspect_value(ret_str, &value)
+    }
+
+    /// Hash an AspectValue into a Hasher without going through Display
+    /// (which would allocate a String per call).
+    fn hash_aspect_value<H: Hasher>(h: &mut H, v: &AspectValue) {
+        match v {
+            AspectValue::Int(i) => {
+                h.write_u8(b'i');
+                h.write_u64(*i as u64);
+            }
+            AspectValue::Univ { sort, name } => {
+                h.write_u8(b'u');
+                h.write(sort.as_bytes());
+                h.write_u8(0);
+                h.write(name.as_bytes());
+            }
+            AspectValue::Symbol(s) => {
+                h.write_u8(b's');
+                h.write(s.as_bytes());
+            }
+            AspectValue::Model(m) => {
+                h.write_u8(b'm');
+                h.write(m.as_bytes());
+            }
+        }
     }
 
     pub fn eval_value_for_sort(
@@ -603,25 +729,21 @@ impl<'a> SemanticContext<'a> {
         }
         if let AspectValue::Int(idx) = &value {
             let model = self.current_model(env)?;
-            let model_ref = self.model(&model)?;
-            if let Some(univ) = model_ref.univ_for_sort(sort) {
-                if let Some(name) = univ.get(*idx) {
-                    return Ok(AspectValue::Univ {
-                        sort: sort.to_string(),
-                        name: name.clone(),
-                    });
-                }
+            let model_ref = self.model(model)?;
+            if let Some(name) = model_ref.univ_element_at(sort, *idx) {
+                return Ok(AspectValue::Univ {
+                    sort: Arc::from(sort),
+                    name: Arc::from(name),
+                });
             }
         }
-        if matches!(&value, AspectValue::Symbol(_)) {
+        if let AspectValue::Symbol(symbol) = &value {
             let model = self.current_model(env)?;
-            let model_ref = self.model(&model)?;
-            if model_ref.univ_for_sort(sort)
-                .is_some_and(|univ| univ.contains(&value.display()))
-            {
+            let model_ref = self.model(model)?;
+            if model_ref.univ_contains(sort, symbol) {
                 return Ok(AspectValue::Univ {
-                    sort: sort.to_string(),
-                    name: value.display(),
+                    sort: Arc::from(sort),
+                    name: Arc::from(symbol.as_str()),
                 });
             }
         }
@@ -638,7 +760,7 @@ impl<'a> SemanticContext<'a> {
     pub fn infer_finite_sort(&self, expr: &Value, env: &impl EnvView) -> Option<String> {
         if let Some(symbol) = expr.as_symbol() {
             if let Some(AspectValue::Univ { sort, .. }) = env.values().get(symbol) {
-                return Some(sort.clone());
+                return Some(sort.to_string());
             }
             return self
                 .func_sigs
@@ -662,7 +784,7 @@ impl<'a> SemanticContext<'a> {
                     if let Some((_, AspectValue::Univ { sort, .. })) =
                         aspect.fields.iter().find(|(name, _)| name == op)
                     {
-                        return Some(sort.clone());
+                        return Some(sort.to_string());
                     }
                 }
             }
@@ -691,13 +813,14 @@ impl<'a> SemanticContext<'a> {
         env: &impl EnvView,
     ) -> Result<bool, String> {
         match (value, target) {
-            (AspectValue::Int(idx), AspectValue::Univ { sort, name }) => {
+            (AspectValue::Int(idx), AspectValue::Univ { sort, name })
+            | (AspectValue::Univ { sort, name }, AspectValue::Int(idx)) => {
                 let model = self.current_model(env)?;
                 let model_ref = self.model(&model)?;
                 let Some(univ) = model_ref.univ_for_sort(sort) else {
                     return Ok(false);
                 };
-                Ok(univ.get(*idx).is_some_and(|candidate| candidate == name))
+                Ok(univ.get(*idx).is_some_and(|candidate| candidate.as_str() == &**name))
             }
             _ => Ok(value == target),
         }
@@ -713,7 +836,7 @@ impl<'a> SemanticContext<'a> {
         let model_ref = self.model(&model)?;
         Ok(self
             .eval_model_symbols(model_ref, symbol, &[])
-            .map(|value| crate::compile::semantic::interped_value_matches(&value, target)))
+            .map(|value| crate::compile::semantics::interped_value_matches(&value, target)))
     }
 
     pub fn matching_model_call_tuples<F>(
@@ -764,8 +887,8 @@ impl<'a> SemanticContext<'a> {
 fn interped_aspect_value(sort: &str, value: &InterpedValue) -> Result<AspectValue, String> {
     match value {
         InterpedValue::UnivElem(elem) => Ok(AspectValue::Univ {
-            sort: sort.to_string(),
-            name: elem.name.clone(),
+            sort: Arc::from(sort),
+            name: Arc::from(elem.name.as_str()),
         }),
         InterpedValue::Literal(lit) if sort == "Int" => lit
             .to_string()

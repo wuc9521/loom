@@ -5,16 +5,17 @@ use crate::{
         emit::{arg_name, BoolExpr},
         expr::sygus_term_to_value,
         eval_ctx::{EnvView, SemanticContext},
-        semantic::{interped_bool, interped_value_matches},
+        semantics::{interped_bool, interped_value_matches},
         syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, SemanticKind},
     },
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
-use lexpr::Value;
+use sygus_parser::SExpr as Value;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
     cell::RefCell,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use sygus_parser::{
@@ -397,6 +398,7 @@ impl<'a> Compiler<'a> {
         }
         cmds.push(synth_cmd.build());
         let env = Env::default();
+        let lower_start = Instant::now();
         let top_level_constraints = self
             .problem
             .cmds
@@ -408,6 +410,11 @@ impl<'a> Compiler<'a> {
             })
             .map(sygus_term_to_value)
             .collect::<Result<Vec<_>, _>>()?;
+        log::debug!(
+            "top-level constraint lowering (sygus_term_to_value x{}): {:?}",
+            top_level_constraints.len(),
+            lower_start.elapsed(),
+        );
         let constraints_start = Instant::now();
         for term in &top_level_constraints {
             let lowered = self.lower_top_level_constraint(term, &env)?;
@@ -1082,11 +1089,12 @@ impl<'a> Compiler<'a> {
                 let model_ref = self.ctx.model(&model)?;
                 let values = model_ref.univ_for_sort(&sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+                let sort_arc: Arc<str> = Arc::from(sort.as_str());
                 values
                     .into_iter()
                     .map(|name| AspectValue::Univ {
-                        sort: sort.clone(),
-                        name,
+                        sort: sort_arc.clone(),
+                        name: Arc::from(name),
                     })
                     .collect()
             }
@@ -1174,12 +1182,13 @@ impl<'a> Compiler<'a> {
         let model_ref = self.ctx.model(&model)?;
         let values = model_ref.univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+        let sort_arc: Arc<str> = Arc::from(sort.as_str());
         let disjuncts = values
             .into_iter()
             .map(|name| {
                 let value = AspectValue::Univ {
-                    sort: sort.clone(),
-                    name,
+                    sort: sort_arc.clone(),
+                    name: Arc::from(name),
                 };
                 Ok(BoolExpr::and(vec![
                     self.eval_finite_eq(lhs, &value, env)?,
@@ -1813,9 +1822,9 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
     let relation_set = relations.iter().cloned().collect::<HashSet<_>>();
     let mut locals = HashMap::<String, RelationLocal>::default();
     for spec in &ctx.semantic_program.semantics {
-        let cases = crate::compile::semantic::parse_cases(&spec.body)?;
+        let cases = crate::compile::semantics::parse_cases(&spec.body)?;
         let entry = locals.entry(spec.relation.clone()).or_default();
-        entry.has_parent |= crate::compile::finite::contains_parent_navigation(&spec.body);
+        entry.has_parent |= crate::compile::aspects::contains_parent_navigation(&spec.body);
         for case in cases.values() {
             entry.self_recursive |= contains_self_call(&spec.relation, &case.self_var, &case.body);
             collect_relation_calls(&case.body, &relation_set, &mut entry.calls);
@@ -1859,7 +1868,7 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
     })
 }
 
-fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bool {
+fn contains_self_call(relation: &str, self_var: &str, expr: &sygus_parser::SExpr) -> bool {
     let Some(items) = expr.to_ref_vec() else {
         return false;
     };
@@ -1873,7 +1882,7 @@ fn contains_self_call(relation: &str, self_var: &str, expr: &lexpr::Value) -> bo
         .any(|item| contains_self_call(relation, self_var, item))
 }
 
-fn collect_relation_calls(expr: &lexpr::Value, relations: &HashSet<String>, out: &mut HashSet<String>) {
+fn collect_relation_calls(expr: &sygus_parser::SExpr, relations: &HashSet<String>, out: &mut HashSet<String>) {
     let Some(items) = expr.to_ref_vec() else {
         return;
     };

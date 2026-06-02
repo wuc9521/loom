@@ -12,10 +12,10 @@ mod closure;
 mod context;
 pub(crate) mod emit;
 mod expr;
-mod finite;
+mod aspects;
 mod eval_ctx;
 pub(crate) mod optim;
-mod semantic;
+mod semantics;
 mod syntax;
 pub mod types;
 
