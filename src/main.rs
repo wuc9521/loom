@@ -375,12 +375,13 @@ pub struct CLI {
     dump_chc: bool,
 
     /// Use counterexample-guided subset solving for the external SyGuS backend,
-    /// seeding with up to N constraints. Use `--cegis=0` to disable.
+    /// seeding with up to N constraints. Off by default; pass `--cegis` to
+    /// enable with the default seed size, or `--cegis=N` to set the seed.
     #[arg(
         long = "cegis",
         num_args = 0..=1,
         require_equals = true,
-        default_value = "6",
+        default_value = "0",
         default_missing_value = "6",
         value_name = "N"
     )]
