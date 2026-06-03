@@ -46,7 +46,12 @@ pub struct SemanticContext<'a> {
     /// String, args: Vec<String> }`. On test_col the wrapping bisim walk
     /// hits this cache 100% of the time — the cache key allocations
     /// previously dominated `eval_model_value_call`.
-    eval_cache_hashed: RefCell<HashMap<u64, Option<InterpedValue>>>,
+    ///
+    /// Stores the already-interpreted `AspectValue` instead of the raw
+    /// `InterpedValue` so cache hits skip `interped_aspect_value`'s
+    /// per-call allocations (two `Arc<str>` for Univ, one `String` for
+    /// Symbol). `None` represents a model call that returned no value.
+    eval_cache_hashed: RefCell<HashMap<u64, Option<AspectValue>>>,
     eval_hits: Cell<usize>,
     eval_misses: Cell<usize>,
 }
@@ -659,37 +664,42 @@ impl<'a> SemanticContext<'a> {
         let key_hash = h.finish();
 
         let cached = self.eval_cache_hashed.borrow().get(&key_hash).cloned();
-        let interped = if let Some(cached) = cached {
+        let aspect_value = if let Some(cached) = cached {
             self.eval_hits.set(self.eval_hits.get() + 1);
             cached
         } else {
             self.eval_misses.set(self.eval_misses.get() + 1);
             // Cache miss: materialise the String args for `Model::eval_symbols`
             // (its inner exact-case index is `HashMap<Vec<String>, _>` so we
-            // can't avoid this on the miss path).
+            // can't avoid this on the miss path). Convert the InterpedValue
+            // to AspectValue here so the cache stores the already-interpreted
+            // form — subsequent hits skip `interped_aspect_value`.
             let arg_strings: Vec<String> =
                 arg_values.iter().map(|v| v.display()).collect();
-            let value = model_ref.eval_symbols(func, &arg_strings).cloned();
+            let raw = model_ref.eval_symbols(func, &arg_strings).cloned();
+            let owned_ret;
+            let ret_str: &str = if let Some(s) = sig.ret_sort.as_simple_name() {
+                s
+            } else {
+                owned_ret = sig.ret_sort.to_string();
+                &owned_ret
+            };
+            let converted = match raw {
+                Some(v) => Some(interped_aspect_value(ret_str, &v)?),
+                None => None,
+            };
             self.eval_cache_hashed
                 .borrow_mut()
-                .insert(key_hash, value.clone());
-            value
+                .insert(key_hash, converted.clone());
+            converted
         };
 
-        let value = interped.ok_or_else(|| {
+        aspect_value.ok_or_else(|| {
             // Format the friendly arg list lazily so the alloc only happens
             // on real errors.
             let parts: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
             format!("model {model} has no value for {func}({})", parts.join(" "))
-        })?;
-        let owned_ret;
-        let ret_str: &str = if let Some(s) = sig.ret_sort.as_simple_name() {
-            s
-        } else {
-            owned_ret = sig.ret_sort.to_string();
-            &owned_ret
-        };
-        interped_aspect_value(ret_str, &value)
+        })
     }
 
     /// Hash an AspectValue into a Hasher without going through Display

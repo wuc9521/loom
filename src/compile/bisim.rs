@@ -577,37 +577,19 @@ impl<'a> Refiner<'a> {
         classes: &HashMap<ClassKey, ClassId>,
         cache: &mut HashMap<WalkKey, u64>,
     ) {
-        // 1. Relation calls and quantifiers need bespoke handling.
-        if let Some(items) = expr.to_ref_vec() {
-            if let Some(op) = items.first().and_then(|v| v.as_symbol()) {
-                if self.ctx.has_relation(op) && items.len() >= 3 {
-                    self.emit_relation(out, op, items[1], items[2], env, classes);
-                    return;
-                }
-                if matches!(op, "exists" | "forall") && items.len() == 3 {
-                    self.emit_quantifier(out, op, items[1], items[2], env, classes, cache);
-                    return;
-                }
+        // Use `as_slice` instead of `to_ref_vec` — the latter allocates a
+        // `Vec<&SExpr>` per call. `walk` is called 20M+ times on test_col
+        // bisim, so the saved heap traffic adds up.
+        let Some(items) = expr.as_slice() else {
+            // Atom: `eval_value` covers literals and bound symbols; fall
+            // back to `eval_bool_value` for the literal `true`/`false`
+            // cases it doesn't already subsume.
+            if self.try_emit_value(out, expr, env) {
+                return;
             }
-        }
-
-        // 2. Try fully-concrete evaluation via the shared evaluator.
-        if let Ok(v) = self.ctx.eval_value(expr, env) {
-            out.write_u8(b'V');
-            self.emit_value(out, &v);
-            return;
-        }
-        if let Ok(b) = self.ctx.eval_bool_value(expr, env) {
-            out.write_u8(if b { b'T' } else { b'F' });
-            return;
-        }
-
-        // 3. Structural fallback for connectives whose subtrees include
-        //    relation calls. Recursion goes through `walk_hash` so each
-        //    sub-expr's hash is cached and reused if the same free-var
-        //    bindings recur (e.g. an `and` conjunct that doesn't depend
-        //    on outer quantifier variables).
-        let Some(items) = expr.to_ref_vec() else {
+            if self.try_emit_bool(out, expr, env) {
+                return;
+            }
             out.write_u8(b'?');
             out.write(format!("{expr}").as_bytes());
             return;
@@ -616,8 +598,29 @@ impl<'a> Refiner<'a> {
             out.write_u8(b'?');
             return;
         };
+
+        // Relation calls and quantifiers always need bespoke handling.
+        if self.ctx.has_relation(op) && items.len() >= 3 {
+            self.emit_relation(out, op, &items[1], &items[2], env, classes);
+            return;
+        }
+        if matches!(op, "exists" | "forall") && items.len() == 3 {
+            self.emit_quantifier(out, op, &items[1], &items[2], env, classes, cache);
+            return;
+        }
+
+        // For every other op, dispatch on `op`: try only the evaluator
+        // that has a matching arm for this shape, then fall through to
+        // structural recursion when the expression isn't fully grounded.
+        // Previously we tried both `eval_value` and `eval_bool_value`
+        // blindly; that wasted ~80% of `eval_value` probes (no `and`/
+        // `or`/`not`/`=` arms) and ~67% of `eval_bool_value` probes (no
+        // `+`/`-`/`size`/model-fn-call arms) on test_col.
         match op {
             "and" | "or" => {
+                if self.try_emit_bool(out, expr, env) {
+                    return;
+                }
                 out.write_u8(if op == "and" { b'A' } else { b'O' });
                 out.write_u8(b'(');
                 for arg in &items[1..] {
@@ -628,18 +631,29 @@ impl<'a> Refiner<'a> {
                 out.write_u8(b')');
             }
             "not" if items.len() == 2 => {
+                if self.try_emit_bool(out, expr, env) {
+                    return;
+                }
                 out.write_u8(b'N');
                 out.write_u8(b'(');
-                let sub = self.walk_hash(items[1], env, classes, cache);
+                let sub = self.walk_hash(&items[1], env, classes, cache);
                 out.write_u64(sub);
                 out.write_u8(b')');
             }
             "ite" if items.len() == 4 => {
+                // `ite` straddles both evaluators (value-typed vs bool-typed
+                // branches), so try value first to match the previous order.
+                if self.try_emit_value(out, expr, env) {
+                    return;
+                }
+                if self.try_emit_bool(out, expr, env) {
+                    return;
+                }
                 out.write_u8(b'I');
                 out.write_u8(b'(');
-                let a = self.walk_hash(items[1], env, classes, cache);
-                let b = self.walk_hash(items[2], env, classes, cache);
-                let c = self.walk_hash(items[3], env, classes, cache);
+                let a = self.walk_hash(&items[1], env, classes, cache);
+                let b = self.walk_hash(&items[2], env, classes, cache);
+                let c = self.walk_hash(&items[3], env, classes, cache);
                 out.write_u64(a);
                 out.write_u8(b',');
                 out.write_u64(b);
@@ -648,17 +662,25 @@ impl<'a> Refiner<'a> {
                 out.write_u8(b')');
             }
             "=" | "<" | "<=" if items.len() == 3 => {
+                if self.try_emit_bool(out, expr, env) {
+                    return;
+                }
                 out.write_u8(b'=');
                 out.write(op.as_bytes());
                 out.write_u8(b'(');
-                let a = self.walk_hash(items[1], env, classes, cache);
-                let b = self.walk_hash(items[2], env, classes, cache);
+                let a = self.walk_hash(&items[1], env, classes, cache);
+                let b = self.walk_hash(&items[2], env, classes, cache);
                 out.write_u64(a);
                 out.write_u8(b',');
                 out.write_u64(b);
                 out.write_u8(b')');
             }
             _ => {
+                // Model-fn call, aspect field accessor, or `+`/`-`/`size`
+                // — all value-typed; only `eval_value` has matching arms.
+                if self.try_emit_value(out, expr, env) {
+                    return;
+                }
                 out.write_u8(b'(');
                 out.write(op.as_bytes());
                 for arg in &items[1..] {
@@ -668,6 +690,25 @@ impl<'a> Refiner<'a> {
                 }
                 out.write_u8(b')');
             }
+        }
+    }
+
+    fn try_emit_value<H: Hasher>(&self, out: &mut H, expr: &Value, env: &WalkEnv) -> bool {
+        if let Ok(v) = self.ctx.eval_value(expr, env) {
+            out.write_u8(b'V');
+            self.emit_value(out, &v);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn try_emit_bool<H: Hasher>(&self, out: &mut H, expr: &Value, env: &WalkEnv) -> bool {
+        if let Ok(b) = self.ctx.eval_bool_value(expr, env) {
+            out.write_u8(if b { b'T' } else { b'F' });
+            true
+        } else {
+            false
         }
     }
 
