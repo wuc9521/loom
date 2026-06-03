@@ -112,6 +112,67 @@ sub-NT-dedup-equivalent sharing lazily at the eval boundary. anbn-3 CEGIS:
 - "Think harder" means actually look at the data / read the code, not
   propose more options. Profile first, propose second.
 
+## TODO: PROSE encoding — re-evaluate Length-and-Char vs position-on-tape
+
+The 354 PROSE files in `benchmark/String/` (translated by
+`benchmark/String/scripts/gen.py`) currently use a **position-on-tape**
+encoding: per-model `PosIn` and `PosOut` sorts, `Char` sort, char_at
+lookups, and a dual-side semantics (`Str.SemIn` / `Str.SemOut`) where
+the constraint pins `Str.SemOut` at the full output. `str.at` and
+`str.substr` cross sides via disjunction; everything else is same-side.
+`int.neg1`, `str.replace`, `int.indexof`, `str.int2str`, `int.to_int`
+are stubbed `false`. Total disk: ~17 MB across 354 files; biggest is
+2.4 MB (Address.000014 → 0014.sl). Most parse but solver wall time
+is unverified for the larger files.
+
+**Alternative under consideration — Length-and-Char (duet style).**
+See `benchmark/misc/duet/11440431.sl` and its theory file. Each `StrProg`
+gets two semantic projections — `StrProg.Len p asp → Idx` and
+`StrProg.Char p (asp, k) → Chr` — instead of a `(lo, hi)` aspect.
+`StrProg.OutEq` ties them via length-equality + pointwise-char equality
+against the output. Two aspects: `ExAsp` (just model) and `CharAsp`
+(model + k). No tape, no positions in the Str aspect itself.
+
+Why this is interesting:
+
+- Aspect space stays small per benchmark (no `O(out² )` substring
+  enumeration; CharAsp scales with `max_len`, not `max_len²`).
+- Closer in spirit to direct term-evaluation. Maps cleanly onto how a
+  human thinks about FlashFill: "the synthesized program produces a
+  string of some length, with character c at each position k".
+- Krogmeier–Madhusudan–style aspect extension would just work if we
+  ever need free-variable contexts.
+
+What's not obvious:
+
+- Lifting `str.substr s i n` into the (Length, Char) view without
+  losing information. The duet theory file punts on the general case
+  (returns `bot` for str.++ length, hardcodes specific patterns for
+  suffixof). For 354 PROSE files we can't hand-author per-benchmark
+  theory, so we'd need a uniform encoding.
+- `str.replace` is the hard one — its length depends on the count of
+  occurrences and the lengths of the replacement vs. the pattern.
+- The Char projection at synthesized-position-k requires evaluating
+  the synth-fun at every (model, k); the BV blowup may be
+  comparable to the position-on-tape encoding.
+
+Action items if/when we revisit:
+
+1. Sketch the Length-and-Char encoding for one PROSE benchmark by
+   hand. Compare BV bit count and file size against the current
+   `0036.sl` (Column.000003) baseline.
+2. Decide if we want a uniform encoding for all 354 or per-benchmark
+   tailoring (duet does the latter; we'd need to autogenerate).
+3. Krogmeier & Madhusudan, *POPL 2022*, "Learning Formulas in Finite
+   Variable Logics" is the relevant paper. Local copy at
+   `~/Zotero/storage/G9AFBVZX/`. Their encoding is parameterless
+   (synth-fun is a constant formula); free variables enter via aspect
+   extension on quantifiers, not as synth-fun parameters. We are
+   *already* doing this for fixed-arity PROSE — `str.argi` are term
+   constructors, not parameters — so the paper's contribution to
+   PROSE specifically is about how to encode lambda-abstraction
+   cleanly, not about synth-fun signatures.
+
 ## Useful commands
 
 ```bash
