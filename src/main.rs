@@ -5,6 +5,15 @@ use delis::{
     parser::{load_module_file, DelisCmd, DelisProg},
     process::{cleanup_children, register_pid, unregister_pid},
 };
+
+// mimalloc as the global allocator. Profiles showed `__rust_alloc`,
+// `__rust_dealloc`, and `Arc::drop_slow` in the top self-time entries on
+// the bisim and exact-nullary hot paths; mimalloc's per-thread heaps and
+// faster small-allocation path generally give 5-15% on workloads like
+// ours where short-lived `Vec` / `HashMap` / `Arc` churn dominates.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::{
     io::{self, BufWriter, Read, Write},
     path::PathBuf,
