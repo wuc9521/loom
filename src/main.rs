@@ -301,7 +301,7 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// CLI application for parsing your custom language
+/// Command-line interface for Delis.
 #[derive(clap::Parser, Debug)]
 #[command(
     author,
@@ -392,7 +392,7 @@ pub struct CLI {
     solver: Option<String>,
 }
 
-/// Run the language parsing application
+/// Run the Delis CLI.
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     env_logger::Builder::from_default_env()
