@@ -107,7 +107,7 @@ impl SemanticProgram {
 
         let mut cases_by_relation: HashMap<String, HashMap<String, Case>> = HashMap::default();
         for spec in &self.semantics {
-            if let Ok(cases) = parse_cases(&spec.body) {
+            if let Ok(cases) = parse_cases(&spec.body, &spec.aspect_var) {
                 cases_by_relation.insert(spec.relation.clone(), cases);
             }
         }
@@ -478,8 +478,13 @@ impl<'a> Refiner<'a> {
             values: HashMap::default(),
             subterms: HashMap::default(),
         };
-        env.aspects.insert("asp".to_string(), aspect.clone());
-        // Walk cache: local to this signature() call. `env.aspects["asp"]`
+        let aspect_var = cases
+            .values()
+            .next()
+            .map(|case| case.aspect_var.clone())
+            .unwrap_or_else(|| "asp".to_string());
+        env.aspects.insert(aspect_var, aspect.clone());
+        // Walk cache: local to this signature() call. The current aspect
         // is fixed for the duration, so a cached hash for a given
         // (expr_ptr, env_values_restricted_to_free_vars) is sound. Lives
         // on the stack so it's dropped at end-of-call — across calls,

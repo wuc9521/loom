@@ -320,7 +320,7 @@ impl<'a> ChcCompiler<'a> {
                 );
             }
             for bit in &domain.bits {
-                Rc::make_mut(&mut env.aspect).insert("asp".to_string(), bit.aspect.clone());
+                Rc::make_mut(&mut env.aspect).insert(case.aspect_var.clone(), bit.aspect.clone());
                 let (formula, neg_formula) = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) => {
                         let pair = self.eval_bool_pair(&case.body, &env)?;
@@ -1299,25 +1299,6 @@ impl<'a> ChcCompiler<'a> {
                         values.join(" ")
                     ))
                 }
-            }
-            FieldDomain::Union { bot, sorts } => {
-                if let Ok(value) = self.ctx.eval_value(arg, env) {
-                    let ok = match &value {
-                        AspectValue::Symbol(symbol) => symbol == bot,
-                        AspectValue::Univ { sort, .. } => {
-                            sorts.iter().any(|s| s.as_str() == &**sort)
-                        }
-                        _ => false,
-                    };
-                    if ok {
-                        return Ok(vec![(formula_true(), value)]);
-                    }
-                }
-                let mut out = vec![(formula_true(), AspectValue::Symbol(bot.clone()))];
-                for sort in sorts {
-                    out.extend(self.dynamic_value_variants(sort, arg, env)?);
-                }
-                Ok(out)
             }
         }
     }

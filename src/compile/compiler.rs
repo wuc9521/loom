@@ -106,6 +106,12 @@ struct ConstructorStats {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct EnvMemoKey {
+    /// The current model. Captured unconditionally because model-function and
+    /// relation calls depend on it even when the expression syntactically
+    /// references no aspect binder (e.g. `(out.chr $0)` with literal args).
+    /// Without this, a value computed under one model could be reused under
+    /// another, silently miscompiling multi-model value-semantics.
+    model: Option<String>,
     aspects: Vec<(String, AspectKey)>,
     values: Vec<(String, AspectValue)>,
 }
@@ -549,7 +555,7 @@ impl<'a> Compiler<'a> {
                 if filled[bit.bit] {
                     continue;
                 }
-                env.aspect.insert("asp".to_string(), bit.aspect.clone());
+                env.aspect.insert(case.aspect_var.clone(), bit.aspect.clone());
                 let eval_start = Instant::now();
                 let bool_expr = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) if body_is_ground => {
@@ -1269,7 +1275,14 @@ impl<'a> Compiler<'a> {
             if let Some(matches) = self.ctx.constant_value_matches(symbol, target, env)? {
                 return Ok(BoolExpr::Const(matches));
             }
-            return Ok(BoolExpr::Const(symbol == target.display()));
+            // Reaching here means the symbol is not a bound value, a declared
+            // constant, or an enum/model token. eval_value's discipline rejects
+            // it (e.g. a bare domain element named directly in a body); surface
+            // that error rather than string-matching the element name.
+            return Err(self
+                .cached_eval_value(expr, env)
+                .err()
+                .unwrap_or_else(|| format!("unsupported finite symbol {symbol}")));
         }
         let Some(items) = expr.to_ref_vec() else {
             return Err(format!("expected finite expression, got {expr}"));
@@ -1329,7 +1342,22 @@ impl<'a> Compiler<'a> {
                 values.push((name.clone(), value.clone()));
             }
         }
+        // The current model must be part of the key whenever it isn't already
+        // implied: model-function and relation calls depend on it even when
+        // `expr` references no aspect binder. If `aspects` is non-empty it
+        // already carries the model (every AspectKey has `.model`, and the env
+        // holds a single aspect during constructor eval), so we only pay the
+        // String clone in the otherwise-uncaptured case.
+        let model = if aspects.is_empty() {
+            env.aspect
+                .values()
+                .next()
+                .map(|aspect| aspect.model.clone())
+        } else {
+            None
+        };
         EnvMemoKey {
+            model,
             aspects,
             values,
         }
@@ -1822,7 +1850,7 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
     let relation_set = relations.iter().cloned().collect::<HashSet<_>>();
     let mut locals = HashMap::<String, RelationLocal>::default();
     for spec in &ctx.semantic_program.semantics {
-        let cases = crate::compile::semantics::parse_cases(&spec.body)?;
+        let cases = crate::compile::semantics::parse_cases(&spec.body, &spec.aspect_var)?;
         let entry = locals.entry(spec.relation.clone()).or_default();
         entry.has_parent |= crate::compile::aspects::contains_parent_navigation(&spec.body);
         for case in cases.values() {

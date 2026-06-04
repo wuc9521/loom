@@ -6,11 +6,12 @@ use sygus_parser::Literal;
 #[derive(Clone)]
 pub struct Case {
     pub self_var: String,
+    pub aspect_var: String,
     pub vars: Vec<String>,
     pub body: Value,
 }
 
-pub fn parse_cases(body: &Value) -> Result<HashMap<String, Case>, String> {
+pub fn parse_cases(body: &Value, aspect_var: &str) -> Result<HashMap<String, Case>, String> {
     let outer = body
         .to_ref_vec()
         .ok_or_else(|| format!("define-semantics body must be a list: {body}"))?;
@@ -60,6 +61,7 @@ pub fn parse_cases(body: &Value) -> Result<HashMap<String, Case>, String> {
             cons,
             Case {
                 self_var: self_var.clone(),
+                aspect_var: aspect_var.to_string(),
                 vars,
                 body: (*body).clone(),
             },

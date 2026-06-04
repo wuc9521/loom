@@ -35,6 +35,10 @@ pub struct SemanticContext<'a> {
     pub models: HashMap<String, &'a Model>,
     pub func_sigs: HashMap<String, FuncSig>,
     spaces: HashMap<String, FiniteSpace>,
+    /// All values declared across `(enum ...)` finite-space field domains.
+    /// Used to recognize bare enum members appearing in semantic bodies
+    /// structurally — without ever consulting model element names.
+    enum_values: std::collections::HashSet<String>,
     specs: HashMap<String, SemanticSpec>,
     domains_by_relation: HashMap<String, SemanticDomain>,
     domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
@@ -141,6 +145,14 @@ impl<'a> SemanticContext<'a> {
             .iter()
             .map(|space| (space.name.clone(), space.clone()))
             .collect::<HashMap<_, _>>();
+        let mut enum_values = std::collections::HashSet::new();
+        for space in &program.finite_spaces {
+            for field in &space.fields {
+                if let crate::compile::types::FieldDomain::Enum(values) = &field.domain {
+                    enum_values.extend(values.iter().cloned());
+                }
+            }
+        }
         let specs = program
             .semantics
             .iter()
@@ -162,6 +174,7 @@ impl<'a> SemanticContext<'a> {
             models,
             func_sigs,
             spaces,
+            enum_values,
             specs,
             domains_by_relation,
             domains_by_sort,
@@ -252,7 +265,8 @@ impl<'a> SemanticContext<'a> {
     /// path to show up at 0.7% self time on test_col before this change.
     pub fn current_model<'e>(&self, env: &'e impl EnvView) -> Result<&'e str, String> {
         env.aspects()
-            .get("asp")
+            .values()
+            .next()
             .map(|aspect| aspect.model.as_str())
             .ok_or_else(|| "no current aspect in semantic environment".to_string())
     }
@@ -391,24 +405,6 @@ impl<'a> SemanticContext<'a> {
                     }
                     fields.push((field.name.clone(), value));
                 }
-                crate::compile::types::FieldDomain::Union { bot, sorts } => {
-                    let value = self.eval_value(arg, env)?;
-                    match &value {
-                        AspectValue::Symbol(symbol) if symbol == bot => {}
-                        AspectValue::Univ { sort, .. }
-                            if sorts.iter().any(|s| s.as_str() == &**sort) => {}
-                        _ => {
-                            return Err(format!(
-                                "aspect field {} expected {} or one of ({}) but got {}",
-                                field.name,
-                                bot,
-                                sorts.join(" "),
-                                value.display()
-                            ));
-                        }
-                    }
-                    fields.push((field.name.clone(), value));
-                }
             }
         }
         Ok(AspectKey {
@@ -426,29 +422,35 @@ impl<'a> SemanticContext<'a> {
             if let Some(value) = env.values().get(symbol) {
                 return Ok(value.clone());
             }
-            if let Ok(model) = self.current_model(env) {
-                if let Some(model_ref) = self.models.get(model) {
-                    for univ in &model_ref.univ_defs {
-                        if univ.elems.iter().any(|elem| elem.name == symbol) {
-                            return Ok(AspectValue::Univ {
-                                sort: Arc::from(univ.sort.to_string()),
-                                name: Arc::from(symbol),
-                            });
-                        }
-                    }
-                    if let Some(sig) = self.func_sigs.get(symbol) {
-                        if sig.arg_sorts.is_empty() {
-                            let value = self
-                                .eval_model_symbols(model_ref, symbol, &[])
-                                .ok_or_else(|| {
-                                    format!("model {model} has no value for {symbol}")
-                                })?;
-                            return interped_aspect_value(&sig.ret_sort.to_string(), &value);
-                        }
-                    }
+            // Disciplined path: a bare symbol denoting a domain value must be a
+            // declared nullary function, interpreted by the model. Its
+            // denotation flows through the structure. We never consult model
+            // element names — those are arbitrary model-internal tokens and a
+            // semantic body may mention only signature-level symbols.
+            if let Some(sig) = self.func_sigs.get(symbol) {
+                if sig.arg_sorts.is_empty() {
+                    let model = self.current_model(env)?;
+                    let model_ref = self
+                        .models
+                        .get(model)
+                        .ok_or_else(|| format!("unknown model {model}"))?;
+                    let value = self
+                        .eval_model_symbols(model_ref, symbol, &[])
+                        .ok_or_else(|| format!("model {model} has no value for {symbol}"))?;
+                    return interped_aspect_value(&sig.ret_sort.to_string(), &value);
                 }
             }
-            return Ok(AspectValue::Symbol(symbol.to_string()));
+            // Enum members and model names are signature-level tokens that
+            // appear as aspect arguments / enum comparisons; they carry through
+            // as Symbol.
+            if self.enum_values.contains(symbol) || self.models.contains_key(symbol) {
+                return Ok(AspectValue::Symbol(symbol.to_string()));
+            }
+            return Err(format!(
+                "undeclared symbol {symbol} in semantic body; expected a bound variable, \
+                 a declared function, an enum value, or a model name (domain elements may \
+                 not be named directly — declare and interpret a nullary constant instead)"
+            ));
         }
         let items = expr
             .to_ref_vec()

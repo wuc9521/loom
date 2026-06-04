@@ -59,7 +59,7 @@ impl<'a> CompileContext<'a> {
             .semantics
             .iter()
             .map(|spec| {
-                semantics::parse_cases(&spec.body).map(|cases| (spec.relation.clone(), cases))
+                semantics::parse_cases(&spec.body, &spec.aspect_var).map(|cases| (spec.relation.clone(), cases))
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
         Ok(Self {
