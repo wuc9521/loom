@@ -11,5 +11,7 @@ theory/
 tests
 tools
 dist
+bench-runner/
+visual/
 **/__pycache__/
 .claude
