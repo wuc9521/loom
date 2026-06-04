@@ -55,6 +55,10 @@ pub struct SemanticProgram {
 pub struct SemanticSpec {
     pub relation: String,
     pub term_sort: String,
+    /// The user-chosen aspect binder name from the header, e.g. `asp` in
+    /// `(asp ExAsp)`. This is an arbitrary local name (the paper's state
+    /// binder σ), so it must be threaded through rather than hardcoded.
+    pub aspect_var: String,
     pub aspect_space: String,
     pub return_kind: SemanticKind,
     pub body: Value,
@@ -150,14 +154,13 @@ pub struct FieldDecl {
 pub enum FieldDomain {
     Sort(String),
     Enum(Vec<String>),
-    Union { bot: String, sorts: Vec<String> },
 }
 
 impl FieldDomain {
     pub fn as_sort(&self) -> Option<&str> {
         match self {
             FieldDomain::Sort(sort) => Some(sort),
-            FieldDomain::Enum(_) | FieldDomain::Union { .. } => None,
+            FieldDomain::Enum(_) => None,
         }
     }
 }

@@ -488,33 +488,6 @@ fn parse_aspect_term(
                 }
                 AspectValue::Symbol(value)
             }
-            FieldDomain::Union { bot, sorts } => {
-                let value = arg.to_string();
-                if value == *bot {
-                    AspectValue::Symbol(value)
-                } else {
-                    let Some(sort) = sorts
-                        .iter()
-                        .find(|sort| {
-                            univs
-                                .get(*sort)
-                                .is_some_and(|univ| univ.contains(&value))
-                        })
-                        .cloned()
-                    else {
-                        return Err(format!(
-                            "aspect field {} expected {} or an element of one of ({}) but got {value}",
-                            field.name,
-                            bot,
-                            sorts.join(", ")
-                        ));
-                    };
-                    AspectValue::Univ {
-                        sort: Arc::from(sort.as_str()),
-                        name: Arc::from(value),
-                    }
-                }
-            }
         };
         assignment.push((field.name.clone(), value));
     }
@@ -661,26 +634,6 @@ fn parse_field_domain(domain: &Value) -> Result<FieldDomain, String> {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(FieldDomain::Enum),
-        [op, bot, sorts @ ..] if op.as_symbol() == Some("union") => {
-            let bot = bot
-                .as_symbol()
-                .ok_or_else(|| format!("union bot value must be a symbol: {bot}"))?
-                .to_string();
-            let sorts = sorts
-                .iter()
-                .map(|sort| {
-                    sort.as_symbol()
-                        .map(str::to_string)
-                        .ok_or_else(|| format!("union sort must be a symbol: {sort}"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if sorts.is_empty() {
-                return Err(format!(
-                    "union field domain must include at least one sort: {domain}"
-                ));
-            }
-            Ok(FieldDomain::Union { bot, sorts })
-        }
         _ => Err(format!("unsupported record field domain {domain}")),
     }
 }
@@ -732,24 +685,6 @@ fn enumerate_aspects(
                 }
                 FieldDomain::Enum(values) => {
                     values.iter().cloned().map(AspectValue::Symbol).collect()
-                }
-                FieldDomain::Union { bot, sorts } => {
-                    let mut values = vec![AspectValue::Symbol(bot.clone())];
-                    for sort in sorts {
-                        let Some(domain) = domains_by_sort.get(sort) else {
-                            return Err(format!(
-                                "unsupported finite field union sort {sort} for field {}; use model universe sorts ({})",
-                                field.name,
-                                universe_sorts.join(", ")
-                            ));
-                        };
-                        let sort_arc: Arc<str> = Arc::from(sort.as_str());
-                        values.extend(domain.iter().cloned().map(|name| AspectValue::Univ {
-                            sort: sort_arc.clone(),
-                            name: Arc::from(name),
-                        }));
-                    }
-                    values
                 }
             };
             Ok((field.name.clone(), values))
@@ -841,6 +776,10 @@ impl SemanticSpec {
         .as_symbol()
         .ok_or_else(|| format!("term argument sort must be a symbol: {}", term_items[1]))?
         .to_string();
+    let aspect_var = aspect_items[0]
+        .as_symbol()
+        .ok_or_else(|| format!("aspect argument name must be a symbol: {}", aspect_items[0]))?
+        .to_string();
     let aspect_space = aspect_items[1]
         .as_symbol()
         .ok_or_else(|| format!("aspect argument sort must be a symbol: {}", aspect_items[1]))?
@@ -860,6 +799,7 @@ impl SemanticSpec {
     Ok(SemanticSpec {
         relation,
         term_sort,
+        aspect_var,
         aspect_space,
         return_kind,
         body,

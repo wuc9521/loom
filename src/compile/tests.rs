@@ -506,16 +506,14 @@ fn model_terms_support_constants_functions_and_nested_applications() {
 (declare-term-types
  ((Formula 0))
  (((flag.atom)
-   (nested.pred)
-   (nested.eq))))
+   (nested.pred))))
 (define-finite FO.Asp
   (record (model Model)))
 (define-semantics
   ((FO.Sem (phi Formula) (asp FO.Asp)))
   ((match phi
      ((flag.atom) (flag))
-     ((nested.pred) (P (g (f c))))
-     ((nested.eq) (= (g (f c)) @A.1)))))
+     ((nested.pred) (P (g (f c)))))))
 (synth-fun phi () Formula)
 (constraint (FO.Sem phi (FO.Asp m)))
 (check-synth)
@@ -628,35 +626,6 @@ fn builds_separate_bool_and_finite_value_semantic_domains() {
 }
 
 #[test]
-fn union_finite_fields_enumerate_bot_plus_model_domains() {
-    let problem = parse(
-        r#"
-(set-logic ALL)
-(declare-sort U 0)
-(define-model m
-  (define-univ U ($0 $1)))
-(declare-term-types
- ((Formula 0))
- (((top))))
-(define-finite EnvAsp
-  (record (model Model) (x (union bot U)) (y (union bot U))))
-(define-semantics
-  ((Formula.Sem (phi Formula) (asp EnvAsp)))
-  ((match phi
-     ((top) true))))
-(synth-fun phi () Formula)
-(constraint (Formula.Sem phi (EnvAsp m bot bot)))
-(check-synth)
-"#,
-    );
-
-    let summary = problem.encode().expect("union finite fields should compile");
-
-    assert_eq!(summary.bit_mappings.len(), 9);
-    assert_eq!(summary.constraint_bits[0].bit, 0);
-}
-
-#[test]
 fn semantic_bv_preserves_composite_top_level_constraints() {
     let problem = parse(
         r#"
@@ -707,7 +676,7 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
  (((top))
   ((x))))
 (define-finite EnvAsp
-  (record (model Model) (xv (union bot U))))
+  (record (model Model) (xv U)))
 (define-semantics
   ((TermU.Sem (t TermU) (asp EnvAsp)))
   :returns U
@@ -722,8 +691,8 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
   ((match phi
      ((top) true))))
 (synth-fun phi () Formula)
-(constraint (Formula.Sem phi (EnvAsp m bot)))
-(constraint (Formula.Valid phi (EnvAsp m bot)))
+(constraint (Formula.Sem phi (EnvAsp m $0)))
+(constraint (Formula.Valid phi (EnvAsp m $0)))
 (check-synth)
 "#,
     );
@@ -731,8 +700,8 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
     let chc = problem.to_chc_ast().expect("multiple Formula CHC domains should compile");
     let output = chc.to_fixedpoint_query_text("Goal");
 
-    assert!(output.contains("qFormula.Sem.m.xv.bot.Formula"));
-    assert!(output.contains("qFormula.Valid.m.xv.bot.Formula"));
+    assert!(output.contains("qFormula.Sem.m.xv.$0.Formula"));
+    assert!(output.contains("qFormula.Valid.m.xv.$0.Formula"));
     assert!(output.contains("(Goal r)"));
 }
 
