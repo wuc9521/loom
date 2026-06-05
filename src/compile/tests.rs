@@ -16,7 +16,7 @@ fn parse(input: &str) -> DelisProg {
 fn eval_symbols_matches_unary_model_interpretations() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun p0 (Pos) Bool)
 (define-model w
@@ -54,7 +54,7 @@ fn eval_symbols_matches_unary_model_interpretations() {
 fn cloned_models_preserve_stable_cache_identity() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun p0 (Pos) Bool)
 (define-model w
@@ -77,7 +77,7 @@ fn cloned_models_preserve_stable_cache_identity() {
     let cloned = model.clone();
     let reparsed = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun p0 (Pos) Bool)
 (define-model w
@@ -109,7 +109,7 @@ fn cloned_models_preserve_stable_cache_identity() {
 fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort U 0)
 (define-model m)
 (declare-term-types ((Formula 0)) (((top) (bot))))
@@ -146,7 +146,7 @@ fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
 fn enumerates_subword_aspects_and_constraint_polarities() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
@@ -187,7 +187,7 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 fn finite_aspect_fields_are_not_named_primitives() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
@@ -230,7 +230,7 @@ fn finite_aspect_fields_are_not_named_primitives() {
 fn enum_aspect_symbols_compare_as_finite_values() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (define-model w
   (define-univ Pos ($0)))
@@ -256,7 +256,7 @@ fn enum_aspect_symbols_compare_as_finite_values() {
 fn parses_direct_semantic_constraints() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
@@ -297,7 +297,7 @@ fn parses_direct_semantic_constraints() {
 fn semantic_predicates_use_aspect_projection() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (declare-fun b (Pos) Bool)
@@ -347,7 +347,7 @@ fn semantic_predicates_use_aspect_projection() {
 fn finite_compilation_loads_models_referenced_only_by_axioms() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
@@ -379,7 +379,7 @@ fn finite_compilation_loads_models_referenced_only_by_axioms() {
 fn detects_two_way_navigation() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
@@ -413,7 +413,7 @@ fn detects_two_way_navigation() {
 fn finite_aspects_and_predicates_use_declared_universe_sorts() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort A 0)
 (declare-sort B 0)
 (declare-fun P (A B) Bool)
@@ -450,7 +450,7 @@ fn finite_aspects_and_predicates_use_declared_universe_sorts() {
 fn quantified_domains_can_select_a_non_primary_universe_sort() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort A 0)
 (declare-sort B 0)
 (declare-fun P (A B) Bool)
@@ -487,7 +487,7 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
 fn model_terms_support_constants_functions_and_nested_applications() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort A 0)
 (declare-sort B 0)
 (declare-fun c () A)
@@ -529,7 +529,7 @@ fn model_terms_support_constants_functions_and_nested_applications() {
 fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort A 0)
 (declare-sort B 0)
 (declare-fun h (A B) A)
@@ -564,7 +564,7 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 fn builds_separate_bool_and_finite_value_semantic_domains() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort U 0)
 (define-model m
   (define-univ U ($0 $1)))
@@ -629,7 +629,7 @@ fn builds_separate_bool_and_finite_value_semantic_domains() {
 fn semantic_bv_preserves_composite_top_level_constraints() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (define-model m
   (define-univ Pos ($0 $1)))
@@ -664,10 +664,129 @@ fn semantic_bv_preserves_composite_top_level_constraints() {
 }
 
 #[test]
+fn term_synthesis_roots_grammar_at_value_sort() {
+    let problem = parse(
+        r#"
+
+(declare-sort U 0)
+(declare-fun src () U)
+(declare-fun dst () U)
+(declare-fun nxt (U) U)
+(declare-term-types
+ ((TermU 0))
+ (((t.src)
+   (t.nxt TermU))))
+(define-finite TermU.Asp (record (model Model)))
+(define-semantics
+  ((TermU.Sem (term TermU) (asp TermU.Asp)))
+  :returns U
+  ((match term
+     ((t.src) src)
+     ((t.nxt x) (nxt (TermU.Sem x asp))))))
+(define-model G1
+  (define-univ U ($0 $1 $2 $3))
+  (interp-fun src ($0))
+  (interp-fun dst ($2))
+  (interp-fun nxt (match ((($0) $1) (($1) $2) (($2) $2) ((_) $0)))))
+(define-model G2
+  (define-univ U ($0 $1 $2 $3 $4))
+  (interp-fun src ($4))
+  (interp-fun dst ($2))
+  (interp-fun nxt (match ((($4) $3) (($3) $2) (($2) $2) ((_) $0)))))
+(synth-fun phi () TermU)
+(constraint (= (TermU.Sem phi (TermU.Asp G1)) (get-fun dst G1)))
+(constraint (= (TermU.Sem phi (TermU.Asp G2)) (get-fun dst G2)))
+(check-synth)
+"#,
+    );
+
+    let sygus = problem
+        .to_sygus()
+        .expect("value-sort term synthesis should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // The synth-fun's declared return sort drives the grammar root: phi ranges
+    // over the value sort TermU, with t.src/t.nxt as its productions.
+    assert!(output.contains("(synth-fun phi () TermU"));
+    assert!(output.contains("t.src"));
+    assert!(output.contains("(t.nxt Start)"));
+    // Each constraint pins the one-hot bit of dst^M against the synth target.
+    assert!(output.contains(") phi)"));
+}
+
+#[test]
+fn parametric_term_synthesis_emits_pbe_application() {
+    let problem = parse(
+        r#"
+
+(declare-sort U 0)
+(declare-fun src () U)
+(declare-fun nxt (U) U)
+(declare-fun arg () U)
+(declare-fun out () U)
+(declare-term-types
+ ((TermU.x0 0))
+ (((x0)
+   (tx.src)
+   (tx.nxt TermU.x0))))
+(define-finite TermU.x0.Asp (record (model Model)))
+(define-semantics
+  ((TermU.x0.Sem (term TermU.x0) (asp TermU.x0.Asp)))
+  :returns U
+  ((match term
+     ((x0) arg)
+     ((tx.src) src)
+     ((tx.nxt y) (nxt (TermU.x0.Sem y asp))))))
+(define-model G1
+  (define-univ U ($0 $1 $2 $3))
+  (interp-fun src ($0))
+  (interp-fun arg ($1))
+  (interp-fun out ($3))
+  (interp-fun nxt (match ((($0) $1) (($1) $2) (($2) $3) (($3) $3) ((_) $0)))))
+(define-model G2
+  (define-univ U ($0 $1 $2 $3 $4))
+  (interp-fun src ($4))
+  (interp-fun arg ($0))
+  (interp-fun out ($2))
+  (interp-fun nxt (match ((($0) $1) (($1) $2) (($2) $3) (($4) $3) ((_) $0)))))
+(synth-fun f ((x0 U)) TermU.x0)
+(constraint (= (TermU.x0.Sem f (TermU.x0.Asp G1)) (get-fun out G1)))
+(constraint (= (TermU.x0.Sem f (TermU.x0.Asp G2)) (get-fun out G2)))
+(check-synth)
+"#,
+    );
+
+    let sygus = problem
+        .to_sygus()
+        .expect("parametric term synthesis should compile");
+    let output = sygus
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // f is a genuine function: real BV parameter, x0 as a grammar leaf.
+    assert!(output.contains("(synth-fun f ((x0 U)) TermU.x0"));
+    assert!(output.contains("(x0 tx.src (tx.nxt Start))"));
+    // Constraints are PBE applications of f, not nullary bit extractions.
+    assert!(output.contains("(f #b"));
+    // Value/param BV width is Σ_M |U_M| = 4 + 5 = 9 (no |U| blowup).
+    assert!(output.contains("(define-sort TermU.x0 () (_ BitVec 9))"));
+    assert!(output.contains("(define-sort U () (_ BitVec 9))"));
+    // The parameter-leaf constructor x0 is the formal parameter, not a folded
+    // define-fun.
+    assert!(!output.contains("(define-fun x0 "));
+}
+
+#[test]
 fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort U 0)
 (define-model m
   (define-univ U ($0)))
@@ -709,7 +828,7 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
 fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
@@ -736,7 +855,7 @@ fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
 fn allows_multiple_finite_aspect_spaces() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (define-model w (define-univ Pos ($0)))
 (declare-term-types ((Regex 0)) (((a))))
@@ -761,7 +880,7 @@ fn allows_multiple_finite_aspect_spaces() {
 fn allows_multiple_define_semantics_declarations() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (define-model w (define-univ Pos ($0)))
 (declare-term-types ((Regex 0)) (((a))))
@@ -790,7 +909,7 @@ fn allows_multiple_define_semantics_declarations() {
 fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
@@ -865,7 +984,7 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
 fn rejects_wrong_aspect_constructor_in_semantic_body() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
@@ -894,7 +1013,7 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 fn rejects_wrong_aspect_arity_in_semantic_body() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
@@ -923,7 +1042,7 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 fn aspect_field_accepts_model_function_expression() {
     let problem = parse(
         r#"
-(set-logic ALL)
+
 (declare-sort U 0)
 (declare-sort Ctr 0)
 (declare-fun a (U) Bool)

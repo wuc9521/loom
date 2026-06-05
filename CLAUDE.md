@@ -248,6 +248,96 @@ Action items if/when we revisit:
    PROSE specifically is about how to encode lambda-abstraction
    cleanly, not about synth-fun signatures.
 
+## The PBE-translation dilemma (String / FlashFill) — read before "fixing" it
+
+We want String benchmarks to come out in genuine **SyGuS PBE shape**:
+
+```
+(synth-fun f ((arg0 Str)) Str ...grammar with arg0 as a leaf...)
+(constraint (= (f "20+") "20"))
+(constraint (= (f "9")   "9"))
+...
+```
+
+This is the natural home for the (Len,Char) value semantics — String
+operators (`str.++`, `str.at`, `str.substr`, ...) are model-independent, so
+`f` is a real function of its input. But delis's architecture compiles the
+synth target as a **closed term** and **folds its value-semantics over the
+example models into a single bitvector**. The result is a *nullary* target:
+
+```
+(synth-fun phi () Str)          ; closed term, no formal parameter
+```
+
+with each example baked into a `(define-model ...)` and the
+input/output read via model-explicit functions (`in.*`, `out.*`, `get-fun`).
+This is what `benchmark/String/scripts/gen_lenchar.py` emits today, and what
+`/tmp/strfold.sl` is a minimal instance of. It **works** (cvc5 and the
+internal backend both solve `f(arg0)=arg0++arg0`, and the multi-operator
+`0031.sl` solution is hand-verified correct), but it is **not** the literal
+PBE shape.
+
+### Why the two shapes conflict
+
+- **Folded (what delis does).** `compile_semantic_program` folds the value
+  sort's BV width as a *sum over all example models* and projects the synth
+  target's semantics against each. That yields **one nullary term** whose bits
+  encode "the value on every example at once". There is no per-example
+  function application — the examples are structure (models), not arguments.
+- **PBE (what SyGuS wants).** `f` must be a **function** applied to per-example
+  inputs, over **one shared, unfolded single-value Str sort** (`[len | chars]`),
+  with the examples expressed as constraints `(= (f in_i) out_i)` and the
+  solution **lambda-wrapped** `(lambda (arg0) body)` at reconstruction.
+
+Folding-over-examples produces a nullary target; PBE needs one shared value
+space plus application. These are structurally incompatible without unfolding.
+
+### How cvc5 actually does the formal parameter (don't universally quantify)
+
+In cvc5 the synth-fun's formal parameter is **a grammar leaf** — a bound
+variable embedded in the grammar/datatype and carried via `getSygusVarList`,
+**not** a universally-quantified variable. The solution is lambda-wrapped at
+reconstruction time. So the literal-PBE path in delis would need to:
+
+1. Recognize the `arg0` leaf (== the synth-fun formal name) as the
+   **parameter**, and emit it as a grammar variable — projecting semantics
+   from the parameter's BV, not from a constant `define-fun`.
+2. Emit `(synth-fun f ((arg0 Str)) Str ...)` with `arg0` as a leaf over an
+   **unfolded** single-value Str sort (width `|Idx| + L*|Chr|`).
+3. Lower each example application `(f <value>)` and encode in/out as BV
+   literals via `get-fun`.
+
+### The element case (finvar) is inherently folded — that's correct
+
+For finvar-style element term synthesis (`s`, `t`, `nxt` are
+**model-dependent**), folding is the *right* answer: there is no
+model-independent function to abstract. `get-fun` + model-seeded constraints
+(`find_constraint_model` seeds `current_model` during constraint lowering) are
+already built and cvc5-verified for this case. String is the natural PBE home
+*because* its operators are model-independent; the element case is not.
+
+### Status / decision
+
+The folded form is shipped and works for all 354 String files. The literal
+PBE-shape compilation (unfolded single-value Str + arg0-leaf-as-parameter +
+`(f value)` application + lambda-wrapped solution) is **deferred**, not
+abandoned. Either form emits a valid SyGuS program; only the *shape* differs.
+
+### References (local copies)
+
+- **2023 Facet meta-theorem** — Krogmeier & Madhusudan, *Languages with
+  Decidable Learning: A Meta-theorem* (finite-aspect-checkable languages;
+  §9 String theory). `~/Zotero/storage/R6C6FPJR/`. This is the source of the
+  aspect/value-semantics encoding delis uses.
+- **2021/2022 finite-variable logics** — Krogmeier & Madhusudan, *Learning
+  Formulas in Finite Variable Logics*. `~/Zotero/storage/G9AFBVZX/`.
+  **Problem 1** = separation / formula synthesis (Bool-valued sentence true on
+  Pos, false on Neg); **Problem 3** = **term synthesis** (value-valued term `t`
+  with ⟦t⟧_M = out^M) — the PBE case above. Their encoding is parameterless
+  (synth-fun is a constant formula; free variables enter via aspect extension,
+  not synth-fun parameters), which is exactly why the folded form falls out
+  naturally and the literal PBE signature needs extra work.
+
 ## Useful commands
 
 ```bash

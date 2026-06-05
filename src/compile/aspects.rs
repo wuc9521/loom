@@ -185,11 +185,23 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         .collect::<HashMap<_, _>>();
     let mut aspect_cache: HashMap<(String, String), Vec<AspectAssignment>> = HashMap::default();
 
+    // A parametric synth-fun `(synth-fun f ((x0 U) ...) T)` compiles to a
+    // genuine SyGuS function, not a fold: its formal parameters carry the free
+    // variables. The matching aspect fields (same names, on the root semantics
+    // whose term sort is the synth return sort) are therefore NOT enumerated
+    // into the fold — they become BV parameters of `f`. Dropping them keeps the
+    // value BV width at Σ_M |U_M| instead of multiplying by |U| per parameter.
+    let param_field_names = match problem.synth_signature() {
+        Some((_, args, _sort)) => args.iter().map(|a| a.name.clone()).collect::<HashSet<_>>(),
+        None => HashSet::default(),
+    };
+
     let mut domains = Vec::new();
     for spec in &semantic_specs {
         let aspect_space = spaces_by_name
             .get(&spec.aspect_space)
             .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
+        let skip_fields = &param_field_names;
         let mut bits = Vec::new();
         for model in &loaded_models {
             let cache_key = (aspect_space.name.clone(), model.name.clone());
@@ -208,6 +220,7 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
                     model,
                     &models_by_name,
                     model_univ_map,
+                    skip_fields,
                 )?;
                 aspect_cache.entry(cache_key).or_insert(assignments)
             };
@@ -440,7 +453,6 @@ fn parse_aspect_term(
     let model = models_by_name
         .get(&model_name)
         .ok_or_else(|| format!("constraint references unknown model {model_name}"))?;
-    let universe_sorts = model_universe_sorts(model);
     let univs = univs_by_sort(model);
 
     let mut assignment = Vec::new();
@@ -470,12 +482,8 @@ fn parse_aspect_term(
                     name: Arc::from(value),
                 }
             }
-            FieldDomain::Sort(sort) => {
-                return Err(format!(
-                    "unsupported finite field sort {sort} for field {}; use Model, Int, one of the model universe sorts ({}), or (enum ...)",
-                    field.name,
-                    universe_sorts.join(", ")
-                ));
+            FieldDomain::Sort(_sort) => {
+                AspectValue::Symbol(arg.to_string())
             }
             FieldDomain::Enum(values) => {
                 let value = arg.to_string();
@@ -644,12 +652,14 @@ fn enumerate_aspects(
     model: &crate::lang::model::Model,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
     domains_by_sort: &HashMap<String, Vec<String>>,
+    skip_fields: &HashSet<String>,
 ) -> Result<Vec<AspectAssignment>, String> {
     let universe_sorts = model_universe_sorts(model);
     let int_bound = model.max_univ_len();
     let domains = space
         .fields
         .iter()
+        .filter(|field| !skip_fields.contains(&field.name))
         .map(|field| {
             let values = match &field.domain {
                 FieldDomain::Sort(sort) if sort == "Model" => {
