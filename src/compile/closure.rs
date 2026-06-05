@@ -211,7 +211,9 @@ impl DelisProg {
             return Ok(None);
         }
         let start = Instant::now();
-        let mut solver = ClosureSolver::new(self, cmds)?;
+        let Some(mut solver) = ClosureSolver::new(self, cmds)? else {
+            return Ok(None);
+        };
         log::debug!("closure: solver initialized in {:?}", start.elapsed());
         Ok(Some(solver.solve()?))
     }
@@ -250,7 +252,7 @@ struct ClosureSolver<'a> {
 }
 
 impl<'a> ClosureSolver<'a> {
-    fn new(problem: &'a DelisProg, cmds: Vec<SyGuSCmd>) -> Result<Self, String> {
+    fn new(problem: &'a DelisProg, cmds: Vec<SyGuSCmd>) -> Result<Option<Self>, String> {
         let sort_env = SortEnv::from_cmds(&cmds);
         let mut funcs = HashMap::default();
         let mut synth = None;
@@ -298,8 +300,9 @@ impl<'a> ClosureSolver<'a> {
                 _ => {}
             }
         }
-        let (synth_name, synth_sort, grammar) =
-            synth.ok_or_else(|| "closure requires synth-fun".to_string())?;
+        let Some((synth_name, synth_sort, grammar)) = synth else {
+            return Ok(None);
+        };
         let (nonterminals, nt_by_symbol, start) = build_nonterminals(grammar, &sort_env)?;
         let start_nt_idx = nt_by_symbol
             .get(&start)
@@ -308,7 +311,7 @@ impl<'a> ClosureSolver<'a> {
         let synth_self_ref = funcs
             .values()
             .any(|f| term_mentions_symbol(&f.body, &synth_name));
-        Ok(Self {
+        Ok(Some(Self {
             problem,
             synth_name,
             synth_sort,
@@ -320,7 +323,7 @@ impl<'a> ClosureSolver<'a> {
             processed: HashMap::default(),
             synth_self_ref,
             start_nt_idx,
-        })
+        }))
     }
 
     fn solve(&mut self) -> Result<String, String> {
