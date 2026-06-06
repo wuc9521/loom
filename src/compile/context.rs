@@ -44,7 +44,7 @@ impl<'a> CompileContext<'a> {
                 _ => None,
             })
             .ok_or_else(|| "SyGuS compilation requires declare-term-types".to_string())?;
-        let (synth_name, synth_args, _synth_sort) = problem
+        let (synth_name, synth_args, synth_sort) = problem
             .cmds
             .iter()
             .find_map(|cmd| match cmd {
@@ -54,7 +54,11 @@ impl<'a> CompileContext<'a> {
                 _ => None,
             })
             .ok_or_else(|| "SyGuS compilation requires synth-fun".to_string())?;
-        let sig = TermSignature::from_declare_term_types(term_types)?;
+        let mut sig = TermSignature::from_declare_term_types(term_types)?;
+        // The synth-fun's declared return sort selects the grammar root: a
+        // Bool-valued formula sort for separator synthesis, or a value sort
+        // for term synthesis. Falls back to the first-declared sort.
+        sig.set_start_sort(&synth_sort.to_string())?;
         let semantic_cases = semantic_program
             .semantics
             .iter()

@@ -300,6 +300,12 @@ impl<'a> Compiler<'a> {
         }
         let mut cons_results = Vec::new();
         for cons in &self.sig.constructors {
+            // A parameter-leaf constructor IS the synth-fun's formal BV
+            // parameter (a bare grammar terminal), not a folded function, so it
+            // gets no define-fun.
+            if self.is_param_leaf(&cons.name) {
+                continue;
+            }
             let cons_start = Instant::now();
             let bool_bits = self.eval_constructor_bits(cons)?;
             log::debug!(
@@ -458,10 +464,284 @@ impl<'a> Compiler<'a> {
     }
 
     fn lower_top_level_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
-        match self.eval_bool(term, env)? {
-            BoolExpr::Const(value) => Ok(SyGuSTerm::Literal(Literal::Bool(value))),
-            BoolExpr::Dynamic(term) => Ok(term),
+        self.lower_constraint(term, env)
+    }
+
+    // --- Unified structural constraint lowering ---
+    //
+    // Constraints are Bool formulas referencing the synth-fun via semantic
+    // relation calls. We walk the formula AST structurally, producing a
+    // SyGuSTerm directly. Semantic relation calls on the synth target become
+    // bit extractions from the synth-fun's BV (variable or application).
+
+    fn lower_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
+        if let Some(symbol) = term.as_symbol() {
+            return match symbol {
+                "true" => Ok(SyGuSTerm::Literal(Literal::Bool(true))),
+                "false" => Ok(SyGuSTerm::Literal(Literal::Bool(false))),
+                _ => Err(format!("unsupported constraint symbol: {symbol}")),
+            };
         }
+        let Some(items) = term.to_ref_vec() else {
+            return Err(format!("expected constraint expression, got {term}"));
+        };
+        let op = items
+            .first()
+            .and_then(|item| item.as_symbol())
+            .ok_or_else(|| format!("constraint operator must be a symbol: {term}"))?;
+        match op {
+            "not" if items.len() == 2 => {
+                Ok(Bool::not(self.lower_constraint(items[1], env)?))
+            }
+            "and" => {
+                let conjuncts = items[1..]
+                    .iter()
+                    .map(|item| self.lower_constraint(item, env))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Bool::and(conjuncts))
+            }
+            "or" => {
+                let disjuncts = items[1..]
+                    .iter()
+                    .map(|item| self.lower_constraint(item, env))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Bool::or(disjuncts))
+            }
+            "=" if items.len() == 3 => self.lower_equality(items[1], items[2], env),
+            relation if self.is_synth_relation_call(relation, &items[1..]) => {
+                self.lower_synth_relation(relation, &items[1..], env)
+            }
+            _ => Err(format!("unsupported constraint expression: {term}")),
+        }
+    }
+
+    /// True if `(op args...)` is a semantic relation call whose term argument
+    /// is the synth target.
+    fn is_synth_relation_call(&self, op: &str, args: &[&Value]) -> bool {
+        if !self.ctx.has_relation(op) {
+            return false;
+        }
+        args.first()
+            .and_then(|a| a.as_symbol())
+            .map_or(false, |sym| sym == self.synth_name)
+    }
+
+    /// Lower a Bool semantic relation call `(Rel synthName asp)` to a bit
+    /// extraction: `(= ((_ extract b b) bv_ref) #b1)`.
+    fn lower_synth_relation(
+        &self,
+        relation: &str,
+        args: &[&Value],
+        _env: &Env,
+    ) -> Result<SyGuSTerm, String> {
+        if args.len() != 2 {
+            return Err(format!(
+                "semantic relation {relation} in constraint expects 2 args (term, aspect)"
+            ));
+        }
+        let aspect_expr = args[1];
+        let model = self.extract_model_from_aspect(relation, aspect_expr)?;
+        let seed_env = self.constraint_model_env(&model);
+        let aspect = self.strip_param_fields(
+            &self.cached_eval_aspect(aspect_expr, relation, &seed_env)?,
+        );
+        let bit = self.bit_for(relation, &aspect, None)?;
+        let bv_ref = self.synth_bv_ref(&model)?;
+        Ok(Bool::eq(BitVec::extract(bit, bit, bv_ref), BitVec::const_(1, 1)))
+    }
+
+    /// Lower `(= lhs rhs)` in a constraint. One side is a semantic relation
+    /// call on the synth target; the other is a ground value expression.
+    fn lower_equality(
+        &self,
+        lhs: &Value,
+        rhs: &Value,
+        _env: &Env,
+    ) -> Result<SyGuSTerm, String> {
+        let (call, out_expr) = if self.is_value_synth_call(lhs) {
+            (lhs, rhs)
+        } else if self.is_value_synth_call(rhs) {
+            (rhs, lhs)
+        } else {
+            return Err(format!(
+                "constraint equality must have a semantic relation call on the synth target: \
+                 (= {lhs} {rhs})"
+            ));
+        };
+        let call_items = call
+            .to_ref_vec()
+            .ok_or_else(|| format!("call side must be a list: {call}"))?;
+        let relation = call_items[0]
+            .as_symbol()
+            .ok_or_else(|| format!("relation must be a symbol: {}", call_items[0]))?;
+        let aspect_expr = call_items[2];
+        let model = self.extract_model_from_aspect(relation, aspect_expr)?;
+        let seed_env = self.constraint_model_env(&model);
+        let out_value = self.cached_eval_value(out_expr, &seed_env)?;
+        let aspect = self.strip_param_fields(
+            &self.cached_eval_aspect(aspect_expr, relation, &seed_env)?,
+        );
+        let bit = self.bit_for(relation, &aspect, Some(&out_value))?;
+        let bv_ref = self.synth_bv_ref(&model)?;
+        Ok(Bool::eq(BitVec::extract(bit, bit, bv_ref), BitVec::const_(1, 1)))
+    }
+
+    /// True if `expr` is `(Rel synthName asp)` where Rel is a FiniteValue relation.
+    fn is_value_synth_call(&self, expr: &Value) -> bool {
+        let Some(items) = expr.to_ref_vec() else {
+            return false;
+        };
+        if items.len() != 3 {
+            return false;
+        }
+        let Some(relation) = items[0].as_symbol() else {
+            return false;
+        };
+        if items[1].as_symbol() != Some(self.synth_name.as_str()) {
+            return false;
+        }
+        matches!(
+            self.ctx.domain_for_relation(relation),
+            Ok(domain) if matches!(domain.kind, SemanticKind::FiniteValue { .. })
+        )
+    }
+
+    /// Build the SyGuS term referencing the synth-fun's BV output.
+    /// Nullary: `Term::var(synth_name)`.
+    /// Parametric: `Application(synth_name, param_bv_consts)`.
+    fn synth_bv_ref(&self, model: &str) -> Result<SyGuSTerm, String> {
+        if self.synth_args.is_empty() {
+            return Ok(Term::var(&self.synth_name));
+        }
+        let mut bind_args = Vec::new();
+        for param in &self.synth_args {
+            bind_args.push(self.param_bv_const(&param.name, model)?);
+        }
+        Ok(SyGuSTerm::Application(
+            Identifier::Symbol(self.synth_name.clone()),
+            bind_args,
+        ))
+    }
+
+    /// Remove synth-parameter-named fields from an AspectKey. These fields
+    /// were excluded from aspect enumeration, so the bit_index only contains
+    /// entries without them.
+    fn strip_param_fields(&self, aspect: &AspectKey) -> AspectKey {
+        if self.synth_args.is_empty() {
+            return aspect.clone();
+        }
+        AspectKey {
+            relation: aspect.relation.clone(),
+            model: aspect.model.clone(),
+            fields: aspect
+                .fields
+                .iter()
+                .filter(|(name, _)| !self.synth_args.iter().any(|a| a.name == *name))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// Extract the model name from an aspect expression by inspecting its
+    /// space's fields for the `Model`-sorted one.
+    fn extract_model_from_aspect(
+        &self,
+        relation: &str,
+        aspect_expr: &Value,
+    ) -> Result<String, String> {
+        let space = {
+            let domain = self.ctx.domain_for_relation(relation)?;
+            self.ctx.aspect_space(&domain.aspect_space)?
+        };
+        let aspect_args = aspect_expr.to_ref_vec().ok_or_else(|| {
+            format!("aspect expression must be a list: {aspect_expr}")
+        })?;
+        for (field, arg) in space.fields.iter().zip(aspect_args.iter().skip(1)) {
+            if matches!(&field.domain, crate::compile::types::FieldDomain::Sort(s) if s == "Model")
+            {
+                if let Some(name) = arg.as_symbol() {
+                    return Ok(name.to_string());
+                }
+            }
+        }
+        Err(format!(
+            "aspect expression has no Model field: {aspect_expr}"
+        ))
+    }
+
+    /// An `Env` seeded with a model, so `current_model()` resolves during
+    /// evaluation of ground sub-expressions in constraints.
+    fn constraint_model_env(&self, model: &str) -> Env {
+        let mut env = Env::default();
+        env.aspect.insert(
+            "__delis.constraint.model".to_string(),
+            AspectKey {
+                relation: String::new(),
+                model: model.to_string(),
+                fields: Vec::new(),
+            },
+        );
+        env
+    }
+
+    /// Compute the BV constant for a synth parameter in a specific model.
+    /// Evaluates the parameter's constructor semantics across all domains of
+    /// the start sort, collecting each bit's ground truth for that model.
+    fn param_bv_const(
+        &self,
+        param_name: &str,
+        model: &str,
+    ) -> Result<SyGuSTerm, String> {
+        let start = self.sig.start_sort();
+        let width = self.sort_width(start)?;
+        let mut bits_vec = vec![false; width];
+        let mut offset = 0usize;
+        for domain in self.ctx.domains_for_sort(start)? {
+            let spec = self.ctx.spec_for_relation(&domain.relation)?;
+            let cases = self.ctx.cases().get(&spec.relation).ok_or_else(|| {
+                format!("missing semantic cases for relation {}", spec.relation)
+            })?;
+            let case = cases.get(param_name).ok_or_else(|| {
+                format!(
+                    "missing semantic case for param constructor {} in {}",
+                    param_name, spec.relation
+                )
+            })?;
+            let mut env = Env::default();
+            env.relation = Some(spec.relation.clone());
+            env.self_var = Some(case.self_var.clone());
+            let domain_width = domain.width();
+            for bit in &domain.bits {
+                if bit.aspect.model != model {
+                    continue;
+                }
+                env.aspect.insert(case.aspect_var.clone(), bit.aspect.clone());
+                let val = match (&domain.kind, &bit.value) {
+                    (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
+                    (SemanticKind::FiniteValue { .. }, Some(value)) => {
+                        self.eval_finite_eq(&case.body, value, &env)?
+                    }
+                    _ => BoolExpr::Const(false),
+                };
+                if matches!(val, BoolExpr::Const(true)) && bit.bit < domain_width {
+                    bits_vec[offset + bit.bit] = true;
+                }
+            }
+            offset += domain_width;
+        }
+        let bv_str: String = (0..width)
+            .rev()
+            .map(|i| if bits_vec[i] { '1' } else { '0' })
+            .collect();
+        Ok(SyGuSTerm::Literal(Literal::BinConst(bv_str)))
+    }
+
+    /// True if `name` is a variable-leaf constructor: it shares its name with a
+    /// synth-fun parameter, so it compiles to the bare grammar terminal (the
+    /// formal parameter, automatically available in the SyGuS grammar) rather
+    /// than a folded define-fun.
+    fn is_param_leaf(&self, name: &str) -> bool {
+        self.synth_args.iter().any(|a| a.name == name)
     }
 
     fn grammar(&self) -> Result<GrammarDef, String> {
@@ -579,6 +859,27 @@ impl<'a> Compiler<'a> {
                 stats.bits += 1;
                 bool_bits[domain_start + bit.bit] = bool_expr;
                 filled[bit.bit] = true;
+            }
+            // One-hot exactness: a closed (ground) value term must denote
+            // exactly one element per model. This holds iff the model functions
+            // it reads are total and functional. Verify it for ground
+            // FiniteValue domains so a malformed example surfaces as an error
+            // rather than as a silently wrong BV.
+            if body_is_ground && matches!(domain.kind, SemanticKind::FiniteValue { .. }) {
+                let mut per_aspect: HashMap<AspectKey, usize> = HashMap::default();
+                for bit in &domain.bits {
+                    let hot = matches!(bool_bits[domain_start + bit.bit], BoolExpr::Const(true));
+                    *per_aspect.entry(bit.aspect.clone()).or_insert(0) += usize::from(hot);
+                }
+                for (aspect, hot) in &per_aspect {
+                    if *hot != 1 {
+                        return Err(format!(
+                            "ground value term {} under {} denotes {} elements (expected exactly 1) \
+                             in model {}; check that its model functions are total and functional",
+                            cons.name, domain.relation, hot, aspect.model
+                        ));
+                    }
+                }
             }
         }
         log::debug!(
@@ -1457,7 +1758,8 @@ impl<'a> Compiler<'a> {
 
 
     fn remapped_sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
-        self.sig
+        let mut cmds = self
+            .sig
             .sort_order()
             .iter()
             .map(|sort| {
@@ -1467,7 +1769,25 @@ impl<'a> Compiler<'a> {
                     Sort::bitvec(self.sort_width(sort)?),
                 ))
             })
-            .collect()
+            .collect::<Result<Vec<_>, String>>()?;
+        // Synth-fun parameter sorts (e.g. `U`) are declared sorts, not term-type
+        // sorts, so they are not in sort_order. A parameter ranges over the same
+        // per-model universe blocks as the value sort it feeds, so it gets the
+        // same BV width as the start value sort. Emit one alias per distinct
+        // parameter sort not already aliased.
+        let mut seen: HashSet<String> = self.sig.sort_order().iter().cloned().collect();
+        let param_width = self.sort_width(self.sig.start_sort())?;
+        for arg in &self.synth_args {
+            let sort_name = arg.sort.to_string();
+            if seen.insert(sort_name.clone()) {
+                cmds.push(SyGuSCmd::DefineSort(
+                    sort_name,
+                    Vec::new(),
+                    Sort::bitvec(param_width),
+                ));
+            }
+        }
+        Ok(cmds)
     }
 
     fn remapped_aux_synth_fun_cmd(&self, aux_name: &str) -> Result<SyGuSCmd, String> {

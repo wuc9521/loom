@@ -62,6 +62,20 @@ impl TermSignature {
         })
     }
 
+    /// Override the grammar root sort. The synth-fun's declared return sort
+    /// selects which `declare-term-types` sort roots the grammar: a Bool-valued
+    /// formula sort for separator synthesis, or a value sort for term synthesis.
+    pub fn set_start_sort(&mut self, sort: &str) -> Result<(), String> {
+        if !self.sort_order.iter().any(|name| name == sort) {
+            return Err(format!(
+                "synth-fun return sort {sort} is not declared in declare-term-types (have: {})",
+                self.sort_order.join(", ")
+            ));
+        }
+        self.start_sort = sort.to_string();
+        Ok(())
+    }
+
     pub fn datatype_decls(&self) -> (Vec<sygus_parser::SortDecl>, Vec<Vec<DTConsDecl>>) {
         let sort_decls = self
             .sort_order

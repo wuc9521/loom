@@ -62,19 +62,19 @@ fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
 
 impl BoolExpr {
     pub fn compact(bits: Vec<Self>) -> SyGuSTerm {
-    let mut chunks = Vec::new();
-    let mut const_bits = Vec::new();
+    let mut chunks: Vec<SyGuSTerm> = Vec::new();
+    let mut const_bits: Vec<bool> = Vec::new();
     for bit in bits {
         match bit {
             BoolExpr::Const(value) => const_bits.push(value),
             BoolExpr::Dynamic(term) => {
-                if !const_bits.is_empty() {
-                    chunks.push(bitvec_literal_from_lsb(&const_bits));
-                    const_bits.clear();
-                }
                 if let SyGuSTerm::Literal(Literal::Bool(value)) = &term {
                     const_bits.push(*value);
                 } else {
+                    if !const_bits.is_empty() {
+                        chunks.push(bitvec_literal_from_lsb(&const_bits));
+                        const_bits.clear();
+                    }
                     chunks.push(Term::ite(term, BitVec::const_(1, 1), BitVec::const_(0, 1)));
                 }
             }

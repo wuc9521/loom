@@ -104,7 +104,13 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let sygus_tx = tx.clone();
     let sygus_file = delis_file.clone();
     let sygus_cmds_for_sygus = sygus_cmds.clone();
-    let sygus_cegis = (args.cegis > 0).then_some(args.cegis);
+    let sygus_cegis = if args.cegis > 0 {
+        Some(args.cegis)
+    } else if delis_file.synth_signature().is_some_and(|(_, args, _)| !args.is_empty()) {
+        Some(6)
+    } else {
+        None
+    };
     let sygus_backend = SygusBackend::from_cli(args);
     let sygus_verbose = args.verbose;
     let sygus_min = args.min;

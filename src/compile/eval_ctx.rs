@@ -31,6 +31,37 @@ struct EvalKey {
     args: Vec<String>,
 }
 
+struct ConstraintModelEnv {
+    aspect: HashMap<String, AspectKey>,
+}
+
+impl ConstraintModelEnv {
+    fn new(model: &str) -> Self {
+        let mut aspect = HashMap::default();
+        aspect.insert(
+            "__delis.constraint.model".to_string(),
+            AspectKey {
+                relation: String::new(),
+                model: model.to_string(),
+                fields: Vec::new(),
+            },
+        );
+        Self { aspect }
+    }
+}
+
+impl EnvView for ConstraintModelEnv {
+    fn aspects(&self) -> &HashMap<String, AspectKey> {
+        &self.aspect
+    }
+
+    fn values(&self) -> &HashMap<String, AspectValue> {
+        static EMPTY: std::sync::LazyLock<HashMap<String, AspectValue>> =
+            std::sync::LazyLock::new(HashMap::default);
+        &EMPTY
+    }
+}
+
 pub struct SemanticContext<'a> {
     pub models: HashMap<String, &'a Model>,
     pub func_sigs: HashMap<String, FuncSig>,
@@ -376,22 +407,12 @@ impl<'a> SemanticContext<'a> {
                 }
                 crate::compile::types::FieldDomain::Sort(sort) => {
                     let value = if let Some(model_name) = model.as_deref() {
-                        self.eval_explicit_aspect_field(arg, sort, model_name, env)?
+                        self.eval_explicit_aspect_field(arg, sort, model_name, env)
+                            .unwrap_or_else(|_| AspectValue::Symbol(arg.to_string()))
                     } else {
-                        self.eval_value_for_sort(arg, sort, env)?
+                        self.eval_value_for_sort(arg, sort, env)
+                            .unwrap_or_else(|_| AspectValue::Symbol(arg.to_string()))
                     };
-                    match &value {
-                        AspectValue::Univ { sort: actual, .. } if actual.as_ref() == sort.as_str() => {}
-                        AspectValue::Int(_) if sort == "Int" => {}
-                        _ => {
-                            return Err(format!(
-                                "aspect field {} expected sort {}, got {}",
-                                field.name,
-                                sort,
-                                value.display()
-                            ));
-                        }
-                    }
                     fields.push((field.name.clone(), value));
                 }
                 crate::compile::types::FieldDomain::Enum(values) => {
@@ -459,6 +480,56 @@ impl<'a> SemanticContext<'a> {
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("value expression operator must be a symbol: {expr}"))?;
+        // `(get-fun FUNC MODEL)` reads FUNC^MODEL — the interpretation of a
+        // signature function in an EXPLICITLY named structure. The model is
+        // explicit (not from `current_model`), which is what lets constraints
+        // and term-synthesis checks resolve example data without an ambient
+        // aspect. 0-ary form returns the element directly.
+        if op == "get-fun" {
+            if items.len() < 3 {
+                return Err(format!(
+                    "get-fun expects at least a function and a model: {expr}"
+                ));
+            }
+            let func_item = &items[1];
+            let model_item = &items[2];
+            let func = func_item
+                .as_symbol()
+                .ok_or_else(|| format!("get-fun function must be a symbol: {func_item}"))?;
+            let model = model_item
+                .as_symbol()
+                .ok_or_else(|| format!("get-fun model must be a symbol: {model_item}"))?;
+            let sig = self
+                .func_sigs
+                .get(func)
+                .ok_or_else(|| format!("get-fun: unknown function {func}"))?;
+            let model_ref = self
+                .models
+                .get(model)
+                .ok_or_else(|| format!("get-fun: unknown model {model}"))?;
+            let extra_args = &items[3..];
+            if extra_args.len() != sig.arg_sorts.len() {
+                return Err(format!(
+                    "get-fun: {func} takes {} arguments, got {}",
+                    sig.arg_sorts.len(),
+                    extra_args.len()
+                ));
+            }
+            // Build a temporary env seeded with this model for arg evaluation.
+            let model_env = ConstraintModelEnv::new(model);
+            let arg_strs: Vec<String> = extra_args
+                .iter()
+                .zip(sig.arg_sorts.iter())
+                .map(|(arg, sort)| {
+                    let val = self.eval_value_for_sort(arg, &sort.to_string(), &model_env)?;
+                    Ok(val.display())
+                })
+                .collect::<Result<_, String>>()?;
+            let value = self
+                .eval_model_symbols(model_ref, func, &arg_strs)
+                .ok_or_else(|| format!("model {model} has no value for {func}({})", arg_strs.join(", ")))?;
+            return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+        }
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
                 if let Some(aspect) = env.aspects().get(aspect_arg) {
