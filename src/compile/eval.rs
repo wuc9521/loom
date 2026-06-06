@@ -165,6 +165,7 @@ pub struct EvalContext<'a> {
 }
 
 impl<'a> EvalContext<'a> {
+    #[inline]
     pub fn eval_bool(&self, term: &SyGuSTerm, env: &mut EvalEnv) -> Result<bool, String> {
         match self.eval(term, env)? {
             EvalValue::Bool(value) => Ok(value),
@@ -172,6 +173,7 @@ impl<'a> EvalContext<'a> {
         }
     }
 
+    #[inline]
     pub fn eval_bv(&self, term: &SyGuSTerm, env: &mut EvalEnv, width: usize) -> Result<Bits, String> {
         match self.eval(term, env)? {
             EvalValue::Bv(bits, actual) => {
@@ -185,6 +187,7 @@ impl<'a> EvalContext<'a> {
         }
     }
 
+    #[inline]
     pub fn eval(&self, term: &SyGuSTerm, env: &mut EvalEnv) -> Result<EvalValue, String> {
         match term {
             SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
@@ -222,6 +225,7 @@ impl<'a> EvalContext<'a> {
         }
     }
 
+    #[inline]
     fn eval_app(
         &self,
         id: &Identifier,
