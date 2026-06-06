@@ -10,14 +10,16 @@ mod compiler;
 mod chc;
 mod closure;
 mod context;
-pub(crate) mod emit;
+pub mod emit;
+mod eval;
 mod expr;
 mod aspects;
 mod eval_ctx;
-pub(crate) mod optim;
+pub mod optim;
 mod semantics;
 mod syntax;
 pub mod types;
+mod verifier;
 
 use context::CompileContext;
 pub use syntax::{TermConstructor, TermSignature};
@@ -75,7 +77,8 @@ where
 }
 
 pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {
-    closure::failing_constraint_indices(cmds, solution)
+    let verifier = verifier::Verifier::new(cmds)?;
+    verifier.failing_constraint_indices(solution)
 }
 
 impl DelisProg {
