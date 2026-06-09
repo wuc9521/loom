@@ -106,8 +106,6 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let sygus_cmds_for_sygus = sygus_cmds.clone();
     let sygus_cegis = if args.cegis > 0 {
         Some(args.cegis)
-    } else if delis_file.synth_signature().is_some_and(|(_, args, _)| !args.is_empty()) {
-        Some(6)
     } else {
         None
     };
@@ -230,7 +228,6 @@ fn spawn_solver(
 fn solve_cmds_with_backend(
     backend: &SygusBackend,
     cmds: &[SyGuSCmd],
-    axioms: Option<&[sygus_parser::SyGuSTerm]>,
     verbose: u8,
     min: bool,
 ) -> Result<String, io::Error> {
@@ -239,7 +236,6 @@ fn solve_cmds_with_backend(
             cmds,
             None,
             "",
-            axioms,
             verbose,
             min,
         )
@@ -259,12 +255,10 @@ fn solve_with_sygus(
     min: bool,
     sygus_cmds: Arc<Vec<SyGuSCmd>>,
 ) -> Result<String, io::Error> {
-    let axioms = delis_file.axioms();
-    let axiom_slice = (!axioms.is_empty()).then_some(axioms.as_slice());
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
         let solved = cegis::cegis_solve(delis_file, cegis_size, &sygus_cmds, |cmds| {
-            let output = solve_cmds_with_backend(backend, cmds, None, verbose, min)?;
+            let output = solve_cmds_with_backend(backend, cmds, verbose, min)?;
             if output.trim() == "infeasible" {
                 return Ok("infeasible".to_string());
             }
@@ -279,7 +273,7 @@ fn solve_with_sygus(
         solved
     } else {
         let output =
-            solve_cmds_with_backend(backend, &sygus_cmds, axiom_slice, verbose, min)?;
+            solve_cmds_with_backend(backend, &sygus_cmds, verbose, min)?;
         log::info!("sygus backend: solved in {:?}", solve_start.elapsed());
         match backend {
             SygusBackend::InProcessDryadSynth => output,
