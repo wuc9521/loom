@@ -172,7 +172,7 @@ fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
                     }
                 }
             }
-            DelisCmd::FiniteAspect(aspect) => {
+            DelisCmd::DefineAspects(aspect) => {
                 names.insert(aspect.name.clone());
             }
             DelisCmd::Semantics(semantics) => {

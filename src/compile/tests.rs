@@ -20,7 +20,7 @@ fn eval_symbols_matches_unary_model_interpretations() {
 (declare-sort Pos 0)
 (declare-fun p0 (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0 $1 $2))
+  (interp-sort Pos ($0 $1 $2))
   (interp-fun p0 (match (
     (($0) true)
     (($1) true)
@@ -38,11 +38,14 @@ fn eval_symbols_matches_unary_model_interpretations() {
         })
         .expect("test model should exist");
 
-    let t0 = model.eval_symbols("p0", &["$0".to_string()])
+    let t0 = model
+        .eval_symbols("p0", &["$0".to_string()])
         .expect("lookup for $0 should exist");
-    let t1 = model.eval_symbols("p0", &["$1".to_string()])
+    let t1 = model
+        .eval_symbols("p0", &["$1".to_string()])
         .expect("lookup for $1 should exist");
-    let t2 = model.eval_symbols("p0", &["$2".to_string()])
+    let t2 = model
+        .eval_symbols("p0", &["$2".to_string()])
         .expect("lookup for $2 should exist");
 
     assert!(crate::compile::semantics::interped_bool(t0));
@@ -58,7 +61,7 @@ fn cloned_models_preserve_stable_cache_identity() {
 (declare-sort Pos 0)
 (declare-fun p0 (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0 $1))
+  (interp-sort Pos ($0 $1))
   (interp-fun p0 (match (
     (($0) true)
     ((_) false)
@@ -81,7 +84,7 @@ fn cloned_models_preserve_stable_cache_identity() {
 (declare-sort Pos 0)
 (declare-fun p0 (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0 $1))
+  (interp-sort Pos ($0 $1))
   (interp-fun p0 (match (
     (($0) true)
     ((_) false)
@@ -100,7 +103,8 @@ fn cloned_models_preserve_stable_cache_identity() {
     assert_eq!(model.cache_id, cloned.cache_id);
     assert_ne!(model.cache_id, reparsed_model.cache_id);
     assert!(crate::compile::semantics::interped_bool(
-        cloned.eval_symbols("p0", &["$0".to_string()])
+        cloned
+            .eval_symbols("p0", &["$0".to_string()])
             .expect("lookup for cloned model should exist")
     ));
 }
@@ -113,7 +117,7 @@ fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
 (declare-sort U 0)
 (define-model m)
 (declare-term-types ((Formula 0)) (((top) (bot))))
-(define-finite Asp
+(define-aspects Asp
   (record (model Model) (tag (enum p0 p1 n0 n1))))
 (define-semantics
   ((Formula.Sem (f Formula) (asp Asp)))
@@ -129,7 +133,9 @@ fn top_level_constraints_keep_distinct_polarities_in_native_bv_lowering() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("native BV lowering should succeed");
+    let sygus = problem
+        .to_sygus()
+        .expect("native BV lowering should succeed");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -150,13 +156,13 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
-  (define-univ Pos ($0 $1))
+  (interp-sort Pos ($0 $1))
   (interp-fun a (match (((_) true)))))
 (define-model w5
-  (define-univ Pos ($0 $1 $2))
+  (interp-sort Pos ($0 $1 $2))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite RegLan.Asp
+(define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
@@ -184,17 +190,17 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 }
 
 #[test]
-fn finite_aspect_fields_are_not_named_primitives() {
+fn aspect_fields_are_not_named_primitives() {
     let problem = parse(
         r#"
 
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0 $1))
+  (interp-sort Pos ($0 $1))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite Span
+(define-aspects Span
   (record (m Model) (left Int) (right Int))
   :where (and (<= 0 left) (<= left right) (<= right (size (Pos m)))))
 (define-semantics
@@ -233,9 +239,9 @@ fn enum_aspect_symbols_compare_as_finite_values() {
 
 (declare-sort Pos 0)
 (define-model w
-  (define-univ Pos ($0)))
+  (interp-sort Pos ($0)))
 (declare-term-types ((Root 0)) (((leaf))))
-(define-finite Asp
+(define-aspects Asp
   (record (model Model) (mode (enum base reset))))
 (define-semantics
   ((Root.Sem (r Root) (asp Asp)))
@@ -247,7 +253,9 @@ fn enum_aspect_symbols_compare_as_finite_values() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("enum aspect equality should compile");
+    let sygus = problem
+        .to_sygus()
+        .expect("enum aspect equality should compile");
 
     assert!(!sygus.is_empty());
 }
@@ -260,13 +268,13 @@ fn parses_direct_semantic_constraints() {
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
-  (define-univ Pos ($0 $1))
+  (interp-sort Pos ($0 $1))
   (interp-fun a (match (((_) true)))))
 (define-model w5
-  (define-univ Pos ($0 $1 $2))
+  (interp-sort Pos ($0 $1 $2))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite RegLan.Asp
+(define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
@@ -302,15 +310,15 @@ fn semantic_predicates_use_aspect_projection() {
 (declare-fun a (Pos) Bool)
 (declare-fun b (Pos) Bool)
 (define-model w1
-  (define-univ Pos ($0 $1))
+  (interp-sort Pos ($0 $1))
   (interp-fun a (match ((($0) true) ((_) false))))
   (interp-fun b (match ((($1) true) ((_) false)))))
 (define-model w5
-  (define-univ Pos ($0 $1 $2))
+  (interp-sort Pos ($0 $1 $2))
   (interp-fun a (match ((($0) true) (($1) true) ((_) false))))
   (interp-fun b (match (((_) false)))))
 (declare-term-types ((Regex 0)) (((a) (b) (re.++ Regex Regex))))
-(define-finite RegLan.Asp
+(define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
@@ -329,7 +337,9 @@ fn semantic_predicates_use_aspect_projection() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("projected semantic predicates should compile");
+    let sygus = problem
+        .to_sygus()
+        .expect("projected semantic predicates should compile");
 
     assert!(!sygus.is_empty());
     let output = sygus
@@ -344,17 +354,17 @@ fn semantic_predicates_use_aspect_projection() {
 }
 
 #[test]
-fn finite_compilation_loads_models_referenced_only_by_axioms() {
+fn semantic_compilation_loads_models_referenced_only_by_axioms() {
     let problem = parse(
         r#"
 
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0))
+  (interp-sort Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite Asp
+(define-aspects Asp
   (record (model Model) (i Int))
   :where (= i 0))
 (define-semantics
@@ -367,7 +377,9 @@ fn finite_compilation_loads_models_referenced_only_by_axioms() {
 "#,
     );
 
-    let summary = problem.encode().expect("axiom-referenced model should be enumerated");
+    let summary = problem
+        .encode()
+        .expect("axiom-referenced model should be enumerated");
 
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
     assert_eq!(summary.constraint_bits.len(), 0);
@@ -383,10 +395,10 @@ fn detects_two_way_navigation() {
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
-  (define-univ Pos ($0))
+  (interp-sort Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Root 0)) (((cfg.top.S Root Root))))
-(define-finite CfgAsp
+(define-aspects CfgAsp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
@@ -398,7 +410,8 @@ fn detects_two_way_navigation() {
 "#,
     );
 
-    let semantic_program = problem.semantic_program()
+    let semantic_program = problem
+        .semantic_program()
         .expect("semantic program should compile");
     assert!(
         semantic_program
@@ -410,7 +423,7 @@ fn detects_two_way_navigation() {
 }
 
 #[test]
-fn finite_aspects_and_predicates_use_declared_universe_sorts() {
+fn aspects_and_predicates_use_declared_universe_sorts() {
     let problem = parse(
         r#"
 
@@ -418,11 +431,11 @@ fn finite_aspects_and_predicates_use_declared_universe_sorts() {
 (declare-sort B 0)
 (declare-fun P (A B) Bool)
 (define-model m
-  (define-univ B ($b0))
-  (define-univ A ($a0 $a1))
+  (interp-sort B ($b0))
+  (interp-sort A ($a0 $a1))
   (interp-fun P (match ((($a0 $b0) true) ((_ _) false)))))
 (declare-term-types ((Formula 0)) (((P.x.y))))
-(define-finite FO.Asp
+(define-aspects FO.Asp
   (record (model Model) (x A) (y B)))
 (define-semantics
   ((FO.Sem (phi Formula) (asp FO.Asp)))
@@ -435,14 +448,18 @@ fn finite_aspects_and_predicates_use_declared_universe_sorts() {
 "#,
     );
 
-    let summary = problem.encode().expect("many-sorted finite aspects should compile");
+    let summary = problem
+        .encode()
+        .expect("many-sorted aspects should compile");
 
     assert_eq!(summary.bit_mappings.len(), 2);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert!(summary.constraint_bits[0].expected);
     assert!(!summary.constraint_bits[1].expected);
 
-    let sygus = problem.to_sygus().expect("many-sorted predicates should lower to SyGuS");
+    let sygus = problem
+        .to_sygus()
+        .expect("many-sorted predicates should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 
@@ -455,14 +472,14 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
 (declare-sort B 0)
 (declare-fun P (A B) Bool)
 (define-model m
-  (define-univ B ($b0))
-  (define-univ A ($a0 $a1))
+  (interp-sort B ($b0))
+  (interp-sort A ($a0 $a1))
   (interp-fun P (match ((($a1 $b0) true) ((_ _) false)))))
 (declare-term-types
  ((Formula 0))
  (((fol.exists.a Formula)
    (P.x.y))))
-(define-finite FO.Asp
+(define-aspects FO.Asp
   (record (model Model) (y B)))
 (define-semantics
   ((FO.Sem (phi Formula) (asp FO.Asp)))
@@ -479,7 +496,9 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("typed quantified domains should lower to SyGuS");
+    let sygus = problem
+        .to_sygus()
+        .expect("typed quantified domains should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 
@@ -496,8 +515,8 @@ fn model_terms_support_constants_functions_and_nested_applications() {
 (declare-fun g (B) A)
 (declare-fun P (A) Bool)
 (define-model m
-  (define-univ A (@A.0 @A.1))
-  (define-univ B (@B_0))
+  (interp-sort A (@A.0 @A.1))
+  (interp-sort B (@B_0))
   (interp-fun c (@A.0))
   (interp-fun flag (true))
   (interp-fun f (match (((@A.0) @B_0) ((@A.1) @B_0))))
@@ -507,7 +526,7 @@ fn model_terms_support_constants_functions_and_nested_applications() {
  ((Formula 0))
  (((flag.atom)
    (nested.pred))))
-(define-finite FO.Asp
+(define-aspects FO.Asp
   (record (model Model)))
 (define-semantics
   ((FO.Sem (phi Formula) (asp FO.Asp)))
@@ -520,7 +539,9 @@ fn model_terms_support_constants_functions_and_nested_applications() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("typed model terms should lower to SyGuS");
+    let sygus = problem
+        .to_sygus()
+        .expect("typed model terms should lower to SyGuS");
 
     assert!(!sygus.is_empty());
 }
@@ -535,14 +556,14 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 (declare-fun h (A B) A)
 (declare-fun R (A B) Bool)
 (define-model m
-  (define-univ A (@a0 @a1))
-  (define-univ B (@b0))
+  (interp-sort A (@a0 @a1))
+  (interp-sort B (@b0))
   (interp-fun h (match (((@a0 @b0) @a1) ((@a1 @b0) @a0))))
   (interp-fun R (match (((@a1 @b0) true) ((_ _) false)))))
 (declare-term-types
  ((Formula 0))
  (((binary.term))))
-(define-finite FO.Asp
+(define-aspects FO.Asp
   (record (model Model) (x A) (y B)))
 (define-semantics
   ((FO.Sem (phi Formula) (asp FO.Asp)))
@@ -555,7 +576,9 @@ fn model_terms_support_binary_functions_and_relations_as_bool_functions() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("binary typed model terms should compile");
+    let sygus = problem
+        .to_sygus()
+        .expect("binary typed model terms should compile");
 
     assert!(!sygus.is_empty());
 }
@@ -567,12 +590,12 @@ fn builds_separate_bool_and_finite_value_semantic_domains() {
 
 (declare-sort U 0)
 (define-model m
-  (define-univ U ($0 $1)))
+  (interp-sort U ($0 $1)))
 (declare-term-types
  ((Formula 0) (TermU 0))
  (((pred TermU))
   ((var.x))))
-(define-finite EnvAsp
+(define-aspects EnvAsp
   (record (model Model) (x U)))
 (define-semantics
   ((TermU.Sem (t TermU) (asp EnvAsp)))
@@ -589,7 +612,9 @@ fn builds_separate_bool_and_finite_value_semantic_domains() {
 "#,
     );
 
-    let summary = problem.encode().expect("mixed semantic domains should compile");
+    let summary = problem
+        .encode()
+        .expect("mixed semantic domains should compile");
 
     let term_domain = summary
         .semantic_domains
@@ -632,12 +657,12 @@ fn semantic_bv_preserves_composite_top_level_constraints() {
 
 (declare-sort Pos 0)
 (define-model m
-  (define-univ Pos ($0 $1)))
+  (interp-sort Pos ($0 $1)))
 (declare-term-types
  ((Formula 0))
  (((top)
    (bot))))
-(define-finite Asp
+(define-aspects Asp
   (record (model Model) (t Pos)))
 (define-semantics
   ((Formula.Sem (phi Formula) (asp Asp)))
@@ -651,7 +676,9 @@ fn semantic_bv_preserves_composite_top_level_constraints() {
 "#,
     );
 
-    let sygus = problem.to_sygus().expect("composite top-level constraints should compile");
+    let sygus = problem
+        .to_sygus()
+        .expect("composite top-level constraints should compile");
     let output = sygus
         .iter()
         .map(ToString::to_string)
@@ -676,7 +703,7 @@ fn term_synthesis_roots_grammar_at_value_sort() {
  ((TermU 0))
  (((t.src)
    (t.nxt TermU))))
-(define-finite TermU.Asp (record (model Model)))
+(define-aspects TermU.Asp (record (model Model)))
 (define-semantics
   ((TermU.Sem (term TermU) (asp TermU.Asp)))
   :returns U
@@ -684,12 +711,12 @@ fn term_synthesis_roots_grammar_at_value_sort() {
      ((t.src) src)
      ((t.nxt x) (nxt (TermU.Sem x asp))))))
 (define-model G1
-  (define-univ U ($0 $1 $2 $3))
+  (interp-sort U ($0 $1 $2 $3))
   (interp-fun src ($0))
   (interp-fun dst ($2))
   (interp-fun nxt (match ((($0) $1) (($1) $2) (($2) $2) ((_) $0)))))
 (define-model G2
-  (define-univ U ($0 $1 $2 $3 $4))
+  (interp-sort U ($0 $1 $2 $3 $4))
   (interp-fun src ($4))
   (interp-fun dst ($2))
   (interp-fun nxt (match ((($4) $3) (($3) $2) (($2) $2) ((_) $0)))))
@@ -733,7 +760,7 @@ fn parametric_term_synthesis_emits_pbe_application() {
  (((x0)
    (tx.src)
    (tx.nxt TermU.x0))))
-(define-finite TermU.x0.Asp (record (model Model)))
+(define-aspects TermU.x0.Asp (record (model Model)))
 (define-semantics
   ((TermU.x0.Sem (term TermU.x0) (asp TermU.x0.Asp)))
   :returns U
@@ -742,13 +769,13 @@ fn parametric_term_synthesis_emits_pbe_application() {
      ((tx.src) src)
      ((tx.nxt y) (nxt (TermU.x0.Sem y asp))))))
 (define-model G1
-  (define-univ U ($0 $1 $2 $3))
+  (interp-sort U ($0 $1 $2 $3))
   (interp-fun src ($0))
   (interp-fun arg ($1))
   (interp-fun out ($3))
   (interp-fun nxt (match ((($0) $1) (($1) $2) (($2) $3) (($3) $3) ((_) $0)))))
 (define-model G2
-  (define-univ U ($0 $1 $2 $3 $4))
+  (interp-sort U ($0 $1 $2 $3 $4))
   (interp-fun src ($4))
   (interp-fun arg ($0))
   (interp-fun out ($2))
@@ -789,12 +816,12 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
 
 (declare-sort U 0)
 (define-model m
-  (define-univ U ($0)))
+  (interp-sort U ($0)))
 (declare-term-types
  ((Formula 0) (TermU 0))
  (((top))
   ((x))))
-(define-finite EnvAsp
+(define-aspects EnvAsp
   (record (model Model) (xv U)))
 (define-semantics
   ((TermU.Sem (t TermU) (asp EnvAsp)))
@@ -816,7 +843,9 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
 "#,
     );
 
-    let chc = problem.to_chc_ast().expect("multiple Formula CHC domains should compile");
+    let chc = problem
+        .to_chc_ast()
+        .expect("multiple Formula CHC domains should compile");
     let output = chc.to_fixedpoint_query_text("Goal");
 
     assert!(output.contains("qFormula.Sem.m.xv.$0.Formula"));
@@ -825,17 +854,17 @@ fn semantic_chc_emits_multiple_domains_for_same_term_sort() {
 }
 
 #[test]
-fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
+fn rejects_unknown_aspect_field_sort_instead_of_singleton_symbol() {
     let problem = parse(
         r#"
 
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0))
+  (interp-sort Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite BadAsp
+(define-aspects BadAsp
   (record (model Model) (color Color)))
 (define-semantics
   ((Regex.Sem (r Regex) (asp BadAsp)))
@@ -846,21 +875,23 @@ fn rejects_unknown_finite_field_sort_instead_of_singleton_symbol() {
 "#,
     );
 
-    let err = problem.encode().expect_err("unknown finite field sort should be rejected");
+    let err = problem
+        .encode()
+        .expect_err("unknown aspect field sort should be rejected");
 
-    assert!(err.contains("unsupported finite field sort Color"));
+    assert!(err.contains("unsupported aspect field sort Color"));
 }
 
 #[test]
-fn allows_multiple_finite_aspect_spaces() {
+fn allows_multiple_aspect_spaces() {
     let problem = parse(
         r#"
 
 (declare-sort Pos 0)
-(define-model w (define-univ Pos ($0)))
+(define-model w (interp-sort Pos ($0)))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite FirstAsp (record (model Model)))
-(define-finite SecondAsp (record (model Model)))
+(define-aspects FirstAsp (record (model Model)))
+(define-aspects SecondAsp (record (model Model)))
 (define-semantics
   ((Regex.Sem (r Regex) (asp FirstAsp)))
   ((match r ((a) true))))
@@ -869,9 +900,11 @@ fn allows_multiple_finite_aspect_spaces() {
 "#,
     );
 
-    let summary = problem.encode().expect("multiple aspect spaces should be summarized");
+    let summary = problem
+        .encode()
+        .expect("multiple aspect spaces should be summarized");
 
-    assert_eq!(summary.finite_spaces, vec!["FirstAsp", "SecondAsp"]);
+    assert_eq!(summary.aspect_spaces, vec!["FirstAsp", "SecondAsp"]);
     assert_eq!(summary.semantic_domains.len(), 1);
     assert_eq!(summary.semantic_domains[0].aspect_space, "FirstAsp");
 }
@@ -882,9 +915,9 @@ fn allows_multiple_define_semantics_declarations() {
         r#"
 
 (declare-sort Pos 0)
-(define-model w (define-univ Pos ($0)))
+(define-model w (interp-sort Pos ($0)))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite RegLan.Asp (record (model Model)))
+(define-aspects RegLan.Asp (record (model Model)))
 (define-semantics
   ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
@@ -896,7 +929,9 @@ fn allows_multiple_define_semantics_declarations() {
 "#,
     );
 
-    let summary = problem.encode().expect("multiple semantics should be summarized");
+    let summary = problem
+        .encode()
+        .expect("multiple semantics should be summarized");
 
     assert_eq!(summary.semantic_relations, vec!["Regex.Sem", "Regex.Other"]);
     assert_eq!(summary.semantic_domains.len(), 2);
@@ -913,7 +948,7 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w1
-  (define-univ Pos ($0))
+  (interp-sort Pos ($0))
   (interp-fun a (match ((($0) true) ((_) false)))))
 (declare-term-types
  ((CFG 0) (Rhs 0) (Rules 0))
@@ -922,7 +957,7 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
    ((tok.a) (cfg.rhs.S))
    ((cfg.lhs.S Rhs Rules) (end))
  ))
-(define-finite CFG.Asp
+(define-aspects CFG.Asp
   (record
     (model Model)
     (i Int)
@@ -988,10 +1023,10 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0))
+  (interp-sort Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite RegLan.Asp
+(define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
@@ -1004,7 +1039,9 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 "#,
     );
 
-    let err = problem.to_sygus().expect_err("wrong aspect constructor should be rejected");
+    let err = problem
+        .to_sygus()
+        .expect_err("wrong aspect constructor should be rejected");
 
     assert!(err.contains("aspect constructor must be RegLan.Asp"));
 }
@@ -1017,10 +1054,10 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 (declare-sort Pos 0)
 (declare-fun a (Pos) Bool)
 (define-model w
-  (define-univ Pos ($0))
+  (interp-sort Pos ($0))
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Regex 0)) (((a))))
-(define-finite RegLan.Asp
+(define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
   :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
 (define-semantics
@@ -1033,7 +1070,9 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 "#,
     );
 
-    let err = problem.to_sygus().expect_err("wrong aspect arity should be rejected");
+    let err = problem
+        .to_sygus()
+        .expect_err("wrong aspect arity should be rejected");
 
     assert!(err.contains("provides 1 scalar fields, expected 2"));
 }
@@ -1049,13 +1088,13 @@ fn aspect_field_accepts_model_function_expression() {
 (declare-fun initial () U)
 (declare-fun bound (U) Ctr)
 (define-model m
-  (define-univ U (s0 s1 s2))
-  (define-univ Ctr ($0 $1 $2))
+  (interp-sort U (s0 s1 s2))
+  (interp-sort Ctr ($0 $1 $2))
   (interp-fun a (match (((s0) true) ((_) false))))
   (interp-fun initial (s0))
   (interp-fun bound (match (((s0) $2) ((s1) $1) ((s2) $0)))))
 (declare-term-types ((F 0)) (((ap.a) (f.not F))))
-(define-finite Asp
+(define-aspects Asp
   (record (model Model) (state U) (depth Ctr)))
 (define-semantics
   ((F.Sem (f F) (asp Asp)))
@@ -1068,7 +1107,9 @@ fn aspect_field_accepts_model_function_expression() {
 "#,
     );
 
-    let summary = problem.encode().expect("function-expr aspect should compile");
+    let summary = problem
+        .encode()
+        .expect("function-expr aspect should compile");
 
     assert_eq!(summary.constraint_bits.len(), 1);
     assert_eq!(summary.constraint_bits[0].model, "m");
@@ -1076,4 +1117,3 @@ fn aspect_field_accepts_model_function_expression() {
     let key = &summary.bit_mappings[summary.constraint_bits[0].bit].aspect;
     assert_eq!(key.display_fields(), "state=s0,depth=$2");
 }
-

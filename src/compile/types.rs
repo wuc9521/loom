@@ -27,7 +27,7 @@ pub struct BitMapping {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Encoding {
-    pub finite_spaces: Vec<String>,
+    pub aspect_spaces: Vec<String>,
     pub semantic_relations: Vec<String>,
     pub semantic_domains: Vec<SemanticDomain>,
     pub bit_mappings: Vec<BitMapping>,
@@ -45,7 +45,7 @@ pub struct ConstraintBit {
 
 #[derive(Debug, Clone)]
 pub struct SemanticProgram {
-    pub finite_spaces: Vec<FiniteSpace>,
+    pub aspect_spaces: Vec<AspectSpace>,
     pub semantics: Vec<SemanticSpec>,
     pub domains: Vec<SemanticDomain>,
     pub constraints: Vec<SemanticConstraint>,
@@ -101,8 +101,8 @@ impl Encoding {
         let mut lines = Vec::new();
         lines.push(format!("; {target} compilation summary"));
         lines.push(format!(
-            "; finite-spaces: {}",
-            self.finite_spaces.join(", ")
+            "; aspect-spaces: {}",
+            self.aspect_spaces.join(", ")
         ));
         lines.push(format!(
             "; semantic-relations: {}",
@@ -166,7 +166,7 @@ impl FieldDomain {
 }
 
 #[derive(Debug, Clone)]
-pub struct FiniteSpace {
+pub struct AspectSpace {
     pub name: String,
     pub fields: Vec<FieldDecl>,
     pub where_expr: Option<Value>,

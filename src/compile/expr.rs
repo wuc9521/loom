@@ -147,7 +147,7 @@ fn raw_value_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<AspectV
             Ok(AspectValue::Int(value as usize))
         } else {
             Err(format!(
-                "negative integer value {value} is not a finite aspect value"
+                "negative integer value {value} is not a aspect value"
             ))
         };
     }
