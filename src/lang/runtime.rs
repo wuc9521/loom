@@ -1,4 +1,4 @@
-use crate::lang::model::{DefineUniv, Model};
+use crate::lang::model::{InterpSort, Model};
 use crate::lang::signature::FuncSig;
 use crate::parser::ast::DelisCmd;
 use rustc_hash::FxHashMap as HashMap;
@@ -7,7 +7,7 @@ use sygus_parser::SyGuSCmd;
 #[derive(Debug, Clone)]
 pub enum Symbol {
     Func(FuncSig),
-    Univ(DefineUniv),
+    InterpSort(InterpSort),
     Model(Model),
 }
 
@@ -47,7 +47,7 @@ pub struct ModelSymbolTable {
 #[derive(Debug, Clone)]
 pub enum SymbolInterp {
     InterpFun(String, crate::lang::model::InterpedValue),
-    Univ(DefineUniv),
+    InterpSort(InterpSort),
 }
 
 impl ModelSymbolTable {
@@ -90,14 +90,16 @@ impl Session {
             DelisCmd::DefineModel(model) => {
                 self.runtime
                     .insert(model.name.clone(), Symbol::Model(model.clone()));
-                for univ in &model.univ_defs {
-                    self.runtime
-                        .insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
+                for sort_interp in &model.sort_interps {
+                    self.runtime.insert(
+                        sort_interp.sort.to_string(),
+                        Symbol::InterpSort(sort_interp.clone()),
+                    );
                 }
             }
             DelisCmd::As(SyGuSCmd::SetLogic(_))
             | DelisCmd::TermTypes(_)
-            | DelisCmd::FiniteAspect(_)
+            | DelisCmd::DefineAspects(_)
             | DelisCmd::Semantics(_)
             | DelisCmd::DeclareAxiom(_)
             | DelisCmd::As(_) => {}

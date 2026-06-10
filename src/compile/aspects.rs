@@ -3,7 +3,7 @@ use crate::{
         expr::{eval_bool, eval_sygus_int},
         types::{
             AspectKey, AspectValue, BitMapping, ConstraintBit, DomainBit, Encoding, FieldDecl,
-            FieldDomain, FiniteSpace, SemanticConstraint, SemanticDomain, SemanticKind,
+            FieldDomain, AspectSpace, SemanticConstraint, SemanticDomain, SemanticKind,
             SemanticProgram, SemanticSpec,
         },
     },
@@ -71,7 +71,7 @@ fn encode(problem: &DelisProg) -> Result<Encoding, String> {
             };
             let bit = bit_by_aspect.get(&key).copied().ok_or_else(|| {
                 format!(
-                    "constraint aspect does not belong to finite space: {}({}; {})",
+                    "constraint aspect does not belong to aspect space: {}({}; {})",
                     key.relation,
                     key.model,
                     key.display_fields()
@@ -87,8 +87,8 @@ fn encode(problem: &DelisProg) -> Result<Encoding, String> {
         .collect::<Result<Vec<_>, String>>()?;
 
     Ok(Encoding {
-        finite_spaces: program
-            .finite_spaces
+        aspect_spaces: program
+            .aspect_spaces
             .iter()
             .map(|space| space.name.clone())
             .collect(),
@@ -110,17 +110,17 @@ impl DelisProg {
 }
 
 fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, String> {
-    let finite_cmds = problem
+    let aspect_cmds = problem
         .cmds
         .iter()
         .filter_map(|cmd| match cmd {
-            DelisCmd::FiniteAspect(cmd) => Some(cmd),
+            DelisCmd::DefineAspects(cmd) => Some(cmd),
             _ => None,
         })
         .collect::<Vec<_>>();
-    let finite_spaces = finite_cmds
+    let aspect_spaces = aspect_cmds
         .iter()
-        .map(|cmd| FiniteSpace::from_cmd(cmd))
+        .map(|cmd| AspectSpace::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
     let semantics = problem
         .cmds
@@ -131,8 +131,8 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         })
         .collect::<Vec<_>>();
 
-    if finite_cmds.is_empty() {
-        return Err("compilation requires at least one define-finite".to_string());
+    if aspect_cmds.is_empty() {
+        return Err("compilation requires at least one define-aspects".to_string());
     }
     if semantics.is_empty() {
         return Err("compilation requires at least one define-semantics".to_string());
@@ -142,14 +142,14 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         .iter()
         .map(|cmd| SemanticSpec::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
-    let spaces_by_name = finite_spaces
+    let spaces_by_name = aspect_spaces
         .iter()
         .map(|space| (space.name.clone(), space))
         .collect::<HashMap<_, _>>();
     for spec in &semantic_specs {
         if !spaces_by_name.contains_key(&spec.aspect_space) {
             return Err(format!(
-                "semantics {} references unknown finite aspect space {}",
+                "semantics {} references unknown aspect space {}",
                 spec.relation, spec.aspect_space
             ));
         }
@@ -278,7 +278,7 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
     }
 
     let mut program = SemanticProgram {
-        finite_spaces,
+        aspect_spaces,
         semantics: semantic_specs,
         domains,
         constraints: semantic_constraints,
@@ -294,7 +294,7 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
 
 fn referenced_models_in_constraints(
     problem: &DelisProg,
-    spaces_by_name: &HashMap<String, &FiniteSpace>,
+    spaces_by_name: &HashMap<String, &AspectSpace>,
 ) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::default();
@@ -313,7 +313,7 @@ fn referenced_models_in_constraints(
 
 fn collect_models_in_term(
     term: &SyGuSTerm,
-    spaces_by_name: &HashMap<String, &FiniteSpace>,
+    spaces_by_name: &HashMap<String, &AspectSpace>,
     seen: &mut HashSet<String>,
     out: &mut Vec<String>,
 ) {
@@ -357,7 +357,7 @@ pub fn contains_parent_navigation(expr: &Value) -> bool {
 fn collect_semantic_constraints(
     problem: &DelisProg,
     semantic_specs: &[SemanticSpec],
-    spaces_by_name: &HashMap<String, &FiniteSpace>,
+    spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &Model>,
 ) -> Result<Vec<SemanticConstraint>, String> {
     let semantics_by_relation = semantic_specs
@@ -383,7 +383,7 @@ fn collect_semantic_constraints(
 fn parse_semantic_constraint(
     term: &SyGuSTerm,
     semantics_by_relation: &HashMap<String, &SemanticSpec>,
-    spaces_by_name: &HashMap<String, &FiniteSpace>,
+    spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<Option<SemanticConstraint>, String> {
     let (expected, term) = match term {
@@ -418,7 +418,7 @@ fn parse_semantic_constraint(
 
 fn parse_aspect_term(
     term: &SyGuSTerm,
-    aspect_space: &FiniteSpace,
+    aspect_space: &AspectSpace,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<(String, Vec<(String, AspectValue)>), String> {
     let SyGuSTerm::Application(cons, args) = term else {
@@ -502,7 +502,7 @@ fn parse_aspect_term(
     if let Some(where_expr) = &aspect_space.where_expr {
         if !eval_bool(where_expr, &assignment, models_by_name)? {
             return Err(format!(
-                "constraint aspect is outside finite space {}: {}",
+                "constraint aspect is outside aspect space {}: {}",
                 aspect_space.name, term
             ));
         }
@@ -568,14 +568,14 @@ fn eval_model_expr(term: &SyGuSTerm, model: &Model) -> Result<String, String> {
     }
 }
 
-impl FiniteSpace {
-    fn from_cmd(cmd: &crate::parser::ast::FiniteAspect) -> Result<Self, String> {
+impl AspectSpace {
+    fn from_cmd(cmd: &crate::parser::ast::DefineAspects) -> Result<Self, String> {
     let record_src = cmd
         .body
         .first()
-        .ok_or_else(|| format!("define-finite {} expects a record body", cmd.name))?;
+        .ok_or_else(|| format!("define-aspects {} expects a record body", cmd.name))?;
     let record = sygus_parser::SExpr::from_str(record_src)
-        .map_err(|e| format!("failed to parse define-finite {} record: {e}", cmd.name))?;
+        .map_err(|e| format!("failed to parse define-aspects {} record: {e}", cmd.name))?;
     let fields = parse_record_fields(&record)?;
     let where_expr = cmd
         .body
@@ -584,10 +584,10 @@ impl FiniteSpace {
         .and_then(|idx| cmd.body.get(idx + 1))
         .map(|src| {
             sygus_parser::SExpr::from_str(src)
-                .map_err(|e| format!("failed to parse define-finite {} :where: {e}", cmd.name))
+                .map_err(|e| format!("failed to parse define-aspects {} :where: {e}", cmd.name))
         })
         .transpose()?;
-    Ok(FiniteSpace {
+    Ok(AspectSpace {
         name: cmd.name.clone(),
         fields,
         where_expr,
@@ -598,9 +598,9 @@ impl FiniteSpace {
 fn parse_record_fields(record: &Value) -> Result<Vec<FieldDecl>, String> {
     let list = record
         .to_ref_vec()
-        .ok_or_else(|| "define-finite record must be a list".to_string())?;
+        .ok_or_else(|| "define-aspects record must be a list".to_string())?;
     if list.first().and_then(|v| v.as_symbol()) != Some("record") {
-        return Err("define-finite body must start with (record ...)".to_string());
+        return Err("define-aspects body must start with (record ...)".to_string());
     }
     list.iter()
         .skip(1)
@@ -647,7 +647,7 @@ fn parse_field_domain(domain: &Value) -> Result<FieldDomain, String> {
 }
 
 fn enumerate_aspects(
-    space: &FiniteSpace,
+    space: &AspectSpace,
     model_name: &str,
     model: &crate::lang::model::Model,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
@@ -674,7 +674,7 @@ fn enumerate_aspects(
                         .get(sort)
                         .ok_or_else(|| {
                             format!(
-                                "universe sort {sort} not found while enumerating finite space {}",
+                                "universe sort {sort} not found while enumerating aspect space {}",
                                 space.name
                             )
                         })?
@@ -688,7 +688,7 @@ fn enumerate_aspects(
                 }
                 FieldDomain::Sort(sort) => {
                     return Err(format!(
-                        "unsupported finite field sort {sort} for field {}; use Model, Int, one of the model universe sorts ({}), or (enum ...)",
+                        "unsupported aspect field sort {sort} for field {}; use Model, Int, one of the model universe sorts ({}), or (enum ...)",
                         field.name,
                         universe_sorts.join(", ")
                     ));
@@ -725,12 +725,12 @@ fn enumerate_aspects(
 
 fn univs_by_sort(model: &crate::lang::model::Model) -> HashMap<String, Vec<String>> {
     model
-        .univ_defs
+        .sort_interps
         .iter()
-        .map(|univ| {
+        .map(|sort_interp| {
             (
-                univ.sort.to_string(),
-                univ.elems.iter().map(|elem| elem.name.clone()).collect(),
+                sort_interp.sort.to_string(),
+                sort_interp.elems.iter().map(|elem| elem.name.clone()).collect(),
             )
         })
         .collect()
@@ -738,9 +738,9 @@ fn univs_by_sort(model: &crate::lang::model::Model) -> HashMap<String, Vec<Strin
 
 fn model_universe_sorts(model: &crate::lang::model::Model) -> Vec<String> {
     model
-        .univ_defs
+        .sort_interps
         .iter()
-        .map(|univ| univ.sort.to_string())
+        .map(|sort_interp| sort_interp.sort.to_string())
         .collect()
 }
 

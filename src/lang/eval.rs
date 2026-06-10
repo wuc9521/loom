@@ -101,11 +101,11 @@ fn pattern_as_exact_tuple(pat: &Pattern) -> Option<Vec<String>> {
 
 fn build_model_univs(model: &Model) -> HashMap<String, Arc<Vec<String>>> {
     let mut buckets: HashMap<String, Vec<String>> = HashMap::default();
-    for univ in &model.univ_defs {
+    for sort_interp in &model.sort_interps {
         let entry = buckets
-            .entry(univ.sort.to_string())
+            .entry(sort_interp.sort.to_string())
             .or_insert_with(Vec::new);
-        entry.extend(univ.elems.iter().map(|elem| elem.name.clone()));
+        entry.extend(sort_interp.elems.iter().map(|elem| elem.name.clone()));
     }
     buckets
         .into_iter()
@@ -208,9 +208,9 @@ impl Model {
     }
 
     pub fn max_univ_len(&self) -> usize {
-        self.univ_defs
+        self.sort_interps
             .iter()
-            .map(|univ| univ.elems.len())
+            .map(|sort_interp| sort_interp.elems.len())
             .max()
             .unwrap_or(0)
     }

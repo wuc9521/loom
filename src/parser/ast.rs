@@ -154,20 +154,20 @@ fn format_sexpr_body(body: &[String]) -> String {
 }
 
 #[derive(Clone, Debug, Display)]
-#[display("(define-finite {}{})", name, format_sexpr_body(body))]
-pub struct FiniteAspect {
+#[display("(define-aspects {}{})", name, format_sexpr_body(body))]
+pub struct DefineAspects {
     pub name: String,
     pub body: Vec<String>,
 }
 
-impl FiniteAspect {
+impl DefineAspects {
     pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
         let mut inner = pair.into_inner();
         let name = inner
             .next()
             .ok_or_else(|| {
                 DelisParseError::InvalidSyntax(
-                    "define-finite expects a finite domain name".to_string(),
+                    "define-aspects expects an aspect space name".to_string(),
                 )
             })?
             .as_str()
@@ -175,14 +175,14 @@ impl FiniteAspect {
         let mut body = Vec::new();
         for item in inner {
             match item.as_rule() {
-                Rule::FiniteRecord => body.push(item.as_str().to_string()),
+                Rule::AspectRecord => body.push(item.as_str().to_string()),
                 Rule::WhereClause => {
                     let expr = item
                         .into_inner()
                         .next()
                         .ok_or_else(|| {
                             DelisParseError::InvalidSyntax(
-                                "define-finite :where expects an expression".to_string(),
+                                "define-aspects :where expects an expression".to_string(),
                             )
                         })?
                         .as_str()
@@ -192,7 +192,7 @@ impl FiniteAspect {
                 }
                 _ => {
                     return Err(DelisParseError::InvalidSyntax(format!(
-                        "Unexpected define-finite body item: {:?}",
+                        "Unexpected define-aspects body item: {:?}",
                         item.as_str()
                     )));
                 }
@@ -269,7 +269,7 @@ pub enum DelisCmd {
     TermTypes(TermTypes),
 
     #[display("{}", _0)]
-    FiniteAspect(FiniteAspect),
+    DefineAspects(DefineAspects),
 
     #[display("{}", _0)]
     Semantics(Semantics),
@@ -406,8 +406,11 @@ fn update_runtime(runtime: &mut Option<&mut Runtime>, cmd: &DelisCmd) {
         }
         DelisCmd::DefineModel(model) => {
             runtime.insert(model.name.clone(), Symbol::Model(model.clone()));
-            for univ in &model.univ_defs {
-                runtime.insert(univ.sort.to_string(), Symbol::Univ(univ.clone()));
+            for sort_interp in &model.sort_interps {
+                runtime.insert(
+                    sort_interp.sort.to_string(),
+                    Symbol::InterpSort(sort_interp.clone()),
+                );
             }
         }
         _ => {}
@@ -426,9 +429,9 @@ fn parse_delis_cmd_pair(cmd: Pair<'_, Rule>) -> Result<DelisCmd, DelisParseError
             let decl = TermTypes::parse(cmd)?;
             Ok(DelisCmd::TermTypes(decl))
         }
-        Rule::DefineFinite => {
-            let decl = FiniteAspect::parse(cmd)?;
-            Ok(DelisCmd::FiniteAspect(decl))
+        Rule::DefineAspects => {
+            let decl = DefineAspects::parse(cmd)?;
+            Ok(DelisCmd::DefineAspects(decl))
         }
         Rule::DefineSemantics => {
             let decl = Semantics::parse(cmd)?;
@@ -529,22 +532,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_define_finite() {
+    fn parses_define_aspects() {
         let cmd = DelisCmd::parse(
-            "(define-finite RegLan.Asp (record (model Model) (i Int) (j Int)) :where (<= i j))",
+            "(define-aspects RegLan.Asp (record (model Model) (i Int) (j Int)) :where (<= i j))",
             None,
         )
-        .expect("define-finite should parse");
+        .expect("define-aspects should parse");
 
         match cmd {
-            DelisCmd::FiniteAspect(cmd) => {
+            DelisCmd::DefineAspects(cmd) => {
                 assert_eq!(cmd.name, "RegLan.Asp");
                 assert_eq!(cmd.body.len(), 3);
                 assert_eq!(cmd.body[0], "(record (model Model) (i Int) (j Int))");
                 assert_eq!(cmd.body[1], ":where");
                 assert_eq!(cmd.body[2], "(<= i j)");
             }
-            other => panic!("expected define-finite, got {other:?}"),
+            other => panic!("expected define-aspects, got {other:?}"),
         }
     }
 
@@ -616,9 +619,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_malformed_define_finite_shape() {
-        let err = DelisCmd::parse("(define-finite RegLan.Asp (not-a-record (i Int)))", None)
-            .expect_err("define-finite must include a record body");
+    fn rejects_malformed_define_aspects_shape() {
+        let err = DelisCmd::parse("(define-aspects RegLan.Asp (not-a-record (i Int)))", None)
+            .expect_err("define-aspects must include a record body");
 
         assert!(err.to_string().contains("Pest parser error"));
     }

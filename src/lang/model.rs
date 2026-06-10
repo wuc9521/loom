@@ -15,18 +15,18 @@ fn next_model_cache_id() -> u64 {
     NEXT_MODEL_CACHE_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-// ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ UnivDef* ~ FuncInterp* ~ ")" }
+// ModelDef = { "(" ~ "define-model" ~ Symbol ~ (":" ~ "signature" ~ Symbol)? ~ SortInterp* ~ FuncInterp* ~ ")" }
 #[derive(Clone, Debug, Display)]
 #[display(
     "(define-model {} {} {})",
     name,
-    univ_defs.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(" "),
+    sort_interps.iter().map(|sort_interp| sort_interp.to_string()).collect::<Vec<_>>().join(" "),
     func_interps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(" ")
 )]
 pub struct Model {
     pub cache_id: u64,
     pub name: String,
-    pub univ_defs: Vec<DefineUniv>,
+    pub sort_interps: Vec<InterpSort>,
     pub func_interps: Vec<FuncInterp>,
 }
 
@@ -35,7 +35,7 @@ impl Model {
         Self {
             cache_id: next_model_cache_id(),
             name: name.to_string(),
-            univ_defs: Vec::new(),
+            sort_interps: Vec::new(),
             func_interps: Vec::new(),
         }
     }
@@ -51,9 +51,9 @@ impl Model {
         let mut model = Self::new(name);
         for item_pair in inner_pairs {
             match item_pair.as_rule() {
-                Rule::UnivDef => {
-                    let univ_def = DefineUniv::parse(item_pair)?;
-                    model.univ_defs.push(univ_def);
+                Rule::SortInterp => {
+                    let sort_interp = InterpSort::parse(item_pair)?;
+                    model.sort_interps.push(sort_interp);
                 }
                 Rule::FuncInterp => {
                     let func_interp = FuncInterp::parse(item_pair)?;
@@ -90,25 +90,28 @@ impl Model {
                 }
             }
         }
-        for univ in &self.univ_defs {
-            table.insert(univ.sort.to_string(), SymbolInterp::Univ(univ.clone()));
+        for sort_interp in &self.sort_interps {
+            table.insert(
+                sort_interp.sort.to_string(),
+                SymbolInterp::InterpSort(sort_interp.clone()),
+            );
         }
     }
 }
 
 #[derive(Clone, Debug, Display, PartialEq, Eq)]
 #[display(
-    "(define-univ {} ({}))",
+    "(interp-sort {} ({}))",
     sort,
     elems.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(" ")
 )]
-pub struct DefineUniv {
+pub struct InterpSort {
     pub sort: Sort,
     pub elems: Vec<UnivElem>,
 }
 
-// UnivDef = { "(" ~ "define-univ" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
-impl DefineUniv {
+// SortInterp = { "(" ~ "interp-sort" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
+impl InterpSort {
     pub fn new(sort: Sort, elems: Vec<UnivElem>) -> Self {
         Self { sort, elems }
     }
@@ -116,7 +119,7 @@ impl DefineUniv {
         let mut inner_pairs = pair.into_inner();
         let sort = inner_pairs
             .next()
-            .ok_or_else(|| DelisParseError::InvalidSyntax("define-univ expects a sort".to_string()))
+            .ok_or_else(|| DelisParseError::InvalidSyntax("interp-sort expects a sort".to_string()))
             .and_then(|p| {
                 Sort::from_str(p.as_str())
                     .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))
@@ -128,14 +131,14 @@ impl DefineUniv {
                 elems.push(elem);
             } else {
                 return Err(DelisParseError::InvalidSyntax(format!(
-                    "Invalid element in universe definition: {}",
+                    "Invalid element in sort interpretation: {}",
                     elem_pair.as_str()
                 )));
             }
         }
         Ok(Self::new(sort, elems))
     }
-    pub fn define_univ(name: &str, elems: Vec<UnivElem>) -> Self {
+    pub fn interp_sort(name: &str, elems: Vec<UnivElem>) -> Self {
         Self {
             sort: Sort::Simple(Identifier::Symbol(name.to_string())),
             elems,

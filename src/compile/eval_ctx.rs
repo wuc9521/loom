@@ -2,7 +2,7 @@ use crate::{
     compile::{
         semantics::Case,
         types::{
-            AspectKey, AspectValue, FiniteSpace, SemanticDomain, SemanticKind, SemanticProgram,
+            AspectKey, AspectValue, AspectSpace, SemanticDomain, SemanticKind, SemanticProgram,
             SemanticSpec,
         },
     },
@@ -65,8 +65,8 @@ impl EnvView for ConstraintModelEnv {
 pub struct SemanticContext<'a> {
     pub models: HashMap<String, &'a Model>,
     pub func_sigs: HashMap<String, FuncSig>,
-    spaces: HashMap<String, FiniteSpace>,
-    /// All values declared across `(enum ...)` finite-space field domains.
+    spaces: HashMap<String, AspectSpace>,
+    /// All values declared across `(enum ...)` aspect-space field domains.
     /// Used to recognize bare enum members appearing in semantic bodies
     /// structurally — without ever consulting model element names.
     enum_values: std::collections::HashSet<String>,
@@ -172,12 +172,12 @@ impl<'a> SemanticContext<'a> {
             })
             .collect::<HashMap<_, _>>();
         let spaces = program
-            .finite_spaces
+            .aspect_spaces
             .iter()
             .map(|space| (space.name.clone(), space.clone()))
             .collect::<HashMap<_, _>>();
         let mut enum_values = std::collections::HashSet::new();
-        for space in &program.finite_spaces {
+        for space in &program.aspect_spaces {
             for field in &space.fields {
                 if let crate::compile::types::FieldDomain::Enum(values) = &field.domain {
                     enum_values.extend(values.iter().cloned());
@@ -277,7 +277,7 @@ impl<'a> SemanticContext<'a> {
             .ok_or_else(|| format!("no semantic domain for relation {relation}"))
     }
 
-    pub fn aspect_space(&self, name: &str) -> Result<&FiniteSpace, String> {
+    pub fn aspect_space(&self, name: &str) -> Result<&AspectSpace, String> {
         self.spaces
             .get(name)
             .ok_or_else(|| format!("unknown aspect space {name}"))
