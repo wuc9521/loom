@@ -72,12 +72,10 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         ));
     }
 
-    // Build the SemanticProgram (the expensive piece — runs bisim) ONCE,
-    // then lower it to SyGuS BV cmds ONCE, and share the result with both
-    // backends via Arc. Earlier each backend independently called
-    // `to_sygus_with`, paying the constructor-compile cost twice in parallel
-    // (visible as two identical `native SyGuS BV lowering completed in ...`
-    // log lines). Sharing collapses that into a single compile.
+    // Both backends solve the same SyGuS BV problem; first-to-finish wins.
+    // The "term enumerator" works at the SyGuSTerm level (fast for small/nullary
+    // problems). The "BV searcher" compiles to BitCircuits and does bottom-up
+    // enumeration with dedup + composition (handles larger problems).
     let semantic_program = delis_file.semantic_program().map_err(io::Error::other)?;
     let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(
         delis_file
@@ -87,45 +85,41 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
     let (tx, rx) = mpsc::channel();
 
-    let closure_tx = tx.clone();
-    let closure_file = delis_file.clone();
-    let closure_cmds = sygus_cmds.clone();
-    const CLOSURE_STACK_BYTES: usize = 64 * 1024 * 1024;
+    let term_tx = tx.clone();
+    let term_file = delis_file.clone();
+    let term_cmds = sygus_cmds.clone();
+    const TERM_STACK_BYTES: usize = 64 * 1024 * 1024;
     thread::Builder::new()
-        .name("closure-backend".to_string())
-        .stack_size(CLOSURE_STACK_BYTES)
+        .name("term-enumerator".to_string())
+        .stack_size(TERM_STACK_BYTES)
         .spawn(move || {
-            let result = closure_file
-                .solve_by_closure_with_cmds((*closure_cmds).clone())
+            let result = term_file
+                .solve_by_closure_with_cmds((*term_cmds).clone())
                 .map_err(io::Error::other);
-            let _ = closure_tx.send(BackendResult::Closure(result));
+            let _ = term_tx.send(BackendResult::Closure(result));
         })?;
 
-    let sygus_tx = tx.clone();
-    let sygus_file = delis_file.clone();
-    let sygus_cmds_for_sygus = sygus_cmds.clone();
-    let sygus_cegis = if args.cegis > 0 {
-        Some(args.cegis)
-    } else {
-        None
-    };
-    let sygus_backend = SygusBackend::from_cli(args);
-    let sygus_verbose = args.verbose;
-    let sygus_min = args.min;
-    const SYGUS_STACK_BYTES: usize = 128 * 1024 * 1024;
+    let bv_tx = tx.clone();
+    let bv_file = delis_file.clone();
+    let bv_cmds = sygus_cmds.clone();
+    let bv_cegis = if args.cegis > 0 { Some(args.cegis) } else { None };
+    let bv_backend = SygusBackend::from_cli(args);
+    let bv_verbose = args.verbose;
+    let bv_min = args.min;
+    const BV_STACK_BYTES: usize = 128 * 1024 * 1024;
     thread::Builder::new()
-        .name("sygus-backend".to_string())
-        .stack_size(SYGUS_STACK_BYTES)
+        .name("bv-searcher".to_string())
+        .stack_size(BV_STACK_BYTES)
         .spawn(move || {
             let result = solve_with_sygus(
-                &sygus_file,
-                &sygus_backend,
-                sygus_cegis,
-                sygus_verbose,
-                sygus_min,
-                sygus_cmds_for_sygus,
+                &bv_file,
+                &bv_backend,
+                bv_cegis,
+                bv_verbose,
+                bv_min,
+                bv_cmds,
             );
-            let _ = sygus_tx.send(BackendResult::Sygus(result));
+            let _ = bv_tx.send(BackendResult::Sygus(result));
         })?;
 
     drop(tx);
