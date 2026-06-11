@@ -22,6 +22,112 @@ pub fn state_name(aspect: &AspectKey) -> String {
     parts.join(".")
 }
 
+/// A static context where a non-root sort can appear: as the `slot`-th
+/// argument of constructor `parent_cons`. The start sort gets a single
+/// synthetic root context (we represent it as `None` outside the struct,
+/// since the root has no parent constructor).
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct ParentCtx {
+    pub parent_cons: String,
+    pub slot: usize,
+}
+
+impl ParentCtx {
+    /// Suffix used in specialized symbol names: `<P>.<k>`.
+    pub fn suffix(&self) -> String {
+        format!("{}.{}", self.parent_cons, self.slot)
+    }
+}
+
+/// Map from each non-start sort `S` to the list of `(P, k)` contexts where
+/// `S` appears as `P`'s slot-`k` argument. The start sort has only the
+/// implicit root context and does not appear in this map.
+#[derive(Debug, Clone, Default)]
+pub struct ParentContexts {
+    by_sort: HashMap<String, Vec<ParentCtx>>,
+}
+
+impl ParentContexts {
+    pub fn from_signature(sig: &TermSignature) -> Self {
+        let _ = sig.start_sort();
+        let mut by_sort: HashMap<String, Vec<ParentCtx>> = HashMap::default();
+        for cons in &sig.constructors {
+            for (slot, arg_sort) in cons.arg_sorts.iter().enumerate() {
+                by_sort
+                    .entry(arg_sort.clone())
+                    .or_default()
+                    .push(ParentCtx {
+                        parent_cons: cons.name.clone(),
+                        slot,
+                    });
+            }
+        }
+        for ctxs in by_sort.values_mut() {
+            ctxs.sort_by(|a, b| {
+                a.parent_cons
+                    .cmp(&b.parent_cons)
+                    .then_with(|| a.slot.cmp(&b.slot))
+            });
+            ctxs.dedup();
+        }
+        Self { by_sort }
+    }
+
+    pub fn for_sort(&self, sort: &str) -> &[ParentCtx] {
+        self.by_sort
+            .get(sort)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Iterate (sort, ctx) pairs across all non-root contexts.
+    pub fn iter_pairs(&self) -> impl Iterator<Item = (&str, &ParentCtx)> {
+        self.by_sort
+            .iter()
+            .flat_map(|(s, ctxs)| ctxs.iter().map(move |c| (s.as_str(), c)))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_sort.is_empty()
+    }
+}
+
+/// Specialized constructor name for emit & grammar productions.
+/// Root context (`None`) keeps the bare constructor name.
+pub fn specialized_cons_name(cons: &str, ctx: Option<&ParentCtx>) -> String {
+    match ctx {
+        None => cons.to_string(),
+        Some(c) => format!("{}.in.{}", cons, c.suffix()),
+    }
+}
+
+/// Specialized grammar nonterminal name for `(sort, ctx)`.
+/// Root context for the start sort is `Start` (matches today's convention).
+/// Root context for any other sort uses `NT.<sort>` (legacy name; only valid
+/// when the program does not use parent-navigation, in which case there is
+/// only one context — the trivial root — for every sort).
+pub fn specialized_grammar_symbol(
+    sort: &str,
+    start_sort: &str,
+    ctx: Option<&ParentCtx>,
+) -> String {
+    match ctx {
+        None if sort == start_sort => "Start".to_string(),
+        None => format!("NT.{sort}"),
+        Some(c) => format!("NT.{sort}.in.{}", c.suffix()),
+    }
+}
+
+/// Aux synth-fun name promising the parent's BV at a (sort, ctx).
+pub fn aux_synth_name(sort: &str, ctx: &ParentCtx) -> String {
+    format!("delis.parent.{sort}.{}", ctx.suffix())
+}
+
+/// Child synth-fun name for the term that occupies (sort, ctx).
+pub fn child_synth_name(sort: &str, ctx: &ParentCtx) -> String {
+    format!("delis.child.{sort}.{}", ctx.suffix())
+}
+
 #[derive(Debug, Clone)]
 pub struct TermConstructor {
     pub name: String,
