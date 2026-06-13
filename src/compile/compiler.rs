@@ -6,11 +6,7 @@ use crate::{
         expr::sygus_term_to_value,
         eval_ctx::{EnvView, SemanticContext},
         semantics::{interped_bool, interped_value_matches},
-        syntax::{
-            aux_synth_name, child_synth_name, specialized_cons_name,
-            specialized_grammar_symbol, ParentCtx, ParentContexts, TermConstructor,
-            TermSignature,
-        },
+        syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, SemanticKind},
     },
     parser::{ast::TermTypes, DelisCmd, DelisProg},
@@ -27,6 +23,7 @@ use sygus_parser::{
     SyGuSCmd, SyGuSGTerm, SyGuSTerm, Term,
 };
 
+const CLOSURE_AUX_NAME: &str = "delis.closure.aux";
 const SELF_BIT_PREFIX: &str = "delis.self.";
 
 
@@ -53,8 +50,6 @@ enum RecurrenceMode {
 
 struct RecurrenceAnalysis {
     relation_modes: HashMap<String, RecurrenceMode>,
-    /// True iff any relation uses `(parent n)`. When true, the compiler
-    /// allocates per-(sort, ctx) auxiliaries and child synth-funs.
     requires_aux: bool,
     /// Term sorts whose semantic relation is in `SelfClosure` mode.
     self_closure_sorts: HashSet<String>,
@@ -83,25 +78,13 @@ struct Compiler<'a> {
     sig: TermSignature,
     ctx: SemanticContext<'a>,
     recurrence: RecurrenceAnalysis,
-    parent_contexts: ParentContexts,
     synth_name: String,
     synth_args: Vec<sygus_parser::SortedVar>,
-    /// Per-(sort, ctx) auxiliary synth-fun names. Each promises the BV of
-    /// the parent constructor as seen by a child of `sort` at slot
-    /// `ctx.slot` of `ctx.parent_cons`. Sort of the aux is
-    /// `result_sort(ctx.parent_cons)`. Empty when no relation uses
-    /// `(parent n)`.
-    aux_by_ctx: HashMap<(String, ParentCtx), String>,
-    /// Per-(sort, ctx) child synth-fun names. Each represents the term
-    /// occupying slot `ctx.slot` of `ctx.parent_cons`, with sort `sort`.
-    /// Empty when no relation uses `(parent n)`.
-    child_by_ctx: HashMap<(String, ParentCtx), String>,
-    /// Emit-time scratch: which (sort, ctx) we are currently lowering a
-    /// constructor body for. `Some((sort, None))` means the root context;
-    /// `Some((sort, Some(ctx)))` is a non-root specialization. Set by
-    /// the constructor-emit loop in `compile()` and read by
-    /// `semantic_term_bit` when it encounters `(parent n)`.
-    current_ctx: std::cell::RefCell<Option<(String, Option<ParentCtx>)>>,
+    /// If `Some`, the program uses `(parent ...)` and we synthesize an
+    /// auxiliary constant of the same sort as g (the start sort). All
+    /// `(parent n)` references in semantic bodies extract bits from this
+    /// aux; the top-level closure constraint `(= g aux)` forces the LFP.
+    aux_synth_name: Option<String>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
     bool_eval_cache: RefCell<HashMap<BoolMemoKey, BoolExpr>>,
     finite_eq_cache: RefCell<HashMap<FiniteEqMemoKey, BoolExpr>>,
@@ -131,11 +114,6 @@ struct EnvMemoKey {
     model: Option<String>,
     aspects: Vec<(String, AspectKey)>,
     values: Vec<(String, AspectValue)>,
-    /// The (sort, parent ctx) currently being lowered. (parent n) resolves
-    /// against the per-(sort, ctx) aux, so two constructor lowerings in
-    /// distinct contexts can produce different `BoolExpr::Dynamic`
-    /// subterms — the memo key must distinguish them.
-    ctx: Option<(String, Option<ParentCtx>)>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -200,19 +178,16 @@ impl<'a> Compiler<'a> {
         bit: usize,
         env: &Env,
     ) -> Result<SyGuSTerm, String> {
-        // `(parent n)` — read bit `n` of the parent's promised BV. The
-        // parent depends on the *static context* this constructor body is
-        // being lowered for, which is recorded in `self.current_ctx`. For
-        // the root context the parent is undefined and this is an error
-        // (no spec should reference (parent n) at the root sort).
+        // `(parent n)` — closure reference: extract the corresponding bit
+        // from the auxiliary synth-fun.  The top-level `(= g aux)` constraint
+        // forces the LFP, so the parent's evaluation at this aspect equals
+        // g's own evaluation.
         if let Some(items) = term_expr.to_ref_vec() {
             if items.first().and_then(|item| item.as_symbol()) == Some("parent") {
-                let aux = self.current_aux_name().ok_or_else(|| {
-                    "semantic body uses (parent ...) but no aux is in scope; \
-                     either no parent context was set, or this is the root context"
-                        .to_string()
+                let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
+                    "semantic body uses (parent ...) but no aux synth-fun allocated".to_string()
                 })?;
-                return Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(&aux))));
+                return Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))));
             }
         }
         let child_name = term_expr
@@ -245,12 +220,11 @@ impl<'a> Compiler<'a> {
                     Ok(Term::var(&self_bit_name(bit)))
                 }
                 RecurrenceMode::ParentClosure => {
-                    let aux = self.current_aux_name().ok_or_else(|| {
-                        "semantic body uses self-recursion in ParentClosure mode but \
-                         no aux is in scope (root context)"
+                    let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
+                        "semantic body uses self-recursion but no aux synth-fun allocated"
                             .to_string()
                     })?;
-                    Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(&aux))))
+                    Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))))
                 }
             };
         }
@@ -264,22 +238,10 @@ impl<'a> Compiler<'a> {
         Err(format!("unknown semantic term variable {child_name}"))
     }
 
-    /// Look up the auxiliary BV name for the current emit context. Returns
-    /// `None` if no context is set or if it is the root context.
-    fn current_aux_name(&self) -> Option<String> {
-        let cur = self.current_ctx.borrow();
-        let (sort, ctx) = cur.as_ref()?;
-        let ctx = ctx.as_ref()?;
-        self.aux_by_ctx
-            .get(&(sort.clone(), ctx.clone()))
-            .cloned()
-    }
-
     fn from_context(ctx_data: &'a CompileContext<'a>, optimize: bool) -> Result<Self, String> {
         let sig = ctx_data.sig.clone();
         let ctx = ctx_data.semantic_context()?;
         let recurrence = analyze_recurrence(ctx_data)?;
-        let parent_contexts = ParentContexts::from_signature(&sig);
         let mut bit_index = HashMap::default();
         let mut offsets = HashMap::default();
         for domain in &ctx_data.semantic_program.domains {
@@ -296,32 +258,20 @@ impl<'a> Compiler<'a> {
             }
             *offset += domain.width();
         }
-        let mut aux_by_ctx: HashMap<(String, ParentCtx), String> = HashMap::default();
-        let mut child_by_ctx: HashMap<(String, ParentCtx), String> = HashMap::default();
-        if recurrence.requires_aux {
-            for (sort, ctx) in parent_contexts.iter_pairs() {
-                aux_by_ctx.insert(
-                    (sort.to_string(), ctx.clone()),
-                    aux_synth_name(sort, ctx),
-                );
-                child_by_ctx.insert(
-                    (sort.to_string(), ctx.clone()),
-                    child_synth_name(sort, ctx),
-                );
-            }
-        }
+        let aux_synth_name = if recurrence.requires_aux {
+            Some(CLOSURE_AUX_NAME.to_string())
+        } else {
+            None
+        };
         Ok(Self {
             problem: ctx_data.problem,
             term_types: ctx_data.term_types,
             sig,
             ctx,
             recurrence,
-            parent_contexts,
             synth_name: ctx_data.synth_name.clone(),
             synth_args: ctx_data.synth_args.clone(),
-            aux_by_ctx,
-            child_by_ctx,
-            current_ctx: std::cell::RefCell::new(None),
+            aux_synth_name,
             bit_index,
             bool_eval_cache: RefCell::new(HashMap::default()),
             finite_eq_cache: RefCell::new(HashMap::default()),
@@ -341,98 +291,57 @@ impl<'a> Compiler<'a> {
         let grammar = self.grammar()?;
         log::debug!("grammar built in {:?}", grammar_start.elapsed());
 
-        // Phase 1: evaluate all constructor bits, per (cons, ctx).
+        // Phase 1: evaluate all constructor bits
         struct ConsResult {
-            /// Specialized constructor name to emit as `define-fun` symbol.
-            emit_name: String,
-            /// Source constructor (unspecialized name).
-            cons_name: String,
+            name: String,
             result_sort: String,
             arg_sorts: Vec<String>,
             bool_bits: Vec<BoolExpr>,
         }
-        let specialize = !self.aux_by_ctx.is_empty();
         let mut cons_results = Vec::new();
-        for cons in self.sig.constructors.clone().iter() {
+        for cons in &self.sig.constructors {
             // A parameter-leaf constructor IS the synth-fun's formal BV
             // parameter (a bare grammar terminal), not a folded function, so it
             // gets no define-fun.
             if self.is_param_leaf(&cons.name) {
                 continue;
             }
-            // Determine the set of contexts under which to emit this cons.
-            // The start sort always has a root context; non-start sorts get
-            // a root context only when no specialization is in effect.
-            let ctxs: Vec<Option<ParentCtx>> = if !specialize {
-                vec![None]
-            } else if cons.result_sort == self.sig.start_sort() {
-                // Start sort only ever appears under the root context (the
-                // synth-fun g). Even if the grammar admits the start sort
-                // also as a non-start arg of some constructor, the spec
-                // for the start-sort relation cannot reference (parent n)
-                // because the root has no parent.
-                let mut v: Vec<Option<ParentCtx>> = vec![None];
-                for ctx in self.parent_contexts.for_sort(&cons.result_sort) {
-                    v.push(Some(ctx.clone()));
-                }
-                v
-            } else {
-                self.parent_contexts
-                    .for_sort(&cons.result_sort)
-                    .iter()
-                    .cloned()
-                    .map(Some)
-                    .collect()
-            };
-
-            for ctx in ctxs {
-                *self.current_ctx.borrow_mut() =
-                    Some((cons.result_sort.clone(), ctx.clone()));
-                let cons_start = Instant::now();
-                let bool_bits = self.eval_constructor_bits(cons)?;
-                log::debug!(
-                    "constructor {} (ctx {:?}): compiled in {:?}",
-                    cons.name,
-                    ctx.as_ref().map(|c| c.suffix()),
-                    cons_start.elapsed()
-                );
-                cons_results.push(ConsResult {
-                    emit_name: specialized_cons_name(&cons.name, ctx.as_ref()),
-                    cons_name: cons.name.clone(),
-                    result_sort: cons.result_sort.clone(),
-                    arg_sorts: cons.arg_sorts.clone(),
-                    bool_bits,
-                });
-            }
+            let cons_start = Instant::now();
+            let bool_bits = self.eval_constructor_bits(cons)?;
+            log::debug!(
+                "constructor {}: compiled in {:?}",
+                cons.name,
+                cons_start.elapsed()
+            );
+            cons_results.push(ConsResult {
+                name: cons.name.clone(),
+                result_sort: cons.result_sort.clone(),
+                arg_sorts: cons.arg_sorts.clone(),
+                bool_bits,
+            });
         }
-        *self.current_ctx.borrow_mut() = None;
 
 
         // Phase 3: emit commands with remapped bits
         let emit_start = Instant::now();
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
-        if specialize {
-            // Constructor define-fun bodies reference per-(sort, ctx) aux
-            // BVs declared (later) as synth-funs, and child synth-fun
-            // grammars reference specialized constructor names. Both are
-            // forward references in normal SyGuS scoping, so we set
-            // `:fwd-decls true` and emit the auxes BEFORE the define-funs
-            // (whose bodies need them) and the child synth-funs AFTER
-            // (whose grammars need the define-fun names).
-            cmds.push(SyGuSCmd::SetFeature(
-                sygus_parser::SyGuSFeature::FwdDecls,
-                true,
-            ));
-        }
         cmds.extend(self.remapped_sort_alias_cmds()?);
-        if specialize {
-            cmds.extend(self.aux_synth_fun_cmds()?);
+        if let Some(aux_name) = self.aux_synth_name.clone() {
+            cmds.push(self.remapped_aux_synth_fun_cmd(&aux_name)?);
         }
         let mut total_lift = Duration::default();
         let mut total_compact = Duration::default();
         let mut total_closure = Duration::default();
         for cr in &cons_results {
             let alive_bits: Vec<BoolExpr> = cr.bool_bits.clone();
+            let mut sort_map: HashMap<String, &str> = HashMap::default();
+            for (idx, sort) in cr.arg_sorts.iter().enumerate() {
+                sort_map.insert(arg_name(idx), sort.as_str());
+            }
+            sort_map.insert(self.synth_name.clone(), self.sig.start_sort());
+            if let Some(aux) = &self.aux_synth_name {
+                sort_map.insert(aux.clone(), self.sig.start_sort());
+            }
             let remapped_bits: Vec<BoolExpr> = alive_bits
                 .into_iter()
                 .map(|expr| match expr {
@@ -442,7 +351,7 @@ impl<'a> Compiler<'a> {
                     c => c,
                 })
                 .collect();
-            let mut builder = Cmd::define_fun(&cr.emit_name);
+            let mut builder = Cmd::define_fun(&cr.name);
             let arg_names = (0..cr.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
             for (idx, sort) in cr.arg_sorts.iter().enumerate() {
                 builder = builder.arg(&arg_names[idx], Sort::from_name(sort));
@@ -475,7 +384,7 @@ impl<'a> Compiler<'a> {
             }
             log::debug!(
                 "emit {}: lift={:?} body={:?}",
-                cr.emit_name,
+                cr.name,
                 lift_elapsed,
                 body_elapsed
             );
@@ -493,12 +402,6 @@ impl<'a> Compiler<'a> {
             total_closure,
             emit_start.elapsed()
         );
-        // Emit per-(sort, ctx) child synth-funs after the constructor
-        // define-funs, so child synth-fun grammars can reference the
-        // specialized constructor names.
-        if specialize {
-            cmds.extend(self.child_synth_fun_cmds()?);
-        }
         let mut synth_cmd = Cmd::synth_fun(&self.synth_name)
             .ret(Sort::from_name(self.sig.start_sort()))
             .grammar(grammar);
@@ -506,8 +409,6 @@ impl<'a> Compiler<'a> {
             synth_cmd = synth_cmd.arg(&arg.name, arg.sort);
         }
         cmds.push(synth_cmd.build());
-        // suppress unused-import/binding warnings for cons_name in non-debug builds
-        let _ = cons_results.first().map(|cr| cr.cons_name.as_str());
         let env = Env::default();
         let lower_start = Instant::now();
         let top_level_constraints = self
@@ -529,18 +430,24 @@ impl<'a> Compiler<'a> {
         let constraints_start = Instant::now();
         for term in &top_level_constraints {
             let lowered = self.lower_top_level_constraint(term, &env)?;
-            cmds.push(Cmd::constraint().body(lowered).build());
+            let mut constraint_sort_map: HashMap<String, &str> = HashMap::default();
+            constraint_sort_map.insert(self.synth_name.clone(), self.sig.start_sort());
+            if let Some(aux) = &self.aux_synth_name {
+                constraint_sort_map.insert(aux.clone(), self.sig.start_sort());
+            }
+            let remapped = lowered;
+            cmds.push(Cmd::constraint().body(remapped).build());
         }
         log::debug!(
             "top-level constraints emitted in {:?}",
             constraints_start.elapsed()
         );
-        // Structural fixpoint: tie aux_<S, (P, k)> to a literal P-application
-        // whose slot-k child is `child_<S, (P, k)>`, and the other slots are
-        // the per-arg child synth-funs. The root child for the start sort
-        // is the user's synth-fun `g` itself (no rename).
-        if specialize {
-            cmds.extend(self.structural_fixpoint_cmds()?);
+        if let Some(aux_name) = &self.aux_synth_name {
+            let closure = Bool::eq(
+                Term::var(&self.synth_name),
+                Term::var(aux_name),
+            );
+            cmds.push(Cmd::constraint().body(closure).build());
         }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
@@ -838,65 +745,6 @@ impl<'a> Compiler<'a> {
     }
 
     fn grammar(&self) -> Result<GrammarDef, String> {
-        self.build_grammar(self.sig.start_sort(), None)
-    }
-
-    /// Build a SyGuS grammar rooted at the nonterminal for `(start_sort, start_ctx)`.
-    ///
-    /// When the program does not use `(parent n)` (`parent_contexts` is
-    /// effectively empty for emit purposes — captured by `aux_by_ctx`), this
-    /// degenerates to the legacy single-rule-list-per-sort grammar.
-    /// Otherwise, every non-start (sort, ctx) pair gets its own rule list,
-    /// and grammar productions route children to per-slot specialized
-    /// nonterminals.
-    fn build_grammar(
-        &self,
-        start_sort: &str,
-        start_ctx: Option<&ParentCtx>,
-    ) -> Result<GrammarDef, String> {
-        let specialize = !self.aux_by_ctx.is_empty();
-        if !specialize {
-            // Legacy path: one rule list per sort, no context specialization.
-            return self.build_grammar_legacy();
-        }
-        // Collect every (sort, Option<ctx>) the grammar may reference.
-        // The start sort under `start_ctx` is always present; every
-        // non-root (sort, ctx) is also present (we emit them all so a
-        // child synth-fun rooted at any ctx can reach the rest).
-        let mut nonterminals: Vec<(String, Option<ParentCtx>)> =
-            vec![(start_sort.to_string(), start_ctx.cloned())];
-        for (sort, ctx) in self.parent_contexts.iter_pairs() {
-            let entry = (sort.to_string(), Some(ctx.clone()));
-            if !nonterminals.contains(&entry) {
-                nonterminals.push(entry);
-            }
-        }
-        // Also include root contexts for every non-start sort that may be
-        // reached by the grammar — but in the specialized-grammar regime,
-        // only the start sort uses a root context. Non-start sorts are
-        // always reached via some parent constructor, so they live under
-        // a non-root ctx. Skip emitting non-start root contexts.
-
-        let sorted_vars = nonterminals
-            .iter()
-            .map(|(sort, ctx)| SortedVar {
-                name: specialized_grammar_symbol(sort, self.sig.start_sort(), ctx.as_ref()),
-                sort: Sort::from_name(sort),
-            })
-            .collect::<Vec<_>>();
-
-        let grouped_rule_lists = nonterminals
-            .iter()
-            .map(|(sort, ctx)| self.build_rule_list(sort, ctx.as_ref()))
-            .collect::<Result<Vec<_>, String>>()?;
-
-        Ok(GrammarDef {
-            sorted_vars,
-            grouped_rule_lists,
-        })
-    }
-
-    fn build_grammar_legacy(&self) -> Result<GrammarDef, String> {
         let sorted_vars = self
             .term_types
             .sort_decls
@@ -938,61 +786,6 @@ impl<'a> Compiler<'a> {
         Ok(GrammarDef {
             sorted_vars,
             grouped_rule_lists,
-        })
-    }
-
-    /// Build the rule list for the nonterminal of `(sort, ctx)`. The list
-    /// contains one rule per constructor whose `result_sort == sort`. Each
-    /// rule's production-symbol is the specialized constructor name
-    /// (`cons.in.<ctx>` for non-root, bare `cons` for root); each child
-    /// reference routes to `NT.<arg_sort>.in.<(cons, slot)>`.
-    fn build_rule_list(
-        &self,
-        sort: &str,
-        lhs_ctx: Option<&ParentCtx>,
-    ) -> Result<GroupedRuleList, String> {
-        let symbol = specialized_grammar_symbol(sort, self.sig.start_sort(), lhs_ctx);
-        let term_type_idx = self
-            .term_types
-            .sort_decls
-            .iter()
-            .position(|d| d.symbol == sort)
-            .ok_or_else(|| format!("sort {sort} not declared in declare-term-types"))?;
-        let term_type_decl = &self.term_types.term_type_decls[term_type_idx];
-        let terms = term_type_decl
-            .constructors
-            .iter()
-            .map(|cons| {
-                let cons_name = cons.symbol.to_string();
-                // Specialized name uses the *lhs* ctx (where this cons is
-                // being placed), so two distinct contexts produce distinct
-                // specialized define-funs.
-                let prod_name = specialized_cons_name(&cons_name, lhs_ctx);
-                // Each arg routes to its own (arg_sort, (cons, slot)) NT.
-                let args = cons
-                    .sorts
-                    .iter()
-                    .enumerate()
-                    .map(|(slot, arg_sort_id)| {
-                        let arg_sort = arg_sort_id.to_string();
-                        let child_ctx = ParentCtx {
-                            parent_cons: cons_name.clone(),
-                            slot,
-                        };
-                        specialized_grammar_symbol(
-                            &arg_sort,
-                            self.sig.start_sort(),
-                            Some(&child_ctx),
-                        )
-                    })
-                    .collect();
-                gterm(&prod_name, args)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(GroupedRuleList {
-            symbol,
-            sort: Sort::from_name(sort),
-            terms,
         })
     }
 
@@ -1868,7 +1661,6 @@ impl<'a> Compiler<'a> {
             model,
             aspects,
             values,
-            ctx: self.current_ctx.borrow().clone(),
         }
     }
 
@@ -1998,174 +1790,27 @@ impl<'a> Compiler<'a> {
         Ok(cmds)
     }
 
-    /// Emit one free-BV synth-fun per (sort, ctx) in `aux_by_ctx`. The
-    /// aux's BV sort is `result_sort(ctx.parent_cons)` — the parent's
-    /// output sort, since the aux promises the parent's BV.
-    fn aux_synth_fun_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
-        let constructor_sorts: HashMap<String, String> = self
-            .sig
-            .constructors
-            .iter()
-            .map(|c| (c.name.clone(), c.result_sort.clone()))
-            .collect();
-        let mut entries: Vec<(&(String, ParentCtx), &String)> =
-            self.aux_by_ctx.iter().collect();
-        entries.sort_by(|a, b| a.1.cmp(b.1));
-        entries
-            .into_iter()
-            .map(|((_, ctx), aux_name)| {
-                let parent_sort = constructor_sorts
-                    .get(&ctx.parent_cons)
-                    .cloned()
-                    .ok_or_else(|| {
-                        format!(
-                            "aux ctx references unknown constructor {}",
-                            ctx.parent_cons
-                        )
-                    })?;
-                let sort = Sort::from_name(&parent_sort);
-                let sorted_var = SortedVar {
-                    name: "C".to_string(),
-                    sort: sort.clone(),
-                };
-                let grammar = GrammarDef {
-                    sorted_vars: vec![sorted_var],
-                    grouped_rule_lists: vec![GroupedRuleList {
-                        symbol: "C".to_string(),
-                        sort: sort.clone(),
-                        terms: vec![SyGuSGTerm::Constant(sort.clone())],
-                    }],
-                };
-                Ok(SyGuSCmd::SynthFun(
-                    aux_name.clone(),
-                    Vec::new(),
-                    sort,
-                    Some(grammar),
-                ))
-            })
-            .collect()
-    }
-
-    /// Emit one synth-fun per (sort, ctx) in `child_by_ctx`. Each child's
-    /// grammar is rooted at the per-(sort, ctx) nonterminal `NT.<sort>.in.<ctx>`,
-    /// so the SyGuS solver synthesizes a term of `sort` consistent with the
-    /// productions for that context.
-    fn child_synth_fun_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
-        let mut entries: Vec<(&(String, ParentCtx), &String)> =
-            self.child_by_ctx.iter().collect();
-        entries.sort_by(|a, b| a.1.cmp(b.1));
-        entries
-            .into_iter()
-            .map(|((sort, ctx), child_name)| {
-                let grammar = self.build_grammar(sort, Some(ctx))?;
-                Ok(SyGuSCmd::SynthFun(
-                    child_name.clone(),
-                    Vec::new(),
-                    Sort::from_name(sort),
-                    Some(grammar),
-                ))
-            })
-            .collect()
-    }
-
-    /// Emit per-(sort, ctx) structural fixpoint constraints. For each
-    /// `aux_<S, (P, k)>` we assert it equals an application of `P` whose
-    /// slot-k argument is `child_<S, (P, k)>` and whose other slots are
-    /// the per-arg child synth-funs (or `g` for the start-sort root). The
-    /// `P`-application's symbol is specialized to the enclosing context
-    /// of `P`. Since `P` may sit in multiple enclosing contexts in
-    /// general, we pick a single representative: root if `P.result_sort`
-    /// is the start sort, else the lexicographically smallest non-root
-    /// ctx of `P.result_sort`. This is the documented precision-loss
-    /// point of Approach A.
-    fn structural_fixpoint_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
-        use crate::compile::syntax::specialized_cons_name;
-        let constructor_by_name: HashMap<String, &TermConstructor> = self
-            .sig
-            .constructors
-            .iter()
-            .map(|c| (c.name.clone(), c))
-            .collect();
-        let mut entries: Vec<(&(String, ParentCtx), &String)> =
-            self.aux_by_ctx.iter().collect();
-        entries.sort_by(|a, b| a.1.cmp(b.1));
-        let mut cmds = Vec::new();
-        for ((sort, ctx), aux_name) in entries {
-            let parent_cons = constructor_by_name
-                .get(&ctx.parent_cons)
-                .ok_or_else(|| {
-                    format!(
-                        "aux ctx references unknown constructor {}",
-                        ctx.parent_cons
-                    )
-                })?;
-            // Build the argument list for the parent-cons application.
-            let mut app_args: Vec<SyGuSTerm> = Vec::with_capacity(parent_cons.arg_sorts.len());
-            for (slot, arg_sort) in parent_cons.arg_sorts.iter().enumerate() {
-                let arg_term = if slot == ctx.slot && arg_sort == sort {
-                    // The slot-k argument is the child synth-fun whose sort
-                    // matches the (sort, ctx) we're constraining.
-                    let child_name = self
-                        .child_by_ctx
-                        .get(&(sort.clone(), ctx.clone()))
-                        .ok_or_else(|| {
-                            format!(
-                                "missing child synth-fun for ({sort}, {})",
-                                ctx.suffix()
-                            )
-                        })?;
-                    Term::var(child_name)
-                } else if arg_sort == self.sig.start_sort() {
-                    // Start-sort children at any slot use the user's `g`.
-                    Term::var(&self.synth_name)
-                } else {
-                    // Non-slot, non-start argument: use the per-arg child
-                    // synth-fun for `(arg_sort, (parent_cons, slot))`.
-                    let arg_ctx = ParentCtx {
-                        parent_cons: parent_cons.name.clone(),
-                        slot,
-                    };
-                    let key = (arg_sort.clone(), arg_ctx);
-                    let child_name = self.child_by_ctx.get(&key).ok_or_else(|| {
-                        format!(
-                            "missing child synth-fun for ({arg_sort}, {}.{})",
-                            parent_cons.name, slot
-                        )
-                    })?;
-                    Term::var(child_name)
-                };
-                app_args.push(arg_term);
-            }
-            // Pick the enclosing context of P for naming. P sits as a
-            // child of some ancestor; pick root if P's result is the start
-            // sort, else the smallest non-root ctx.
-            let enclosing: Option<ParentCtx> = if parent_cons.result_sort == self.sig.start_sort()
-            {
-                None
-            } else {
-                self.parent_contexts
-                    .for_sort(&parent_cons.result_sort)
-                    .iter()
-                    .min_by(|a, b| a.suffix().cmp(&b.suffix()))
-                    .cloned()
-            };
-            let app_name = specialized_cons_name(&parent_cons.name, enclosing.as_ref());
-            let app = if app_args.is_empty() {
-                Term::var(&app_name)
-            } else {
-                SyGuSTerm::Application(
-                    Identifier::Symbol(app_name),
-                    app_args,
-                )
-            };
-            let constraint = Bool::eq(Term::var(aux_name), app);
-            cmds.push(Cmd::constraint().body(constraint).build());
-        }
-        // Also tie g to the root child for the start sort. With the
-        // current convention `g` itself plays the role of the root child,
-        // so no extra constraint is needed unless we'd allocated a
-        // separate child_<S0, Root>. We do not, so this is a no-op.
-        Ok(cmds)
+    fn remapped_aux_synth_fun_cmd(&self, aux_name: &str) -> Result<SyGuSCmd, String> {
+        let sort = Sort::from_name(self.sig.start_sort());
+        let sorted_var = SortedVar {
+            name: "C".to_string(),
+            sort: sort.clone(),
+        };
+        let constant_rule = SyGuSGTerm::Constant(sort.clone());
+        let grammar = GrammarDef {
+            sorted_vars: vec![sorted_var],
+            grouped_rule_lists: vec![GroupedRuleList {
+                symbol: "C".to_string(),
+                sort: sort.clone(),
+                terms: vec![constant_rule],
+            }],
+        };
+        Ok(SyGuSCmd::SynthFun(
+            aux_name.to_string(),
+            Vec::new(),
+            sort,
+            Some(grammar),
+        ))
     }
 
 

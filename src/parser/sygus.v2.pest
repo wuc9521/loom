@@ -134,7 +134,6 @@ SyGuSCmd = {
 | SyGuSCmdDeclareDatatypes
 | SyGuSCmdDeclareSort
 | SyGuSCmdDefineFun
-| SyGuSCmdDefineFunRec
 | SyGuSCmdDefineSort
 | SyGuSCmdSetInfo
 | SyGuSCmdSetLogic
@@ -170,7 +169,6 @@ SyGuSCmdDeclareDatatype = { "(" ~ #SyGuSTkDeclareDatatype="declare-datatype" ~ S
 SyGuSCmdDeclareDatatypes = { "(" ~ #SyGuSTkDeclareDatatypes="declare-datatypes" ~ "(" ~ SortDecl+ ~ ")" ~ "(" ~ DTDecl+ ~ ")" ~ ")" }
 SyGuSCmdDeclareSort = { "(" ~ #SyGuSTkDeclareSort="declare-sort" ~ Symbol ~ Numeral ~ ")" }
 SyGuSCmdDefineFun = { "(" ~ #SyGuSTkDefineFun="define-fun" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ SyGuSTerm ~ ")" }
-SyGuSCmdDefineFunRec = { "(" ~ #SyGuSTkDefineFunRec="define-fun-rec" ~ Symbol ~ "(" ~ SortedVar* ~ ")" ~ Sort ~ SyGuSTerm ~ ")" }
 SyGuSCmdDefineSort = { "(" ~ #SyGuSTkDefineSort="define-sort" ~ Symbol ~ "(" ~ Symbol* ~ ")" ~ Sort ~ ")" }
 SyGuSCmdSetInfo = { "(" ~ #SyGuSTkSetInfo="set-info" ~ Keyword ~ Literal ~ ")" }
 SyGuSCmdSetLogic = { "(" ~ #SyGuSTkSetLogic="set-logic" ~ Symbol ~ ")" }
