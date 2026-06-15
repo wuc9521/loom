@@ -30,7 +30,11 @@ use sygus_parser::SyGuSCmd;
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
-            let program = delis_file.to_chc_ast().map_err(io::Error::other)?;
+            let program = if std::env::var("DELIS_DUMP_CHC_SATURATED").is_ok() {
+                delis_file.to_chc_ast_saturated().map_err(io::Error::other)?
+            } else {
+                delis_file.to_chc_ast().map_err(io::Error::other)?
+            };
             println!(
                 "{}",
                 program.to_smt()

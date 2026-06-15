@@ -1,10 +1,10 @@
 use crate::{
     compile::optim,
     compile::{
+        bexpr::{arg_name, self_bit_name, BoolExpr},
         context::CompileContext,
-        emit::{arg_name, BoolExpr},
-        expr::sygus_term_to_value,
         eval_ctx::{EnvView, SemanticContext},
+        expr::sygus_term_to_value,
         semantics::{interped_bool, interped_value_matches},
         syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, SemanticKind},
@@ -24,7 +24,6 @@ use sygus_parser::{
 };
 
 const CLOSURE_AUX_NAME: &str = "delis.closure.aux";
-const SELF_BIT_PREFIX: &str = "delis.self.";
 
 
 #[derive(Clone)]
@@ -1952,200 +1951,6 @@ fn extract_arg_bit(arg_idx: usize, bit: usize) -> SyGuSTerm {
 
 fn bit_is_one(bit: SyGuSTerm) -> SyGuSTerm {
     Bool::eq(bit, BitVec::const_(1, 1))
-}
-
-/// Placeholder variable name used in `RecurrenceMode::SelfClosure` mode to
-/// stand for "the Bool value of bit `i` of the synth-fun's output". The
-/// post-pass in `compile()` resolves these into let-bindings.
-fn self_bit_name(bit: usize) -> String {
-    format!("{SELF_BIT_PREFIX}{bit}")
-}
-
-/// Walk a SyGuSTerm and collect bit indices `j` for any `__delis_self_b{j}`
-/// identifier appearing in it. These are the self-bit dependencies of the
-/// expression.
-fn collect_self_bit_deps(term: &SyGuSTerm, out: &mut HashSet<usize>) {
-    match term {
-        SyGuSTerm::Identifier(id) => {
-            if let Some(j) = parse_self_bit_index(id) {
-                out.insert(j);
-            }
-        }
-        SyGuSTerm::Application(_, args) => {
-            for a in args {
-                collect_self_bit_deps(a, out);
-            }
-        }
-        SyGuSTerm::Annotated(inner, _) => collect_self_bit_deps(inner, out),
-        SyGuSTerm::Let(bindings, body) => {
-            for b in bindings {
-                collect_self_bit_deps(&b.term, out);
-            }
-            collect_self_bit_deps(body, out);
-        }
-        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => {
-            collect_self_bit_deps(body, out)
-        }
-        SyGuSTerm::Literal(_) => {}
-    }
-}
-
-fn parse_self_bit_index(id: &Identifier) -> Option<usize> {
-    match id {
-        Identifier::Symbol(name) => name
-            .strip_prefix(SELF_BIT_PREFIX)
-            .and_then(|s| s.parse::<usize>().ok()),
-        _ => None,
-    }
-}
-
-/// Topological sort of bit dependencies. Returns bits in an order where
-/// every dependency precedes its dependents; `Err` on cyclic graphs.
-fn topo_sort_bits(deps: &[HashSet<usize>]) -> Result<Vec<usize>, String> {
-    let n = deps.len();
-    let mut in_deg = vec![0usize; n];
-    let mut rev: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (i, ds) in deps.iter().enumerate() {
-        for &j in ds {
-            if j >= n {
-                return Err(format!(
-                    "self-bit dep out of range: bit {i} references {j} but only {n} bits exist"
-                ));
-            }
-            in_deg[i] += 1;
-            rev[j].push(i);
-        }
-    }
-    let mut queue: std::collections::VecDeque<usize> =
-        (0..n).filter(|&i| in_deg[i] == 0).collect();
-    let mut order = Vec::with_capacity(n);
-    while let Some(i) = queue.pop_front() {
-        order.push(i);
-        for &k in &rev[i] {
-            in_deg[k] -= 1;
-            if in_deg[k] == 0 {
-                queue.push_back(k);
-            }
-        }
-    }
-    if order.len() != n {
-        return Err("cyclic self-bit dependency".to_string());
-    }
-    Ok(order)
-}
-
-/// Build a constructor body that statically unrolls the LFP introduced by
-/// `RecurrenceMode::SelfClosure`. If no bit has a self-dependency this falls
-/// back to a plain `compact_bitvec`; otherwise it emits nested let-bindings
-/// in topological order so each `__delis_self_b{i}` variable is defined
-/// before any other binding (or the final body) references it.
-impl BoolExpr {
-    pub fn resolve_closure(bits: &[Self]) -> SyGuSTerm {
-        let n = bits.len();
-        let deps: Vec<HashSet<usize>> = bits
-            .iter()
-            .map(|expr| {
-                let mut d = HashSet::default();
-                if let BoolExpr::Dynamic(t) = expr {
-                    collect_self_bit_deps(t, &mut d);
-                }
-                d
-            })
-            .collect();
-        let has_self_refs = deps.iter().any(|d| !d.is_empty());
-        if !has_self_refs {
-            let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
-            return BoolExpr::compact(bit_exprs);
-        }
-        let order = match topo_sort_bits(&deps) {
-            Ok(o) => o,
-            Err(msg) => {
-                log::warn!(
-                    "self-closure body: {msg}; falling back to runtime self-references"
-                );
-                let bit_exprs: Vec<BoolExpr> = bits.iter().cloned().collect();
-                return BoolExpr::compact(bit_exprs);
-            }
-        };
-        // Determine which bits are referenced by other bits — only those
-        // need `let`-bindings to avoid exponential subexpression duplication.
-        let mut ref_count = vec![0usize; n];
-        for d in &deps {
-            for &j in d {
-                ref_count[j] += 1;
-            }
-        }
-        // Walk bits in topo order, building each as a BoolExpr. Bits that are
-        // referenced more than once are materialized as let-bound names so
-        // the surrounding term tree reuses them by reference, not by cloning.
-        let mut resolved: Vec<BoolExpr> = vec![BoolExpr::Const(false); n];
-        let mut bindings: Vec<(String, SyGuSTerm)> = Vec::new();
-        for &i in &order {
-            let computed = match &bits[i] {
-                BoolExpr::Const(v) => BoolExpr::Const(*v),
-                BoolExpr::Dynamic(t) => resolve_self_refs(t, &resolved),
-            };
-            // Only let-bind dynamic terms that are referenced more than once.
-            // Constants and unreferenced terms are inlined as before.
-            match computed {
-                BoolExpr::Const(_) => resolved[i] = computed,
-                BoolExpr::Dynamic(term) if ref_count[i] >= 2 => {
-                    let name = format!("delis.share.b{i}");
-                    bindings.push((name.clone(), term));
-                    resolved[i] = BoolExpr::Dynamic(Term::var(&name));
-                }
-                expr => resolved[i] = expr,
-            }
-        }
-        let body = BoolExpr::compact(resolved);
-        if bindings.is_empty() {
-            body
-        } else {
-            // Each let-binding references at most earlier let-vars (topo order),
-            // so a single nested let chain — innermost binding outermost — works.
-            // We emit one let with all bindings since they're sequential in topo
-            // order and SyGuS `let` semantics allow this when no name shadowing
-            // exists between siblings.
-            let mut out = body;
-            for (name, term) in bindings.into_iter().rev() {
-                out = Term::let_binding(vec![(name, term)], out);
-            }
-            out
-        }
-    }
-}
-
-/// Resolve `__delis_self_b{j}` references in a SyGuSTerm by looking up
-/// their already-resolved BoolExpr values. Boolean operators are combined
-/// via BoolExpr::and/or/not which fold constants automatically.
-/// Non-self-ref subterms (e.g., `(= ((_ extract k k) arg0) #b1)`) become
-/// `BoolExpr::Dynamic(subterm)`.
-fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
-    match term {
-        SyGuSTerm::Literal(Literal::Bool(v)) => BoolExpr::Const(*v),
-        SyGuSTerm::Identifier(Identifier::Symbol(name)) => {
-            if let Some(idx) = name.strip_prefix(SELF_BIT_PREFIX) {
-                if let Ok(i) = idx.parse::<usize>() {
-                    return resolved[i].clone();
-                }
-            }
-            BoolExpr::Dynamic(term.clone())
-        }
-        SyGuSTerm::Application(id, args) => {
-            let op = id.get_name();
-            match op {
-                "and" => BoolExpr::and(
-                    args.iter().map(|a| resolve_self_refs(a, resolved)).collect(),
-                ),
-                "or" => BoolExpr::or(
-                    args.iter().map(|a| resolve_self_refs(a, resolved)).collect(),
-                ),
-                "not" if args.len() == 1 => resolve_self_refs(&args[0], resolved).not(),
-                _ => BoolExpr::Dynamic(term.clone()),
-            }
-        }
-        _ => BoolExpr::Dynamic(term.clone()),
-    }
 }
 
 fn collect_expr_symbols(expr: &Value, out: &mut HashSet<String>) {

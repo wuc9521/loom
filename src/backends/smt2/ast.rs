@@ -124,6 +124,19 @@ impl HornProg {
     }
 }
 
+/// Classification of a body atom against its rule's head.
+///
+/// `Pop` atoms contain a variable not bound by the head — they originate
+/// from `(parent n)` lowering and saturation must eliminate them.
+/// `Intersection` atoms are closed in the head's variables — alternating
+/// clauses (Comon 2008 §7.6.1) that must be preserved by saturation,
+/// otherwise an AND-of-OR body distributes to DNF.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AtomRole {
+    Pop,
+    Intersection,
+}
+
 impl HornTerm {
     pub fn var(name: impl Into<String>) -> Self {
         HornTerm::Var(name.into())
@@ -143,6 +156,35 @@ impl HornTerm {
                 fun: fun.clone(),
                 args: args.iter().map(|a| a.substitute(subst)).collect(),
             },
+        }
+    }
+
+    /// Insert every variable appearing in `self` into `out`.
+    pub fn collect_vars(&self, out: &mut HashSet<String>) {
+        match self {
+            HornTerm::Var(name) => {
+                out.insert(name.clone());
+            }
+            HornTerm::App { args, .. } => {
+                for arg in args {
+                    arg.collect_vars(out);
+                }
+            }
+        }
+    }
+
+    /// Variables appearing in `self`.
+    pub fn vars(&self) -> HashSet<String> {
+        let mut out = HashSet::default();
+        self.collect_vars(&mut out);
+        out
+    }
+
+    /// True iff `self` contains a variable not in `allowed`.
+    pub fn has_var_outside(&self, allowed: &HashSet<String>) -> bool {
+        match self {
+            HornTerm::Var(name) => !allowed.contains(name),
+            HornTerm::App { args, .. } => args.iter().any(|a| a.has_var_outside(allowed)),
         }
     }
 
@@ -169,14 +211,36 @@ impl HornAtom {
             arg: self.arg.substitute(subst),
         }
     }
+
+    /// Classify `self` as a body atom against the head-bound variables
+    /// `head_vars`. See [`AtomRole`].
+    pub fn role_against(&self, head_vars: &HashSet<String>) -> AtomRole {
+        if self.arg.has_var_outside(head_vars) {
+            AtomRole::Pop
+        } else {
+            AtomRole::Intersection
+        }
+    }
 }
 
 impl HornRule {
-    /// Returns true if the rule has a body atom that is a constructor application (pop clause).
+    /// Variables bound by the rule's head.
+    pub fn head_vars(&self) -> HashSet<String> {
+        self.head.arg.vars()
+    }
+
+    /// True iff some body atom is a [`AtomRole::Pop`] — i.e., a constructor
+    /// application carrying a variable not bound by the head. Saturation
+    /// must close these.
+    ///
+    /// Note: intersection clauses (helper-pred bodies) also have App-shaped
+    /// body atoms, but their variables are all head-bound; they are not
+    /// pop clauses and survive saturation.
     pub fn is_pop_clause(&self) -> bool {
+        let hv = self.head_vars();
         self.body_atoms
             .iter()
-            .any(|a| matches!(&a.arg, HornTerm::App { .. }))
+            .any(|a| matches!(&a.arg, HornTerm::App { .. }) && a.role_against(&hv) == AtomRole::Pop)
     }
 
     /// Returns true if self subsumes other (same head, self has subset of other's body).

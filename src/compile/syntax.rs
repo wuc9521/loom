@@ -62,6 +62,21 @@ impl TermSignature {
         })
     }
 
+    /// Construct from parts. Intended for tests; the production path uses
+    /// `from_declare_term_types`.
+    #[cfg(test)]
+    pub fn from_parts(
+        constructors: Vec<TermConstructor>,
+        sort_order: Vec<String>,
+        start_sort: String,
+    ) -> Self {
+        Self {
+            constructors,
+            sort_order,
+            start_sort,
+        }
+    }
+
     /// Override the grammar root sort. The synth-fun's declared return sort
     /// selects which `declare-term-types` sort roots the grammar: a Bool-valued
     /// formula sort for separator synthesis, or a value sort for term synthesis.
