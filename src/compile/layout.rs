@@ -1,8 +1,9 @@
 //! Per-sort BV layout: one bit per predicate in `HornProg.predicates`.
 //!
 //! Pred order per sort is deterministic — keyed on a (group, declaration
-//! index) tuple where group separates positive (q), negative (nq), and
-//! helper (`__chc.*`) preds. Stable across runs for the same input.
+//! index) tuple where group separates positive (q) and negative (nq).
+//! Helper (`__chc.*`) preds are not bit-allocated; the emit pass inlines
+//! their definitions into using rules. Stable across runs for the same input.
 
 use crate::backends::smt2::ast::{HornProg, PredicatePolarity};
 use rustc_hash::FxHashMap as HashMap;
@@ -20,14 +21,13 @@ impl BitLayout {
             if name == "Goal" {
                 continue;
             }
-            let helper = info.state == *name;
-            let group: u8 = if helper {
-                2
-            } else {
-                match info.polarity {
-                    PredicatePolarity::Positive => 0,
-                    PredicatePolarity::Negative => 1,
-                }
+            // Helpers (state == name) are inlined at emit time, not given a bit.
+            if info.state == *name {
+                continue;
+            }
+            let group: u8 = match info.polarity {
+                PredicatePolarity::Positive => 0,
+                PredicatePolarity::Negative => 1,
             };
             by_sort
                 .entry(info.sort.clone())

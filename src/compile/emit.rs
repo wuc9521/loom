@@ -195,6 +195,26 @@ pub fn aggregate_constructor_bits(
     layout: &BitLayout,
     sig: &TermSignature,
 ) -> Result<Vec<ConstructorBits>, String> {
+    // Index helper rules so body atoms referencing a helper can be inlined
+    // instead of consuming a BV bit per helper. A predicate is a helper iff
+    // its `PredicateInfo.state == name` (the marker `chc.rs::emit_helper_atom`
+    // sets). Helpers carry intermediate sub-formulae of one constructor's
+    // lowering — inlining them keeps the BV width proportional to the
+    // bisim-quotient classes only.
+    let mut helper_rules: HashMap<&str, Vec<&crate::backends::smt2::ast::HornRule>> =
+        HashMap::default();
+    for rule in &prog.rules {
+        let head_pred = rule.head.pred.as_str();
+        let is_helper = prog
+            .predicates
+            .get(head_pred)
+            .map(|info| info.state == *head_pred)
+            .unwrap_or(false);
+        if is_helper {
+            helper_rules.entry(head_pred).or_default().push(rule);
+        }
+    }
+
     let mut out = Vec::with_capacity(sig.constructors.len());
     for cons in &sig.constructors {
         let width = layout.width(&cons.result_sort);
@@ -210,6 +230,11 @@ pub fn aggregate_constructor_bits(
             let Some(var_to_arg) = head_arg_index_map(head_args) else {
                 continue;
             };
+            // Skip rules whose head is a helper — they're inlined at use sites,
+            // not OR-ed into a head bit.
+            if helper_rules.contains_key(rule.head.pred.as_str()) {
+                continue;
+            }
             let Some(head_bit) = layout.bit_of(&rule.head.pred) else {
                 continue;
             };
@@ -220,10 +245,21 @@ pub fn aggregate_constructor_bits(
                 ));
             }
 
+            let mut visiting: rustc_hash::FxHashSet<&str> = rustc_hash::FxHashSet::default();
             let body_terms: Result<Vec<BoolExpr>, String> = rule
                 .body_atoms
                 .iter()
-                .map(|atom| body_atom_to_bool(atom, &rule.head.arg, &var_to_arg, layout))
+                .map(|atom| {
+                    body_atom_to_bool(
+                        atom,
+                        &rule.head.arg,
+                        &var_to_arg,
+                        layout,
+                        prog,
+                        &helper_rules,
+                        &mut visiting,
+                    )
+                })
                 .collect();
             let body_terms = match body_terms {
                 Ok(t) => t,
@@ -246,12 +282,54 @@ pub fn aggregate_constructor_bits(
     Ok(out)
 }
 
-fn body_atom_to_bool(
-    atom: &HornAtom,
+fn body_atom_to_bool<'p>(
+    atom: &'p HornAtom,
     head_term: &HornTerm,
     var_to_arg: &HashMap<&str, usize>,
     layout: &BitLayout,
+    prog: &'p HornProg,
+    helper_rules: &HashMap<&'p str, Vec<&'p crate::backends::smt2::ast::HornRule>>,
+    visiting: &mut rustc_hash::FxHashSet<&'p str>,
 ) -> Result<BoolExpr, String> {
+    // Helper atoms (no BV bit allocated) are expanded inline as
+    // `OR_r (AND r.body)` over the helper's defining rules. Helpers are
+    // always applied to the enclosing constructor's head term, so their
+    // body atoms reference vars in the same scope.
+    if let Some(rules) = helper_rules.get(atom.pred.as_str()) {
+        let pred = atom.pred.as_str();
+        if !visiting.insert(pred) {
+            // Cycle: sound under monotone LFP to substitute false.
+            return Ok(BoolExpr::Const(false));
+        }
+        let mut disjuncts = Vec::with_capacity(rules.len());
+        for rule in rules {
+            let mut conjuncts = Vec::with_capacity(rule.body_atoms.len());
+            let mut residual = false;
+            for body_atom in &rule.body_atoms {
+                match body_atom_to_bool(
+                    body_atom,
+                    &rule.head.arg,
+                    var_to_arg,
+                    layout,
+                    prog,
+                    helper_rules,
+                    visiting,
+                ) {
+                    Ok(e) => conjuncts.push(e),
+                    Err(_) => {
+                        residual = true;
+                        break;
+                    }
+                }
+            }
+            if !residual {
+                disjuncts.push(BoolExpr::and(conjuncts));
+            }
+        }
+        visiting.remove(pred);
+        return Ok(BoolExpr::or(disjuncts));
+    }
+
     let Some(bit) = layout.bit_of(&atom.pred) else {
         return Err(format!("unknown body pred {}", atom.pred));
     };
@@ -328,7 +406,14 @@ fn q_pred_name_for(
         model: model.to_string(),
         fields: fields.to_vec(),
     };
-    let want_state = state_name(&aspect);
+    let aspect_key = state_name(&aspect);
+    // Bisim may have merged several aspects onto one canonical state. The
+    // map populated in `chc::compile` is the source of truth for which.
+    let want_state = prog
+        .aspect_state
+        .get(&aspect_key)
+        .cloned()
+        .unwrap_or(aspect_key.clone());
     for (name, info) in &prog.predicates {
         if info.sort == sort
             && info.polarity == PredicatePolarity::Positive
@@ -338,6 +423,6 @@ fn q_pred_name_for(
         }
     }
     Err(format!(
-        "no q-pred found for relation={relation} sort={sort} aspect={want_state}"
+        "no q-pred found for relation={relation} sort={sort} aspect={aspect_key} (canonical={want_state})"
     ))
 }

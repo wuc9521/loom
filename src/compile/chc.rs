@@ -209,7 +209,7 @@ impl<'a> ChcCompiler<'a> {
     fn init_predicates(mut self) -> Self {
         for domain in &self.program.domains {
             for bit in &domain.bits {
-                let state = domain_state_name(domain, &bit.aspect, bit.value.as_ref());
+                let state = domain_state_name(domain, bit);
                 for sort in self
                     .relation_sorts
                     .get(&domain.relation)
@@ -240,9 +240,19 @@ impl<'a> ChcCompiler<'a> {
         let (sorts, decls) = self.sig.datatype_decls();
         out.decls.push(HornDecl::DeclareDatatypes(sorts, decls));
 
+        let mut seen_decl: rustc_hash::FxHashSet<String> = rustc_hash::FxHashSet::default();
         for domain in &self.program.domains {
             for bit in &domain.bits {
-                let state = domain_state_name(domain, &bit.aspect, bit.value.as_ref());
+                let state = domain_state_name(domain, bit);
+                // Map both the bit's own aspect-state-name and the (no-value)
+                // aspect-state-name to the canonical state, so constraint
+                // lowering can find this pred regardless of whether the
+                // constraint is value-typed.
+                out.aspect_state.insert(state_name(&bit.aspect), state.clone());
+                out.aspect_state.insert(
+                    aspect_value_state_name(&bit.aspect, bit.value.as_ref()),
+                    state.clone(),
+                );
                 for sort in self.relation_term_sorts(&domain.relation)? {
                     let pred =
                         self.pred_for(&domain.relation, sort, &bit.aspect, bit.value.as_ref())?;
@@ -250,9 +260,11 @@ impl<'a> ChcCompiler<'a> {
                         (pred_name(&pred, false), PredicatePolarity::Positive),
                         (pred_name(&pred, true), PredicatePolarity::Negative),
                     ] {
-                        let declared_sort = Sort::from_name(sort);
-                        out.decls
-                            .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
+                        if seen_decl.insert(name.clone()) {
+                            let declared_sort = Sort::from_name(sort);
+                            out.decls
+                                .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
+                        }
                         out.register_predicate(name, state.clone(), polarity, sort.clone());
                     }
                 }
@@ -1428,17 +1440,22 @@ impl<'a> ChcCompiler<'a> {
     }
 }
 
-fn domain_state_name(
-    domain: &SemanticDomain,
-    aspect: &AspectKey,
-    value: Option<&AspectValue>,
-) -> String {
+/// Bisim-canonical state name for a domain bit. `bit.bit` is the
+/// per-domain class id assigned by `quotient_by_bisim`; aspects in the
+/// same class share a name and therefore one BV bit. Including
+/// `domain.relation` namespaces ids across domains.
+fn domain_state_name(domain: &SemanticDomain, bit: &crate::compile::types::DomainBit) -> String {
+    format!("{}.c{}", domain.relation, bit.bit)
+}
+
+/// Aspect-keyed state name including the FiniteValue value (if any).
+/// Used as a lookup key in `HornProg::aspect_state` so constraint
+/// lowering can find a bit-and-value-typed constraint's q-pred.
+fn aspect_value_state_name(aspect: &AspectKey, value: Option<&AspectValue>) -> String {
     let mut state = state_name(aspect);
-    if domain.kind != SemanticKind::Bool {
-        if let Some(value) = value {
-            state.push('.');
-            state.push_str(&value.display());
-        }
+    if let Some(value) = value {
+        state.push('.');
+        state.push_str(&value.display());
     }
     state
 }

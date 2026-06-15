@@ -116,9 +116,17 @@ impl DelisProg {
     /// bisim isn't re-run. Use from `main::solve` to share one compile
     /// between the parallel closure and sygus backends.
     pub fn to_sygus_with(&self, program: types::SemanticProgram) -> Result<Vec<SyGuSCmd>, String> {
+        let uses_parent = program
+            .semantics
+            .iter()
+            .any(|spec| aspects::contains_parent_navigation(&spec.body));
         let ctx = CompileContext::with_program(self, program)?;
         let encode_start = Instant::now();
-        let result = emit::compile_via_horn(ctx);
+        let result = if uses_parent {
+            emit::compile_via_horn(ctx)
+        } else {
+            ctx.compile()
+        };
         log::info!("encoded to SyGuS BV in {:?}", encode_start.elapsed());
         result
     }

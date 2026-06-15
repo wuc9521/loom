@@ -74,6 +74,11 @@ pub struct HornProg {
     pub queries: Vec<HornQuery>,
     pub tail: Vec<HornDecl>,
     pub predicates: HashMap<String, PredicateInfo>,
+    /// Bisim-canonical state lookup: `aspect_state_name → canonical state`.
+    /// Multiple aspects equivalent under bisim share one canonical state.
+    /// Populated by chc; read by constraint lowering to find a constraint's
+    /// q-pred when several aspects collapse to one predicate.
+    pub aspect_state: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
