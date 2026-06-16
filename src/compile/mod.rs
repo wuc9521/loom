@@ -116,16 +116,24 @@ impl DelisProg {
     /// bisim isn't re-run. Use from `main::solve` to share one compile
     /// between the parallel closure and sygus backends.
     pub fn to_sygus_with(&self, program: types::SemanticProgram) -> Result<Vec<SyGuSCmd>, String> {
-        let uses_parent = program
+        // The four-step Π → A → H → H★ → SyGuS-BV pipeline is the
+        // theoretical model and applies uniformly to every Facet program
+        // (Section 5 of the paper). The direct `ctx.compile()` path is a
+        // performance optimisation that bypasses the Horn IR detour when
+        // the program has no `(parent n)` navigation — push-free already,
+        // saturation is a no-op. Gated on `opts().optimize` so the
+        // non-optim build stays on the theoretical pipeline.
+        let parent_free = !program
             .semantics
             .iter()
             .any(|spec| aspects::contains_parent_navigation(&spec.body));
+        let use_direct = opts().optimize && parent_free;
         let ctx = CompileContext::with_program(self, program)?;
         let encode_start = Instant::now();
-        let result = if uses_parent {
-            emit::compile_via_horn(ctx)
-        } else {
+        let result = if use_direct {
             ctx.compile()
+        } else {
+            emit::compile_via_horn(ctx)
         };
         log::info!("encoded to SyGuS BV in {:?}", encode_start.elapsed());
         result
