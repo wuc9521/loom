@@ -368,7 +368,6 @@ pub struct CLI {
     #[arg(long = "sygus-stats", default_value_t = false)]
     dump_sygus_stats: bool,
 
-    /// Translate to CHC (HORN) and print to stdout
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
 

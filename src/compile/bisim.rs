@@ -108,7 +108,10 @@ impl SemanticProgram {
         let mut cases_by_relation: HashMap<String, HashMap<String, Case>> = HashMap::default();
         for spec in &self.semantics {
             if let Ok(cases) = parse_cases(&spec.body, &spec.aspect_var) {
-                cases_by_relation.insert(spec.relation.clone(), cases);
+                let entry = cases_by_relation.entry(spec.relation.clone()).or_default();
+                for (cons, case) in cases {
+                    entry.insert(cons, case);
+                }
             }
         }
 

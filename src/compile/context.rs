@@ -59,13 +59,18 @@ impl<'a> CompileContext<'a> {
         // Bool-valued formula sort for separator synthesis, or a value sort
         // for term synthesis. Falls back to the first-declared sort.
         sig.set_start_sort(&synth_sort.to_string())?;
-        let semantic_cases = semantic_program
-            .semantics
-            .iter()
-            .map(|spec| {
-                semantics::parse_cases(&spec.body, &spec.aspect_var).map(|cases| (spec.relation.clone(), cases))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+        // Merge cases across every spec for the same relation. Multiple
+        // (define-semantics ((R (n S) ...))) blocks at different sorts S
+        // share one cases map keyed by constructor name; the spec's
+        // term_sort is recovered per constructor from sig.
+        let mut semantic_cases: SemanticCases = HashMap::default();
+        for spec in &semantic_program.semantics {
+            let cases = semantics::parse_cases(&spec.body, &spec.aspect_var)?;
+            let entry = semantic_cases.entry(spec.relation.clone()).or_default();
+            for (cons, case) in cases {
+                entry.insert(cons, case);
+            }
+        }
         Ok(Self {
             problem,
             term_types,

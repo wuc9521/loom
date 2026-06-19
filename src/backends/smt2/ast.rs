@@ -2,7 +2,6 @@ use derive_more::Display;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sygus_parser::{DTConsDecl, Identifier, Sort, SortDecl, SyGuSTerm};
 
-/// Minimal term representation for CHC: variables and constructor applications only.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Display)]
 pub enum HornTerm {
     #[display("{}", _0)]
@@ -74,10 +73,6 @@ pub struct HornProg {
     pub queries: Vec<HornQuery>,
     pub tail: Vec<HornDecl>,
     pub predicates: HashMap<String, PredicateInfo>,
-    /// Bisim-canonical state lookup: `aspect_state_name → canonical state`.
-    /// Multiple aspects equivalent under bisim share one canonical state.
-    /// Populated by chc; read by constraint lowering to find a constraint's
-    /// q-pred when several aspects collapse to one predicate.
     pub aspect_state: HashMap<String, String>,
 }
 
@@ -129,13 +124,6 @@ impl HornProg {
     }
 }
 
-/// Classification of a body atom against its rule's head.
-///
-/// `Pop` atoms contain a variable not bound by the head — they originate
-/// from `(parent n)` lowering and saturation must eliminate them.
-/// `Intersection` atoms are closed in the head's variables — alternating
-/// clauses (Comon 2008 §7.6.1) that must be preserved by saturation,
-/// otherwise an AND-of-OR body distributes to DNF.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AtomRole {
     Pop,
@@ -193,6 +181,112 @@ impl HornTerm {
         }
     }
 
+    /// Fully apply a substitution, dereferencing variable chains transitively
+    /// (so `x↦y, y↦a` maps `x` to `a`). Used to build resolvents under an mgu.
+    pub fn apply(&self, subst: &HashMap<String, HornTerm>) -> HornTerm {
+        match self {
+            HornTerm::Var(name) => match subst.get(name) {
+                Some(t) => t.apply(subst),
+                None => self.clone(),
+            },
+            HornTerm::App { fun, args } => HornTerm::App {
+                fun: fun.clone(),
+                args: args.iter().map(|a| a.apply(subst)).collect(),
+            },
+        }
+    }
+
+    /// Replace every occurrence of the subterm `target` by `with`.
+    pub fn replace_subterm(&self, target: &HornTerm, with: &HornTerm) -> HornTerm {
+        if self == target {
+            return with.clone();
+        }
+        match self {
+            HornTerm::Var(_) => self.clone(),
+            HornTerm::App { fun, args } => HornTerm::App {
+                fun: fun.clone(),
+                args: args.iter().map(|a| a.replace_subterm(target, with)).collect(),
+            },
+        }
+    }
+
+    /// Term height: a variable or nullary constructor is 0; `f(t..)` is 1+max.
+    pub fn depth(&self) -> usize {
+        match self {
+            HornTerm::Var(_) => 0,
+            HornTerm::App { args, .. } if args.is_empty() => 0,
+            HornTerm::App { args, .. } => 1 + args.iter().map(HornTerm::depth).max().unwrap_or(0),
+        }
+    }
+
+    /// Occurs-check: does the variable `var` appear in `self`? (Call on a term
+    /// already `apply`-resolved under the current substitution.)
+    pub fn occurs(&self, var: &str) -> bool {
+        match self {
+            HornTerm::Var(name) => name == var,
+            HornTerm::App { args, .. } => args.iter().any(|a| a.occurs(var)),
+        }
+    }
+
+    /// One-way match: extend `subst` so that `self·subst == subject`. Only
+    /// `self`'s variables are bound (the subject is treated as ground/fixed).
+    /// Used for subsumption — it is invariant under renaming the subject.
+    pub fn matches(&self, subject: &HornTerm, subst: &mut HashMap<String, HornTerm>) -> bool {
+        match self {
+            HornTerm::Var(name) => match subst.get(name) {
+                Some(bound) => bound == subject,
+                None => {
+                    subst.insert(name.clone(), subject.clone());
+                    true
+                }
+            },
+            HornTerm::App { fun: pf, args: pa } => match subject {
+                HornTerm::App { fun: sf, args: sa } => {
+                    pf == sf
+                        && pa.len() == sa.len()
+                        && pa.iter().zip(sa).all(|(p, s)| p.matches(s, subst))
+                }
+                HornTerm::Var(_) => false,
+            },
+        }
+    }
+
+    /// Robinson most-general-unifier, extending `subst` in place. Returns
+    /// false (and leaves `subst` partially extended) if not unifiable. Binds
+    /// variables on BOTH sides — this is a real mgu, not one-way matching.
+    pub fn unify(&self, other: &HornTerm, subst: &mut HashMap<String, HornTerm>) -> bool {
+        let a = self.apply(subst);
+        let b = other.apply(subst);
+        match (&a, &b) {
+            (HornTerm::Var(x), HornTerm::Var(y)) if x == y => true,
+            (HornTerm::Var(x), _) => {
+                if b.occurs(x) {
+                    false
+                } else {
+                    subst.insert(x.clone(), b);
+                    true
+                }
+            }
+            (_, HornTerm::Var(y)) => {
+                if a.occurs(y) {
+                    false
+                } else {
+                    subst.insert(y.clone(), a);
+                    true
+                }
+            }
+            (
+                HornTerm::App { fun: f, args: fa },
+                HornTerm::App { fun: g, args: ga },
+            ) => {
+                if f != g || fa.len() != ga.len() {
+                    return false;
+                }
+                fa.iter().zip(ga.iter()).all(|(x, y)| x.unify(y, subst))
+            }
+        }
+    }
+
     /// Converts to SyGuSTerm for SMT emission.
     pub fn to_sygus(&self) -> SyGuSTerm {
         match self {
@@ -217,6 +311,20 @@ impl HornAtom {
         }
     }
 
+    /// Transitively apply a substitution (see [`HornTerm::apply`]).
+    pub fn apply(&self, subst: &HashMap<String, HornTerm>) -> Self {
+        HornAtom {
+            pred: self.pred.clone(),
+            arg: self.arg.apply(subst),
+        }
+    }
+
+    /// Unify two atoms (same predicate + unifiable arguments), extending
+    /// `subst`. See [`HornTerm::unify`].
+    pub fn unify(&self, other: &HornAtom, subst: &mut HashMap<String, HornTerm>) -> bool {
+        self.pred == other.pred && self.arg.unify(&other.arg, subst)
+    }
+
     /// Classify `self` as a body atom against the head-bound variables
     /// `head_vars`. See [`AtomRole`].
     pub fn role_against(&self, head_vars: &HashSet<String>) -> AtomRole {
@@ -234,27 +342,70 @@ impl HornRule {
         self.head.arg.vars()
     }
 
-    /// True iff some body atom is a [`AtomRole::Pop`] — i.e., a constructor
-    /// application carrying a variable not bound by the head. Saturation
-    /// must close these.
-    ///
-    /// Note: intersection clauses (helper-pred bodies) also have App-shaped
-    /// body atoms, but their variables are all head-bound; they are not
-    /// pop clauses and survive saturation.
     pub fn is_pop_clause(&self) -> bool {
+        if self.head.pred.starts_with("__guard") {
+            return false;
+        }
         let hv = self.head_vars();
         self.body_atoms
             .iter()
             .any(|a| matches!(&a.arg, HornTerm::App { .. }) && a.role_against(&hv) == AtomRole::Pop)
     }
 
-    /// Returns true if self subsumes other (same head, self has subset of other's body).
+    /// A copy of this rule with every variable renamed to a fresh name, so it
+    /// shares no variable with any other clause (required before unifying its
+    /// head with another clause's body atom). `fresh` is a running counter.
+    pub fn rename_apart(&self, fresh: &mut usize) -> HornRule {
+        let mut vars: HashSet<String> = HashSet::default();
+        self.head.arg.collect_vars(&mut vars);
+        for atom in &self.body_atoms {
+            atom.arg.collect_vars(&mut vars);
+        }
+        let mut map: HashMap<String, HornTerm> = HashMap::default();
+        for v in vars {
+            let name = format!("_r{fresh}");
+            *fresh += 1;
+            map.insert(v, HornTerm::Var(name));
+        }
+        HornRule {
+            head: self.head.substitute(&map),
+            body_atoms: self.body_atoms.iter().map(|a| a.substitute(&map)).collect(),
+        }
+    }
+
+    /// True iff `self` subsumes `other`: there is a substitution θ with
+    /// `self.head·θ = other.head` and `self.body·θ ⊆ other.body` (as a set).
+    /// This is the standard clause subsumption — invariant under renaming the
+    /// variables of either clause AND under reordering body atoms, so it is
+    /// not fooled by the fresh variable names that flattening introduces.
     pub fn subsumes(&self, other: &HornRule) -> bool {
-        if self.head != other.head {
+        let mut subst: HashMap<String, HornTerm> = HashMap::default();
+        if self.head.pred != other.head.pred || !self.head.arg.matches(&other.head.arg, &mut subst) {
             return false;
         }
-        let other_body: HashSet<_> = other.body_atoms.iter().collect();
-        self.body_atoms.iter().all(|a| other_body.contains(a))
+        Self::match_body(&self.body_atoms, &other.body_atoms, subst)
+    }
+
+    /// Backtracking: can every atom of `pattern` be matched (extending `subst`)
+    /// to some atom of `target`?
+    fn match_body(
+        pattern: &[HornAtom],
+        target: &[HornAtom],
+        subst: HashMap<String, HornTerm>,
+    ) -> bool {
+        let Some((first, rest)) = pattern.split_first() else {
+            return true;
+        };
+        for t in target {
+            if first.pred != t.pred {
+                continue;
+            }
+            let mut s = subst.clone();
+            if first.arg.matches(&t.arg, &mut s) && Self::match_body(rest, target, s) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Returns a key for deduplication. Body is sorted for stable hashing.

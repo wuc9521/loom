@@ -177,12 +177,20 @@ impl<'a> ChcCompiler<'a> {
             .collect::<HashMap<_, _>>();
         let mut relation_sorts = HashMap::default();
         for spec in &program.semantics {
-            let mut sorts = vec![spec.term_sort.clone()];
             let cases = ctx
                 .cases()
                 .get(&spec.relation)
                 .ok_or_else(|| format!("missing parsed cases for relation {}", spec.relation))?;
+            let sorts = relation_sorts
+                .entry(spec.relation.clone())
+                .or_insert_with(Vec::new);
+            if !sorts.contains(&spec.term_sort) {
+                sorts.push(spec.term_sort.clone());
+            }
             for cons in cases.keys() {
+                if cons == "_" {
+                    continue;
+                }
                 let sort = constructor_sorts
                     .get(cons)
                     .ok_or_else(|| format!("unknown constructor {} in {}", cons, spec.relation))?;
@@ -190,7 +198,6 @@ impl<'a> ChcCompiler<'a> {
                     sorts.push(sort.clone());
                 }
             }
-            relation_sorts.insert(spec.relation.clone(), sorts);
         }
         Ok(Self {
             program,
@@ -244,10 +251,6 @@ impl<'a> ChcCompiler<'a> {
         for domain in &self.program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, bit);
-                // Map both the bit's own aspect-state-name and the (no-value)
-                // aspect-state-name to the canonical state, so constraint
-                // lowering can find this pred regardless of whether the
-                // constraint is value-typed.
                 out.aspect_state.insert(state_name(&bit.aspect), state.clone());
                 out.aspect_state.insert(
                     aspect_value_state_name(&bit.aspect, bit.value.as_ref()),
@@ -296,33 +299,46 @@ impl<'a> ChcCompiler<'a> {
         for domain in &domains {
             let relation = domain.relation.clone();
             let spec = self.ctx.spec_for_relation(&relation)?.clone();
-            let Some(case) = self
-                .ctx
-                .cases()
-                .get(&spec.relation)
-                .and_then(|cases| cases.get(&cons.name))
-                .cloned()
-            else {
-                continue;
+            let cases = self.ctx.cases().get(&spec.relation);
+            let (case, is_wildcard) = match cases.and_then(|c| c.get(&cons.name)).cloned() {
+                Some(c) => (c, false),
+                None => match cases.and_then(|c| c.get("_")).cloned() {
+                    Some(c) => (c, true),
+                    None => continue,
+                },
             };
             matched = true;
-            if case.vars.len() != cons.arg_sorts.len() {
-                return Err(format!(
-                    "match case for constructor {} binds {} variables, expected {}",
-                    cons.name,
-                    case.vars.len(),
-                    cons.arg_sorts.len()
-                ));
-            }
+            let vars: Vec<String> = if is_wildcard {
+                if !case.vars.is_empty() {
+                    return Err(format!(
+                        "wildcard case for {} must bind no variables, has {}",
+                        spec.relation,
+                        case.vars.len()
+                    ));
+                }
+                (0..cons.arg_sorts.len())
+                    .map(|i| format!("_wild{i}"))
+                    .collect()
+            } else {
+                if case.vars.len() != cons.arg_sorts.len() {
+                    return Err(format!(
+                        "match case for constructor {} binds {} variables, expected {}",
+                        cons.name,
+                        case.vars.len(),
+                        cons.arg_sorts.len()
+                    ));
+                }
+                case.vars.clone()
+            };
             let head_term = HornTerm::app(
                 &cons.name,
-                case.vars.iter().map(HornTerm::var).collect::<Vec<_>>(),
+                vars.iter().map(HornTerm::var).collect::<Vec<_>>(),
             );
             let mut env = Env::default();
             env.current_sort = Some(Rc::new(cons.result_sort.clone()));
             env.current_var = Some(Rc::new(case.self_var.clone()));
             env.current_term = Some(Rc::new(head_term.clone()));
-            for (idx, var) in case.vars.iter().enumerate() {
+            for (idx, var) in vars.iter().enumerate() {
                 Rc::make_mut(&mut env.children).insert(
                     var.clone(),
                     ChildBinding {
@@ -408,11 +424,14 @@ impl<'a> ChcCompiler<'a> {
                     constraint.relation
                 ));
             }
-            if domain.term_sort != self.sig.start_sort() {
+            if !self
+                .relation_sorts
+                .get(&constraint.relation)
+                .is_some_and(|sorts| sorts.iter().any(|s| s == self.sig.start_sort()))
+            {
                 return Err(format!(
-                    "constraint relation {} has term sort {}, expected start sort {}",
+                    "constraint relation {} is not defined on start sort {}",
                     constraint.relation,
-                    domain.term_sort,
                     self.sig.start_sort()
                 ));
             }
@@ -1440,17 +1459,10 @@ impl<'a> ChcCompiler<'a> {
     }
 }
 
-/// Bisim-canonical state name for a domain bit. `bit.bit` is the
-/// per-domain class id assigned by `quotient_by_bisim`; aspects in the
-/// same class share a name and therefore one BV bit. Including
-/// `domain.relation` namespaces ids across domains.
 fn domain_state_name(domain: &SemanticDomain, bit: &crate::compile::types::DomainBit) -> String {
     format!("{}.c{}", domain.relation, bit.bit)
 }
 
-/// Aspect-keyed state name including the FiniteValue value (if any).
-/// Used as a lookup key in `HornProg::aspect_state` so constraint
-/// lowering can find a bit-and-value-typed constraint's q-pred.
 fn aspect_value_state_name(aspect: &AspectKey, value: Option<&AspectValue>) -> String {
     let mut state = state_name(aspect);
     if let Some(value) = value {

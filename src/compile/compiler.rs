@@ -214,8 +214,7 @@ impl<'a> Compiler<'a> {
                     // bit dependency graph, and wraps the constructor body in
                     // nested let-bindings — statically unrolling the LFP so
                     // dryadsynth-bv sees a pure nullary problem (no synth-fun
-                    // reference in any define-fun body). This mirrors what
-                    // the old CHC-saturation pipeline did.
+                    // reference in any define-fun body).
                     Ok(Term::var(&self_bit_name(bit)))
                 }
                 RecurrenceMode::ParentClosure => {
