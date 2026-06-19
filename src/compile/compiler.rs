@@ -23,7 +23,6 @@ use sygus_parser::{
     SyGuSCmd, SyGuSGTerm, SyGuSTerm, Term,
 };
 
-const CLOSURE_AUX_NAME: &str = "delis.closure.aux";
 
 
 #[derive(Clone)]
@@ -44,19 +43,16 @@ struct Env {
 enum RecurrenceMode {
     Direct,
     SelfClosure,
-    ParentClosure,
 }
 
 struct RecurrenceAnalysis {
     relation_modes: HashMap<String, RecurrenceMode>,
-    requires_aux: bool,
     /// Term sorts whose semantic relation is in `SelfClosure` mode.
     self_closure_sorts: HashSet<String>,
 }
 
 #[derive(Default)]
 struct RelationLocal {
-    has_parent: bool,
     self_recursive: bool,
     calls: HashSet<String>,
 }
@@ -79,11 +75,6 @@ struct Compiler<'a> {
     recurrence: RecurrenceAnalysis,
     synth_name: String,
     synth_args: Vec<sygus_parser::SortedVar>,
-    /// If `Some`, the program uses `(parent ...)` and we synthesize an
-    /// auxiliary constant of the same sort as g (the start sort). All
-    /// `(parent n)` references in semantic bodies extract bits from this
-    /// aux; the top-level closure constraint `(= g aux)` forces the LFP.
-    aux_synth_name: Option<String>,
     bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
     bool_eval_cache: RefCell<HashMap<BoolMemoKey, BoolExpr>>,
     finite_eq_cache: RefCell<HashMap<FiniteEqMemoKey, BoolExpr>>,
@@ -177,18 +168,6 @@ impl<'a> Compiler<'a> {
         bit: usize,
         env: &Env,
     ) -> Result<SyGuSTerm, String> {
-        // `(parent n)` — closure reference: extract the corresponding bit
-        // from the auxiliary synth-fun.  The top-level `(= g aux)` constraint
-        // forces the LFP, so the parent's evaluation at this aspect equals
-        // g's own evaluation.
-        if let Some(items) = term_expr.to_ref_vec() {
-            if items.first().and_then(|item| item.as_symbol()) == Some("parent") {
-                let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
-                    "semantic body uses (parent ...) but no aux synth-fun allocated".to_string()
-                })?;
-                return Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))));
-            }
-        }
         let child_name = term_expr
             .as_symbol()
             .ok_or_else(|| format!("semantic call term must be a symbol: {term_expr}"))?;
@@ -216,13 +195,6 @@ impl<'a> Compiler<'a> {
                     // dryadsynth-bv sees a pure nullary problem (no synth-fun
                     // reference in any define-fun body).
                     Ok(Term::var(&self_bit_name(bit)))
-                }
-                RecurrenceMode::ParentClosure => {
-                    let aux = self.aux_synth_name.as_deref().ok_or_else(|| {
-                        "semantic body uses self-recursion but no aux synth-fun allocated"
-                            .to_string()
-                    })?;
-                    Ok(bit_is_one(BitVec::extract(bit, bit, Term::var(aux))))
                 }
             };
         }
@@ -256,11 +228,6 @@ impl<'a> Compiler<'a> {
             }
             *offset += domain.width();
         }
-        let aux_synth_name = if recurrence.requires_aux {
-            Some(CLOSURE_AUX_NAME.to_string())
-        } else {
-            None
-        };
         Ok(Self {
             problem: ctx_data.problem,
             term_types: ctx_data.term_types,
@@ -269,7 +236,6 @@ impl<'a> Compiler<'a> {
             recurrence,
             synth_name: ctx_data.synth_name.clone(),
             synth_args: ctx_data.synth_args.clone(),
-            aux_synth_name,
             bit_index,
             bool_eval_cache: RefCell::new(HashMap::default()),
             finite_eq_cache: RefCell::new(HashMap::default()),
@@ -324,31 +290,11 @@ impl<'a> Compiler<'a> {
         let emit_start = Instant::now();
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
         cmds.extend(self.remapped_sort_alias_cmds()?);
-        if let Some(aux_name) = self.aux_synth_name.clone() {
-            cmds.push(self.remapped_aux_synth_fun_cmd(&aux_name)?);
-        }
         let mut total_lift = Duration::default();
         let mut total_compact = Duration::default();
         let mut total_closure = Duration::default();
         for cr in &cons_results {
-            let alive_bits: Vec<BoolExpr> = cr.bool_bits.clone();
-            let mut sort_map: HashMap<String, &str> = HashMap::default();
-            for (idx, sort) in cr.arg_sorts.iter().enumerate() {
-                sort_map.insert(arg_name(idx), sort.as_str());
-            }
-            sort_map.insert(self.synth_name.clone(), self.sig.start_sort());
-            if let Some(aux) = &self.aux_synth_name {
-                sort_map.insert(aux.clone(), self.sig.start_sort());
-            }
-            let remapped_bits: Vec<BoolExpr> = alive_bits
-                .into_iter()
-                .map(|expr| match expr {
-                    BoolExpr::Dynamic(term) => {
-                        BoolExpr::Dynamic(term)
-                    }
-                    c => c,
-                })
-                .collect();
+            let remapped_bits: Vec<BoolExpr> = cr.bool_bits.clone();
             let mut builder = Cmd::define_fun(&cr.name);
             let arg_names = (0..cr.arg_sorts.len()).map(arg_name).collect::<Vec<_>>();
             for (idx, sort) in cr.arg_sorts.iter().enumerate() {
@@ -428,25 +374,12 @@ impl<'a> Compiler<'a> {
         let constraints_start = Instant::now();
         for term in &top_level_constraints {
             let lowered = self.lower_top_level_constraint(term, &env)?;
-            let mut constraint_sort_map: HashMap<String, &str> = HashMap::default();
-            constraint_sort_map.insert(self.synth_name.clone(), self.sig.start_sort());
-            if let Some(aux) = &self.aux_synth_name {
-                constraint_sort_map.insert(aux.clone(), self.sig.start_sort());
-            }
-            let remapped = lowered;
-            cmds.push(Cmd::constraint().body(remapped).build());
+            cmds.push(Cmd::constraint().body(lowered).build());
         }
         log::debug!(
             "top-level constraints emitted in {:?}",
             constraints_start.elapsed()
         );
-        if let Some(aux_name) = &self.aux_synth_name {
-            let closure = Bool::eq(
-                Term::var(&self.synth_name),
-                Term::var(aux_name),
-            );
-            cmds.push(Cmd::constraint().body(closure).build());
-        }
         cmds.push(SyGuSCmd::CheckSynth);
         Ok(cmds)
     }
@@ -1788,30 +1721,6 @@ impl<'a> Compiler<'a> {
         Ok(cmds)
     }
 
-    fn remapped_aux_synth_fun_cmd(&self, aux_name: &str) -> Result<SyGuSCmd, String> {
-        let sort = Sort::from_name(self.sig.start_sort());
-        let sorted_var = SortedVar {
-            name: "C".to_string(),
-            sort: sort.clone(),
-        };
-        let constant_rule = SyGuSGTerm::Constant(sort.clone());
-        let grammar = GrammarDef {
-            sorted_vars: vec![sorted_var],
-            grouped_rule_lists: vec![GroupedRuleList {
-                symbol: "C".to_string(),
-                sort: sort.clone(),
-                terms: vec![constant_rule],
-            }],
-        };
-        Ok(SyGuSCmd::SynthFun(
-            aux_name.to_string(),
-            Vec::new(),
-            sort,
-            Some(grammar),
-        ))
-    }
-
-
     fn bit_for(
         &self,
         relation: &str,
@@ -1976,7 +1885,6 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
     for spec in &ctx.semantic_program.semantics {
         let cases = crate::compile::semantics::parse_cases(&spec.body, &spec.aspect_var)?;
         let entry = locals.entry(spec.relation.clone()).or_default();
-        entry.has_parent |= crate::compile::aspects::contains_parent_navigation(&spec.body);
         for case in cases.values() {
             entry.self_recursive |= contains_self_call(&spec.relation, &case.self_var, &case.body);
             collect_relation_calls(&case.body, &relation_set, &mut entry.calls);
@@ -1985,24 +1893,18 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
 
     let components = strongly_connected_components(&relations, &locals);
     let mut relation_modes = HashMap::default();
-    let mut requires_aux = false;
     for component in components {
-        let mut has_parent = false;
         let mut cyclic = component.len() > 1;
         for relation in &component {
             if let Some(local) = locals.get(relation) {
-                has_parent |= local.has_parent;
                 cyclic |= local.self_recursive;
             }
         }
-        let mode = if has_parent {
-            RecurrenceMode::ParentClosure
-        } else if cyclic {
+        let mode = if cyclic {
             RecurrenceMode::SelfClosure
         } else {
             RecurrenceMode::Direct
         };
-        requires_aux |= mode == RecurrenceMode::ParentClosure;
         for relation in component {
             relation_modes.insert(relation, mode);
         }
@@ -2015,7 +1917,6 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
     }
     Ok(RecurrenceAnalysis {
         relation_modes,
-        requires_aux,
         self_closure_sorts,
     })
 }
