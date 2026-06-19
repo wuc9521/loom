@@ -5,17 +5,22 @@ use std::sync::OnceLock;
 use std::time::Instant;
 use sygus_parser::SyGuSCmd;
 
+mod aspects;
+mod bexpr;
 mod bisim;
-mod compiler;
+mod bit_link;
 mod chc;
 mod closure;
+mod compiler;
 mod context;
 pub mod emit;
 mod eval;
-mod expr;
-mod aspects;
 mod eval_ctx;
+mod expr;
+pub mod fwd_decls;
+mod layout;
 pub mod optim;
+mod saturate;
 mod semantics;
 mod syntax;
 pub mod types;
@@ -111,15 +116,32 @@ impl DelisProg {
     /// bisim isn't re-run. Use from `main::solve` to share one compile
     /// between the parallel closure and sygus backends.
     pub fn to_sygus_with(&self, program: types::SemanticProgram) -> Result<Vec<SyGuSCmd>, String> {
+        let uses_parent = program
+            .semantics
+            .iter()
+            .any(|spec| aspects::contains_parent_navigation(&spec.body));
         let ctx = CompileContext::with_program(self, program)?;
         let encode_start = Instant::now();
-        let result = ctx.compile();
+        let result = if uses_parent {
+            emit::compile_via_horn(ctx)
+        } else {
+            ctx.compile()
+        };
         log::info!("encoded to SyGuS BV in {:?}", encode_start.elapsed());
         result
     }
 
     pub fn to_chc_ast(&self) -> Result<HornProg, String> {
         CompileContext::new(self)?.compile_chc()
+    }
+
+    /// Like `to_chc_ast`, then runs the saturation pass to eliminate pop
+    /// clauses (parent navigation). Returned program's rules are all
+    /// closed push rules whose bodies reference only head vars.
+    pub fn to_chc_ast_saturated(&self) -> Result<HornProg, String> {
+        let mut prog = self.to_chc_ast()?;
+        saturate::saturate(&mut prog);
+        Ok(prog)
     }
 
     pub fn to_sygus_bytes(&self) -> Result<Vec<u8>, String> {

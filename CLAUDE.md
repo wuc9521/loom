@@ -1,360 +1,260 @@
-# delis + dryadsynth-bv — working notes
+# delis — current state (handoff)
 
-Delis learns logical formulas from finite models. It compiles a typed semantic
-DSL down to SyGuS BV and races two backends: an internal closure-search and
-either in-process `dryadsynth-bv` (sibling crate at `../dryadsynth-bv`) or an
-external solver (`cvc5`). Sibling crates: `../dryadsynth-bv`, `../sygus-parser-rs`.
+This file is the authoritative working notes. Older revisions of this file
+were stale; trust THIS file over anything you remember about prior contents.
 
-## Three load-bearing optimizations (don't undo)
+## What delis does (one-liner)
 
-These each give ~10× and compose. They apply uniformly to direct and LFP paths:
+Compiles a typed semantic DSL (`define-semantics` over `define-aspects` /
+`declare-term-types`) into SyGuS-BV and dispatches to `dryadsynth-bv` (or
+an external SyGuS solver) to synthesize a term satisfying labeled examples.
+Two input shapes:
 
-1. **Bisimulation quotient in delis** (`src/compile/bisim.rs`). Collapses
-   equivalent aspects before BV encoding. Typical reduction: 80%+ bits
-   (`random_52_tiny`: 5481 → 833).
-2. **Backward relevance in dryadsynth-bv** (`exact/relevance/`). Drives
-   projected dedup keys; ~4–20% of bits relevant on our problems.
-3. **Let-binding ordering in delis-generated SyGuS** (`compile/compiler.rs`
-   `BoolExpr::compact` / `BoolExpr::resolve_closure`). Lets the solver
-   reuse subterms instead of re-evaluating.
+- **No `(parent n)`**: per-bit BV encoding is sound + complete (verified
+  via `tools/smt-crosscheck.sh` and end-to-end solve on Reg/0001).
+- **With `(parent n)`** (CFG, FO with up-moves, …): per-bit BV alone is too
+  weak — see the validated approach below.
 
-## LFP path (parent semantics) — how it actually works
+## Pipeline (post-saturation Comon §7.6.3 style)
 
-When the Delis semantic spec uses `(parent n)`, the compiler emits two
-synth-funs: `g` (operator, real grammar) and `delis.closure.aux` (constant
-grammar) joined by `(= g aux)`. This is the standard one-way translation of
-two-way tree automata via least fixpoint (Vardi 1998 §4; Comon et al. 7.6.3).
-No special "LFP design" — the LFP is just the math.
+```
+DelisProg
+  → SemanticProgram (bisim quotient at aspect level — src/compile/bisim.rs)
+  → HornProg via compile_chc (src/compile/chc.rs)
+  → push×pop saturation (src/compile/saturate.rs)
+  → BitLayout (src/compile/layout.rs — one bit per HornProg.predicates entry)
+  → aggregate_constructor_bits (src/compile/emit.rs)
+  → per-cons define-funs + per-example bit-extract constraints (sygus_parser)
+  → kleene::apply (src/compile/kleene.rs) — wraps parent-referencing
+    nullaries in a synth-fun-with-args + Kleene unrolling chain when the
+    HornProg has POP rules.
+```
 
-dryadsynth-bv detects this via `LfpSpec::detect_separate` (and the
-`lfp-recursive` 1-synth-fun variant), then routes to the unified
-`NullarySpec::search` with `fixpoint = Some(closure_name)`. There is no
-parallel enumeration engine — both modes go through the same
-`search_nullary_multi_nt`.
+## Validated approach: Kleene unrolling for parent specs
 
-Three LFP-mode-specific behaviors inside that engine:
+Experimentally validated answer to the open question that killed earlier
+iterations of this file (Sessions C through O). It composes:
 
-- **Sub-NT dedup uses a two-sample (`value@aux=0`, `value@aux=top`)
-  fingerprint.** `aux=0` alone is biased — recursive sub-terms whose
-  recursion doesn't fire at 0 collide with non-recursive ones and the
-  synthesizer can't assemble recursive answers. The `top` sample lights
-  up the recursion. Sound by monotone-lattice squeeze
-  (`F(0) ≤ F(aux) ≤ F(top)`) for almost-all candidates; any false
-  collision that drops a true LFP is caught downstream by the CEGIS
-  verifier which re-checks under true LFP semantics. Implemented via
-  `Candidate.value_top` and `pair_seen` in
-  `dryadsynth-bv/src/exact.rs`. On `random_52_tiny` collapses 3.9M
-  candidate pushes to 22.7k (~170×, ~10× wall).
-- **DAG-eval in `materialize_and_kleene`.** Each candidate root walks the
-  Node DAG via `eval_node_at_aux` directly instead of building a
-  throwaway `OwnedExpr` via `materialize_node` per iter; `OwnedExpr` is
-  materialized only for the winning candidate. Independent of dedup;
-  ~4% wall on `random_52_tiny` (small because the walk cost dominates
-  over Box allocation, which is what got eliminated).
-- **Per-iter negative-label early-reject** in `materialize_and_kleene`:
-  sound by monotonicity (`aux_n ≤ LFP`), saves Kleene iters on failing
-  candidates.
+1. **Encoding (steps 1-3 of K&M Lemma 1 chain)**: the Horn IR is sound +
+   complete for the Horn LFP semantics. Saturation is Comon §7.6.3 push×pop
+   resolution (no case-split — case-split was experimentally unsound at
+   per-bit BV, verified by 3-solver crosscheck on CFG/0001).
+2. **Bit-derivation (the auxiliary fix)**: parent-referencing nullaries
+   (constructors with 0 args whose sort is used as an arg) get bit
+   patterns that DEPEND on g. Per-bit BV can't bake this in statically;
+   we add a Kleene chain `c_0 = baseline; c_{i+1} = c_baseline ∨ (extract
+   tgt_bit (g <c_*_i>))` at SMT solve time, for `N` iterations.
+3. **Synth-fun gets args**: each parent-referencing nullary becomes a
+   synth-fun argument. The grammar's terminal references to those nullaries
+   get rewritten to the arg vars. Constraints apply `(g a b c)` where
+   `a, b, c` are the user-visible aliases for `c_*_N`.
 
-Opt-in stats: set `DELIS_DEDUP_STATS=1` to print per-(nt, size) pushed /
-distinct@0 / distinct@(0,top) counts at end of each LFP search round.
-Useful for diagnosing whether the dedup is biting on new benchmarks.
+### Verified outcome
 
-## The memo cache (the LFP-path 6×)
+3-solver crosscheck (z3 / bitwuzla / cvc5) on CFG/0001 candidates at `N=2`:
 
-`eval_defined_with_closure` in `dryadsynth-bv/src/exact.rs` wraps
-`Environ::eval_defined` with a thread-local FxHashMap cache keyed on
-`(fid, nargs, args)`. Enabled in `LfpSpec::search`, disabled in direct mode.
+| candidate (encodes) | expected | got |
+|---|---|---|
+| `S → ab | aSb` (recursive) | sat | sat ✓ |
+| `S → ab | aaSb` (unsound) | unsat | unsat ✓ |
+| `cfg.top.S0 cfg.rhs.S0 end` (degenerate) | unsat | unsat ✓ |
+| `S → ab | aabb | aaabbb` (enumeration) | sat | sat ✓ |
 
-Empirically: 97–98% hit rate on solvable LFP cases. The same `(fid, args)`
-tuple recurs ~40× across candidates and Kleene iters; the cache recovers
-sub-NT-dedup-equivalent sharing lazily at the eval boundary. anbn-3 CEGIS:
-~245ms → ~37ms with the cache.
+Generalizes to K=2 (verified on tiny `aaa` cases in
+`tools/tiny_cfg_comon.py` — same N-step approach works at multiple K
+with zero per-K code).
 
-## Hot-path gotchas
+### CLI
 
-- **Cross-module `#[inline]` is not free.** Moving the memo cache from
-  `exact.rs` to `closure/eval.rs` regressed random_52_tiny from ~35s to
-  ~700s despite identical source. `#[inline(always)]` did not fix it.
-  Keep `eval_defined_with_closure` and `EVAL_CACHE` in `exact.rs`.
-- **`OwnedExpr::eval(args)` does NOT support closure binding.** Closure
-  references in `define-fun` bodies are resolved via the `closure_args`
-  metadata on each `DefineFun`, appended to the args list at eval time —
-  not via `Var(0)` substitution. Use `eval_defined_with_closure` (or
-  `OwnedExpr::eval_with_closure` for whole-tree walks).
-- **`buf.clone()` for cache keys allocates per call.** Don't think a TLS
-  args buffer eliminates allocation if the key still needs ownership.
-- **First-run wall time on this MacBook is unreliable** — 2–10× variance
-  is normal. Always do 3+ runs and trust steady-state.
+`delis --kleene N <spec>` sets the unrolling depth. `0` disables (no-op
+for parent-free specs anyway, since `bit_link::derive_bit_links` returns
+empty without POP rules in the pre-saturation HornProg).
 
-## What didn't work (don't re-try without strong reason)
+## Status of the end-to-end synth (the still-open piece)
 
-- Tree-walk cache keyed on `(structural_hash(OwnedExpr), aux)`: 0% hit rate.
-  Each materialized candidate is structurally unique (different `Rhs × Rules`
-  pair). Without hash-consing of the search's `Node` DAG, this can't fire.
-- Split-key cache (`HashMap<(fid,nargs), HashMap<Box<[Value]>, Value>>`):
-  doubled per-lookup HashMap probe → slower despite borrowed-slice lookups.
-- Per-define-fun closure-bit-mask compressing cache keys: added BigUint
-  `bitand` per lookup, outweighed the marginal cache-key compression
-  (97% baseline hit rate left no headroom).
-- `F(top)` upper-bound early-reject: one extra eval per candidate doesn't
-  offset the savings on already-cheap Kleene.
+The SyGuS-2.1 file delis emits for parent specs (`g` with args + Kleene
+chain) is structurally correct and verified by external SMT solvers.
+**dryadsynth-bv's existing search paths don't yet handle it** — its
+`OwnedExpr::from_term` errors with "Unrecognized Expression" when it
+encounters `(g a_0 b_0 cfg_rhs_S0_0)` (a synth-fun in Application position).
 
-## Multi-nonterminal CFG search: why it's hard, and what's intrinsic
+Two shapes dryadsynth-bv DOES handle natively:
+- Synth-fun without args (bit-constraint or PBE-literal-tuple).
+- Synth-fun with args under PBE shape `(= (g lit lit lit) lit)` only —
+  via `parse_pbe_from_view`, requires args to be `SyGuSTerm::Literal`.
 
-Context: the K>=2 CFG benchmarks (`benchmark/CFG/sipser/`, generated by
-`asp4cfg/scripts/gen.py` via `gen_sipser.py`) learn grammars with several
-nonterminals S0..S{k-1}. Two separate things were investigated; keep them
-straight.
+Our shape `(= ((_ extract bit) (g define_fun_a define_fun_b define_fun_c)) #b1)`
+fits neither (args are define-funs, not literals).
 
-### Encoding fix (real bug, fixed)
+The proper extension in dryadsynth-bv (in progress):
+- Add `OwnedExpr::SynthApp(usize, Vec<OwnedExpr>)` variant.
+- Recognize synth-fun symbols in `from_term`'s Application branch.
+- Evaluator substitutes the candidate's body at each SynthApp during search.
+- Generalized constraint parser puts non-PBE-shaped constraints into
+  `exact::Constraint.structural` (already a `Vec<OwnedExpr>` — the IR
+  exists; only the parser needs to fall through).
+- Backward relevance walks SynthApp's args and the synth-fun's grammar
+  for demanded output bits.
 
-`gen.py`'s `Rules.Sem` clause originally only climbed upward on `reset.Si`
-at a `cfg.lhs.Si` node. The paper's reset(z) `_` rule (Krogmeier &
-Madhusudan 2023, Fig 7) requires climbing for *any* reset mode regardless
-of the node's label. Without it, a `reset.Sj` (j!=i) walk dies the moment
-it crosses a `cfg.lhs.Si` node with a different label, so the rules spine
-cannot mix nonterminals and every multi-NT solution is silently rejected.
-Fixed by using the `all_reset_or` disjunction (same as `Rhs.Sem` already
-did). This was necessary but NOT sufficient to see multi-NT solutions.
+## Key files
 
-### Why multi-NT solutions rarely appear (not a bug)
+- `src/compile/kleene.rs` — generic Kleene unrolling: detects
+  parent-referencing nullaries, rewrites synth-fun signature, emits
+  baselines + iteration chain. 3 unit tests pass.
+- `src/compile/bit_link.rs` — auto-derives `(child_cons, src_pred, tgt_pred)`
+  triples from POP rules (must be called on PRE-saturation HornProg —
+  saturation consumes pops).
+- `src/compile/emit.rs::compile_via_horn` — orchestrates the pipeline.
+  Extracts bit_link triples before saturation, calls kleene::apply at the
+  end with `opts().kleene_n`.
+- `src/compile/saturate.rs` — push×pop resolution + alpha-subsumption.
+  Case-split intentionally NOT done (experimentally unsound for delis at
+  per-bit BV; the SOUND fix is Kleene unrolling outside saturation).
+- `tools/tiny_cfg_comon.py` — standalone Python prototype that validated
+  the 4-step pipeline + Kleene on K=1 and K=2 tiny CFG cases. 10/10
+  candidates verify across solvers. Reference implementation.
+- `tools/lfp-emit.py` — older Python verifier (works on a given candidate
+  via text substitution). Useful for one-off crosschecks.
+- `tools/smt-crosscheck.sh` — ground truth: substitute a candidate into
+  the emitted SyGuS and check 3-solver agreement.
 
-dryadsynth-bv's exact-nullary engine is deterministic bottom-up,
-size-stratified, smallest-tree-first, no randomization (`src/exact/
-search.rs::run`). It returns the minimal-AST-size satisfying tree. For any
-finite positive sample the globally smallest grammar is usually the trivial
-"list the positives" enumeration `S0 -> w1 | w2 | ...`, which is 1-NT and
-satisfies exhaustive negatives (it generates exactly the positives). So you
-only see multi-NT when the sample *forces* it: long positives (listing
-expensive) + an inherently >=2-NT language + exhaustive short negatives
-(kill 1-NT recursive cheats via cross-contamination). The earlier
-`gen_force_multint.py` failed this (short positives -> listing cheap).
-`gen_force_union.py` ({a^n b^n} U {b^n a^n}, positives to length 6,
-exhaustive negatives to length 5) is a genuine forcing instance: known
-minimal solution is size ~23.
+## Things that DID NOT work (don't relitigate without strong reason)
 
-### The blowup is intrinsic — measured, don't re-attack with dedup tricks
+- **alt_enum**: hand-rolled "OR LFP-reachable bits onto parent
+  nullaries". Sound for positives, **unsound** for negatives (admits
+  degenerate `(cfg.top.S0 cfg.rhs.S0 end)`). Kept in tree as a reference
+  for the demand-walk shape; `emit.rs` does NOT call it. Verified
+  unsoundness by 3-solver crosscheck.
+- **Comon case-split inside saturate**: produces body-less facts that
+  are sound in Horn LFP semantics but unsound for delis (over-approximates
+  parent context). Verified by experiment (zeroing cfg.rhs.S0 flips the
+  unsound candidate's verdict, isolating the unsoundness to the spuriously
+  derived bits). The functions `case_split` and `try_case_split` have
+  been removed from saturate.rs.
+- **subset_dta**: subset construction at the per-bit level. Algorithm
+  correct on small hand examples (4 unit tests in `subset_dta.rs`).
+  Doesn't scale at delis predicate granularity (Reg/0001 hits 145
+  subsets after one round; cartesian over child subsets blows up).
+  Kept in tree for the algorithm but not wired in.
+- **fwd-decls in dryadsynth-bv**: experimental multi-synth-fun engine.
+  Removed in commit `cfe3bdc` (in sibling crate).
 
-`anbn_union_bnan_k2.sl` does not finish. Traced with per-size
-instrumentation + `DELIS_DEDUP_STATS=1` (the `snapshot_line` path). Findings,
-all measured:
+## Soundness verification workflow
 
-- The search climbs sizes correctly toward the size-23 solution; candidate
-  count grows ~3.6x per (odd) size. By size 17: ~230k candidates, ~28s.
-  Direction is correct; it's just far.
-- The blowup is entirely the `Rules` (production-list) NT. `Rhs` saturates
-  (~603 distinct and flat); `Rules` explodes (879 -> 3851 -> 15783 ->
-  61326 -> 229608 at sizes 9..17).
-- Profiling (samply): ~41% self-time in `DefineFunPlan::eval` + ~25% in
-  `Value` concat/clone/drop/malloc. That's a *symptom* of evaluating 230k
-  candidates, not the cause. A 2x eval speedup buys ~1 size level (3.6x), so
-  per-candidate throughput alone cannot close the ~5-level gap.
-- **Not permutations/duplicates.** Theory-agnostic spine measurement
-  (detect right-spine list NT by grammar shape; compare distinct ordered
-  lists vs sorted multisets vs dedup sets of element structural hashes):
-  `permutation=1.00x duplication=1.00x list/set=1.00x`. The 230k candidates
-  are genuinely distinct production-sets. ACI / canonical-order
-  normalization would buy nothing.
-- **Not an over-fine upper sample.** The two-sample dedup key
-  `(value@0, value@top)` shows `collapse@(0,top)=1.0x` and a growing gap to
-  the single-sample floor (`distinct@0` vs `distinct@(0,top)` = 7.5x at
-  size 17). Tightening the upper sample from all-ones down through F^2, F^4,
-  to the **GFP** (tightest sound over-approximation) collapses only ~1.2x
-  (size 13: 16360 -> 13699), nowhere near `distinct@0` (3655). The ~4.5x
-  gap to the single-sample floor is *real recursive distinctness*; the
-  single-sample key is unreachable because it's unsound, and here the
-  unsoundness is load-bearing.
+Always: emit → crosscheck → measure. Don't trust analysis without
+empirical confirmation. `tools/smt-crosscheck.sh <spec> <candidate>` is
+the ground truth. Three-solver agreement (z3 + bitwuzla + cvc5)
+distinguishes encoding-level verdicts from solver quirks.
 
-Conclusion: the `Rules` NT genuinely has ~3.6x/size distinct recursive
-behaviors over these 64 models. No *sound* dedup refinement collapses it
-(measured best case GFP = 1.2x). This benchmark sits near the genuine
-difficulty frontier of its model-count / target-size regime, not behind a
-fixable inefficiency. Do not re-attempt ACI canonicalization, upper-sample
-tightening, or single-sample dedup on it. The only real levers are reducing
-model count / aspect width (the keyspace multiplier) or using a smaller
-forcing instance.
+If any new encoding work changes how parent-referencing nullaries are
+emitted, the 4 CFG/0001 candidates from the table above are the minimum
+gate. For K=2 work, add 4 analogous candidates per
+`tools/tiny_cfg_comon.py`.
+
+## Reproducing
+
+```bash
+cargo build --release
+
+# Parent-free spec — solves immediately.
+./target/release/delis benchmark/Reg/0001.sl
+
+# Parent spec — emits the correct SyGuS file (verifiable by external
+# solver) but currently fails in dryadsynth-bv pending the SynthApp
+# extension. Dump and crosscheck manually:
+./target/release/delis --kleene 2 --dump-sygus benchmark/CFG/0001.sl > /tmp/cfg.sl
+# substitute candidate into /tmp/cfg.sl per tools/smt-crosscheck.sh shape.
+
+# Validate via Python prototype (works today):
+python3 tools/tiny_cfg_comon.py
+```
 
 ## Coding preferences (Chentian)
 
-- Function names should be short. `do_A_something` → `A.do_something`
-  when it can naturally be a method.
-- Modules should not know about concerns outside their responsibility.
-  Example: `deffun.rs` (generic SyGuS define-fun bookkeeping) shouldn't
-  use the word "closure" — that's LFP-search terminology.
-- Prefer real algorithmic wins (bisim, relevance, let-binding) over
-  Rust micro-tweaks (caches, hashing tricks). 1.5× tweaks aren't the
-  goal; 10× restructuring is.
-- "Think harder" means actually look at the data / read the code, not
-  propose more options. Profile first, propose second.
+- Function names short. Modules don't leak concerns from elsewhere
+  (`compile/kleene` knows about HornProg + signature, not about specific
+  spec families).
+- Algorithm input-agnostic: depends only on what `delis.pest` admits
+  (`define-aspects` / `define-semantics` / `declare-term-types` /
+  `define-model` / `declare-fun`). NO hardcoded CFG/LTL/Reg knowledge.
+- Real algorithmic wins, not Rust micro-tweaks.
+- "Think harder" = look at data. Profile/measure first.
+- **Never add `#[allow(dead_code)]`** — remove the dead code or scope
+  to `#[cfg(test)]`.
+- Don't commit dead/unused code, dead-code annotations, or
+  backwards-compat shims.
 
-## TODO: PROSE encoding — re-evaluate Length-and-Char vs position-on-tape
+## What to do next (handoff TODO)
 
-The 354 PROSE files in `benchmark/String/` (translated by
-`benchmark/String/scripts/gen.py`) currently use a **position-on-tape**
-encoding: per-model `PosIn` and `PosOut` sorts, `Char` sort, char_at
-lookups, and a dual-side semantics (`Str.SemIn` / `Str.SemOut`) where
-the constraint pins `Str.SemOut` at the full output. `str.at` and
-`str.substr` cross sides via disjunction; everything else is same-side.
-`int.neg1`, `str.replace`, `int.indexof`, `str.int2str`, `int.to_int`
-are stubbed `false`. Total disk: ~17 MB across 354 files; biggest is
-2.4 MB (Address.000014 → 0014.sl). Most parse but solver wall time
-is unverified for the larger files.
+### SynthApp extension in dryadsynth-bv — **PARTIAL, in progress**
 
-**Alternative under consideration — Length-and-Char (duet style).**
-See `benchmark/misc/duet/11440431.sl` and its theory file. Each `StrProg`
-gets two semantic projections — `StrProg.Len p asp → Idx` and
-`StrProg.Char p (asp, k) → Chr` — instead of a `(lo, hi)` aspect.
-`StrProg.OutEq` ties them via length-equality + pointwise-char equality
-against the output. Two aspects: `ExAsp` (just model) and `CharAsp`
-(model + k). No tape, no positions in the Str aspect itself.
+Done so far in `../dryadsynth-bv` (uncommitted on this branch):
+- `OwnedExpr::SynthApp(usize, Vec<OwnedExpr>)` variant + Display helper
+  (`src/enumerate/macros.rs`, `src/enumerate/expr.rs::format_owned_synth_app`).
+- Thread-local synth-fun registry in `src/parse/deffun.rs`
+  (`set_synth_registry` / `lookup_synth`).
+- `OwnedExpr::from_term` recognises synth-fun symbols and produces
+  `SynthApp` (`src/enumerate/expr.rs`).
+- `solve_file_inner` populates the registry before parsing
+  (`src/lib.rs:94-99`).
 
-Why this is interesting:
-
-- Aspect space stays small per benchmark (no `O(out² )` substring
-  enumeration; CharAsp scales with `max_len`, not `max_len²`).
-- Closer in spirit to direct term-evaluation. Maps cleanly onto how a
-  human thinks about FlashFill: "the synthesized program produces a
-  string of some length, with character c at each position k".
-- Krogmeier–Madhusudan–style aspect extension would just work if we
-  ever need free-variable contexts.
-
-What's not obvious:
-
-- Lifting `str.substr s i n` into the (Length, Char) view without
-  losing information. The duet theory file punts on the general case
-  (returns `bot` for str.++ length, hardcodes specific patterns for
-  suffixof). For 354 PROSE files we can't hand-author per-benchmark
-  theory, so we'd need a uniform encoding.
-- `str.replace` is the hard one — its length depends on the count of
-  occurrences and the lengths of the replacement vs. the pattern.
-- The Char projection at synthesized-position-k requires evaluating
-  the synth-fun at every (model, k); the BV blowup may be
-  comparable to the position-on-tape encoding.
-
-Action items if/when we revisit:
-
-1. Sketch the Length-and-Char encoding for one PROSE benchmark by
-   hand. Compare BV bit count and file size against the current
-   `0036.sl` (Column.000003) baseline.
-2. Decide if we want a uniform encoding for all 354 or per-benchmark
-   tailoring (duet does the latter; we'd need to autogenerate).
-3. Krogmeier & Madhusudan, *POPL 2022*, "Learning Formulas in Finite
-   Variable Logics" is the relevant paper. Local copy at
-   `~/Zotero/storage/G9AFBVZX/`. Their encoding is parameterless
-   (synth-fun is a constant formula); free variables enter via aspect
-   extension on quantifiers, not as synth-fun parameters. We are
-   *already* doing this for fixed-arity PROSE — `str.argi` are term
-   constructors, not parameters — so the paper's contribution to
-   PROSE specifically is about how to encode lambda-abstraction
-   cleanly, not about synth-fun signatures.
-
-## The PBE-translation dilemma (String / FlashFill) — read before "fixing" it
-
-We want String benchmarks to come out in genuine **SyGuS PBE shape**:
-
+**Items 1-3 + 5 done; current blocker is item 4 (the dispatcher).**
+Running `delis --kleene 2 benchmark/CFG/0001.sl` now reaches the
+dispatcher in `lib.rs::solve_file_inner` and errors with:
 ```
-(synth-fun f ((arg0 Str)) Str ...grammar with arg0 as a leaf...)
-(constraint (= (f "20+") "20"))
-(constraint (= (f "9")   "9"))
-...
+"Unsupported SyGuS benchmark shape for g: expected PBE examples,
+ a define-fun reference implementation, or a nullary bit-constraint task"
 ```
 
-This is the natural home for the (Len,Char) value semantics — String
-operators (`str.++`, `str.at`, `str.substr`, ...) are model-independent, so
-`f` is a real function of its input. But delis's architecture compiles the
-synth target as a **closed term** and **folds its value-semantics over the
-example models into a single bitvector**. The result is a *nullary* target:
+What landed (uncommitted on `../dryadsynth-bv`):
+1. **`SynthEntry { name, arity, ret_bits }`** registry; `synth_ret_bits`
+   / `synth_arity` helpers. `width()` (`expr.rs`) and `bit_width()`
+   (`algo.rs`) use these — no more `unimplemented!()`.
+2. **`PlanInstr::SynthCall { synth_idx, args }`** variant +
+   `compile_expr` case + plan executor case. Plan-eval reads the
+   thread-local candidate, recurses into its body via
+   `eval_with_bindings`.
+3. **Thread-local `CURRENT_CANDIDATES: RefCell<Vec<Option<OwnedExpr>>>`**
+   with `set_synth_candidate(idx, body)` / `get_synth_candidate(idx)`.
+   `OwnedExpr::eval_with_bindings` for `SynthApp` substitutes.
+5. **Backward relevance** through `SynthCall`: conservative
+   `BitDep::full(arg_bits)` (single-bit walker) and "demand all bits of
+   all args" (forward-demand walker). Sound but loose. Tightening is an
+   optimisation; not blocking.
 
-```
-(synth-fun phi () Str)          ; closed term, no formal parameter
-```
+Remaining:
 
-with each example baked into a `(define-model ...)` and the
-input/output read via model-explicit functions (`in.*`, `out.*`, `get-fun`).
-This is what `benchmark/String/scripts/gen_lenchar.py` emits today, and what
-`/tmp/strfold.sl` is a minimal instance of. It **works** (cvc5 and the
-internal backend both solve `f(arg0)=arg0++arg0`, and the multi-operator
-`0031.sl` solution is hand-verified correct), but it is **not** the literal
-PBE shape.
+4. **Dispatcher + constraint parser** — the real open work. Our shape:
+   ```
+   (constraint (= ((_ extract N N) (g a b cfg.rhs.S0)) #b1))
+   ```
+   has arity=3 but the args are nullary define-fun calls (the Kleene
+   chain), not literals. `parse_extract_call_constraint` requires
+   literal args, so `parse_bit_constraints_grouped` returns `None`, and
+   the dispatcher cascades through PBE / reference-impl / nullary-bit
+   paths and ends at "Unsupported".
 
-### Why the two shapes conflict
+   Proposed path: in `parse_bit_constraints_grouped` (arity > 0 branch),
+   if `parse_extract_call_constraint` returns None but
+   `constraint_mentions_target` is true, lift the whole constraint via
+   `OwnedExpr::from_term` and push to `structural`. The lifted expr
+   contains `SynthApp(0, [Func(a), Func(b), Func(cfg.rhs.S0)])`. The
+   search machinery's `spec.matches(&values)` then needs to set the
+   current candidate before evaluating structural exprs — which means
+   threading the candidate's `OwnedExpr` (not just its `values`) into
+   the search loop. `try_push_new` / `try_push_existing` only have
+   `Node`; would need a `materialize → set_synth_candidate(0, expr)`
+   pair before `matches`.
 
-- **Folded (what delis does).** `compile_semantic_program` folds the value
-  sort's BV width as a *sum over all example models* and projects the synth
-  target's semantics against each. That yields **one nullary term** whose bits
-  encode "the value on every example at once". There is no per-example
-  function application — the examples are structure (models), not arguments.
-- **PBE (what SyGuS wants).** `f` must be a **function** applied to per-example
-  inputs, over **one shared, unfolded single-value Str sort** (`[len | chars]`),
-  with the examples expressed as constraints `(= (f in_i) out_i)` and the
-  solution **lambda-wrapped** `(lambda (arg0) body)` at reconstruction.
+   This is the big remaining chunk. Once `set_synth_candidate` is
+   called at each candidate, the structural eval already works
+   (`SynthApp` thread-local read is in place).
 
-Folding-over-examples produces a nullary target; PBE needs one shared value
-space plus application. These are structurally incompatible without unfolding.
+### Other follow-ups
 
-### How cvc5 actually does the formal parameter (don't universally quantify)
-
-In cvc5 the synth-fun's formal parameter is **a grammar leaf** — a bound
-variable embedded in the grammar/datatype and carried via `getSygusVarList`,
-**not** a universally-quantified variable. The solution is lambda-wrapped at
-reconstruction time. So the literal-PBE path in delis would need to:
-
-1. Recognize the `arg0` leaf (== the synth-fun formal name) as the
-   **parameter**, and emit it as a grammar variable — projecting semantics
-   from the parameter's BV, not from a constant `define-fun`.
-2. Emit `(synth-fun f ((arg0 Str)) Str ...)` with `arg0` as a leaf over an
-   **unfolded** single-value Str sort (width `|Idx| + L*|Chr|`).
-3. Lower each example application `(f <value>)` and encode in/out as BV
-   literals via `get-fun`.
-
-### The element case (finvar) is inherently folded — that's correct
-
-For finvar-style element term synthesis (`s`, `t`, `nxt` are
-**model-dependent**), folding is the *right* answer: there is no
-model-independent function to abstract. `get-fun` + model-seeded constraints
-(`find_constraint_model` seeds `current_model` during constraint lowering) are
-already built and cvc5-verified for this case. String is the natural PBE home
-*because* its operators are model-independent; the element case is not.
-
-### Status / decision
-
-The folded form is shipped and works for all 354 String files. The literal
-PBE-shape compilation (unfolded single-value Str + arg0-leaf-as-parameter +
-`(f value)` application + lambda-wrapped solution) is **deferred**, not
-abandoned. Either form emits a valid SyGuS program; only the *shape* differs.
-
-### References (local copies)
-
-- **2023 Facet meta-theorem** — Krogmeier & Madhusudan, *Languages with
-  Decidable Learning: A Meta-theorem* (finite-aspect-checkable languages;
-  §9 String theory). `~/Zotero/storage/R6C6FPJR/`. This is the source of the
-  aspect/value-semantics encoding delis uses.
-- **2021/2022 finite-variable logics** — Krogmeier & Madhusudan, *Learning
-  Formulas in Finite Variable Logics*. `~/Zotero/storage/G9AFBVZX/`.
-  **Problem 1** = separation / formula synthesis (Bool-valued sentence true on
-  Pos, false on Neg); **Problem 3** = **term synthesis** (value-valued term `t`
-  with ⟦t⟧_M = out^M) — the PBE case above. Their encoding is parameterless
-  (synth-fun is a constant formula; free variables enter via aspect extension,
-  not synth-fun parameters), which is exactly why the folded form falls out
-  naturally and the literal PBE signature needs extra work.
-
-## Useful commands
-
-```bash
-# rebuild both crates (delis depends on sibling dryadsynth-bv)
-cargo build --release
-
-# anbn-3 is the smallest LFP smoke test (~70ms wall after warmup)
-time ./target/release/delis ./benchmark/CFG/anbn-3.sl
-
-# random_52_tiny is the standing LFP performance reference. After the
-# multi-sample sub-NT dedup landing: ~16s on remote (down from ~163s).
-# A copy is checked into the repo root.
-python3 benchmark/CFG/asp4cfg/scripts/gen.py \
-  --data ~/Codes/Python/asp4cfg/datasets/random_52.txt \
-  --k 3 --max-len-pos 5 --neg-cap 10 --out /tmp/random_52_tiny.sl
-time ./target/release/delis ./random_52_tiny.sl --verbose
-
-# LTL direct-mode regression check (~18-25s after warmup)
-time ./target/release/delis benchmark/LTL/learnltl/syslite-comparison/glba_6802_1250.sl
-```
+6. **Run end-to-end synth** on CFG/0001, CFG/0002, CFG/0003 once the
+   above lands. Crosscheck against the Python prototype.
+7. **K=2 specs** (`benchmark/CFG/0026.sl` etc.) need larger Kleene N
+   (empirically N=3 for tiny `aaa`; conservatively `N = max_word_len`).
+8. **delis orchestrate loop** `N := 1; N += 1` in `src/main.rs::solve`
+   — wrap the dryadsynth-bv call, increment on UNSAT. Small (~30 LOC).
