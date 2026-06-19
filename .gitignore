@@ -1,3 +1,4 @@
+.tmp*
 .codegraph/
 .qoder/
 .DS_Store
