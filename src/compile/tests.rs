@@ -939,7 +939,6 @@ fn allows_multiple_define_semantics_declarations() {
 
 // Multi-non-terminal CFG with (parent ...): out of scope for the native
 // multisynth path, which only handles a single recursive-ref constructor.
-// The CHC pipeline still compiles it (useful as a smoke test).
 #[test]
 fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
     let problem = parse(

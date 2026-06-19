@@ -1,1270 +1,1250 @@
-//! Saturation for the per-bit Horn CHC IR.
-//!
-//! Given a Horn program with push rules (`head.arg = cons(...)`) and pop
-//! rules (one body atom has `arg = cons(...)`), saturation closes the two
-//! directions by repeated resolution. Each push×pop resolution unifies the
-//! push head's constructor pattern with the pop body atom, substitutes the
-//! head's variables in the push body, and concatenates that into the pop
-//! rule's body in place of the pop atom. Push rules are kept; pop rules
-//! are intermediate. The end result is a closed set of one-way push rules
-//! whose bodies reference only variables that appear in their heads.
-//!
-//! This is the standard one-way conversion for two-way alternating tree
-//! automata (Vardi 1998; Comon et al. 2008 §7.6.3) applied at the Horn IR
-//! level. The saturated rules emit cleanly as `define-fun` bodies — every
-//! constructor's per-bit semantics becomes a closed Boolean formula in its
-//! children's bits, with no aux synth-fun and no closure constraint.
-//!
-//! ## Body atom roles
-//!
-//! Each body atom is classified once at index time (see [`AtomRole`]):
-//!
-//! - [`AtomRole::Pop`]: contains a variable not bound by the head — comes
-//!   from `parent_contexts` lowering (the fresh `__up<n>` slots of a parent
-//!   constructor pattern). Saturation MUST eliminate it by resolving.
-//! - [`AtomRole::Intersection`]: every variable is already bound by the
-//!   head. These are the helper-pred (`__chc.*`) clauses from
-//!   `chc.rs::emit_helper_atom` — 1-way *alternating* TA transitions in
-//!   Comon's §7.6.1 sense. Resolving them would distribute an AND-of-OR
-//!   into DNF, which is the source of the 2^K blowup. We never resolve them.
-//!
-//! All resolution decisions flow from `body_atom_role`: only `Pop` atoms
-//! enter `pop_index`, so no other site needs to know about the distinction.
-//!
-//! ## Other corrections over earlier in-tree attempts
-//!  - Push body variables that don't appear in the head's cons pattern are
-//!    alpha-renamed to fresh names per resolution, so they can't capture
-//!    a same-named variable that happens to live in the pop rule.
-//!  - Subsumption / dedup uses an alpha-normalized rule key, so two rules
-//!    equivalent up to renaming collapse to one (otherwise the worklist
-//!    may not terminate).
-
-use crate::backends::smt2::ast::{AtomRole, HornAtom, HornProg, HornRule, HornTerm};
+use crate::backends::smt2::ast::{HornAtom, HornDecl, HornProg, HornRule, HornTerm};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::collections::BTreeSet;
 
-/// Saturate `prog.rules` in place. Pop rules are eliminated; closed push
-/// rules (body all-vars referencing only head-vars) remain.
-pub fn saturate(prog: &mut HornProg) {
-    let saturated = saturate_rules(&prog.rules);
-    prog.rules = saturated;
-}
+type Term = HornTerm;
+type Subst = HashMap<String, Term>;
 
-/// Saturate a rule list and return the closed push rules. Public for tests.
-pub fn saturate_rules(input: &[HornRule]) -> Vec<HornRule> {
-    saturate_rules_with(input, SaturateConfig::from_env())
-}
-
-/// Like `saturate_rules` but with explicit configuration. Tests pass
-/// `SaturateConfig::default()`; the binary path constructs from env.
-pub fn saturate_rules_with(input: &[HornRule], config: SaturateConfig) -> Vec<HornRule> {
-    let mut state = SaturationState::new(input, config);
-    state.run();
-    state.finish()
-}
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-/// External knobs for a saturation run. Read once at entry from
-/// `DELIS_SATURATE_*` env vars (binary path) or constructed via
-/// `Default::default()` (tests).
-#[derive(Clone, Debug, Default)]
-pub struct SaturateConfig {
-    /// Bail out and dump diagnostics when the rule store reaches this size.
-    /// `None` = no cap.
-    pub cap: Option<usize>,
-    /// On cap-hit, write a sample of saturated rules here (one rule per line,
-    /// with body atoms tagged by [`AtomRole`]).
-    pub dump_path: Option<PathBuf>,
-}
-
-impl SaturateConfig {
-    pub fn from_env() -> Self {
-        Self {
-            cap: std::env::var("DELIS_SATURATE_CAP")
-                .ok()
-                .and_then(|s| s.parse().ok()),
-            dump_path: std::env::var("DELIS_SATURATE_DUMP").ok().map(PathBuf::from),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Diagnostic counters
-// ---------------------------------------------------------------------------
-
-/// Per-run counters. Centralised here so adding/removing a stat is a
-/// one-place change and `log_row` is the single owner of the print format.
-#[derive(Default, Debug, Clone)]
-pub struct SaturateStats {
-    /// `try_resolve` invocations.
-    pub attempts: usize,
-    /// Attempts that failed at unification (head pattern didn't fit pop atom).
-    pub unify_fail: usize,
-    /// Attempts that produced a rule that passed dedup + subsumption.
-    pub kept: usize,
-    /// Attempts whose alpha-key matched an existing rule.
-    pub dup: usize,
-    /// Attempts whose resolved rule was subsumed by some existing rule.
-    pub subsumed_in: usize,
-    /// Body atoms classified `Intersection` at index time — i.e. excluded
-    /// from `pop_index` to prevent the AND-of-OR → DNF blowup. A healthy
-    /// run on a `(parent n)`-using spec has this far larger than `attempts`.
-    pub intersections_protected: usize,
-}
-
-impl SaturateStats {
-    fn log_row(&self, label: &str, rules: usize, active: usize, seen: usize, pending: usize) {
-        eprintln!(
-            "[saturate {label}] rules={rules} (active={active}) seen={seen} pending={pending} \
-             | attempts={} unify_fail={} kept={} dup={} subsumed_in={} intr_protected={}",
-            self.attempts,
-            self.unify_fail,
-            self.kept,
-            self.dup,
-            self.subsumed_in,
-            self.intersections_protected,
-        );
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Internal state
-// ---------------------------------------------------------------------------
-
-struct SaturationState {
-    /// All rules ever produced. `active[i] == false` means subsumed/removed.
-    rules: Vec<HornRule>,
-    active: Vec<bool>,
-    /// Alpha-normalized keys of every active rule, for dedup.
-    seen: HashSet<RuleKey>,
-    /// Worklist of rule ids still to process.
-    pending: VecDeque<usize>,
-    /// Constructor key (pred, fun, arity) → list of active push rule ids
-    /// whose head matches.
-    push_index: HashMap<CtorKey, Vec<usize>>,
-    /// Constructor key → list of (rule_id, body_idx) where a **Pop** atom
-    /// matches. `Intersection` atoms are never inserted here, so resolution
-    /// can't reach them.
-    pop_index: HashMap<CtorKey, Vec<(usize, usize)>>,
-    /// Head atom → ids of every active rule with that head. Used by
-    /// subsumption to find candidates with matching head only.
-    by_head: HashMap<HornAtom, Vec<usize>>,
-    /// Counter for fresh variable names.
-    fresh_counter: usize,
-    /// All counters in one place.
-    stats: SaturateStats,
-    /// Read-only knobs.
-    config: SaturateConfig,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct CtorKey {
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Atom {
     pred: String,
-    fun: String,
-    arity: usize,
+    arg: Option<Term>,
 }
 
-/// Alpha-normalized rule shape: rename every variable to its first-occurrence
-/// ordinal in a deterministic walk of (head, sorted body). Two rules with the
-/// same alpha-key are equivalent up to renaming.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct RuleKey {
-    head: HornAtom,
-    body: Vec<HornAtom>,
+#[derive(Clone)]
+struct Clause {
+    head: Atom,
+    body: Vec<Atom>,
+    origin: String,
 }
 
-impl SaturationState {
-    fn new(input: &[HornRule], config: SaturateConfig) -> Self {
-        let mut state = Self {
-            rules: Vec::with_capacity(input.len()),
-            active: Vec::with_capacity(input.len()),
-            seen: HashSet::default(),
-            pending: VecDeque::new(),
-            push_index: HashMap::default(),
-            pop_index: HashMap::default(),
-            by_head: HashMap::default(),
-            fresh_counter: 0,
-            stats: SaturateStats::default(),
-            config,
-        };
-        for rule in input {
-            state.insert(rule.clone());
-        }
-        state
+struct Sig {
+    cons: HashMap<String, (Vec<String>, String)>,
+}
+
+impl Sig {
+    fn arg_sorts(&self, f: &str) -> Option<&[String]> {
+        self.cons.get(f).map(|(a, _)| a.as_slice())
     }
-
-    /// Add a rule if it's not already present (modulo alpha) AND no existing
-    /// rule with the same head has a body that is a subset of this one
-    /// (i.e., an existing rule that subsumes this one). If accepted, also
-    /// deactivate any existing rules that the new rule subsumes.
-    fn insert(&mut self, rule: HornRule) -> Option<usize> {
-        let key = alpha_normalize(&rule);
-        if self.seen.contains(&key) {
-            return None;
-        }
-        // Subsumption check: is there an active rule with same head whose
-        // body is a subset of the new rule's body? If so, drop the new rule.
-        let new_body_set: HashSet<&HornAtom> = rule.body_atoms.iter().collect();
-        if let Some(ids) = self.by_head.get(&rule.head) {
-            for &existing_id in ids {
-                if !self.active[existing_id] {
-                    continue;
-                }
-                let existing = &self.rules[existing_id];
-                if existing
-                    .body_atoms
-                    .iter()
-                    .all(|a| new_body_set.contains(a))
-                {
-                    return None;
-                }
-            }
-        }
-        // Mark every existing-rule-with-same-head whose body is a SUPERSET
-        // of the new rule's body as inactive (the new rule subsumes them).
-        // We iterate a snapshot to avoid borrowing conflicts.
-        if let Some(ids) = self.by_head.get(&rule.head).cloned() {
-            let new_body_atoms = rule.body_atoms.clone();
-            for existing_id in ids {
-                if !self.active[existing_id] {
-                    continue;
-                }
-                let existing_body: HashSet<&HornAtom> =
-                    self.rules[existing_id].body_atoms.iter().collect();
-                if new_body_atoms
-                    .iter()
-                    .all(|a| existing_body.contains(a))
-                {
-                    self.active[existing_id] = false;
-                    let existing_key = alpha_normalize(&self.rules[existing_id]);
-                    self.seen.remove(&existing_key);
-                }
-            }
-        }
-        self.seen.insert(key);
-        let id = self.rules.len();
-        // Index into `by_head` immediately (subsumption needs to see this
-        // rule even while it's still pending). `push_index` / `pop_index`
-        // are populated only when the rule transitions to "active partner
-        // for resolution" via `mark_active(id)` — given-clause style, so
-        // each (push, pop) pair is tried exactly once.
-        self.by_head.entry(rule.head.clone()).or_default().push(id);
-        self.rules.push(rule);
-        self.active.push(true);
-        self.pending.push_back(id);
-        Some(id)
-    }
-
-    /// Add `id` to `push_index` / `pop_index`. Called when the rule is
-    /// popped from the worklist and starts participating as a resolution
-    /// partner. **Intersection** body atoms (all vars bound by the head)
-    /// are deliberately NOT inserted into `pop_index` — they are
-    /// alternating clauses in Comon's §7.6.1 sense and must stay put.
-    fn mark_active_partner(&mut self, id: usize) {
-        let rule = &self.rules[id];
-        if let Some(k) = ctor_key(&rule.head) {
-            self.push_index.entry(k).or_default().push(id);
-        }
-        let head_vars = rule.head_vars();
-        for (idx, atom) in rule.body_atoms.iter().enumerate() {
-            let Some(k) = ctor_key(atom) else { continue };
-            match atom.role_against(&head_vars) {
-                AtomRole::Pop => {
-                    self.pop_index.entry(k).or_default().push((id, idx));
-                }
-                AtomRole::Intersection => {
-                    self.stats.intersections_protected += 1;
-                }
-            }
-        }
-    }
-
-    fn run(&mut self) {
-        let mut last_log = 0usize;
-        let cap = self.config.cap.unwrap_or(usize::MAX);
-        while let Some(id) = self.pending.pop_front() {
-            if !self.active[id] {
-                continue;
-            }
-            // Resolve `id` against currently-indexed (= already-processed)
-            // partners, THEN index `id` so future-popped rules can see it.
-            // This way each (push, pop) pair is attempted exactly once,
-            // by whichever rule was popped last.
-            self.resolve_with_partners(id);
-            self.mark_active_partner(id);
-            if self.rules.len() >= last_log + 1000 {
-                self.log_progress("tick");
-                last_log = self.rules.len();
-            }
-            if self.rules.len() >= cap {
-                eprintln!("[saturate] hit cap={cap}; bailing");
-                self.log_progress("cap-hit");
-                self.write_dump();
-                break;
-            }
-        }
-    }
-
-    fn log_progress(&self, label: &str) {
-        let active: usize = self.active.iter().filter(|a| **a).count();
-        self.stats
-            .log_row(label, self.rules.len(), active, self.seen.len(), self.pending.len());
-    }
-
-    /// On cap-hit, write a sample of late-indexed active rules to
-    /// `config.dump_path`. Each rule's body atom is tagged by its
-    /// [`AtomRole`] so you can see at a glance which atoms saturation
-    /// would have resolved (`pop`) vs. left alone (`intr`).
-    fn write_dump(&self) {
-        let Some(path) = &self.config.dump_path else {
-            return;
-        };
-        use std::io::Write;
-        let Ok(mut f) = std::fs::File::create(path) else {
-            return;
-        };
-        let from = self.rules.len().saturating_sub(60);
-        let mut written = 0;
-        for (i, (rule, active)) in self
-            .rules
-            .iter()
-            .zip(self.active.iter())
-            .enumerate()
-            .skip(from)
-        {
-            if !*active {
-                continue;
-            }
-            let _ = writeln!(f, "{i}: {}", format_rule_with_roles(rule));
-            written += 1;
-            if written >= 30 {
-                break;
-            }
-        }
-    }
-
-    fn resolve_with_partners(&mut self, id: usize) {
-        let rule = self.rules[id].clone();
-
-        // (a) If `id` is a push rule, look at every pop site whose ctor
-        // matches. `pop_index` only contains `Pop` atoms, so intersection
-        // atoms are skipped by construction.
-        if let Some(head_key) = ctor_key(&rule.head) {
-            if let Some(pops) = self.pop_index.get(&head_key).cloned() {
-                for (pop_id, body_idx) in pops {
-                    if !self.active[pop_id] {
-                        continue;
-                    }
-                    self.try_resolve(pop_id, body_idx, id);
-                }
-            }
-        }
-
-        // (b) If `id` has pop body atoms, look at every push rule whose
-        // head matches. Intersection body atoms never reach this branch.
-        let head_vars = rule.head_vars();
-        for (body_idx, atom) in rule.body_atoms.iter().enumerate() {
-            let Some(k) = ctor_key(atom) else { continue };
-            if atom.role_against(&head_vars) != AtomRole::Pop {
-                continue;
-            }
-            let Some(pushes) = self.push_index.get(&k).cloned() else {
-                continue;
-            };
-            for push_id in pushes {
-                if !self.active[push_id] {
-                    continue;
-                }
-                // Self-resolution is allowed; the alpha-renaming in
-                // `resolve` handles capture.
-                self.try_resolve(id, body_idx, push_id);
-            }
-        }
-    }
-
-    /// Try to resolve `pop_rule.body[body_idx]` against `push_rule.head`.
-    /// On success, add the resolved rule to the worklist.
-    fn try_resolve(&mut self, pop_id: usize, body_idx: usize, push_id: usize) {
-        self.stats.attempts += 1;
-        let pop_rule = &self.rules[pop_id];
-        let push_rule = &self.rules[push_id];
-        let Some(resolved) = resolve(pop_rule, body_idx, push_rule, &mut self.fresh_counter)
-        else {
-            self.stats.unify_fail += 1;
-            return;
-        };
-        let key = alpha_normalize(&resolved);
-        if self.seen.contains(&key) {
-            self.stats.dup += 1;
-            return;
-        }
-        if self.insert(resolved).is_some() {
-            self.stats.kept += 1;
-        } else {
-            self.stats.subsumed_in += 1;
-        }
-    }
-
-
-
-    fn finish(self) -> Vec<HornRule> {
-        self.rules
-            .into_iter()
-            .zip(self.active)
-            .filter(|(rule, active)| {
-                *active
-                    && !rule.is_pop_clause()
-                    && matches!(&rule.head.arg, HornTerm::App { .. })
-            })
-            .map(|(rule, _)| rule)
-            .collect()
+    fn result_sort(&self, f: &str) -> Option<&str> {
+        self.cons.get(f).map(|(_, r)| r.as_str())
     }
 }
 
-// ---------------------------------------------------------------------------
-// Resolution primitive
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// term helpers
+// ===========================================================================
+fn is_var(t: &Term) -> bool {
+    matches!(t, HornTerm::Var(_))
+}
 
-/// Compute the matcher `push.head.cons-args → pop.body[idx].cons-args`. The
-/// patterns must be a constructor app on both sides with the same fun and arity.
-/// Push args are *patterns* (assumed to be all `Var`s, which is how
-/// `parent_contexts` and the chc lowering build them) — each push var is
-/// bound to the corresponding pop arg `HornTerm`.
-fn unify_push_head_with_pop(
-    push_head: &HornAtom,
-    pop_atom: &HornAtom,
-) -> Option<HashMap<String, HornTerm>> {
-    let HornTerm::App { fun: pf, args: pa } = &push_head.arg else {
-        return None;
-    };
-    let HornTerm::App { fun: cf, args: ca } = &pop_atom.arg else {
-        return None;
-    };
-    if push_head.pred != pop_atom.pred || pf != cf || pa.len() != ca.len() {
-        return None;
+fn term_vars(t: &Term) -> HashSet<String> {
+    t.vars()
+}
+
+// ===========================================================================
+// atom / clause helpers
+// ===========================================================================
+fn atom_vars(a: &Atom) -> HashSet<String> {
+    match &a.arg {
+        None => HashSet::default(),
+        Some(t) => term_vars(t),
     }
-    let mut subst: HashMap<String, HornTerm> = HashMap::default();
-    for (pattern, candidate) in pa.iter().zip(ca.iter()) {
-        match pattern {
-            HornTerm::Var(name) => match subst.get(name) {
-                Some(existing) if existing != candidate => return None,
-                _ => {
-                    subst.insert(name.clone(), candidate.clone());
-                }
+}
+
+fn atom_apply(s: &Subst, a: &Atom) -> Atom {
+    Atom {
+        pred: a.pred.clone(),
+        arg: a.arg.as_ref().map(|t| t.apply(s)),
+    }
+}
+
+fn head_vars(c: &Clause) -> HashSet<String> {
+    atom_vars(&c.head)
+}
+
+fn floating_vars(c: &Clause) -> HashSet<String> {
+    let hv = head_vars(c);
+    let mut bv = HashSet::default();
+    for b in &c.body {
+        bv.extend(atom_vars(b));
+    }
+    bv.retain(|v| !hv.contains(v));
+    bv
+}
+
+fn normalize_clause(c: &Clause) -> Clause {
+    // dedup body atoms preserving order
+    let mut seen: Vec<Atom> = Vec::new();
+    for b in &c.body {
+        if !seen.contains(b) {
+            seen.push(b.clone());
+        }
+    }
+    // canonical variable renaming by first occurrence
+    let mut mapping: HashMap<String, String> = HashMap::default();
+    let mut order = 0usize;
+    fn canon(t: &Term, mapping: &mut HashMap<String, String>, order: &mut usize) -> Term {
+        match t {
+            HornTerm::Var(name) => {
+                let n = mapping.entry(name.clone()).or_insert_with(|| {
+                    let v = format!("x{order}");
+                    *order += 1;
+                    v
+                });
+                HornTerm::Var(n.clone())
+            }
+            HornTerm::App { fun, args } => HornTerm::App {
+                fun: fun.clone(),
+                args: args.iter().map(|a| canon(a, mapping, order)).collect(),
             },
-            HornTerm::App { .. } => {
-                if pattern != candidate {
-                    return None;
-                }
-            }
         }
     }
-    Some(subst)
+    let canon_atom = |a: &Atom, mapping: &mut HashMap<String, String>, order: &mut usize| Atom {
+        pred: a.pred.clone(),
+        arg: a.arg.as_ref().map(|t| canon(t, mapping, order)),
+    };
+    let head = canon_atom(&c.head, &mut mapping, &mut order);
+    let body = seen
+        .iter()
+        .map(|b| canon_atom(b, &mut mapping, &mut order))
+        .collect();
+    Clause {
+        head,
+        body,
+        origin: c.origin.clone(),
+    }
 }
 
-/// Build the resolved rule: pop_rule[body_idx ← (push_rule.body with subst)].
-fn resolve(
-    pop_rule: &HornRule,
-    body_idx: usize,
-    push_rule: &HornRule,
-    fresh: &mut usize,
-) -> Option<HornRule> {
-    let pop_atom = pop_rule.body_atoms.get(body_idx)?;
-    let subst = unify_push_head_with_pop(&push_rule.head, pop_atom)?;
-
-    // Variables in push.body that are NOT bound by `subst` are push-local —
-    // alpha-rename them to fresh names so they don't shadow pop's vars.
-    let head_vars = push_rule.head_vars();
-    let mut renaming: HashMap<String, HornTerm> = HashMap::default();
-    for atom in &push_rule.body_atoms {
-        collect_vars(&atom.arg, &mut renaming, &head_vars, fresh);
+// ---------------------------------------------------------------------------
+// classification (delis-adapted: a body atom equal to the head term is an
+// inert self-loop / intersection edge; only deep non-head atoms are "pop")
+// ---------------------------------------------------------------------------
+fn shallow_ok(b: &Atom, head_term: Option<&Term>, hv: &HashSet<String>) -> bool {
+    match &b.arg {
+        None => false,
+        Some(arg) => {
+            if let HornTerm::Var(v) = arg {
+                if hv.contains(v) {
+                    return true;
+                }
+            }
+            Some(arg) == head_term
+        }
     }
+}
 
-    // Combined substitution: head vars → pop terms, then local vars → fresh.
-    // `subst` and `renaming` are disjoint (head_vars vs non-head-vars).
-    let mut combined = subst;
-    for (k, v) in renaming {
-        combined.insert(k, v);
+fn is_guard_def(c: &Clause) -> bool {
+    c.head.arg.is_none()
+}
+
+fn is_automaton_clause(c: &Clause) -> bool {
+    if c.head.arg.is_none() {
+        return false;
     }
+    if !floating_vars(c).is_empty() {
+        return false;
+    }
+    if c.body.iter().any(|b| b.arg.is_none()) {
+        return false;
+    }
+    let hv = head_vars(c);
+    let ht = c.head.arg.as_ref();
+    c.body.iter().all(|b| shallow_ok(b, ht, &hv))
+}
 
-    // Build resolved body: pop's body minus the resolved atom, plus push's body
-    // under the combined substitution.
-    let mut body: Vec<HornAtom> = pop_rule
-        .body_atoms
+// ===========================================================================
+// LPO ordering
+// ===========================================================================
+struct Prec {
+    rank: HashMap<String, i64>,
+}
+
+impl Prec {
+    fn rank(&self, sym: &str) -> i64 {
+        if let Some(r) = self.rank.get(sym) {
+            return *r;
+        }
+        if sym.starts_with("__guard[") {
+            return -1;
+        }
+        0
+    }
+}
+
+fn occurs(v: &str, t: &Term) -> bool {
+    match t {
+        HornTerm::Var(name) => name == v,
+        HornTerm::App { args, .. } => args.iter().any(|a| occurs(v, a)),
+    }
+}
+
+fn lpo_gt(s: &Term, t: &Term, prec: &Prec) -> bool {
+    if s == t {
+        return false;
+    }
+    if let HornTerm::Var(tv) = t {
+        return !is_var(s) && occurs(tv, s);
+    }
+    if is_var(s) {
+        return false;
+    }
+    let (sf, sa) = match s {
+        HornTerm::App { fun, args } => (fun, args),
+        _ => unreachable!(),
+    };
+    let (tf, ta) = match t {
+        HornTerm::App { fun, args } => (fun, args),
+        _ => unreachable!(),
+    };
+    // (1) some immediate subterm s_i >= t
+    for si in sa {
+        if si == t || lpo_gt(si, t, prec) {
+            return true;
+        }
+    }
+    let (ps, pt) = (prec.rank(sf), prec.rank(tf));
+    // (2) root(s) > root(t) and s > every t_j
+    if ps > pt {
+        return ta.iter().all(|tj| lpo_gt(s, tj, prec));
+    }
+    // (3) same root: s > every t_j and args lex-greater
+    if ps == pt && sf == tf {
+        if !ta.iter().all(|tj| lpo_gt(s, tj, prec)) {
+            return false;
+        }
+        for (a, b) in sa.iter().zip(ta.iter()) {
+            if a == b {
+                continue;
+            }
+            return lpo_gt(a, b, prec);
+        }
+        return false;
+    }
+    false
+}
+
+fn atom_term(a: &Atom) -> Term {
+    match &a.arg {
+        None => HornTerm::App {
+            fun: a.pred.clone(),
+            args: Vec::new(),
+        },
+        Some(arg) => HornTerm::App {
+            fun: a.pred.clone(),
+            args: vec![arg.clone()],
+        },
+    }
+}
+
+fn atom_gt(a: &Atom, b: &Atom, prec: &Prec) -> bool {
+    lpo_gt(&atom_term(a), &atom_term(b), prec)
+}
+
+fn is_maximal(idx: usize, atoms: &[Atom], prec: &Prec) -> bool {
+    !atoms
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != body_idx)
-        .map(|(_, a)| a.clone())
-        .collect();
-    for atom in &push_rule.body_atoms {
-        body.push(atom.substitute(&combined));
-    }
-
-    Some(HornRule {
-        body_atoms: body,
-        head: pop_rule.head.clone(),
-    })
+        .any(|(i, x)| i != idx && atom_gt(x, &atoms[idx], prec))
 }
 
-/// For every variable in `term` that isn't in `head_vars`, insert a
-/// fresh-name mapping into `renaming` (if not already present).
-fn collect_vars(
-    term: &HornTerm,
-    renaming: &mut HashMap<String, HornTerm>,
-    head_vars: &HashSet<String>,
-    fresh: &mut usize,
-) {
-    match term {
-        HornTerm::Var(name) => {
-            if !head_vars.contains(name) && !renaming.contains_key(name) {
-                let next = format!("__sat{fresh}");
-                *fresh += 1;
-                renaming.insert(name.clone(), HornTerm::Var(next));
-            }
-        }
-        HornTerm::App { args, .. } => {
-            for arg in args {
-                collect_vars(arg, renaming, head_vars, fresh);
-            }
-        }
-    }
-}
-
-fn ctor_key(atom: &HornAtom) -> Option<CtorKey> {
-    let HornTerm::App { fun, args } = &atom.arg else {
-        return None;
-    };
-    Some(CtorKey {
-        pred: atom.pred.clone(),
-        fun: fun.clone(),
-        arity: args.len(),
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Diagnostic formatting
-// ---------------------------------------------------------------------------
-
-/// Render a rule for the cap-hit dump, prefixing each body atom with its
-/// classified [`AtomRole`] (`pop` / `intr`). Reads exactly like the rule's
-/// `Display` impl otherwise; intended for human eyeballing.
-fn format_rule_with_roles(rule: &HornRule) -> String {
-    let head_vars = rule.head_vars();
-    let body_len = rule.body_atoms.len();
-    let body = rule
-        .body_atoms
+fn is_strictly_maximal(idx: usize, atoms: &[Atom], prec: &Prec) -> bool {
+    atoms
         .iter()
-        .map(|atom| {
-            let tag = match atom.role_against(&head_vars) {
-                AtomRole::Pop => "pop ",
-                AtomRole::Intersection => "intr",
-            };
-            format!("[{tag}] {atom}")
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("body_len={body_len} head={} <= {body}", rule.head)
+        .enumerate()
+        .all(|(i, x)| i == idx || atom_gt(&atoms[idx], x, prec))
 }
 
-// ---------------------------------------------------------------------------
-// Alpha-normalization (for dedup)
-// ---------------------------------------------------------------------------
-
-/// Alpha-normalize a rule for dedup. Two passes:
-///
-/// 1. Identify *isolated existentials* — variables that appear in exactly
-///    one body atom and not in the head. These are truly existential
-///    (purely "∃ x. ...") and any two body atoms `P(e1)` / `P(e2)` with
-///    different isolated existentials `e1, e2` are logically equivalent
-///    to a single `P(_)`. Without this, resolution chains accumulate
-///    arbitrarily many `P(__sat<i>)` atoms with the same `P` but fresh
-///    distinct vars, blowing up alpha-distinct rule count without
-///    adding logical content.
-/// 2. Rename surviving variables by first-appearance ordinal in a
-///    deterministic walk (head, then sorted body).
-fn alpha_normalize(rule: &HornRule) -> RuleKey {
-    let head_vars = rule.head_vars();
-    let counts = count_var_occurrences(rule);
-    // A var is an isolated existential iff it appears once total AND not in
-    // the head. We canonicalize all isolated existentials to the same
-    // sentinel name "_" so duplicate `P(iso1)` / `P(iso2)` atoms collapse.
-    let isolated: HashSet<String> = counts
-        .iter()
-        .filter(|(name, count)| **count == 1 && !head_vars.contains(*name))
-        .map(|(name, _)| name.clone())
-        .collect();
-
-    let mut order: HashMap<String, usize> = HashMap::default();
-    let head = normalize_atom(&rule.head, &mut order, &isolated);
-    let mut body: Vec<HornAtom> = rule
-        .body_atoms
-        .iter()
-        .map(|a| normalize_atom(a, &mut order, &isolated))
-        .collect();
-    body.sort();
-    body.dedup();
-    RuleKey { head, body }
-}
-
-/// Count every variable occurrence across a rule (head and all body atoms).
-/// A var that appears multiple times is "linked" — it represents a constraint
-/// shared across atoms — and stays a real variable. A var that appears once
-/// (and not in head) is an isolated existential.
-fn count_var_occurrences(rule: &HornRule) -> HashMap<String, usize> {
-    let mut counts: HashMap<String, usize> = HashMap::default();
-    count_term_occurrences(&rule.head.arg, &mut counts);
-    for atom in &rule.body_atoms {
-        count_term_occurrences(&atom.arg, &mut counts);
-    }
-    counts
-}
-
-fn count_term_occurrences(term: &HornTerm, counts: &mut HashMap<String, usize>) {
-    match term {
-        HornTerm::Var(name) => {
-            *counts.entry(name.clone()).or_insert(0) += 1;
+fn build_precedence(clauses: &[Clause], sig: &Sig) -> Prec {
+    // states = all predicates with a non-None arg, minus data symbols
+    let mut states: BTreeSet<String> = BTreeSet::new();
+    for c in clauses {
+        if c.head.arg.is_some() && !sig.cons.contains_key(&c.head.pred) {
+            states.insert(c.head.pred.clone());
         }
-        HornTerm::App { args, .. } => {
-            for arg in args {
-                count_term_occurrences(arg, counts);
+        for b in &c.body {
+            if b.arg.is_some() && !sig.cons.contains_key(&b.pred) {
+                states.insert(b.pred.clone());
             }
         }
     }
-}
+    let states: Vec<String> = states.into_iter().collect();
+    let state_set: HashSet<String> = states.iter().cloned().collect();
 
-fn normalize_atom(
-    atom: &HornAtom,
-    order: &mut HashMap<String, usize>,
-    isolated: &HashSet<String>,
-) -> HornAtom {
-    HornAtom {
-        pred: atom.pred.clone(),
-        arg: normalize_term(&atom.arg, order, isolated),
-    }
-}
-
-fn normalize_term(
-    term: &HornTerm,
-    order: &mut HashMap<String, usize>,
-    isolated: &HashSet<String>,
-) -> HornTerm {
-    match term {
-        HornTerm::Var(name) => {
-            if isolated.contains(name) {
-                HornTerm::Var("_".to_string())
-            } else {
-                let next = order.len();
-                let idx = *order.entry(name.clone()).or_insert(next);
-                HornTerm::Var(format!("v{idx}"))
-            }
-        }
-        HornTerm::App { fun, args } => HornTerm::App {
-            fun: fun.clone(),
-            args: args.iter().map(|a| normalize_term(a, order, isolated)).collect(),
-        },
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tiny forward-chaining evaluator (for tests only)
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-fn collect_subterms(term: &HornTerm, out: &mut Vec<HornTerm>) {
-    if !out.contains(term) {
-        out.push(term.clone());
-    }
-    if let HornTerm::App { args, .. } = term {
-        for arg in args {
-            collect_subterms(arg, out);
-        }
-    }
-}
-
-/// Structural match of a rule head's term pattern against a ground candidate.
-/// Returns the substitution head-vars → candidate-subterms on success, else None.
-#[cfg(test)]
-fn match_term(pattern: &HornTerm, candidate: &HornTerm) -> Option<HashMap<String, HornTerm>> {
-    let mut subst = HashMap::default();
-    if match_term_into(pattern, candidate, &mut subst) {
-        Some(subst)
-    } else {
-        None
-    }
-}
-
-#[cfg(test)]
-fn match_term_into(
-    pattern: &HornTerm,
-    candidate: &HornTerm,
-    subst: &mut HashMap<String, HornTerm>,
-) -> bool {
-    match (pattern, candidate) {
-        (HornTerm::Var(name), c) => match subst.get(name) {
-            Some(existing) if existing != c => false,
-            Some(_) => true,
-            None => {
-                subst.insert(name.clone(), c.clone());
-                true
-            }
-        },
-        (
-            HornTerm::App { fun: pf, args: pa },
-            HornTerm::App { fun: cf, args: ca },
-        ) => {
-            if pf != cf || pa.len() != ca.len() {
-                return false;
-            }
-            for (p, c) in pa.iter().zip(ca.iter()) {
-                if !match_term_into(p, c, subst) {
-                    return false;
+    // constraints head -> body for shallow (var-headed) input clauses
+    let mut succ: HashMap<String, BTreeSet<String>> = HashMap::default();
+    let mut indeg: HashMap<String, usize> = states.iter().map(|s| (s.clone(), 0)).collect();
+    for c in clauses {
+        let Some(HornTerm::Var(_)) = c.head.arg.as_ref() else {
+            continue;
+        };
+        for b in &c.body {
+            if let Some(arg) = &b.arg {
+                if is_var(arg)
+                    && b.pred != c.head.pred
+                    && state_set.contains(&b.pred)
+                {
+                    succ.entry(c.head.pred.clone())
+                        .or_default()
+                        .insert(b.pred.clone());
                 }
             }
-            true
         }
-        _ => false,
+    }
+    for bs in succ.values() {
+        for b in bs {
+            if let Some(d) = indeg.get_mut(b) {
+                *d += 1;
+            }
+        }
+    }
+    // Kahn: indeg-0 heads first
+    let mut order: Vec<String> = Vec::new();
+    let mut avail: Vec<String> = states
+        .iter()
+        .filter(|s| indeg[*s] == 0)
+        .cloned()
+        .collect();
+    avail.sort();
+    let mut indeg2 = indeg.clone();
+    while let Some(s) = (!avail.is_empty()).then(|| avail.remove(0)) {
+        order.push(s.clone());
+        if let Some(bs) = succ.get(&s) {
+            for b in bs {
+                let e = indeg2.get_mut(b).unwrap();
+                *e -= 1;
+                if *e == 0 {
+                    avail.push(b.clone());
+                    avail.sort();
+                }
+            }
+        }
+    }
+    for s in &states {
+        if !order.contains(s) {
+            order.push(s.clone());
+        }
+    }
+
+    // ranks: guards (lowest) < states (reverse topo) < data symbols
+    let mut rank: HashMap<String, i64> = HashMap::default();
+    let base = 0i64;
+    for (i, s) in order.iter().rev().enumerate() {
+        rank.insert(s.clone(), base + 1 + i as i64);
+    }
+    let state_top = base + order.len() as i64;
+    let mut data: Vec<String> = sig.cons.keys().cloned().collect();
+    data.sort();
+    for (i, f) in data.iter().enumerate() {
+        rank.insert(f.clone(), state_top + 1 + i as i64);
+    }
+    Prec { rank }
+}
+
+// ===========================================================================
+// flatten (only fires on nested heads; delis heads are depth<=1 so identity)
+// ===========================================================================
+struct Fresh(usize);
+impl Fresh {
+    fn var(&mut self, base: &str) -> Term {
+        self.0 += 1;
+        HornTerm::Var(format!("{base}#{}", self.0))
+    }
+    fn state(&mut self) -> String {
+        self.0 += 1;
+        format!("__N{}", self.0)
     }
 }
 
-/// Forward-chain a saturated push-rule program over the subterms of `term`.
-/// Each rule has head shape `Pred(cons(x1, ..., xk))`. We unify head with
-/// every subterm, check body atoms (with the substitution applied) are in
-/// the derived set, and add the head if so. Iterate until fixpoint.
-///
-/// Body atoms after substitution must be either ground (`Pred(c)`) or a
-/// `Pred(Var)` with the var bound by the substitution. Range-restricted
-/// rules guarantee this.
-#[cfg(test)]
-fn evaluate(saturated: &[HornRule], term: &HornTerm) -> rustc_hash::FxHashSet<HornAtom> {
-    let mut subterms = Vec::new();
-    collect_subterms(term, &mut subterms);
-    let mut derived: rustc_hash::FxHashSet<HornAtom> = HashSet::default();
-    loop {
-        let mut changed = false;
-        for rule in saturated {
-            for candidate in &subterms {
-                let Some(subst) = match_term(&rule.head.arg, candidate) else {
-                    continue;
-                };
-                let body_satisfied = rule.body_atoms.iter().all(|atom| {
-                    let grounded = atom.substitute(&subst);
-                    derived.contains(&grounded)
-                });
-                if body_satisfied {
-                    let head = HornAtom {
-                        pred: rule.head.pred.clone(),
-                        arg: rule.head.arg.substitute(&subst),
-                    };
-                    if derived.insert(head) {
-                        changed = true;
+fn flatten(clauses: &[Clause], fresh: &mut Fresh) -> Vec<Clause> {
+    let mut out = Vec::new();
+    for c in clauses {
+        match &c.head.arg {
+            // guard def or variable head pass through unchanged
+            None => out.push(c.clone()),
+            Some(t) if is_var(t) => out.push(c.clone()),
+            // every App head (incl. nullary) goes through _flatten, which keeps
+            // only body atoms whose arg is a variable of the (sub)term
+            Some(t) => flatten_into(&c.head.pred, t, &c.body, fresh, &mut out),
+        }
+    }
+    out
+}
+
+/// Keep only body atoms whose arg is a variable occurring in `term`.
+fn atoms_in_vars(body: &[Atom], vars: &HashSet<String>) -> Vec<Atom> {
+    body.iter()
+        .filter(|b| matches!(&b.arg, Some(HornTerm::Var(v)) if vars.contains(v)))
+        .cloned()
+        .collect()
+}
+
+fn flatten_into(pred: &str, term: &Term, body: &[Atom], fresh: &mut Fresh, out: &mut Vec<Clause>) {
+    // base case: variable or nullary constructor — keep only var-in-term atoms
+    let args = match term {
+        HornTerm::App { args, .. } if !args.is_empty() => args,
+        _ => {
+            let used = atoms_in_vars(body, &term_vars(term));
+            out.push(normalize_clause(&Clause {
+                head: Atom { pred: pred.to_string(), arg: Some(term.clone()) },
+                body: used,
+                origin: "flatten".into(),
+            }));
+            return;
+        }
+    };
+    let fun = match term {
+        HornTerm::App { fun, .. } => fun,
+        _ => unreachable!(),
+    };
+    let mut new_args = Vec::new();
+    let mut top_body: Vec<Atom> = Vec::new();
+    for a in args {
+        let avars = term_vars(a);
+        let atoms_here: Vec<Atom> = body
+            .iter()
+            .filter(|b| match &b.arg {
+                Some(HornTerm::Var(v)) => avars.contains(v),
+                _ => false,
+            })
+            .cloned()
+            .collect();
+        if is_var(a) || matches!(a, HornTerm::App { args, .. } if args.is_empty()) {
+            new_args.push(a.clone());
+            top_body.extend(atoms_here);
+        } else {
+            let v = fresh.var("y");
+            let st = fresh.state();
+            flatten_into(&st, a, &atoms_here, fresh, out);
+            if let HornTerm::Var(vn) = &v {
+                top_body.push(Atom { pred: st, arg: Some(HornTerm::Var(vn.clone())) });
+            }
+            new_args.push(v);
+        }
+    }
+    out.push(normalize_clause(&Clause {
+        head: Atom {
+            pred: pred.to_string(),
+            arg: Some(HornTerm::App { fun: fun.clone(), args: new_args }),
+        },
+        body: top_body,
+        origin: "flatten".into(),
+    }));
+}
+
+// ===========================================================================
+// eager epsilon-splitting into product-state guards
+// ===========================================================================
+fn guard_name(preds: &BTreeSet<String>) -> String {
+    let parts: Vec<&str> = preds.iter().map(|s| s.as_str()).collect();
+    format!("__guard[{}]", parts.join("&"))
+}
+
+fn eps_split(c: &Clause) -> Vec<Clause> {
+    let floats = floating_vars(c);
+    if c.head.arg.is_none() || floats.is_empty() {
+        return vec![normalize_clause(c)];
+    }
+    // floating vars that occur in a deep (non-var) body atom are left alone
+    let mut deep_vars: HashSet<String> = HashSet::default();
+    for b in &c.body {
+        if let Some(arg) = &b.arg {
+            if !is_var(arg) {
+                for v in term_vars(arg) {
+                    if floats.contains(&v) {
+                        deep_vars.insert(v);
                     }
                 }
             }
         }
-        if !changed {
+    }
+    let pure: HashSet<String> = floats.difference(&deep_vars).cloned().collect();
+    if pure.is_empty() {
+        return vec![normalize_clause(c)];
+    }
+    let mut kept: Vec<Atom> = Vec::new();
+    let mut by_var: HashMap<String, Vec<Atom>> = HashMap::default();
+    let mut var_order: Vec<String> = Vec::new();
+    for b in &c.body {
+        match &b.arg {
+            Some(HornTerm::Var(v)) if pure.contains(v) => {
+                if !by_var.contains_key(v) {
+                    var_order.push(v.clone());
+                }
+                by_var.entry(v.clone()).or_default().push(b.clone());
+            }
+            _ => kept.push(b.clone()),
+        }
+    }
+    let mut guards: Vec<Clause> = Vec::new();
+    for v in &var_order {
+        let atoms = &by_var[v];
+        let preds: BTreeSet<String> = atoms.iter().map(|a| a.pred.clone()).collect();
+        let q = guard_name(&preds);
+        kept.push(Atom { pred: q.clone(), arg: None });
+        let body: Vec<Atom> = preds
+            .iter()
+            .map(|p| Atom { pred: p.clone(), arg: Some(HornTerm::Var(v.clone())) })
+            .collect();
+        guards.push(normalize_clause(&Clause {
+            head: Atom { pred: q, arg: None },
+            body,
+            origin: "eps-split".into(),
+        }));
+    }
+    let reduced = normalize_clause(&Clause {
+        head: c.head.clone(),
+        body: kept,
+        origin: format!("{}+split", c.origin),
+    });
+    let mut out = vec![reduced];
+    out.extend(guards);
+    out
+}
+
+// ===========================================================================
+// binary ordered resolution
+// ===========================================================================
+fn rename_apart(c: &Clause, fresh: &mut Fresh) -> Clause {
+    let mut m: HashMap<String, String> = HashMap::default();
+    fn rt(t: &Term, m: &mut HashMap<String, String>, fresh: &mut Fresh) -> Term {
+        match t {
+            HornTerm::Var(name) => {
+                let n = m.entry(name.clone()).or_insert_with(|| {
+                    fresh.0 += 1;
+                    format!("{name}#{}", fresh.0)
+                });
+                HornTerm::Var(n.clone())
+            }
+            HornTerm::App { fun, args } => HornTerm::App {
+                fun: fun.clone(),
+                args: args.iter().map(|a| rt(a, m, fresh)).collect(),
+            },
+        }
+    }
+    let ra = |a: &Atom, m: &mut HashMap<String, String>, fresh: &mut Fresh| Atom {
+        pred: a.pred.clone(),
+        arg: a.arg.as_ref().map(|t| rt(t, m, fresh)),
+    };
+    let head = ra(&c.head, &mut m, fresh);
+    let body = c.body.iter().map(|b| ra(b, &mut m, fresh)).collect();
+    Clause { head, body, origin: c.origin.clone() }
+}
+
+fn resolve(main: &Clause, idx: usize, side: &Clause, fresh: &mut Fresh) -> Option<Clause> {
+    let lit = &main.body[idx];
+    let lit_arg = match (&lit.arg, &side.head.arg) {
+        (Some(l), Some(_)) if lit.pred == side.head.pred => l,
+        _ => return None,
+    };
+    let side = rename_apart(side, fresh);
+    let side_head_arg = side.head.arg.as_ref().unwrap();
+    let mut s: Subst = HashMap::default();
+    if !lit_arg.unify(side_head_arg, &mut s) {
+        return None;
+    }
+    let new_head = atom_apply(&s, &main.head);
+    let mut new_body: Vec<Atom> = main
+        .body
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| *j != idx)
+        .map(|(_, b)| atom_apply(&s, b))
+        .collect();
+    new_body.extend(side.body.iter().map(|b| atom_apply(&s, b)));
+    let res = normalize_clause(&Clause {
+        head: new_head,
+        body: new_body,
+        origin: format!("{} x {}", main.origin, side.origin),
+    });
+    if res.body.contains(&res.head) {
+        return None; // tautology
+    }
+    Some(res)
+}
+
+// ---------------------------------------------------------------------------
+// subsumption
+// ---------------------------------------------------------------------------
+fn atom_match(p: &Atom, t: &Atom, s: &Subst) -> Option<Subst> {
+    if p.pred != t.pred {
+        return None;
+    }
+    match (&p.arg, &t.arg) {
+        (None, None) => Some(s.clone()),
+        (Some(pa), Some(ta)) => {
+            let mut s2 = s.clone();
+            if pa.matches(ta, &mut s2) {
+                Some(s2)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn subsumes(c: &Clause, d: &Clause) -> bool {
+    let Some(s0) = atom_match(&c.head, &d.head, &HashMap::default()) else {
+        return false;
+    };
+    fn search(i: usize, cbody: &[Atom], dbody: &[Atom], s: &Subst) -> bool {
+        if i == cbody.len() {
+            return true;
+        }
+        for datom in dbody {
+            if let Some(s2) = atom_match(&cbody[i], datom, s) {
+                if search(i + 1, cbody, dbody, &s2) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    search(0, &c.body, &d.body, &s0)
+}
+
+// ===========================================================================
+// exact guard discharge: reachable types (sort-aware subset construction)
+// ===========================================================================
+fn reachable_types(automaton: &[Clause], sig: &Sig) -> HashSet<(String, BTreeSet<String>)> {
+    let mut const_seed: HashMap<String, BTreeSet<String>> = HashMap::default();
+    // pushes: (head_pred, f, [(child_pred, child_pos)], [self_loop_pred])
+    // self_loop preds are node-level intersection conditions: the head fires
+    // only when they already hold in this node's own type.
+    let mut pushes: Vec<(String, String, Vec<(String, usize)>, Vec<String>)> = Vec::new();
+    let mut eps: Vec<(String, String)> = Vec::new();
+    let mut inter: Vec<(String, Vec<String>)> = Vec::new();
+
+    for c in automaton {
+        let Some(harg) = &c.head.arg else { continue };
+        if c.body.is_empty() {
+            if let HornTerm::App { fun, args } = harg {
+                if args.is_empty() {
+                    const_seed.entry(fun.clone()).or_default().insert(c.head.pred.clone());
+                }
+            }
+            continue;
+        }
+        if is_var(harg) {
+            let preds: Vec<String> = c
+                .body
+                .iter()
+                .filter_map(|b| b.arg.as_ref().and(Some(b.pred.clone())))
+                .collect();
+            if preds.len() == 1 {
+                eps.push((c.head.pred.clone(), preds[0].clone()));
+            } else if !preds.is_empty() {
+                inter.push((c.head.pred.clone(), preds));
+            }
+            continue;
+        }
+        if let HornTerm::App { fun, args } = harg {
+            // position of each head variable
+            let mut pos: HashMap<String, usize> = HashMap::default();
+            for (i, v) in args.iter().enumerate() {
+                if let HornTerm::Var(n) = v {
+                    pos.insert(n.clone(), i);
+                }
+            }
+            let mut obligations: Vec<(String, usize)> = Vec::new();
+            let mut self_preds: Vec<String> = Vec::new();
+            let mut ok = true;
+            for b in &c.body {
+                if b.arg.as_ref() == Some(harg) {
+                    // self-loop: a condition on this node's own type
+                    self_preds.push(b.pred.clone());
+                } else if let Some(HornTerm::Var(v)) = &b.arg {
+                    if let Some(&p) = pos.get(v) {
+                        obligations.push((b.pred.clone(), p));
+                    } else {
+                        ok = false;
+                        break;
+                    }
+                } else {
+                    ok = false;
+                    break;
+                }
+            }
+            if !ok {
+                continue;
+            }
+            if args.is_empty() {
+                // nullary constructor: head fires at the constant iff its
+                // self-loop conditions hold — a plain node-level intersection.
+                if !self_preds.is_empty() {
+                    inter.push((c.head.pred.clone(), self_preds));
+                }
+            } else {
+                pushes.push((c.head.pred.clone(), fun.clone(), obligations, self_preds));
+            }
+        }
+    }
+
+    let close = |seed: BTreeSet<String>| -> BTreeSet<String> {
+        let mut typ = seed;
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (p, q) in &eps {
+                if typ.contains(q) && !typ.contains(p) {
+                    typ.insert(p.clone());
+                    changed = true;
+                }
+            }
+            for (p, ps) in &inter {
+                if ps.iter().all(|pi| typ.contains(pi)) && !typ.contains(p) {
+                    typ.insert(p.clone());
+                    changed = true;
+                }
+            }
+        }
+        typ
+    };
+
+    let mut types: HashSet<(String, BTreeSet<String>)> = HashSet::default();
+    for (c, seed) in &const_seed {
+        if let Some(rs) = sig.result_sort(c) {
+            types.insert((rs.to_string(), close(seed.clone())));
+        }
+    }
+
+    // rules grouped by constructor, computed once (mirrors prototype's rules_f)
+    type Rule = (String, Vec<(String, usize)>, Vec<String>); // head, child obligations, self-loop preds
+    let mut rules_by_f: HashMap<String, Vec<Rule>> = HashMap::default();
+    for (p, f, obs, sp) in &pushes {
+        rules_by_f.entry(f.clone()).or_default().push((p.clone(), obs.clone(), sp.clone()));
+    }
+
+    // Node-level type for a constructor node, given its children's types: fire
+    // a push head when its child obligations are met by the combo AND its
+    // self-loop conditions already hold in this node's type, interleaved with
+    // the global eps / intersection edges, to a fixpoint.
+    let node_type = |combo: &[&BTreeSet<String>], rules: &[Rule]| -> BTreeSet<String> {
+        let mut typ: BTreeSet<String> = BTreeSet::new();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (p, obs, sp) in rules {
+                if !typ.contains(p)
+                    && obs.iter().all(|(qi, idx)| combo[*idx].contains(qi))
+                    && sp.iter().all(|s| typ.contains(s))
+                {
+                    typ.insert(p.clone());
+                    changed = true;
+                }
+            }
+            for (p, q) in &eps {
+                if typ.contains(q) && !typ.contains(p) {
+                    typ.insert(p.clone());
+                    changed = true;
+                }
+            }
+            for (p, ps) in &inter {
+                if ps.iter().all(|pi| typ.contains(pi)) && !typ.contains(p) {
+                    typ.insert(p.clone());
+                    changed = true;
+                }
+            }
+        }
+        typ
+    };
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        // group current type sets by sort (by reference, no clone)
+        let mut by_sort: HashMap<&str, Vec<&BTreeSet<String>>> = HashMap::default();
+        for (s, t) in &types {
+            by_sort.entry(s.as_str()).or_default().push(t);
+        }
+        let mut fresh_types: Vec<(String, BTreeSet<String>)> = Vec::new();
+        for (f, rules) in &rules_by_f {
+            let Some(arg_sorts) = sig.arg_sorts(f) else { continue };
+            let Some(result_sort) = sig.result_sort(f) else { continue };
+            if arg_sorts.is_empty() {
+                continue;
+            }
+            let per_pos: Vec<&Vec<&BTreeSet<String>>> =
+                match arg_sorts.iter().map(|s| by_sort.get(s.as_str())).collect() {
+                    Some(v) => v,
+                    None => continue, // some position has no inhabited type yet
+                };
+            cartesian(&per_pos, &mut |combo: &[&BTreeSet<String>]| {
+                let t = node_type(combo, rules);
+                if !t.is_empty() && !types.contains(&(result_sort.to_string(), t.clone())) {
+                    fresh_types.push((result_sort.to_string(), t));
+                }
+            });
+        }
+        for entry in fresh_types {
+            if types.insert(entry) {
+                changed = true;
+            }
+        }
+    }
+    types
+}
+
+/// Visit every tuple of the cartesian product of `per_pos`, calling `f` on each.
+fn cartesian<'a>(
+    per_pos: &[&Vec<&'a BTreeSet<String>>],
+    f: &mut impl FnMut(&[&'a BTreeSet<String>]),
+) {
+    let mut combo: Vec<&'a BTreeSet<String>> = Vec::with_capacity(per_pos.len());
+    fn go<'a>(
+        per_pos: &[&Vec<&'a BTreeSet<String>>],
+        i: usize,
+        combo: &mut Vec<&'a BTreeSet<String>>,
+        f: &mut impl FnMut(&[&'a BTreeSet<String>]),
+    ) {
+        if i == per_pos.len() {
+            f(combo);
+            return;
+        }
+        for &t in per_pos[i] {
+            combo.push(t);
+            go(per_pos, i + 1, combo, f);
+            combo.pop();
+        }
+    }
+    go(per_pos, 0, &mut combo, f);
+}
+
+fn guard_true(qpred: &str, types: &HashSet<(String, BTreeSet<String>)>) -> bool {
+    let inner = qpred
+        .strip_prefix("__guard[")
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or("");
+    let need: BTreeSet<String> = if inner.is_empty() {
+        BTreeSet::new()
+    } else {
+        inner.split('&').map(|s| s.to_string()).collect()
+    };
+    types.iter().any(|(_, t)| need.is_subset(t))
+}
+
+// ===========================================================================
+// selection / premise roles
+// ===========================================================================
+fn selected_literal(c: &Clause, prec: &Prec) -> Option<usize> {
+    if is_guard_def(c) || is_automaton_clause(c) {
+        return None;
+    }
+    let mut atoms: Vec<Atom> = vec![c.head.clone()];
+    atoms.extend(c.body.iter().cloned());
+    let mut best: Option<usize> = None;
+    for (i, b) in c.body.iter().enumerate() {
+        if b.arg.is_none() {
+            continue;
+        }
+        if !is_maximal(i + 1, &atoms, prec) {
+            continue;
+        }
+        match best {
+            None => best = Some(i),
+            Some(bi) => {
+                if atom_gt(b, &c.body[bi], prec) {
+                    best = Some(i);
+                }
+            }
+        }
+    }
+    best
+}
+
+fn is_side_eligible(c: &Clause, prec: &Prec) -> bool {
+    if !is_automaton_clause(c) {
+        return false;
+    }
+    let mut atoms: Vec<Atom> = vec![c.head.clone()];
+    atoms.extend(c.body.iter().cloned());
+    is_strictly_maximal(0, &atoms, prec)
+}
+
+// ===========================================================================
+// saturation loop (indexed given-clause loop)
+// ===========================================================================
+fn atom_repr(a: &Atom) -> String {
+    match &a.arg {
+        None => a.pred.clone(),
+        Some(t) => format!("{}({t})", a.pred),
+    }
+}
+
+fn clause_repr(c: &Clause) -> String {
+    let mut bs: Vec<String> = c.body.iter().map(atom_repr).collect();
+    bs.sort();
+    format!("{} :- {}", atom_repr(&c.head), bs.join(","))
+}
+
+/// Database of clauses kept across the saturation, with role indexes so each
+/// resolution step only meets the few clauses that can actually resolve.
+struct Db {
+    clauses: Vec<Clause>,
+    active: Vec<bool>,
+    by_head: HashMap<String, Vec<usize>>,        // for subsumption (same head pred)
+    sides: HashMap<String, Vec<usize>>,          // side-eligible clauses by head pred
+    mains: HashMap<String, Vec<(usize, usize)>>, // by selected-literal pred -> (clause, lit idx)
+    seen: HashSet<String>,
+}
+
+impl Db {
+    fn new() -> Self {
+        Db {
+            clauses: Vec::new(),
+            active: Vec::new(),
+            by_head: HashMap::default(),
+            sides: HashMap::default(),
+            mains: HashMap::default(),
+            seen: HashSet::default(),
+        }
+    }
+
+    /// Add `c`; returns its index, or None if it was a duplicate or subsumed.
+    /// Backward-subsumes (deactivates) the clauses it makes redundant.
+    fn add(&mut self, c: Clause, prec: &Prec) -> Option<usize> {
+        if !self.seen.insert(clause_repr(&c)) {
+            return None;
+        }
+        if let Some(cands) = self.by_head.get(&c.head.pred) {
+            if cands.iter().any(|&i| self.active[i] && subsumes(&self.clauses[i], &c)) {
+                return None;
+            }
+        }
+        if let Some(cands) = self.by_head.get(&c.head.pred) {
+            for &i in cands {
+                if self.active[i] && subsumes(&c, &self.clauses[i]) {
+                    self.active[i] = false;
+                }
+            }
+        }
+        let idx = self.clauses.len();
+        self.by_head.entry(c.head.pred.clone()).or_default().push(idx);
+        if let Some(li) = selected_literal(&c, prec) {
+            self.mains.entry(c.body[li].pred.clone()).or_default().push((idx, li));
+        } else if is_side_eligible(&c, prec) {
+            self.sides.entry(c.head.pred.clone()).or_default().push(idx);
+        }
+        self.clauses.push(c);
+        self.active.push(true);
+        Some(idx)
+    }
+}
+
+fn saturate_clauses(clauses: Vec<Clause>, sig: &Sig) -> Vec<Clause> {
+    let mut fresh = Fresh(0);
+    let normalized: Vec<Clause> = clauses.iter().map(normalize_clause).collect();
+    let flat = flatten(&normalized, &mut fresh);
+    let prec = build_precedence(&flat, sig);
+
+    let mut db = Db::new();
+    // generation 0 = the flattened, eps-split input
+    let mut gen: Vec<Clause> = Vec::new();
+    for c in &flat {
+        gen.extend(eps_split(c));
+    }
+
+    let mut true_guards: HashSet<String> = HashSet::default();
+    // Process one generation, then discharge guards on the resulting automaton
+    // before the next generation's resolvents enlarge it (this keeps the subset
+    // construction on the small early automaton, as the prototype does).
+    loop {
+        let mut next: Vec<Clause> = Vec::new();
+        for given in gen.drain(..) {
+            let mut given = normalize_clause(&given);
+            if given.body.iter().any(|b| b.arg.is_none() && true_guards.contains(&b.pred)) {
+                let body = given
+                    .body
+                    .iter()
+                    .filter(|b| !(b.arg.is_none() && true_guards.contains(&b.pred)))
+                    .cloned()
+                    .collect();
+                given = normalize_clause(&Clause { head: given.head.clone(), body, origin: given.origin });
+            }
+            let role_main = selected_literal(&given, &prec);
+            let role_side = role_main.is_none() && is_side_eligible(&given, &prec);
+            let mut resolvents: Vec<Clause> = Vec::new();
+            if let Some(li) = role_main {
+                let lp = given.body[li].pred.clone();
+                if let Some(sis) = db.sides.get(&lp) {
+                    for &si in sis {
+                        if db.active[si] {
+                            if let Some(r) = resolve(&given, li, &db.clauses[si], &mut fresh) {
+                                resolvents.extend(eps_split(&r));
+                            }
+                        }
+                    }
+                }
+            } else if role_side {
+                if let Some(mis) = db.mains.get(&given.head.pred) {
+                    for &(ci, li) in mis {
+                        if db.active[ci] {
+                            if let Some(r) = resolve(&db.clauses[ci], li, &given, &mut fresh) {
+                                resolvents.extend(eps_split(&r));
+                            }
+                        }
+                    }
+                }
+            }
+            if db.add(given, &prec).is_some() {
+                next.extend(resolvents);
+            }
+        }
+        let discharged = discharge(&db, sig, &mut true_guards, &mut next);
+        gen = next;
+        if gen.is_empty() && !discharged {
             break;
         }
     }
-    derived
+    db.clauses
+        .into_iter()
+        .zip(db.active)
+        .filter(|(c, a)| *a && is_automaton_clause(c))
+        .map(|(c, _)| c)
+        .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+/// Decide pending product-state guards exactly (subset construction), latch the
+/// non-empty ones, and re-enqueue every clause that carried a now-true guard
+/// with that atom erased.  Returns true iff a new guard became true.
+fn discharge(db: &Db, sig: &Sig, true_guards: &mut HashSet<String>, work: &mut Vec<Clause>) -> bool {
+    let pending: Vec<&Clause> = db
+        .clauses
+        .iter()
+        .zip(db.active.iter())
+        .filter(|(c, a)| **a && c.head.arg.is_none() && !c.body.is_empty() && !true_guards.contains(&c.head.pred))
+        .map(|(c, _)| c)
+        .collect();
+    if pending.is_empty() {
+        return false;
+    }
+    let automaton: Vec<Clause> = db
+        .clauses
+        .iter()
+        .zip(db.active.iter())
+        .filter(|(c, a)| **a && is_automaton_clause(c))
+        .map(|(c, _)| c.clone())
+        .collect();
+    let types = reachable_types(&automaton, sig);
+    let mut newly = false;
+    for c in &pending {
+        if guard_true(&c.head.pred, &types) && true_guards.insert(c.head.pred.clone()) {
+            newly = true;
+        }
+    }
+    if !newly {
+        return false;
+    }
+    for (c, a) in db.clauses.iter().zip(db.active.iter()) {
+        if *a && c.body.iter().any(|b| b.arg.is_none() && true_guards.contains(&b.pred)) {
+            let body = c
+                .body
+                .iter()
+                .filter(|b| !(b.arg.is_none() && true_guards.contains(&b.pred)))
+                .cloned()
+                .collect();
+            work.push(Clause { head: c.head.clone(), body, origin: format!("{}/g", c.origin) });
+        }
+    }
+    true
+}
+
+// ===========================================================================
+// HornProg <-> Clause conversion + public entry
+// ===========================================================================
+impl HornAtom {
+    fn to_atom(&self) -> Atom {
+        Atom { pred: self.pred.clone(), arg: Some(self.arg.clone()) }
+    }
+}
+
+impl HornRule {
+    fn to_clause(&self) -> Clause {
+        Clause {
+            head: self.head.to_atom(),
+            body: self.body_atoms.iter().map(HornAtom::to_atom).collect(),
+            origin: "input".into(),
+        }
+    }
+}
+
+impl Clause {
+    fn to_rule(&self) -> HornRule {
+        let lower = |a: &Atom| HornAtom {
+            pred: a.pred.clone(),
+            arg: a.arg.clone().expect("automaton atom has an arg"),
+        };
+        HornRule {
+            head: lower(&self.head),
+            body_atoms: self.body.iter().map(lower).collect(),
+        }
+    }
+}
+
+impl HornProg {
+    fn term_signature(&self) -> Sig {
+        let mut cons: HashMap<String, (Vec<String>, String)> = HashMap::default();
+        for decl in &self.decls {
+            if let HornDecl::DeclareDatatypes(sorts, groups) = decl {
+                for (sort_decl, group) in sorts.iter().zip(groups.iter()) {
+                    for cd in group {
+                        let arg_sorts =
+                            cd.args.iter().map(|sv| sv.sort.to_string()).collect();
+                        cons.insert(cd.name.clone(), (arg_sorts, sort_decl.symbol.clone()));
+                    }
+                }
+            }
+        }
+        Sig { cons }
+    }
+}
+
+pub fn saturate(prog: &mut HornProg) {
+    let sig = prog.term_signature();
+    let clauses: Vec<Clause> = prog.rules.iter().map(HornRule::to_clause).collect();
+    let saturated = saturate_clauses(clauses, &sig);
+    prog.rules = saturated.iter().map(Clause::to_rule).collect();
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn atom(pred: &str, arg: HornTerm) -> HornAtom {
-        HornAtom {
-            pred: pred.to_string(),
-            arg,
+    fn v(n: &str) -> Term { HornTerm::Var(n.into()) }
+    fn c(n: &str) -> Term { HornTerm::App { fun: n.into(), args: vec![] } }
+    fn f(n: &str, args: Vec<Term>) -> Term { HornTerm::App { fun: n.into(), args } }
+    fn at(p: &str, t: Term) -> Atom { Atom { pred: p.into(), arg: Some(t) } }
+    fn cl(head: Atom, body: Vec<Atom>) -> Clause { Clause { head, body, origin: "t".into() } }
+
+    fn tata_762() -> Vec<Clause> {
+        let (x1, x2, x3, x, y) = (v("x1"), v("x2"), v("x3"), v("x"), v("y"));
+        vec![
+            cl(at("P1", f("f", vec![f("f", vec![x1.clone(), x2.clone()]), x3.clone()])),
+               vec![at("P2", x1.clone()), at("P2", x2.clone()), at("P2", x3.clone())]),
+            cl(at("P2", c("a")), vec![]),
+            cl(at("P1", f("f", vec![c("a"), x.clone()])), vec![at("P2", x.clone())]),
+            cl(at("P3", f("f", vec![x.clone(), y.clone()])), vec![at("P1", x.clone()), at("P2", y.clone())]),
+            cl(at("P4", x.clone()), vec![at("P3", x.clone()), at("P1", x.clone())]),
+            cl(at("P2", x.clone()), vec![at("P4", f("f", vec![x.clone(), y.clone()]))]),
+            cl(at("P1", y.clone()), vec![at("P4", f("f", vec![x.clone(), y.clone()]))]),
+        ]
+    }
+
+    fn sig_af() -> Sig {
+        let mut cons = HashMap::default();
+        cons.insert("a".to_string(), (vec![], "T".to_string()));
+        cons.insert("f".to_string(), (vec!["T".into(), "T".into()], "T".to_string()));
+        Sig { cons }
+    }
+
+    fn universe(sig: &Sig, height: usize) -> Vec<Term> {
+        let mut u: Vec<Term> = sig.cons.iter().filter(|(_, (a, _))| a.is_empty())
+            .map(|(n, _)| c(n)).collect();
+        for _ in 0..height {
+            let prev = u.clone();
+            for (name, (args, _)) in &sig.cons {
+                if args.is_empty() { continue; }
+                let mut combos: Vec<Vec<Term>> = vec![vec![]];
+                for _ in 0..args.len() {
+                    let mut next = vec![];
+                    for cmb in &combos { for t in &prev {
+                        let mut cc = cmb.clone(); cc.push(t.clone()); next.push(cc);
+                    }}
+                    combos = next;
+                }
+                for cmb in combos {
+                    let t = f(name, cmb);
+                    if !u.contains(&t) { u.push(t); }
+                }
+            }
         }
+        u
     }
 
-    fn v(name: &str) -> HornTerm {
-        HornTerm::var(name)
-    }
-
-    fn app(fun: &str, args: Vec<HornTerm>) -> HornTerm {
-        HornTerm::app(fun, args)
-    }
-
-    /// Alpha-normalization is stable: two rules equivalent up to renaming
-    /// give the same key.
-    #[test]
-    fn alpha_normalize_collapses_renaming() {
-        let r1 = HornRule {
-            body_atoms: vec![atom("P", v("x")), atom("Q", v("y"))],
-            head: atom("R", app("f", vec![v("x"), v("y")])),
-        };
-        let r2 = HornRule {
-            body_atoms: vec![atom("P", v("a")), atom("Q", v("b"))],
-            head: atom("R", app("f", vec![v("a"), v("b")])),
-        };
-        assert_eq!(alpha_normalize(&r1), alpha_normalize(&r2));
-    }
-
-    /// Two rules with *different* variable identifications give different keys.
-    #[test]
-    fn alpha_normalize_distinguishes_distinct_links() {
-        // x linked to itself in head vs distinct x,y.
-        let r1 = HornRule {
-            body_atoms: vec![],
-            head: atom("R", app("f", vec![v("x"), v("x")])),
-        };
-        let r2 = HornRule {
-            body_atoms: vec![],
-            head: atom("R", app("f", vec![v("x"), v("y")])),
-        };
-        assert_ne!(alpha_normalize(&r1), alpha_normalize(&r2));
-    }
-
-    /// Resolution: push `P(f(a,b)) :- Q(a)`. Pop `S(x) :- P(f(x, y))`.
-    /// Result: `S(x) :- Q(x)`. (y becomes fresh, but Q is on a only, so dropped.)
-    #[test]
-    fn resolve_single_step() {
-        let push = HornRule {
-            body_atoms: vec![atom("Q", v("a"))],
-            head: atom("P", app("f", vec![v("a"), v("b")])),
-        };
-        let pop = HornRule {
-            body_atoms: vec![atom("P", app("f", vec![v("x"), v("y")]))],
-            head: atom("S", v("x")),
-        };
-        let mut fresh = 0;
-        let resolved = resolve(&pop, 0, &push, &mut fresh).expect("must resolve");
-        assert_eq!(resolved.head, atom("S", v("x")));
-        assert_eq!(resolved.body_atoms, vec![atom("Q", v("x"))]);
-    }
-
-    /// Push body has a var that's *not* in the head — must be alpha-renamed
-    /// to avoid capturing pop's `y`.
-    #[test]
-    fn resolve_fresh_renaming_avoids_capture() {
-        let push = HornRule {
-            // `b` is bound to pop's `y` via head unification, but `c` is a
-            // push-local var — it must be renamed to fresh.
-            body_atoms: vec![atom("Q", v("c"))],
-            head: atom("P", app("f", vec![v("a"), v("b")])),
-        };
-        let pop = HornRule {
-            // Pop's `y` happens to be named the same as a hypothetical push
-            // var; the renaming should not unify them.
-            body_atoms: vec![
-                atom("R", v("y")),
-                atom("P", app("f", vec![v("x"), v("y")])),
-            ],
-            head: atom("S", v("x")),
-        };
-        let mut fresh = 0;
-        let resolved = resolve(&pop, 1, &push, &mut fresh).expect("must resolve");
-        // pop's R(y) is kept; push's Q(c) becomes Q(__sat0); no clash.
-        assert_eq!(resolved.head, atom("S", v("x")));
-        assert!(resolved
-            .body_atoms
-            .iter()
-            .any(|a| a.pred == "R" && a.arg == v("y")));
-        assert!(resolved.body_atoms.iter().any(|a| a.pred == "Q"
-            && matches!(&a.arg, HornTerm::Var(name) if name.starts_with("__sat"))));
-    }
-
-    /// REGRESSION: end-to-end saturation chain that mirrors the empirical
-    /// 482-atom body case found in `/tmp/anbn_min.sl`. The chain:
-    ///   R1 (pop): H :- pop(C(K, __up1))
-    ///   P  (push): pop(C(x, y)) :- a1(x), a2(y)     where a1's arg becomes K (App, pop)
-    /// Resolving R1 vs P gives R2 with body [a1(K), a2(__up1)] — a1(K) is a pop
-    /// site that matches R1's head (because K is the same nullary App).
-    /// Resolving R2 vs R1 then vs P alternates and grows the body.
-    /// Without isolated-existential collapsing, this chain runs forever.
-    /// With it, the chain must terminate (alpha-key stabilises).
-    #[test]
-    fn saturation_chain_terminates_isolated_existential_loop() {
-        use rustc_hash::FxHashSet as Set;
-        let _ = Set::<u8>::default();
-        let rules = vec![
-            // R1: H(K()) :- pop(C(K(), __up1))     [pop rule, K is nullary App]
-            HornRule {
-                body_atoms: vec![atom(
-                    "pop_pred",
-                    app("C", vec![app("K", vec![]), v("__up1")]),
-                )],
-                head: atom("H", app("K", vec![])),
-            },
-            // P: pop_pred(C(x, y)) :- H(x), a2(y)  [push, range-restricted]
-            HornRule {
-                body_atoms: vec![
-                    atom("H", v("x")),
-                    atom("a2", v("y")),
-                ],
-                head: atom("pop_pred", app("C", vec![v("x"), v("y")])),
-            },
-        ];
-        let saturated = saturate_rules(&rules);
-        // Saturation must finish (terminate) and produce no pop clauses.
-        for rule in &saturated {
-            assert!(
-                !rule.is_pop_clause(),
-                "pop clause survived: {rule}"
-            );
+    fn solve_body(body: &[Atom], model: &HashMap<String, HashSet<Term>>,
+                  nullary: &HashSet<String>, s: Subst) -> Vec<Subst> {
+        let Some((first, rest)) = body.split_first() else { return vec![s]; };
+        let mut out = vec![];
+        if first.arg.is_none() {
+            if nullary.contains(&first.pred) {
+                out.extend(solve_body(rest, model, nullary, s));
+            }
+            return out;
         }
-    }
-
-    /// REGRESSION: isolated existentials must canonicalize to the same key.
-    /// Two rules with the same head and same predicates in the body but with
-    /// different "throwaway" fresh var names must be alpha-equivalent.
-    /// Without this, saturation chains where each resolution adds a fresh
-    /// var to the body produce unbounded distinct rules.
-    #[test]
-    fn alpha_normalize_collapses_isolated_existentials() {
-        // R3: nqRhs.Sem(cfg.rhs.S0) :- nqRules.Sem.find.S0(__up1),
-        //                              nqCFG.Sem.reset.S0(cfg.top.S0(cfg.rhs.S0, __sat1))
-        let r3 = HornRule {
-            body_atoms: vec![
-                atom("nqRules.Sem.find.S0", v("__up1")),
-                atom(
-                    "nqCFG.Sem.reset.S0",
-                    app("cfg.top.S0", vec![app("cfg.rhs.S0", vec![]), v("__sat1")]),
-                ),
-            ],
-            head: atom("nqRhs.Sem.base", app("cfg.rhs.S0", vec![])),
-        };
-        // R5: same shape but with one EXTRA find.S0 atom on a different
-        // fresh var. Should normalize to the same key as R3.
-        let r5 = HornRule {
-            body_atoms: vec![
-                atom("nqRules.Sem.find.S0", v("__up1")),
-                atom("nqRules.Sem.find.S0", v("__sat1")),
-                atom(
-                    "nqCFG.Sem.reset.S0",
-                    app("cfg.top.S0", vec![app("cfg.rhs.S0", vec![]), v("__sat2")]),
-                ),
-            ],
-            head: atom("nqRhs.Sem.base", app("cfg.rhs.S0", vec![])),
-        };
-        let k3 = alpha_normalize(&r3);
-        let k5 = alpha_normalize(&r5);
-        assert_eq!(
-            k3, k5,
-            "R3 and R5 differ only in extra Pred(IsolatedExistential) atoms; \
-             they must alpha-normalize to the same key.\nR3 key: {k3:?}\nR5 key: {k5:?}"
-        );
-    }
-
-    /// Smoke test for the worklist: a trivial cycle that does NOT diverge
-    /// (no new alpha-distinct rules ever appear).
-    #[test]
-    fn saturate_terminates_no_pops() {
-        let rules = vec![
-            HornRule {
-                body_atoms: vec![],
-                head: atom("P", app("a", vec![])),
-            },
-            HornRule {
-                body_atoms: vec![atom("P", v("x"))],
-                head: atom("P", app("g", vec![v("x")])),
-            },
-        ];
-        let out = saturate_rules(&rules);
-        assert_eq!(out.len(), 2);
-    }
-
-    /// CFG-shaped resolution: pop rule with a NESTED cons in body resolves
-    /// against the push rule for the outer cons. From `old_saturate.rs`.
-    #[test]
-    fn cfg_style_one_step_resolution() {
-        // Push: qCfgResetS(cfg.top.S(x, y)) :- qRhsBase(x)
-        let push = HornRule {
-            body_atoms: vec![atom("qRhsBase", v("x"))],
-            head: atom("qCfgResetS", app("cfg.top.S", vec![v("x"), v("y")])),
-        };
-        // Pop body atom: qCfgResetS(cfg.top.S(cfg.rhs.S(), __up1))
-        let pop = HornRule {
-            body_atoms: vec![atom(
-                "qCfgResetS",
-                app(
-                    "cfg.top.S",
-                    vec![app("cfg.rhs.S", vec![]), v("__up1")],
-                ),
-            )],
-            head: atom("qRhsBase", app("cfg.rhs.S", vec![])),
-        };
-        let mut fresh = 0;
-        let resolved = resolve(&pop, 0, &push, &mut fresh).expect("must resolve");
-        // Push var x → cfg.rhs.S(), y → __up1. Body x becomes cfg.rhs.S().
-        // Expected resolved: qRhsBase(cfg.rhs.S()) :- qRhsBase(cfg.rhs.S())
-        assert_eq!(
-            resolved.head,
-            atom("qRhsBase", app("cfg.rhs.S", vec![]))
-        );
-        assert_eq!(
-            resolved.body_atoms,
-            vec![atom("qRhsBase", app("cfg.rhs.S", vec![]))]
-        );
-    }
-
-    /// End-to-end CFG-style saturation with two push rules + one pop rule.
-    /// Verifies saturation TERMINATES, produces NO pop clauses, and includes
-    /// the expected resolved rules. Mirrors `old_saturate.rs::cfg_style_parent_pop_clause_saturates`.
-    #[test]
-    fn cfg_style_full_saturation() {
-        let rules = vec![
-            // Push 1: qCfgResetS(cfg.top.S(x, y)) :- qRhsBase(x)
-            HornRule {
-                body_atoms: vec![atom("qRhsBase", v("x"))],
-                head: atom("qCfgResetS", app("cfg.top.S", vec![v("x"), v("y")])),
-            },
-            // Push 2: qCfgResetS(cfg.top.S(x, y)) :- qRulesFindS(y)
-            HornRule {
-                body_atoms: vec![atom("qRulesFindS", v("y"))],
-                head: atom("qCfgResetS", app("cfg.top.S", vec![v("x"), v("y")])),
-            },
-            // Pop: qRhsBase(cfg.rhs.S()) :- qCfgResetS(cfg.top.S(cfg.rhs.S(), __up1))
-            HornRule {
-                body_atoms: vec![atom(
-                    "qCfgResetS",
-                    app(
-                        "cfg.top.S",
-                        vec![app("cfg.rhs.S", vec![]), v("__up1")],
-                    ),
-                )],
-                head: atom("qRhsBase", app("cfg.rhs.S", vec![])),
-            },
-        ];
-        let saturated = saturate_rules(&rules);
-        // No pop clauses should survive.
-        for rule in &saturated {
-            assert!(
-                !rule.is_pop_clause(),
-                "saturated rule still has a pop clause: {rule}"
-            );
+        let pat = first.arg.as_ref().unwrap();
+        if let Some(ext) = model.get(&first.pred) {
+            for g in ext {
+                let mut s2 = s.clone();
+                if pat.matches(g, &mut s2) {
+                    out.extend(solve_body(rest, model, nullary, s2));
+                }
+            }
         }
-        // Both original push rules survive (no Var heads, they have App heads).
-        let original_pushes: Vec<&HornRule> = saturated
-            .iter()
-            .filter(|r| {
-                matches!(&r.head.arg, HornTerm::App { fun, .. } if fun == "cfg.top.S")
-            })
-            .collect();
-        assert!(
-            original_pushes.len() >= 2,
-            "expected both cfg.top.S pushes to survive, got {} ({saturated:#?})",
-            original_pushes.len()
-        );
-        // Resolved rule with head qRhsBase(cfg.rhs.S()) should appear, with
-        // body qRulesFindS(__sat0) (from push 2; push 1 produces a tautology
-        // qRhsBase(cfg.rhs.S()) :- qRhsBase(cfg.rhs.S()) which is self-subsumed).
-        let resolved: Vec<&HornRule> = saturated
-            .iter()
-            .filter(|r| {
-                matches!(&r.head.arg, HornTerm::App { fun, args } if fun == "cfg.rhs.S" && args.is_empty())
-            })
-            .collect();
-        assert!(
-            !resolved.is_empty(),
-            "expected a resolved rule with head qRhsBase(cfg.rhs.S()); got none ({saturated:#?})"
-        );
+        out
     }
 
-    /// SOUNDNESS/COMPLETENESS test: a tiny 2-way TA that accepts trees
-    /// whose first child is `a`. We saturate the Horn encoding, then
-    /// forward-evaluate on two trees and check Goal acceptance matches the
-    /// TA's intended semantics.
-    ///
-    /// Initial Horn rules (encoding the 2-way TA):
-    ///   q_start(top(x, y)) :- q_check_a(x).        // start: check first child
-    ///   q_check_a(a) :- q_seen_a(top(a, __up)).    // up-direction from a
-    ///   q_check_a(a) :- q_seen_a(top(__up, a)).    // up-direction (other slot)
-    ///   q_seen_a(top(x, y)).                       // parent receives signal
-    ///
-    /// After saturation, no pop clauses should remain. The closed rules
-    /// must derive q_start(top(a, b)) but not q_start(top(b, a)).
-    #[test]
-    fn saturated_program_accepts_iff_ta_accepts() {
-        let rules = vec![
-            // q_start(top(x, y)) :- q_check_a(x)
-            HornRule {
-                body_atoms: vec![atom("q_check_a", v("x"))],
-                head: atom("q_start", app("top", vec![v("x"), v("y")])),
-            },
-            // q_check_a(a) :- q_seen_a(top(a, __up))
-            HornRule {
-                body_atoms: vec![atom(
-                    "q_seen_a",
-                    app("top", vec![app("a", vec![]), v("__up")]),
-                )],
-                head: atom("q_check_a", app("a", vec![])),
-            },
-            // q_check_a(a) :- q_seen_a(top(__up, a))
-            HornRule {
-                body_atoms: vec![atom(
-                    "q_seen_a",
-                    app("top", vec![v("__up"), app("a", vec![])]),
-                )],
-                head: atom("q_check_a", app("a", vec![])),
-            },
-            // q_seen_a(top(x, y))  -- the parent always signals OK
-            HornRule {
-                body_atoms: vec![],
-                head: atom("q_seen_a", app("top", vec![v("x"), v("y")])),
-            },
-        ];
-        let saturated = saturate_rules(&rules);
-
-        // No pop clauses should survive saturation.
-        for rule in &saturated {
-            assert!(
-                !rule.is_pop_clause(),
-                "pop clause survived saturation: {rule}"
-            );
+    fn least_model(clauses: &[Clause], uni: &[Term]) -> (HashMap<String, HashSet<Term>>, HashSet<String>) {
+        let uset: HashSet<Term> = uni.iter().cloned().collect();
+        let mut model: HashMap<String, HashSet<Term>> = HashMap::default();
+        let mut nullary: HashSet<String> = HashSet::default();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for cl in clauses {
+                for sub in solve_body(&cl.body, &model, &nullary, HashMap::default()) {
+                    match &cl.head.arg {
+                        None => { if nullary.insert(cl.head.pred.clone()) { changed = true; } }
+                        Some(t) => {
+                            let g = t.apply(&sub);
+                            let fv: Vec<String> = g.vars().into_iter().collect();
+                            // free head vars (e.g. universal clause P(x) <= ) range over the universe
+                            let mut combos: Vec<Subst> = vec![HashMap::default()];
+                            for fvn in &fv {
+                                let mut next = vec![];
+                                for pre in &combos { for u in uni {
+                                    let mut m = pre.clone();
+                                    m.insert(fvn.clone(), u.clone());
+                                    next.push(m);
+                                }}
+                                combos = next;
+                            }
+                            for m in &combos {
+                                let gg = g.apply(m);
+                                if uset.contains(&gg)
+                                    && model.entry(cl.head.pred.clone()).or_default().insert(gg) {
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-
-        // Construct two ground trees.
-        let tree_ab = app("top", vec![app("a", vec![]), app("b", vec![])]);
-        let tree_ba = app("top", vec![app("b", vec![]), app("a", vec![])]);
-
-        // top(a, b): first child is `a`, TA accepts.
-        let truths_ab = evaluate(&saturated, &tree_ab);
-        let goal_ab = HornAtom {
-            pred: "q_start".to_string(),
-            arg: tree_ab.clone(),
-        };
-        assert!(
-            truths_ab.contains(&goal_ab),
-            "expected saturated program to derive q_start(top(a, b)); derived: {truths_ab:#?}\n\nsaturated rules: {saturated:#?}"
-        );
-
-        // top(b, a): first child is `b`, TA rejects.
-        let truths_ba = evaluate(&saturated, &tree_ba);
-        let goal_ba = HornAtom {
-            pred: "q_start".to_string(),
-            arg: tree_ba.clone(),
-        };
-        assert!(
-            !truths_ba.contains(&goal_ba),
-            "expected saturated program to NOT derive q_start(top(b, a)); derived: {truths_ba:#?}"
-        );
+        (model, nullary)
     }
 
-    /// REGRESSION (intersection protection): a helper-pred intersection
-    /// clause `__h(f(x,y)) ← Q(x)` looks identical to a push rule from
-    /// `ctor_key`'s perspective. Before the fix, saturation would resolve
-    /// a main rule's body atom `__h(f(x,y))` against it, inlining the
-    /// helper's body and destroying alternation. After the fix, the body
-    /// atom is classified `Intersection` (all vars `{x, y}` ⊆ head vars
-    /// `{x, y}`) and never indexed as a pop site.
     #[test]
-    fn intersection_clause_is_protected_from_resolution() {
-        let rules = vec![
-            // Main rule:  H(f(x, y)) :- __h(f(x, y)).   [intersection body]
-            HornRule {
-                body_atoms: vec![atom("__h", app("f", vec![v("x"), v("y")]))],
-                head: atom("H", app("f", vec![v("x"), v("y")])),
-            },
-            // Helper push:  __h(f(x, y)) :- Q(x).
-            HornRule {
-                body_atoms: vec![atom("Q", v("x"))],
-                head: atom("__h", app("f", vec![v("x"), v("y")])),
-            },
-        ];
-        let saturated = saturate_rules_with(&rules, SaturateConfig::default());
-        // The pre-fix algorithm would resolve the main rule's body atom
-        // against the helper push, producing a third rule
-        // `H(f(x, y)) :- Q(x)`. With intersection protection, no resolution
-        // fires: we keep exactly the two input rules.
-        assert_eq!(
-            saturated.len(),
-            2,
-            "intersection clause was resolved; got {saturated:#?}"
-        );
-        let inlined = saturated.iter().any(|r| {
-            r.head.pred == "H" && r.body_atoms.iter().any(|a| a.pred == "Q")
-        });
-        assert!(
-            !inlined,
-            "main rule's intersection body was inlined: {saturated:#?}"
-        );
-    }
-
-    /// REGRESSION (no AND-of-OR → DNF blowup): the encoding of a single
-    /// `AND_{k=1..K} of (OR (p_k_x x) (p_k_y y))` produced by
-    /// `chc.rs::emit_helper_atom` is 1 main rule + 2K helper push rules.
-    /// Before the fix, saturation resolved each helper's K body sites in
-    /// the main rule against 2 helper pushes each, producing 2^K rules.
-    /// After the fix, the helpers stay as intersection clauses; the rule
-    /// count stays at 1 + 2K.
-    #[test]
-    fn and_of_k_disjunctions_does_not_blow_up() {
-        const K: usize = 6; // 2^6 = 64 would be bad; expected 1 + 2K = 13.
-        let mut rules = Vec::new();
-        let head_args = vec![v("x"), v("y")];
-        let helper_name = |k: usize| format!("__h{k}");
-        // Main rule:  H(f(x, y)) :- __h1(f(x,y)), ..., __hK(f(x,y)).
-        rules.push(HornRule {
-            body_atoms: (0..K)
-                .map(|k| atom(&helper_name(k), app("f", head_args.clone())))
-                .collect(),
-            head: atom("H", app("f", head_args.clone())),
-        });
-        // For each k, two helper pushes (OR of two disjuncts).
-        for k in 0..K {
-            rules.push(HornRule {
-                body_atoms: vec![atom(&format!("p{k}x"), v("x"))],
-                head: atom(&helper_name(k), app("f", head_args.clone())),
-            });
-            rules.push(HornRule {
-                body_atoms: vec![atom(&format!("p{k}y"), v("y"))],
-                head: atom(&helper_name(k), app("f", head_args.clone())),
-            });
+    fn tata_762_saturates_to_oneway_and_preserves_language() {
+        let input = tata_762();
+        let sig = sig_af();
+        let out = saturate_clauses(input.clone(), &sig);
+        // every output clause is a one-way automaton clause
+        assert!(out.iter().all(is_automaton_clause), "projection left non-automaton clauses");
+        assert!(out.iter().all(|c| c.head.arg.is_some()), "guard def survived projection");
+        // Language preserved. The two-way input may need a taller witness term
+        // to place a height-k term in a state, so models are computed with
+        // headroom and compared only on terms well below the model height.
+        let cutoff = 1;
+        let uni = universe(&sig, cutoff + 2);
+        let (mi, _) = least_model(&input, &uni);
+        let (mo, _) = least_model(&out, &uni);
+        let restrict = |m: &HashMap<String, HashSet<Term>>, p: &str| -> HashSet<Term> {
+            m.get(p).cloned().unwrap_or_default().into_iter()
+                .filter(|t| t.depth() <= cutoff).collect()
+        };
+        for p in ["P1", "P2", "P3", "P4"] {
+            assert_eq!(restrict(&mi, p), restrict(&mo, p), "language differs for {p}");
         }
-        let saturated = saturate_rules_with(&rules, SaturateConfig::default());
-        // 1 main + 2K helpers, no DNF expansion.
-        assert_eq!(
-            saturated.len(),
-            1 + 2 * K,
-            "expected 1 + 2K = {} saturated rules, got {} \
-             (DNF expansion of AND-of-OR would give 1 + 2K + 2^K = {})",
-            1 + 2 * K,
-            saturated.len(),
-            1 + 2 * K + (1usize << K),
-        );
-    }
-
-    /// End-to-end micro saturation: pop rule resolves against push rule once,
-    /// producing a closed push rule.
-    #[test]
-    fn saturate_micro_close_one_pop() {
-        let rules = vec![
-            // Push: P(f(a)) :- Q(a)
-            HornRule {
-                body_atoms: vec![atom("Q", v("a"))],
-                head: atom("P", app("f", vec![v("a")])),
-            },
-            // Push: Q(g(b))  (a base for Q)
-            HornRule {
-                body_atoms: vec![],
-                head: atom("Q", app("g", vec![v("b")])),
-            },
-            // Pop: S(x) :- P(f(x))
-            HornRule {
-                body_atoms: vec![atom("P", app("f", vec![v("x")]))],
-                head: atom("S", v("x")),
-            },
-        ];
-        let out = saturate_rules(&rules);
-        // Expected closed rules: the two original push rules + one resolved
-        // S(x) :- Q(x). All have head=App, so they survive `finish`.
-        let s_rules: Vec<_> = out
-            .iter()
-            .filter(|r| r.head.pred == "S")
-            .collect();
-        // S head is Var, so it's filtered out by finish() (we keep push only).
-        // Verify the resolved S rule did NOT come through the filter.
-        assert!(s_rules.is_empty());
     }
 }

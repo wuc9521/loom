@@ -1,17 +1,5 @@
-//! Unified SyGuS-BV command emission.
-//!
-//! Pipeline: `compile_chc` → `saturate::saturate` →
-//! `BitLayout::from_horn_prog` → `aggregate_constructor_bits` →
-//! `lower_constraints` → `emit_sygus_cmds`.
-//!
-//! After saturation, every rule's body atoms reference only variables
-//! bound by the rule's head term (child arg refs) or are intersection
-//! atoms on the head's term itself (self-loops / helper preds). Pop
-//! atoms with free `__upN` vars are eliminated by saturation. Rules that
-//! still carry such residuals are skipped — saturation incompleteness is
-//! the only source of incompleteness in the emitted program.
 
-use crate::backends::smt2::ast::{HornAtom, HornProg, HornTerm};
+use crate::backends::smt2::ast::{HornAtom, HornProg, HornRule, HornTerm};
 use crate::compile::bexpr::{arg_name, self_bit_name, BoolExpr};
 use crate::compile::context::CompileContext;
 use crate::compile::layout::BitLayout;
@@ -56,24 +44,22 @@ pub fn compile_via_horn(ctx: CompileContext<'_>) -> Result<Vec<SyGuSCmd>, String
     let constraints = ctx.semantic_program.constraints.clone();
 
     let mut prog = ctx.compile_chc()?;
-    if std::env::var("DELIS_DUMP_PREDS").is_ok() {
-        let mut by_sort: HashMap<String, usize> = HashMap::default();
-        for (_, info) in &prog.predicates {
-            *by_sort.entry(info.sort.clone()).or_default() += 1;
-        }
-        eprintln!("[predicates after compile_chc, before saturate] {by_sort:?}");
-    }
-    // Bit-link triples must be derived from the PRE-saturation HornProg —
-    // saturation consumes POP rules into derived push rules. Stash the
-    // triples here so fwd_decls::apply can use them after saturation.
-    let bit_link_triples = crate::compile::bit_link::derive_bit_links(&prog);
     saturate::saturate(&mut prog);
-    if std::env::var("DELIS_DUMP_PREDS").is_ok() {
-        let mut by_sort: HashMap<String, usize> = HashMap::default();
-        for (_, info) in &prog.predicates {
-            *by_sort.entry(info.sort.clone()).or_default() += 1;
+    if std::env::var("DELIS_DUMP_SAT").is_ok() {
+        eprintln!("==== saturated rules pre-discharge ({}) ====", prog.rules.len());
+        for r in &prog.rules {
+            eprintln!("{r}");
         }
-        eprintln!("[predicates after saturate] {by_sort:?}");
+        eprintln!("==== end ====");
+    }
+    discharge_guards(&mut prog);
+
+    if std::env::var("DELIS_DUMP_ONEWAY").is_ok() {
+        eprintln!("==== one-way rules ({}) ====", prog.rules.len());
+        for r in &prog.rules {
+            eprintln!("{r}");
+        }
+        eprintln!("==== end one-way rules ====");
     }
 
     let layout = BitLayout::from_horn_prog(&prog);
@@ -107,7 +93,7 @@ pub fn compile_via_horn(ctx: CompileContext<'_>) -> Result<Vec<SyGuSCmd>, String
         args: synth_args,
         ret_sort: sig.start_sort().to_string(),
     };
-    let cmds = emit_sygus_cmds(
+    emit_sygus_cmds(
         &layout,
         &sig,
         cons_bits,
@@ -115,11 +101,64 @@ pub fn compile_via_horn(ctx: CompileContext<'_>) -> Result<Vec<SyGuSCmd>, String
         synth_sig,
         lowered,
         EmitOptions::default(),
-    )?;
-    // Lower parent-referencing nullaries to fwd-declared synth-funs plus
-    // a fixpoint constraint. No-op for specs without `(parent n)` (bit_link
-    // triples are empty there).
-    crate::compile::fwd_decls::apply(cmds, &prog, &bit_link_triples, &layout, &sig)
+    )
+}
+
+fn discharge_guards(prog: &mut HornProg) {
+    let productive = productive_predicates(&prog.rules);
+    let mut kept = Vec::with_capacity(prog.rules.len());
+    'rule: for rule in std::mem::take(&mut prog.rules) {
+        if is_guard_pred(&rule.head.pred) {
+            continue;
+        }
+        let mut body = Vec::with_capacity(rule.body_atoms.len());
+        for atom in rule.body_atoms {
+            if is_guard_pred(&atom.pred) {
+                if productive.contains(&atom.pred) {
+                    continue;
+                }
+                continue 'rule;
+            }
+            body.push(atom);
+        }
+        kept.push(HornRule {
+            body_atoms: body,
+            head: rule.head,
+        });
+    }
+    prog.rules = kept;
+}
+
+fn productive_predicates(rules: &[HornRule]) -> rustc_hash::FxHashSet<String> {
+    let mut productive: rustc_hash::FxHashSet<String> = rustc_hash::FxHashSet::default();
+    loop {
+        let mut changed = false;
+        for rule in rules {
+            if productive.contains(&rule.head.pred) {
+                continue;
+            }
+            if rule
+                .body_atoms
+                .iter()
+                .all(|atom| productive.contains(&atom.pred))
+            {
+                productive.insert(rule.head.pred.clone());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    productive
+}
+
+fn is_guard_pred(pred: &str) -> bool {
+    pred.starts_with("__guard")
+}
+
+fn is_shape_pred(pred: &str) -> bool {
+    pred.starts_with("__shape.")
 }
 
 pub fn emit_sygus_cmds(
@@ -195,44 +234,18 @@ pub fn aggregate_constructor_bits(
     layout: &BitLayout,
     sig: &TermSignature,
 ) -> Result<Vec<ConstructorBits>, String> {
-    // Index helper rules so body atoms referencing a helper can be inlined
-    // instead of consuming a BV bit per helper. A predicate is a helper iff
-    // its `PredicateInfo.state == name` (the marker `chc.rs::emit_helper_atom`
-    // sets). Helpers carry intermediate sub-formulae of one constructor's
-    // lowering — inlining them keeps the BV width proportional to the
-    // bisim-quotient classes only.
-    let mut helper_rules: HashMap<&str, Vec<&crate::backends::smt2::ast::HornRule>> =
-        HashMap::default();
-    for rule in &prog.rules {
-        let head_pred = rule.head.pred.as_str();
-        let is_helper = prog
-            .predicates
-            .get(head_pred)
-            .map(|info| info.state == *head_pred)
-            .unwrap_or(false);
-        if is_helper {
-            helper_rules.entry(head_pred).or_default().push(rule);
-        }
-    }
-
     let mut out = Vec::with_capacity(sig.constructors.len());
     for cons in &sig.constructors {
         let width = layout.width(&cons.result_sort);
         let mut bits: Vec<BoolExpr> = vec![BoolExpr::Const(false); width];
 
         for rule in &prog.rules {
-            let HornTerm::App { fun, args: head_args } = &rule.head.arg else {
+            let Some(var_to_arg) = rule_builds_cons(rule, cons) else {
                 continue;
             };
-            if fun != &cons.name {
-                continue;
-            }
-            let Some(var_to_arg) = head_arg_index_map(head_args) else {
-                continue;
-            };
-            // Skip rules whose head is a helper — they're inlined at use sites,
-            // not OR-ed into a head bit.
-            if helper_rules.contains_key(rule.head.pred.as_str()) {
+            if prog.predicates.get(&rule.head.pred).map(|i| i.sort.as_str())
+                != Some(cons.result_sort.as_str())
+            {
                 continue;
             }
             let Some(head_bit) = layout.bit_of(&rule.head.pred) else {
@@ -240,32 +253,18 @@ pub fn aggregate_constructor_bits(
             };
             if head_bit >= width {
                 return Err(format!(
-                    "head bit {} out of range for {} (width {})",
-                    head_bit, cons.result_sort, width
+                    "head bit {head_bit} out of range for {} (width {width})",
+                    cons.result_sort
                 ));
             }
 
-            let mut visiting: rustc_hash::FxHashSet<&str> = rustc_hash::FxHashSet::default();
-            let body_terms: Result<Vec<BoolExpr>, String> = rule
+            let conditions: Result<Vec<BoolExpr>, String> = rule
                 .body_atoms
                 .iter()
-                .map(|atom| {
-                    body_atom_to_bool(
-                        atom,
-                        &rule.head.arg,
-                        &var_to_arg,
-                        layout,
-                        prog,
-                        &helper_rules,
-                        &mut visiting,
-                    )
-                })
+                .filter(|atom| !is_shape_pred(&atom.pred))
+                .map(|atom| body_atom_to_bool(atom, &rule.head.arg, &var_to_arg, layout))
                 .collect();
-            let body_terms = match body_terms {
-                Ok(t) => t,
-                Err(_) => continue, // Residual existential — skip rule.
-            };
-            let body = BoolExpr::and(body_terms);
+            let body = BoolExpr::and(conditions?);
             bits[head_bit] = BoolExpr::or(vec![
                 std::mem::replace(&mut bits[head_bit], BoolExpr::Const(false)),
                 body,
@@ -282,92 +281,68 @@ pub fn aggregate_constructor_bits(
     Ok(out)
 }
 
-fn body_atom_to_bool<'p>(
-    atom: &'p HornAtom,
+fn rule_builds_cons<'r>(
+    rule: &'r HornRule,
+    cons: &crate::compile::syntax::TermConstructor,
+) -> Option<HashMap<&'r str, usize>> {
+    match &rule.head.arg {
+        HornTerm::App { fun, args } if fun.as_str() == cons.name.as_str() => {
+            let mut map: HashMap<&str, usize> = HashMap::default();
+            for (idx, arg) in args.iter().enumerate() {
+                match arg {
+                    HornTerm::Var(name) => {
+                        map.insert(name.as_str(), idx);
+                    }
+                    HornTerm::App { .. } => return None,
+                }
+            }
+            Some(map)
+        }
+        HornTerm::App { .. } => None,
+        HornTerm::Var(_) => {
+            let shape = rule
+                .body_atoms
+                .iter()
+                .find(|atom| is_shape_pred(&atom.pred));
+            match shape {
+                Some(sel) if sel.pred == shape_pred_of(cons) => Some(HashMap::default()),
+                Some(_) => None,
+                None => Some(HashMap::default()),
+            }
+        }
+    }
+}
+
+fn body_atom_to_bool(
+    atom: &HornAtom,
     head_term: &HornTerm,
     var_to_arg: &HashMap<&str, usize>,
     layout: &BitLayout,
-    prog: &'p HornProg,
-    helper_rules: &HashMap<&'p str, Vec<&'p crate::backends::smt2::ast::HornRule>>,
-    visiting: &mut rustc_hash::FxHashSet<&'p str>,
 ) -> Result<BoolExpr, String> {
-    // Helper atoms (no BV bit allocated) are expanded inline as
-    // `OR_r (AND r.body)` over the helper's defining rules. Helpers are
-    // always applied to the enclosing constructor's head term, so their
-    // body atoms reference vars in the same scope.
-    if let Some(rules) = helper_rules.get(atom.pred.as_str()) {
-        let pred = atom.pred.as_str();
-        if !visiting.insert(pred) {
-            // Cycle: sound under monotone LFP to substitute false.
-            return Ok(BoolExpr::Const(false));
-        }
-        let mut disjuncts = Vec::with_capacity(rules.len());
-        for rule in rules {
-            let mut conjuncts = Vec::with_capacity(rule.body_atoms.len());
-            let mut residual = false;
-            for body_atom in &rule.body_atoms {
-                match body_atom_to_bool(
-                    body_atom,
-                    &rule.head.arg,
-                    var_to_arg,
-                    layout,
-                    prog,
-                    helper_rules,
-                    visiting,
-                ) {
-                    Ok(e) => conjuncts.push(e),
-                    Err(_) => {
-                        residual = true;
-                        break;
-                    }
-                }
-            }
-            if !residual {
-                disjuncts.push(BoolExpr::and(conjuncts));
-            }
-        }
-        visiting.remove(pred);
-        return Ok(BoolExpr::or(disjuncts));
+    let bit = layout
+        .bit_of(&atom.pred)
+        .ok_or_else(|| format!("unknown body pred {}", atom.pred))?;
+    if &atom.arg == head_term {
+        return Ok(BoolExpr::Dynamic(Term::var(&self_bit_name(bit))));
     }
-
-    let Some(bit) = layout.bit_of(&atom.pred) else {
-        return Err(format!("unknown body pred {}", atom.pred));
-    };
     match &atom.arg {
         HornTerm::Var(name) => {
-            let Some(&arg_idx) = var_to_arg.get(name.as_str()) else {
-                return Err(format!(
-                    "body atom var `{name}` is not a head-arg variable"
-                ));
-            };
+            let &arg_idx = var_to_arg
+                .get(name.as_str())
+                .ok_or_else(|| format!("body var `{name}` is neither a child nor the node"))?;
             Ok(BoolExpr::Dynamic(Bool::eq(
                 BitVec::extract(bit, bit, Term::var(&arg_name(arg_idx))),
                 BitVec::const_(1, 1),
             )))
         }
-        HornTerm::App { .. } => {
-            if &atom.arg != head_term {
-                return Err(format!(
-                    "non-intersection App body atom survived saturation: \
-                     atom={atom} head_term={head_term}"
-                ));
-            }
-            Ok(BoolExpr::Dynamic(Term::var(&self_bit_name(bit))))
-        }
+        HornTerm::App { .. } => Err(format!(
+            "non-self App body atom survived saturation: atom={atom} head={head_term}"
+        )),
     }
 }
 
-fn head_arg_index_map(head_args: &[HornTerm]) -> Option<HashMap<&str, usize>> {
-    let mut map: HashMap<&str, usize> = HashMap::default();
-    for (idx, arg) in head_args.iter().enumerate() {
-        match arg {
-            HornTerm::Var(name) => {
-                map.insert(name.as_str(), idx);
-            }
-            HornTerm::App { .. } => return None,
-        }
-    }
-    Some(map)
+fn shape_pred_of(cons: &crate::compile::syntax::TermConstructor) -> String {
+    format!("__shape.{}.{}", cons.name, cons.arg_sorts.len())
 }
 
 pub fn lower_constraints(
@@ -407,8 +382,6 @@ fn q_pred_name_for(
         fields: fields.to_vec(),
     };
     let aspect_key = state_name(&aspect);
-    // Bisim may have merged several aspects onto one canonical state. The
-    // map populated in `chc::compile` is the source of truth for which.
     let want_state = prog
         .aspect_state
         .get(&aspect_key)
