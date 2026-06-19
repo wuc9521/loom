@@ -371,23 +371,30 @@ fn flatten(clauses: &[Clause], fresh: &mut Fresh) -> Vec<Clause> {
     out
 }
 
-/// Keep only body atoms whose arg is a variable occurring in `term`.
-fn atoms_in_vars(body: &[Atom], vars: &HashSet<String>) -> Vec<Atom> {
+
+/// Keep body atoms that are child-var refs of `node` or self-loops on `node`
+/// (a body atom whose arg is the whole node term — a delis intersection edge).
+/// Deep non-head atoms (pop / parent-navigation) are dropped.
+fn kept_for(body: &[Atom], node: &Term) -> Vec<Atom> {
+    let vars = term_vars(node);
     body.iter()
-        .filter(|b| matches!(&b.arg, Some(HornTerm::Var(v)) if vars.contains(v)))
+        .filter(|b| match &b.arg {
+            Some(HornTerm::Var(v)) => vars.contains(v),
+            Some(other) => other == node,
+            None => false,
+        })
         .cloned()
         .collect()
 }
 
 fn flatten_into(pred: &str, term: &Term, body: &[Atom], fresh: &mut Fresh, out: &mut Vec<Clause>) {
-    // base case: variable or nullary constructor — keep only var-in-term atoms
+    // base case: variable or nullary constructor
     let args = match term {
         HornTerm::App { args, .. } if !args.is_empty() => args,
         _ => {
-            let used = atoms_in_vars(body, &term_vars(term));
             out.push(normalize_clause(&Clause {
                 head: Atom { pred: pred.to_string(), arg: Some(term.clone()) },
-                body: used,
+                body: kept_for(body, term),
                 origin: "flatten".into(),
             }));
             return;
@@ -422,11 +429,17 @@ fn flatten_into(pred: &str, term: &Term, body: &[Atom], fresh: &mut Fresh, out: 
             new_args.push(v);
         }
     }
+    // keep self-loop atoms on the (reconstructed) node term
+    let new_head = HornTerm::App { fun: fun.clone(), args: new_args };
+    for b in body {
+        if (b.arg.as_ref() == Some(&new_head) || b.arg.as_ref() == Some(term))
+            && !top_body.contains(b)
+        {
+            top_body.push(b.clone());
+        }
+    }
     out.push(normalize_clause(&Clause {
-        head: Atom {
-            pred: pred.to_string(),
-            arg: Some(HornTerm::App { fun: fun.clone(), args: new_args }),
-        },
+        head: Atom { pred: pred.to_string(), arg: Some(new_head) },
         body: top_body,
         origin: "flatten".into(),
     }));

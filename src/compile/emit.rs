@@ -45,22 +45,6 @@ pub fn compile_via_horn(ctx: CompileContext<'_>) -> Result<Vec<SyGuSCmd>, String
 
     let mut prog = ctx.compile_chc()?;
     saturate::saturate(&mut prog);
-    if std::env::var("DELIS_DUMP_SAT").is_ok() {
-        eprintln!("==== saturated rules pre-discharge ({}) ====", prog.rules.len());
-        for r in &prog.rules {
-            eprintln!("{r}");
-        }
-        eprintln!("==== end ====");
-    }
-    discharge_guards(&mut prog);
-
-    if std::env::var("DELIS_DUMP_ONEWAY").is_ok() {
-        eprintln!("==== one-way rules ({}) ====", prog.rules.len());
-        for r in &prog.rules {
-            eprintln!("{r}");
-        }
-        eprintln!("==== end one-way rules ====");
-    }
 
     let layout = BitLayout::from_horn_prog(&prog);
     if std::env::var("DELIS_DUMP_BIT_LAYOUT").is_ok() {
@@ -102,63 +86,6 @@ pub fn compile_via_horn(ctx: CompileContext<'_>) -> Result<Vec<SyGuSCmd>, String
         lowered,
         EmitOptions::default(),
     )
-}
-
-fn discharge_guards(prog: &mut HornProg) {
-    let productive = productive_predicates(&prog.rules);
-    let mut kept = Vec::with_capacity(prog.rules.len());
-    'rule: for rule in std::mem::take(&mut prog.rules) {
-        if is_guard_pred(&rule.head.pred) {
-            continue;
-        }
-        let mut body = Vec::with_capacity(rule.body_atoms.len());
-        for atom in rule.body_atoms {
-            if is_guard_pred(&atom.pred) {
-                if productive.contains(&atom.pred) {
-                    continue;
-                }
-                continue 'rule;
-            }
-            body.push(atom);
-        }
-        kept.push(HornRule {
-            body_atoms: body,
-            head: rule.head,
-        });
-    }
-    prog.rules = kept;
-}
-
-fn productive_predicates(rules: &[HornRule]) -> rustc_hash::FxHashSet<String> {
-    let mut productive: rustc_hash::FxHashSet<String> = rustc_hash::FxHashSet::default();
-    loop {
-        let mut changed = false;
-        for rule in rules {
-            if productive.contains(&rule.head.pred) {
-                continue;
-            }
-            if rule
-                .body_atoms
-                .iter()
-                .all(|atom| productive.contains(&atom.pred))
-            {
-                productive.insert(rule.head.pred.clone());
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    productive
-}
-
-fn is_guard_pred(pred: &str) -> bool {
-    pred.starts_with("__guard")
-}
-
-fn is_shape_pred(pred: &str) -> bool {
-    pred.starts_with("__shape.")
 }
 
 pub fn emit_sygus_cmds(
@@ -261,7 +188,6 @@ pub fn aggregate_constructor_bits(
             let conditions: Result<Vec<BoolExpr>, String> = rule
                 .body_atoms
                 .iter()
-                .filter(|atom| !is_shape_pred(&atom.pred))
                 .map(|atom| body_atom_to_bool(atom, &rule.head.arg, &var_to_arg, layout))
                 .collect();
             let body = BoolExpr::and(conditions?);
@@ -299,17 +225,9 @@ fn rule_builds_cons<'r>(
             Some(map)
         }
         HornTerm::App { .. } => None,
-        HornTerm::Var(_) => {
-            let shape = rule
-                .body_atoms
-                .iter()
-                .find(|atom| is_shape_pred(&atom.pred));
-            match shape {
-                Some(sel) if sel.pred == shape_pred_of(cons) => Some(HashMap::default()),
-                Some(_) => None,
-                None => Some(HashMap::default()),
-            }
-        }
+        // A variable-headed rule (ε / intersection) applies at every constructor
+        // of its sort.
+        HornTerm::Var(_) => Some(HashMap::default()),
     }
 }
 
@@ -339,10 +257,6 @@ fn body_atom_to_bool(
             "non-self App body atom survived saturation: atom={atom} head={head_term}"
         )),
     }
-}
-
-fn shape_pred_of(cons: &crate::compile::syntax::TermConstructor) -> String {
-    format!("__shape.{}.{}", cons.name, cons.arg_sorts.len())
 }
 
 pub fn lower_constraints(
