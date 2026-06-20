@@ -1247,4 +1247,65 @@ mod tests {
             assert_eq!(restrict(&mi, p), restrict(&mo, p), "language differs for {p}");
         }
     }
+
+    fn sig_upmove() -> Sig {
+        let mut cons = HashMap::default();
+        cons.insert("r".to_string(), (vec![], "T".to_string()));
+        cons.insert("e1".to_string(), (vec![], "T".to_string()));
+        cons.insert("e2".to_string(), (vec![], "T".to_string()));
+        cons.insert("top".to_string(), (vec!["T".into(), "T".into()], "T".to_string()));
+        Sig { cons }
+    }
+
+    /// Minimal model of how delis compiles a FACET up-move `(parent n)`: a PUSH
+    /// clause whose parent context carries a FRESH sibling variable `y`
+    /// (exactly what `syntax.rs::parent_contexts` emits).
+    ///
+    /// Intended (real-parent) semantics: `top(x, s)` is in `Win` only if `x`'s
+    /// ACTUAL sibling `s` is `Good`. Here `e2` is Good, `e1` is not. So
+    /// `Win(top(r, e1))` should be FALSE — r's real sibling e1 isn't Good.
+    ///
+    /// The fresh-sibling encoding lets the up-move from `r` borrow the Good
+    /// sibling `e2`, so `B(r)` holds and `Win(top(r, e1))` is accepted anyway.
+    ///
+    /// The test pins down WHERE that over-acceptance lives: it is already in the
+    /// least Herbrand model of the *input* (the encoding), and `saturate`
+    /// PRESERVES it (VGL is language-preserving). So saturate is faithful; the
+    /// unsoundness is the fresh-sibling push clause itself.
+    #[test]
+    fn upmove_fresh_sibling_overapproximates_but_saturate_preserves_language() {
+        let sig = sig_upmove();
+        let (x, y) = (v("x"), v("y"));
+        let input = vec![
+            cl(at("Good", c("e2")), vec![]),
+            cl(at("A", f("top", vec![x.clone(), y.clone()])), vec![at("Good", y.clone())]),
+            // PUSH: head over the subterm `r`, body over the parent `top(r, y)`
+            // with y a FRESH sibling not constrained to r's real sibling.
+            cl(at("B", c("r")), vec![at("A", f("top", vec![c("r"), y.clone()]))]),
+            cl(at("Win", f("top", vec![x.clone(), y.clone()])), vec![at("B", x.clone())]),
+        ];
+
+        let cutoff = 1;
+        let uni = universe(&sig, cutoff + 2);
+        let target = f("top", vec![c("r"), c("e1")]); // r's real sibling e1 is NOT Good
+
+        let (mi, _) = least_model(&input, &uni);
+        let out = saturate_clauses(input.clone(), &sig);
+        let (mo, _) = least_model(&out, &uni);
+
+        let win_in = mi.get("Win").map_or(false, |s| s.contains(&target));
+        let win_out = mo.get("Win").map_or(false, |s| s.contains(&target));
+
+        // (1) The ENCODING over-accepts: top(r, e1) wins despite e1 not being Good.
+        assert!(win_in, "expected the fresh-sibling encoding to over-accept Win(top(r,e1))");
+        // (2) saturate is language-preserving (VGL faithful): same verdict, and
+        //     more strongly the whole Win/B languages match below the cutoff.
+        assert!(win_out, "saturate dropped the (over-)accepted Win(top(r,e1)) -- not language preserving");
+        let restrict = |m: &HashMap<String, HashSet<Term>>, p: &str| -> HashSet<Term> {
+            m.get(p).cloned().unwrap_or_default().into_iter().filter(|t| t.depth() <= cutoff).collect()
+        };
+        for p in ["Good", "A", "B", "Win"] {
+            assert_eq!(restrict(&mi, p), restrict(&mo, p), "language differs for {p} -- saturate not faithful");
+        }
+    }
 }
