@@ -44,6 +44,13 @@ pub fn compile_via_horn(ctx: CompileContext<'_>) -> Result<Vec<SyGuSCmd>, String
     let constraints = ctx.semantic_program.constraints.clone();
 
     let mut prog = ctx.compile_chc()?;
+    if std::env::var("DELIS_DUMP_PRESAT").is_ok() {
+        eprintln!("==== pre-saturate rules ({}) ====", prog.rules.len());
+        for r in &prog.rules {
+            eprintln!("{r}");
+        }
+        eprintln!("==== end pre-saturate ====");
+    }
     saturate::saturate(&mut prog);
 
     let layout = BitLayout::from_horn_prog(&prog);

@@ -1,4 +1,4 @@
-IMAGE_TAG ?= delis:bench
+IMAGE_TAG ?= delis:latest
 IMAGE_ARCHIVE ?= dist/delis.tar.gz
 IMAGE_PLATFORM ?= linux/amd64
 PARENT_DIR := $(abspath ..)
