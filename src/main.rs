@@ -46,8 +46,17 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         }
         if args.dump_sygus || args.dump_sygus_stats {
             let compile_start = Instant::now();
-            let sygus_bytes =
-                delis_file.to_sygus_bytes().map_err(io::Error::other)?;
+            // Dump the same encoding the solver uses: parent-bearing programs
+            // get the sound crossing encoding (with `Constant` annotation holes);
+            // parent-free / DELIS_LEGACY get the direct `to_sygus`.
+            let use_crossing = delis_file.is_parent_bearing().map_err(io::Error::other)?
+                && std::env::var("DELIS_LEGACY").is_err();
+            let sygus_bytes = if use_crossing {
+                let (sygus, _, _) = delis_file.faithful_sygus().map_err(io::Error::other)?;
+                sygus.into_bytes()
+            } else {
+                delis_file.to_sygus_bytes().map_err(io::Error::other)?
+            };
             if args.dump_sygus {
                 let stdout = io::stdout();
                 let mut stdout = BufWriter::new(stdout.lock());
