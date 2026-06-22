@@ -76,6 +76,17 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         ));
     }
 
+    // Parent-bearing programs (with `(parent n)` up-moves) default to the sound
+    // crossing encoding solved by cvc5; the legacy saturation path (faster but
+    // over-approximating — it can return grammars that fail their own examples)
+    // is opt-in via DELIS_LEGACY. Parent-free programs always use the (sound,
+    // fast) direct path below.
+    if delis_file.is_parent_bearing().map_err(io::Error::other)?
+        && std::env::var("DELIS_LEGACY").is_err()
+    {
+        return crossing_solve(delis_file, args.verbose);
+    }
+
     // Both backends solve the same SyGuS BV problem; first-to-finish wins.
     // The "term enumerator" works at the SyGuSTerm level (fast for small/nullary
     // problems). The "BV searcher" compiles to BitCircuits and does bottom-up
@@ -147,6 +158,51 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     cleanup_children();
     Err(first_error
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
+}
+
+/// Sound (crossing) path for parent-bearing programs: emit the founded
+/// annotation SyGuS and solve it with dryadsynth-bv, whose const-hole mode
+/// enumerates the syntax tree and SMT-solves the `Constant` annotation holes
+/// per skeleton (the sound, terminating route — cvc5's monolithic SyGuS search
+/// hangs on this encoding). `DELIS_DRYADSYNTH` overrides the binary path;
+/// `DELIS_LEGACY` selects the old over-approximating path instead.
+fn crossing_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> {
+    let (sygus, sort, synth_name) = delis_file.faithful_sygus().map_err(io::Error::other)?;
+    let path = std::env::temp_dir().join("delis_crossing.sygus");
+    std::fs::write(&path, &sygus)?;
+    let bin = std::env::var("DELIS_DRYADSYNTH").unwrap_or_else(|_| "dryadsynth-bv".to_string());
+    let mut cmd = Command::new(&bin);
+    // Forward delis verbosity onto dryadsynth (`-v`/`-vv`); its diagnostics go
+    // to stderr, which we let stream live.
+    if verbose >= 1 {
+        cmd.arg(format!("-{}", "v".repeat(verbose as usize)));
+    }
+    cmd.arg(&path).stdout(Stdio::piped());
+    if verbose >= 1 {
+        cmd.stderr(Stdio::inherit());
+    }
+    let out = cmd
+        .spawn()
+        .map_err(|e| {
+            io::Error::other(format!(
+                "the default (sound) crossing backend needs the `dryadsynth-bv` binary on \
+                 PATH ({e}). Build it (cargo build --release in dryadsynth-bv) and set \
+                 DELIS_DRYADSYNTH to its path, or set DELIS_LEGACY=1 for the legacy \
+                 (faster, over-approximating) backend."
+            ))
+        })?
+        .wait_with_output()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    match compile::decode_faithful_term(&stdout, &synth_name) {
+        Some(term) => {
+            println!("(\n(define-fun {synth_name} () {sort} {term})\n)");
+            Ok(())
+        }
+        None => Err(io::Error::other(
+            "crossing backend (dryadsynth-bv): no solution decoded. If a deeper solution \
+             is expected, raise DRYAD_HOLE_MAX_SIZE / DELIS_TREE_BOUND.",
+        )),
+    }
 }
 
 enum BackendResult {

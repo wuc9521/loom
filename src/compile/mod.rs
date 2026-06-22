@@ -11,6 +11,7 @@ mod chc;
 mod closure;
 mod compiler;
 mod context;
+mod crossing;
 pub mod emit;
 mod eval;
 mod eval_ctx;
@@ -121,6 +122,35 @@ impl DelisProg {
         writeln!(&mut out).map_err(|e| e.to_string())?;
         Ok(out)
     }
+
+    /// True if any semantic spec navigates up to the parent (`(parent n)`). Such
+    /// programs need the sound crossing encoder; the legacy saturation path
+    /// over-approximates them.
+    pub fn is_parent_bearing(&self) -> Result<bool, String> {
+        let program = self.semantic_program()?;
+        Ok(program
+            .semantics
+            .iter()
+            .any(|spec| aspects::contains_parent_navigation(&spec.body)))
+    }
+
+    /// Sound & complete crossing encoding for a parent-bearing program. Returns
+    /// `(sygus-text, synth-target sort, synth-fun name)`; solve the text with an
+    /// SMT-backed SyGuS solver (it contains `Constant` holes) and decode with
+    /// [`decode_faithful_term`].
+    pub fn faithful_sygus(&self) -> Result<(String, String, String), String> {
+        let ctx = CompileContext::new(self)?;
+        let synth_name = ctx.synth_name.clone();
+        let horn = ctx.compile_chc()?;
+        let (sygus, sort) = crossing::faithful_sygus(&horn, &synth_name);
+        Ok((sygus, sort, synth_name))
+    }
+}
+
+/// Decode a SyGuS solver's solution for the crossing encoding into a plain delis
+/// term (the synth-fun named `synth_name`, with annotation args stripped).
+pub fn decode_faithful_term(stdout: &str, synth_name: &str) -> Option<String> {
+    crossing::decode_term(stdout, synth_name)
 }
 
 #[cfg(test)]
