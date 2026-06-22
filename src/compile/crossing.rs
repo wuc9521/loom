@@ -331,7 +331,26 @@ fn rank_bits(total_states: usize, tree_bound: usize) -> usize {
     (64 - max_atoms.leading_zeros()).max(1) as usize
 }
 
+/// Whether to constant-fold emitted formulas (under `--optim`). Folding the
+/// trivially-true/false subterms the founded encoding produces (e.g.
+/// `(or true … true)`, `(= (= bit #b1) true)`) yields a smaller, slightly
+/// faster SMT problem. The unfolded form is kept when optimization is off.
+fn fold_on() -> bool {
+    crate::compile::opts().optimize
+}
+
 fn or_bool(v: &[String]) -> String {
+    if fold_on() {
+        if v.iter().any(|x| x == "true") {
+            return "true".to_string();
+        }
+        let kept: Vec<&str> = v.iter().map(String::as_str).filter(|x| *x != "false").collect();
+        return match kept.as_slice() {
+            [] => "false".to_string(),
+            [one] => one.to_string(),
+            _ => format!("(or {})", kept.join(" ")),
+        };
+    }
     match v.len() {
         0 => "false".to_string(),
         1 => v[0].clone(),
@@ -342,6 +361,17 @@ fn or_bool(v: &[String]) -> String {
 /// Conjunction that avoids single-arg `(and X)` — nonstandard SMT-LIB that
 /// strict parsers (e.g. bitwuzla) reject. Empty ⇒ `true`.
 fn and_bool(v: &[String]) -> String {
+    if fold_on() {
+        if v.iter().any(|x| x == "false") {
+            return "false".to_string();
+        }
+        let kept: Vec<&str> = v.iter().map(String::as_str).filter(|x| *x != "true").collect();
+        return match kept.as_slice() {
+            [] => "true".to_string(),
+            [one] => one.to_string(),
+            _ => format!("(and {})", kept.join(" ")),
+        };
+    }
     match v.len() {
         0 => "true".to_string(),
         1 => v[0].clone(),
@@ -537,7 +567,16 @@ fn faithful_sygus_ir(
                         and_bool(&parts)
                     })
                     .collect();
-                checks.push(format!("(= (= {} #b1) {})", upb(q), or_bool(&alts)));
+                let just = or_bool(&alts);
+                checks.push(if fold_on() && just == "true" {
+                    // up[q] ⟺ true  ⇒  the bit must be 1
+                    format!("(= {} #b1)", upb(q))
+                } else if fold_on() && just == "false" {
+                    // up[q] ⟺ false ⇒  the bit must be 0
+                    format!("(= {} #b0)", upb(q))
+                } else {
+                    format!("(= (= {} #b1) {})", upb(q), just)
+                });
             }
             // the parent certifies each child's parent-channel
             for (i, a) in arg_sorts.iter().enumerate() {
@@ -555,10 +594,17 @@ fn faithful_sygus_ir(
                 }
             }
             let valid = and_bool(&checks);
-            let body = if ann_w == w - 1 {
-                format!("(concat (ite {valid} #b1 #b0) ann)")
+            let valid_bit = if fold_on() && valid == "true" {
+                "#b1".to_string()
+            } else if fold_on() && valid == "false" {
+                "#b0".to_string()
             } else {
                 format!("(ite {valid} #b1 #b0)")
+            };
+            let body = if ann_w == w - 1 {
+                format!("(concat {valid_bit} ann)")
+            } else {
+                valid_bit
             };
             s.push_str(&format!("{sig}{body})\n"));
         }
