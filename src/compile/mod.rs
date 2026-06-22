@@ -143,6 +143,19 @@ impl DelisProg {
         let synth_name = ctx.synth_name.clone();
         let horn = ctx.compile_chc()?;
         let (sygus, sort) = crossing::faithful_sygus(&horn, &synth_name);
+        // Carry the program's `declare-axiom` operator laws to the solver as
+        // `(assume …)` (a SyGuS command): the synthesis backend uses them to
+        // recognize semantically-equivalent candidates and dedup the search.
+        let assumes: String = self
+            .axioms()
+            .iter()
+            .map(|a| format!("(assume {a})\n"))
+            .collect();
+        let sygus = if assumes.is_empty() {
+            sygus
+        } else {
+            sygus.replace("(check-synth)\n", &format!("{assumes}(check-synth)\n"))
+        };
         Ok((sygus, sort, synth_name))
     }
 }
