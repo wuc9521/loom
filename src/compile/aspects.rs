@@ -138,10 +138,19 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         return Err("compilation requires at least one define-semantics".to_string());
     }
 
-    let semantic_specs = semantics
+    let mut semantic_specs = semantics
         .iter()
         .map(|cmd| SemanticSpec::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
+    // Sound negative examples: a negative `(not (P g σ))` cannot be witnessed by
+    // negating P's acceptance bit (P is existential/least-fixpoint acceptance).
+    // When any negative semantic constraint exists, derive the dual relations
+    // `P.dual ≡ ¬P` and compile negatives as the dual's acceptance
+    // (Krogmeier–Madhusudan 2023 §4.4). See `compile::dual`.
+    if has_negative_semantic_constraint(problem, &semantic_specs) {
+        let duals = crate::compile::dual::dual_specs(&semantic_specs);
+        semantic_specs.extend(duals);
+    }
     let spaces_by_name = aspect_spaces
         .iter()
         .map(|space| (space.name.clone(), space))
@@ -380,17 +389,31 @@ fn collect_semantic_constraints(
     Ok(constraints)
 }
 
+/// True if any `(constraint (not (P …)))` mentions a semantic relation `P`.
+fn has_negative_semantic_constraint(problem: &DelisProg, specs: &[SemanticSpec]) -> bool {
+    let rels: HashSet<&str> = specs.iter().map(|s| s.relation.as_str()).collect();
+    problem.cmds.iter().any(|cmd| {
+        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(SyGuSTerm::Application(sym, args))) = cmd
+        else {
+            return false;
+        };
+        sym.to_string() == "not"
+            && args.len() == 1
+            && matches!(&args[0], SyGuSTerm::Application(rel, _) if rels.contains(rel.to_string().as_str()))
+    })
+}
+
 fn parse_semantic_constraint(
     term: &SyGuSTerm,
     semantics_by_relation: &HashMap<String, &SemanticSpec>,
     spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
 ) -> Result<Option<SemanticConstraint>, String> {
-    let (expected, term) = match term {
+    let (negated, term) = match term {
         SyGuSTerm::Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-            (false, &args[0])
+            (true, &args[0])
         }
-        _ => (true, term),
+        _ => (false, term),
     };
     let SyGuSTerm::Application(rel, args) = term else {
         return Ok(None);
@@ -408,6 +431,15 @@ fn parse_semantic_constraint(
         .get(&spec.aspect_space)
         .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
     let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name)?;
+    // A negative `(not (P …))` compiles to the dual relation's *acceptance*
+    // (`P.dual ≡ ¬P`); the dual spec was appended to the program above. We
+    // therefore always assert `expected = true`, but against `P.dual` for
+    // negatives. This is sound where naively asserting `P = 0` is vacuous.
+    let (relation, expected) = if negated {
+        (crate::compile::dual::dual_name(&relation), true)
+    } else {
+        (relation, true)
+    };
     Ok(Some(SemanticConstraint {
         relation,
         model,

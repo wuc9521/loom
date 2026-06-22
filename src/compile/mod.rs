@@ -12,6 +12,7 @@ mod closure;
 mod compiler;
 mod context;
 mod crossing;
+mod dual;
 pub mod emit;
 mod eval;
 mod eval_ctx;
