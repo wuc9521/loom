@@ -526,6 +526,10 @@ struct Enc<'a> {
     /// per sort, the `(state index, DS triple index)` pairs that can route up
     /// (precomputed `can_route_up`), so the hot pruning checks are O(1) lookups.
     route: HashMap<String, HashSet<(usize, usize)>>,
+    /// per sort, the packed bit offset (within the `udem` field) of each routable
+    /// `(y,t)` pair. Non-routable pairs are absent — they are dead bits (forced
+    /// `#b0`, read only under `routes_up`), so the `udem` field stores only these.
+    ud_rank: HashMap<String, HashMap<(usize, usize), usize>>,
     /// per clause, its 1-based position within its `(ctor, head)` group — so
     /// `pick` is a per-state *binary index* of the founding clause (every value a
     /// valid choice) instead of `P` one-hot bits (almost all patterns invalid).
@@ -622,6 +626,14 @@ impl<'a> Enc<'a> {
             }
             route.insert(sort.clone(), set);
         }
+        // Pack the `udem` field: assign each routable pair a dense bit offset (a
+        // deterministic sorted order, so writer and reader agree).
+        let mut ud_rank: HashMap<String, HashMap<(usize, usize), usize>> = HashMap::default();
+        for (sort, set) in &route {
+            let mut pairs: Vec<(usize, usize)> = set.iter().copied().collect();
+            pairs.sort_unstable();
+            ud_rank.insert(sort.clone(), pairs.into_iter().enumerate().map(|(i, p)| (p, i)).collect());
+        }
         // pick as a per-state binary clause index: position within (ctor,head) group.
         let mut group_count: HashMap<(String, String), usize> = HashMap::default();
         let mut pos_in_group: Vec<usize> = vec![0; gcs.len()];
@@ -638,7 +650,7 @@ impl<'a> Enc<'a> {
                 .unwrap_or(0);
             pw.insert(sort.clone(), (usize::BITS - maxg.leading_zeros()).max(1) as usize);
         }
-        Enc { states, gcs, ds, sort_clauses, reach, route, pos_in_group, pw }
+        Enc { states, gcs, ds, sort_clauses, reach, route, ud_rank, pos_in_group, pw }
     }
 
     /// Can `y` (state index of `sort`) route up via DS triple `t` in some candidate?
@@ -749,13 +761,15 @@ impl<'a> Enc<'a> {
         self.pw[s]
     }
 
-    // --- layout offsets: value = [dact:D | pick:Q·pw | up:Q | udem:Q·D | valid:1] ---
+    // --- layout offsets: value = [dact:D | pick:Q·pw | up:Q | udem:Nud | valid:1] ---
     // ONLY `dact`+`pick` are guessed (the Constant, low bits, so Constant offsets =
     // value offsets); `up`/`udem` are COMPUTED in the define-fun (high bits), and `R`
     // (the support relation) is computed *internally* (let-bound rows, never stored).
+    // `udem` carries only the ROUTABLE `(y,t)` pairs (`Nud = |route[s]|`): a
+    // non-routable bit is forced `#b0` by `node_checks` AND only ever read under the
+    // same `routes_up` gate, so it is dead — dropping it is behavior-preserving.
     fn width(&self, s: &str) -> usize {
-        let (q, d) = (self.nq(s), self.nd(s));
-        d + q * self.pw_of(s) + q + q * d + 1
+        self.udem_base(s) + self.nud(s) + 1
     }
     fn dact_pos(&self, _s: &str, j: usize) -> usize {
         j
@@ -767,9 +781,18 @@ impl<'a> Enc<'a> {
     fn up_pos(&self, s: &str, q: usize) -> usize {
         self.nd(s) + self.nq(s) * self.pw_of(s) + q
     }
+    /// Number of routable `(y,t)` pairs = width of the packed `udem` field.
+    fn nud(&self, s: &str) -> usize {
+        self.ud_rank.get(s).map(HashMap::len).unwrap_or(0)
+    }
+    /// Low bit of the `udem` field (just above `up`).
+    fn udem_base(&self, s: &str) -> usize {
+        self.nd(s) + self.nq(s) * self.pw_of(s) + self.nq(s)
+    }
+    /// Packed bit position of routable pair `(y,t)`. Only ever called for routable
+    /// pairs (writer iterates `route`; reader gates on `routes_up`).
     fn udem_pos(&self, s: &str, y: usize, t: usize) -> usize {
-        let (q, d) = (self.nq(s), self.nd(s));
-        d + q * self.pw_of(s) + q + y * d + t
+        self.udem_base(s) + self.ud_rank[s][&(y, t)]
     }
     /// Width of the `Constant` = the guess-only prefix `[dact | pick]`.
     fn ann_w(&self, s: &str) -> usize {
@@ -1030,25 +1053,24 @@ impl<'a> Enc<'a> {
                 od[t].push(name);
             }
         }
-        let mut ud_terms: Vec<String> = Vec::new();
-        for y in (0..q_n).rev() {
+        // Emit only the routable pairs, placed at their packed rank (non-routable
+        // bits were dead — forced #b0, read only under `routes_up`). `concat` is
+        // high→low, so emit ranks descending to land rank `r` at offset `base+r`.
+        let nud = self.nud(sort);
+        let mut by_rank: Vec<String> = vec!["#b0".to_string(); nud];
+        for (&(y, t), &rank) in self.ud_rank.get(sort).into_iter().flatten() {
             let yst = &self.states[sort][y];
-            for t in (0..nd).rev() {
-                if !self.routes_up(sort, y, t) {
-                    ud_terms.push("#b0".to_string());
-                    continue;
+            let mut terms: Vec<String> = Vec::new();
+            for (zi, (z, _ks)) in pu[t].iter().enumerate() {
+                if *z == y {
+                    terms.push(od[t][zi].clone());
+                } else if self.may_dep(yst, &self.states[sort][*z]) {
+                    terms.push(format!("(and (= {} #b1) {})", bit(&rf[y], *z), od[t][zi]));
                 }
-                let mut terms: Vec<String> = Vec::new();
-                for (zi, (z, _ks)) in pu[t].iter().enumerate() {
-                    if *z == y {
-                        terms.push(od[t][zi].clone());
-                    } else if self.may_dep(yst, &self.states[sort][*z]) {
-                        terms.push(format!("(and (= {} #b1) {})", bit(&rf[y], *z), od[t][zi]));
-                    }
-                }
-                ud_terms.push(format!("(ite {} #b1 #b0)", or_bool(&terms)));
             }
+            by_rank[rank] = format!("(ite {} #b1 #b0)", or_bool(&terms));
         }
+        let ud_terms: Vec<String> = (0..nud).rev().map(|r| by_rank[r].clone()).collect();
         let udem_val = concat_terms(&ud_terms);
 
         // (C0) every child is valid; (Cchannel) the parent certifies child `dact`.
@@ -1427,9 +1449,9 @@ mod tests {
                 let up_lo = e.up_pos(sort, 0);
                 smt.push_str(&format!("(assert (= {} {up_val}))\n", slice(&nn, up_lo, up_lo + q_n - 1)));
             }
-            if q_n * e.nd(sort) > 0 {
-                let ud_lo = e.udem_pos(sort, 0, 0);
-                smt.push_str(&format!("(assert (= {} {udem_val}))\n", slice(&nn, ud_lo, ud_lo + q_n * e.nd(sort) - 1)));
+            if e.nud(sort) > 0 {
+                let ud_lo = e.udem_base(sort);
+                smt.push_str(&format!("(assert (= {} {udem_val}))\n", slice(&nn, ud_lo, ud_lo + e.nud(sort) - 1)));
             }
             for chk in &checks {
                 smt.push_str(&format!("(assert {chk})\n"));
