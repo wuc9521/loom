@@ -4,13 +4,17 @@
 //!
 //! The semantics of a FACET program is a two-way alternating tree automaton over
 //! the candidate syntax tree, accepted by a least fixpoint (reachability). The
-//! one-way encoding here is a **founded annotation certificate**: each node
-//! carries guessed `up[state]`, a parent-channel `down[(parent-ctor, pos, state)]`,
-//! and per-state founded `rank`s; a computed `valid` bit checks, for every clause
-//! uniformly (child-ref / self-loop / parent-atom), that `up` is justified with
-//! strictly smaller rank. This is polynomial-size and handles intersection, mixed
-//! up+down clauses, and multiple parent atoms — i.e. it is sound and complete for
-//! arbitrary delis programs, not just CFG.
+//! one-way encoding here is a **crossing-relation annotation certificate**: each
+//! node carries guessed `up[state]`, a same-node support relation `R ⊆ Q×Q`, a
+//! parent-channel (`dact`/`ddem`) and child→parent demand (`udem`), and clause
+//! `pick` bits. A computed `valid` bit checks, for every clause uniformly
+//! (child-ref / self-loop / parent-atom), that `up` is justified and that `R` is
+//! the chosen support — irreflexive and transitively closed, i.e. acyclic, hence
+//! the least fixpoint. `R` summarizes the up/down crossings (Shepherdson 1959;
+//! Vardi 1998, specialized to no-parity since delis is monotone LFP), so its
+//! width depends only on `|Q|`, **never on tree size** — the encoding is sound and
+//! complete for unbounded trees and handles intersection, mixed up+down clauses,
+//! and multiple parent atoms (arbitrary delis programs, not just CFG).
 //!
 //! `crossing_eval` (the exact ground LFP) and `respond_gen` (the exact faithful
 //! per-node semantics) are the reference oracles the encoder is validated against.
@@ -316,20 +320,8 @@ fn respond_gen(
 }
 
 // ===========================================================================
-//  Encoder: founded annotation certificate → SyGuS-BV
+//  Encoder: crossing-relation annotation certificate → SyGuS-BV
 // ===========================================================================
-
-/// Default founded-rank width: enough bits to index every relevant (node,state)
-/// atom of a candidate up to `tree_bound` nodes. The founded chain length is
-/// bounded by `nodes × |states|`, so `fr` must cover that — a too-small `fr`
-/// would make deeper-derivation solutions uncertifiable (incomplete). There is
-/// no fixed `fr` complete for arbitrarily large terms; raise `tree_bound`
-/// (env `DELIS_TREE_BOUND`) for larger solutions, or use the per-candidate LFP
-/// backend for unbounded completeness.
-fn rank_bits(total_states: usize, tree_bound: usize) -> usize {
-    let max_atoms = (total_states.max(1) * tree_bound.max(1)) as u64;
-    (64 - max_atoms.leading_zeros()).max(1) as usize
-}
 
 /// Whether to constant-fold emitted formulas (under `--optim`). Folding the
 /// trivially-true/false subterms the founded encoding produces (e.g.
@@ -379,6 +371,33 @@ fn and_bool(v: &[String]) -> String {
     }
 }
 
+// --- small SMT-BV string builders for the crossing-relation encoding ---
+fn bit(term: &str, k: usize) -> String {
+    format!("((_ extract {k} {k}) {term})")
+}
+fn slice(term: &str, lo: usize, hi: usize) -> String {
+    format!("((_ extract {hi} {lo}) {term})")
+}
+fn bv0(w: usize) -> String {
+    format!("(_ bv0 {w})")
+}
+/// The `w`-bit set `{q}` (bit `q` set). `q < w ≤ 127`.
+fn singleton(q: usize, w: usize) -> String {
+    format!("(_ bv{} {w})", 1u128 << q)
+}
+/// `bvor` of `w`-bit masks; `[]`⇒`bv0`, `[x]`⇒`x`.
+fn bvor_all(xs: &[String], w: usize) -> String {
+    match xs {
+        [] => bv0(w),
+        [one] => one.clone(),
+        _ => format!("(bvor {})", xs.join(" ")),
+    }
+}
+/// `mask ⊆ row` as `w`-bit sets: `(bvand mask ¬row) = 0`.
+fn subset(mask: &str, row: &str, w: usize) -> String {
+    format!("(= (bvand {mask} (bvnot {row})) {})", bv0(w))
+}
+
 /// Encode a compiled CHC program, naming the synth-fun `synth_name` (the source
 /// program's synth-fun name). Returns `(sygus-text, synth-target sort)`.
 pub(crate) fn faithful_sygus(prog: &HornProg, synth_name: &str) -> (String, String) {
@@ -387,11 +406,7 @@ pub(crate) fn faithful_sygus(prog: &HornProg, synth_name: &str) -> (String, Stri
     let relevant = relevant_states(prog, &seeds);
     let (states, ctors) = build_sig(prog, &relevant);
     let gcs = general_clauses(prog, &relevant);
-    let total_states: usize = states.values().map(Vec::len).sum();
-    let tree_bound: usize =
-        std::env::var("DELIS_TREE_BOUND").ok().and_then(|s| s.parse().ok()).unwrap_or(64);
-    let fr = rank_bits(total_states, tree_bound);
-    let sygus = faithful_sygus_ir(&states, &ctors, &gcs, &start, &constraints, synth_name, fr);
+    let sygus = faithful_sygus_ir(&states, &ctors, &gcs, &start, &constraints, synth_name);
     (sygus, start)
 }
 
@@ -462,9 +477,445 @@ pub(crate) fn decode_term(stdout: &str, synth_name: &str) -> Option<String> {
     find(&parse_sexp(t), synth_name).map(|body| sx_to_string(&strip_ann(body)))
 }
 
-/// The encoder, decoupled from `HornProg`. Node layout per sort:
-/// `[up:|Q|][down:|DS|·(1+FR)][rank:|Q|·FR][valid:1]`, where `DS` is the set of
-/// `(parent ctor, position, state)` triples appearing in `Parent` atoms.
+/// Per-sort node layout + the local `node_checks` certificate, shared by the
+/// SyGuS emitter and the fixed-tree validation oracle. Node layout per sort `s`
+/// (`Q=|states|`, `D=|DS|`, `P=#clauses producing s`):
+///
+/// `[ up:Q ][ R:Q² ][ dact:D ][ ddem:D·Q ][ udem:Q·D ][ pick:P ][ valid:1 ]`
+///
+/// - `up[q]`            — guessed acceptance: state `q` holds at this node.
+/// - `R[p][q]`          — same-node support relation: `up[p]` (transitively)
+///   depends on `up[q]` at this node. Required irreflexive + transitively
+///   closed ⇒ acyclic support ⇒ least fixpoint. This replaces the old numeric
+///   rank; it is the Shepherdson/Vardi crossing relation (no parity, since delis
+///   is monotone LFP). Width depends only on `|Q|`, never on tree size.
+/// - `dact[j]`/`ddem[j]` — parent-channel for `DS` triple `j=(pc,pos,st)`:
+///   `dact` = "my parent is `pc`, I'm at `pos`, parent has `st`" (certified by
+///   the parent = parent's `up[st]`); `ddem` (over this node's `Q`) = the set of
+///   *my* states that `st@parent`'s support routes back to (parent→child demand).
+/// - `udem[Y][j]`       — child→parent demand: my state `Y` routes up to `st@parent`
+///   for triple `j`. Computed here (I see my own children), read by my parent.
+/// - `pick[k]`          — which clause founds each `up`; makes the chosen
+///   derivation unambiguous so `R` is the chosen support, not an over-approx.
+struct Enc<'a> {
+    states: &'a HashMap<String, Vec<String>>,
+    gcs: &'a [GC],
+    ds: HashMap<String, Vec<(String, usize, String)>>,
+    /// per sort: indices into `gcs` of clauses producing that sort (pick order).
+    sort_clauses: HashMap<String, Vec<usize>>,
+    /// reflexive-transitive closure of the predicate dependency graph
+    /// (`Y → Z` iff `Z` appears in some premise of a clause for `Y`). Over-
+    /// approximates which states can transitively support which: if `Z ∉ reach[Y]`
+    /// then `R[Y][Z]`/`udem` involving them are statically 0, so the emitter skips
+    /// those `(and …)` terms (sound — they can never be true).
+    reach: HashMap<String, HashSet<String>>,
+    /// per sort, the `(state index, DS triple index)` pairs that can route up
+    /// (precomputed `can_route_up`), so the hot pruning checks are O(1) lookups.
+    route: HashMap<String, HashSet<(usize, usize)>>,
+}
+
+impl<'a> Enc<'a> {
+    fn new(
+        states: &'a HashMap<String, Vec<String>>,
+        ctors: &'a HashMap<String, Vec<(String, Vec<String>)>>,
+        gcs: &'a [GC],
+    ) -> Self {
+        let mut ctor_sort: HashMap<String, String> = HashMap::default();
+        for (sort, cs) in ctors {
+            for (c, _) in cs {
+                ctor_sort.insert(c.clone(), sort.clone());
+            }
+        }
+        let mut ds: HashMap<String, Vec<(String, usize, String)>> = HashMap::default();
+        for gc in gcs {
+            let sort = &ctor_sort[&gc.ctor];
+            for a in &gc.body {
+                if let GA::Parent(pc, pos, st) = a {
+                    let v = ds.entry(sort.clone()).or_default();
+                    let e = (pc.clone(), *pos, st.clone());
+                    if !v.contains(&e) {
+                        v.push(e);
+                    }
+                }
+            }
+        }
+        for v in ds.values_mut() {
+            v.sort();
+        }
+        let mut sort_clauses: HashMap<String, Vec<usize>> = HashMap::default();
+        for sort in ctors.keys() {
+            sort_clauses.entry(sort.clone()).or_default();
+        }
+        for (k, gc) in gcs.iter().enumerate() {
+            if let Some(sort) = ctor_sort.get(&gc.ctor) {
+                sort_clauses.get_mut(sort).expect("sort registered").push(k);
+            }
+        }
+        // dependency successors, then reflexive-transitive closure per state.
+        let mut succ: HashMap<String, HashSet<String>> = HashMap::default();
+        for gc in gcs {
+            let e = succ.entry(gc.head.clone()).or_default();
+            for a in &gc.body {
+                let (GA::Child(_, s) | GA::Selfp(s) | GA::Parent(_, _, s)) = a;
+                e.insert(s.clone());
+            }
+        }
+        let mut reach: HashMap<String, HashSet<String>> = HashMap::default();
+        for st in states.values().flatten() {
+            let mut seen: HashSet<String> = HashSet::default();
+            seen.insert(st.clone());
+            let mut stack = vec![st.clone()];
+            while let Some(x) = stack.pop() {
+                if let Some(ns) = succ.get(&x) {
+                    for n in ns {
+                        if seen.insert(n.clone()) {
+                            stack.push(n.clone());
+                        }
+                    }
+                }
+            }
+            reach.insert(st.clone(), seen);
+        }
+        // routability: `y` of `sort` can route up via triple `t` iff `y` reaches
+        // (incl. itself) a `sort`-state whose clause directly uses `Parent(t)`.
+        let empty_ds: Vec<(String, usize, String)> = Vec::new();
+        let mut route: HashMap<String, HashSet<(usize, usize)>> = HashMap::default();
+        for (sort, sts) in states {
+            let triples = ds.get(sort).unwrap_or(&empty_ds);
+            let clauses = sort_clauses.get(sort).map(Vec::as_slice).unwrap_or(&[]);
+            let mut set: HashSet<(usize, usize)> = HashSet::default();
+            for (t, trip) in triples.iter().enumerate() {
+                let users: Vec<&String> = clauses
+                    .iter()
+                    .filter(|&&k| gcs[k].body.iter().any(|a| matches!(a, GA::Parent(p, po, s) if p == &trip.0 && *po == trip.1 && s == &trip.2)))
+                    .map(|&k| &gcs[k].head)
+                    .collect();
+                if users.is_empty() {
+                    continue;
+                }
+                for (y, yst) in sts.iter().enumerate() {
+                    if reach.get(yst).is_some_and(|r| users.iter().any(|u| r.contains(*u))) {
+                        set.insert((y, t));
+                    }
+                }
+            }
+            route.insert(sort.clone(), set);
+        }
+        Enc { states, gcs, ds, sort_clauses, reach, route }
+    }
+
+    /// Can `y` (state index of `sort`) route up via DS triple `t` in some candidate?
+    fn routes_up(&self, sort: &str, y: usize, t: usize) -> bool {
+        self.route.get(sort).is_some_and(|s| s.contains(&(y, t)))
+    }
+    /// Can `R[p][q]` ever be 1? Only if `q` is reachable from `p`.
+    fn may_dep(&self, p: &str, q: &str) -> bool {
+        self.reach.get(p).is_some_and(|r| r.contains(q))
+    }
+
+    fn nq(&self, s: &str) -> usize {
+        self.states[s].len()
+    }
+    fn ds_of(&self, s: &str) -> &[(String, usize, String)] {
+        self.ds.get(s).map(Vec::as_slice).unwrap_or(&[])
+    }
+    fn nd(&self, s: &str) -> usize {
+        self.ds_of(s).len()
+    }
+    fn clauses(&self, s: &str) -> &[usize] {
+        self.sort_clauses.get(s).map(Vec::as_slice).unwrap_or(&[])
+    }
+    fn np(&self, s: &str) -> usize {
+        self.clauses(s).len()
+    }
+    fn qidx(&self, s: &str, st: &str) -> Option<usize> {
+        self.states[s].iter().position(|x| x == st)
+    }
+    fn dsidx(&self, s: &str, e: &(String, usize, String)) -> Option<usize> {
+        self.ds_of(s).iter().position(|x| x == e)
+    }
+    fn clause_local(&self, s: &str, k: usize) -> usize {
+        self.clauses(s).iter().position(|&x| x == k).expect("clause of sort")
+    }
+
+    // --- layout offsets ---
+    fn width(&self, s: &str) -> usize {
+        let (q, d, p) = (self.nq(s), self.nd(s), self.np(s));
+        q + q * q + d + d * q + q * d + p + 1
+    }
+    fn r_lo(&self, s: &str, p: usize) -> usize {
+        self.nq(s) + p * self.nq(s)
+    }
+    fn r_pos(&self, s: &str, p: usize, q: usize) -> usize {
+        self.r_lo(s, p) + q
+    }
+    fn r_row(&self, s: &str, term: &str, p: usize) -> String {
+        slice(term, self.r_lo(s, p), self.r_lo(s, p) + self.nq(s) - 1)
+    }
+    fn dact_pos(&self, s: &str, j: usize) -> usize {
+        let q = self.nq(s);
+        q + q * q + j
+    }
+    fn ddem_lo(&self, s: &str, j: usize) -> usize {
+        let (q, d) = (self.nq(s), self.nd(s));
+        q + q * q + d + j * q
+    }
+    fn ddem_row(&self, s: &str, term: &str, j: usize) -> String {
+        slice(term, self.ddem_lo(s, j), self.ddem_lo(s, j) + self.nq(s) - 1)
+    }
+    fn udem_pos(&self, s: &str, y: usize, t: usize) -> usize {
+        let (q, d) = (self.nq(s), self.nd(s));
+        q + q * q + d + d * q + y * d + t
+    }
+    fn pick_pos(&self, s: &str, k_local: usize) -> usize {
+        let (q, d) = (self.nq(s), self.nd(s));
+        q + q * q + d + d * q + q * d + k_local
+    }
+    fn valid_pos(&self, s: &str) -> usize {
+        self.width(s) - 1
+    }
+
+    /// The local certificate for a node of ctor `ctor` (sort `sort`, children
+    /// sorts `arg_sorts`), reading its own annotation from `ann` and child `i`'s
+    /// full value from `kids[i]`. Returns `(lets, checks)`: `checks`' conjunction
+    /// is the node's `valid` bit, and `lets` are `(name, width, expr)` shared
+    /// sub-terms the checks reference (each state's per-child down-routing — bound
+    /// once so the `D` `ddem` rows share it instead of re-emitting an `O(P)` scan
+    /// `D` times). The SAME formulas drive the fixed-tree oracle. `pfx` namespaces
+    /// the let names (the oracle flattens many nodes into one SMT scope).
+    fn node_checks(
+        &self,
+        sort: &str,
+        ctor: &str,
+        arg_sorts: &[String],
+        ann: &str,
+        kids: &[String],
+        pfx: &str,
+    ) -> (Vec<(String, usize, String)>, Vec<String>) {
+        let q_n = self.nq(sort);
+        let mut out: Vec<String> = Vec::new();
+
+        // (C0) every child is itself valid.
+        for (i, a) in arg_sorts.iter().enumerate() {
+            out.push(format!("(= {} #b1)", bit(&kids[i], self.valid_pos(a))));
+        }
+
+        // premise-activeness of a clause (premises currently hold).
+        let prem_active = |gc: &GC| -> String {
+            let parts: Vec<String> = gc
+                .body
+                .iter()
+                .map(|atom| match atom {
+                    GA::Child(ci, st) => {
+                        let qj = self.qidx(&arg_sorts[*ci], st).unwrap();
+                        format!("(= {} #b1)", bit(&kids[*ci], qj))
+                    }
+                    GA::Selfp(st) => format!("(= {} #b1)", bit(ann, self.qidx(sort, st).unwrap())),
+                    GA::Parent(pc, pos, st) => {
+                        let j = self.dsidx(sort, &(pc.clone(), *pos, st.clone())).unwrap();
+                        format!("(= {} #b1)", bit(ann, self.dact_pos(sort, j)))
+                    }
+                })
+                .collect();
+            and_bool(&parts)
+        };
+
+        // same-node deps of a clause, as a Q_n-bit mask over this node's states.
+        let deps_mask = |gc: &GC| -> String {
+            let mut parts: Vec<String> = Vec::new();
+            for atom in &gc.body {
+                match atom {
+                    GA::Selfp(st) => {
+                        let qj = self.qidx(sort, st).unwrap();
+                        parts.push(format!("(bvor {} {})", singleton(qj, q_n), self.r_row(sort, ann, qj)));
+                    }
+                    GA::Parent(pc, pos, st) => {
+                        let j = self.dsidx(sort, &(pc.clone(), *pos, st.clone())).unwrap();
+                        parts.push(self.ddem_row(sort, ann, j));
+                    }
+                    GA::Child(ci, st) => {
+                        // states of THIS node that `st@child` routes back to,
+                        // read from the child's `udem` (child→parent demand). Skip
+                        // child triples `st` can't statically route up via (their
+                        // `udem` is pinned 0, so the term is always-zero).
+                        let a = &arg_sorts[*ci];
+                        let qa = self.qidx(a, st).unwrap();
+                        let mut terms: Vec<String> = Vec::new();
+                        for (tj, trip) in self.ds_of(a).iter().enumerate() {
+                            let (pc2, pos2, st2) = trip;
+                            if pc2 == ctor && *pos2 == *ci && self.routes_up(a, qa, tj) {
+                                if let Some(sj) = self.qidx(sort, st2) {
+                                    terms.push(format!(
+                                        "(ite (= {} #b1) {} {})",
+                                        bit(&kids[*ci], self.udem_pos(a, qa, tj)),
+                                        singleton(sj, q_n),
+                                        bv0(q_n)
+                                    ));
+                                }
+                            }
+                        }
+                        parts.push(bvor_all(&terms, q_n));
+                    }
+                }
+            }
+            bvor_all(&parts, q_n)
+        };
+
+        // (Cup) up[q] ⟺ some clause for (ctor, q) is picked (foundedness, via
+        // pick ⇒ active ∧ deps⊆R below); plus *closure*: if any clause for q is
+        // active, up[q] must hold — without this the solver could choose a sound
+        // but non-least sub-fixpoint (set derivable states to 0). The two together
+        // pin the least fixpoint. (R irreflexive.)
+        for (q, qst) in self.states[sort].iter().enumerate() {
+            let mine: Vec<&usize> = self
+                .clauses(sort)
+                .iter()
+                .filter(|&&k| &self.gcs[k].ctor == ctor && &self.gcs[k].head == qst)
+                .collect();
+            let picks: Vec<String> =
+                mine.iter().map(|&&k| format!("(= {} #b1)", bit(ann, self.pick_pos(sort, self.clause_local(sort, k))))).collect();
+            out.push(format!("(= (= {} #b1) {})", bit(ann, q), or_bool(&picks)));
+            let actives: Vec<String> = mine.iter().map(|&&k| prem_active(&self.gcs[k])).collect();
+            if !actives.is_empty() {
+                out.push(format!("(=> {} (= {} #b1))", or_bool(&actives), bit(ann, q)));
+            }
+            out.push(format!("(= {} #b0)", bit(ann, self.r_pos(sort, q, q))));
+        }
+
+        // (Cpick) a picked clause must be active and contribute its deps to R[head];
+        // clauses of other ctors cannot be picked here.
+        for &k in self.clauses(sort) {
+            let gc = &self.gcs[k];
+            let pbit = bit(ann, self.pick_pos(sort, self.clause_local(sort, k)));
+            if gc.ctor == ctor {
+                let head = self.qidx(sort, &gc.head).unwrap();
+                let mut conj = vec![prem_active(gc)];
+                conj.push(subset(&deps_mask(gc), &self.r_row(sort, ann, head), q_n));
+                out.push(format!("(=> (= {pbit} #b1) {})", and_bool(&conj)));
+            } else {
+                out.push(format!("(= {pbit} #b0)"));
+            }
+        }
+
+        // (Rtrans) R[p][q] ⇒ R[q]-row ⊆ R[p]-row (transitive closure). Skip pairs
+        // where `q` is statically unreachable from `p` (`R[p][q]` is then 0 in the
+        // least solution; a spurious 1 only adds cycle risk, never hides one).
+        for p in 0..q_n {
+            for q in 0..q_n {
+                if p == q || !self.may_dep(&self.states[sort][p], &self.states[sort][q]) {
+                    continue;
+                }
+                out.push(format!(
+                    "(=> (= {} #b1) {})",
+                    bit(ann, self.r_pos(sort, p, q)),
+                    subset(&self.r_row(sort, ann, q), &self.r_row(sort, ann, p), q_n)
+                ));
+            }
+        }
+
+        // (Cudem) udem[Y][t] ⟺ Y directly routes up via t (picked Parent clause)
+        // or Y depends (R) on some Y' that routes up via t. Statically-impossible
+        // routings are pinned to 0; closure terms emitted only for reachable Y'
+        // that can themselves route up via t (the bulk of the `(and …)` prune).
+        for y in 0..q_n {
+            let yst = &self.states[sort][y];
+            for (t, trip) in self.ds_of(sort).iter().enumerate() {
+                let (pc, pos, st) = trip;
+                if !self.routes_up(sort, y, t) {
+                    out.push(format!("(= {} #b0)", bit(ann, self.udem_pos(sort, y, t))));
+                    continue;
+                }
+                let mut terms: Vec<String> = Vec::new();
+                for &k in self.clauses(sort) {
+                    let gc = &self.gcs[k];
+                    if gc.ctor == ctor
+                        && self.qidx(sort, &gc.head) == Some(y)
+                        && gc.body.iter().any(|a| matches!(a, GA::Parent(p2, po2, s2) if p2 == pc && po2 == pos && s2 == st))
+                    {
+                        terms.push(format!("(= {} #b1)", bit(ann, self.pick_pos(sort, self.clause_local(sort, k)))));
+                    }
+                }
+                for yp in 0..q_n {
+                    let ypst = &self.states[sort][yp];
+                    if yp == y || !self.may_dep(yst, ypst) || !self.routes_up(sort, yp, t) {
+                        continue;
+                    }
+                    terms.push(format!(
+                        "(and (= {} #b1) (= {} #b1))",
+                        bit(ann, self.r_pos(sort, y, yp)),
+                        bit(ann, self.udem_pos(sort, yp, t))
+                    ));
+                }
+                out.push(format!("(= (= {} #b1) {})", bit(ann, self.udem_pos(sort, y, t)), or_bool(&terms)));
+            }
+        }
+
+        // (Cchannel) the parent certifies each child's dact + ddem. First bind, per
+        // child `i` and self-state `p`, the down-routing of `p` into child `i`
+        // (`p`'s picked `Child(i,z)` deps) — independent of the triple, so the `D`
+        // ddem rows reference the shared let var instead of re-scanning `P` clauses.
+        let mut lets: Vec<(String, usize, String)> = Vec::new();
+        let mut dr: HashMap<(usize, usize), String> = HashMap::default();
+        for (i, a) in arg_sorts.iter().enumerate() {
+            let q_a = self.nq(a);
+            for p in 0..q_n {
+                let mut dd_terms: Vec<String> = Vec::new();
+                for &k in self.clauses(sort) {
+                    let gc = &self.gcs[k];
+                    if gc.ctor == ctor && self.qidx(sort, &gc.head) == Some(p) {
+                        let z_terms: Vec<String> = gc
+                            .body
+                            .iter()
+                            .filter_map(|atom| match atom {
+                                GA::Child(ci2, z) if *ci2 == i => Some(singleton(self.qidx(a, z).unwrap(), q_a)),
+                                _ => None,
+                            })
+                            .collect();
+                        if !z_terms.is_empty() {
+                            dd_terms.push(format!(
+                                "(ite (= {} #b1) {} {})",
+                                bit(ann, self.pick_pos(sort, self.clause_local(sort, k))),
+                                bvor_all(&z_terms, q_a),
+                                bv0(q_a)
+                            ));
+                        }
+                    }
+                }
+                if !dd_terms.is_empty() {
+                    let name = format!("{pfx}dr_{i}_{p}");
+                    lets.push((name.clone(), q_a, bvor_all(&dd_terms, q_a)));
+                    dr.insert((i, p), name);
+                }
+            }
+        }
+        for (i, a) in arg_sorts.iter().enumerate() {
+            let q_a = self.nq(a);
+            for (j, (pc, pos, st)) in self.ds_of(a).iter().enumerate() {
+                let cact = bit(&kids[i], self.dact_pos(a, j));
+                let cddem = self.ddem_row(a, &kids[i], j);
+                if pc == ctor && *pos == i && self.qidx(sort, st).is_some() {
+                    let sq = self.qidx(sort, st).unwrap();
+                    out.push(format!("(= {cact} {})", bit(ann, sq)));
+                    // ddem = ⋃ over self-states p ∈ {sq}∪R[sq] of p's down-routing dr[i][p].
+                    let p_terms: Vec<String> = (0..q_n)
+                        .filter_map(|p| {
+                            let name = dr.get(&(i, p))?;
+                            let guard = if p == sq { "true".to_string() } else { format!("(= {} #b1)", bit(ann, self.r_pos(sort, sq, p))) };
+                            Some(format!("(ite {guard} {name} {})", bv0(q_a)))
+                        })
+                        .collect();
+                    out.push(format!("(= {cddem} {})", bvor_all(&p_terms, q_a)));
+                } else {
+                    out.push(format!("(= {cact} #b0)"));
+                    out.push(format!("(= {cddem} {})", bv0(q_a)));
+                }
+            }
+        }
+        (lets, out)
+    }
+}
+
+/// The encoder, decoupled from `HornProg`. See [`Enc`] for the node layout.
 fn faithful_sygus_ir(
     states: &HashMap<String, Vec<String>>,
     ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
@@ -472,134 +923,31 @@ fn faithful_sygus_ir(
     start_sort: &str,
     constraints: &[(String, bool)],
     synth_name: &str,
-    fr: usize,
 ) -> String {
-    let mut ctor_sort: HashMap<String, String> = HashMap::default();
-    for (sort, cs) in ctors {
-        for (c, _) in cs {
-            ctor_sort.insert(c.clone(), sort.clone());
-        }
-    }
-    let mut ds: HashMap<String, Vec<(String, usize, String)>> = HashMap::default();
-    for gc in gcs {
-        let sort = &ctor_sort[&gc.ctor];
-        for a in &gc.body {
-            if let GA::Parent(pc, pos, st) = a {
-                let v = ds.entry(sort.clone()).or_default();
-                let e = (pc.clone(), *pos, st.clone());
-                if !v.contains(&e) {
-                    v.push(e);
-                }
-            }
-        }
-    }
-    for v in ds.values_mut() {
-        v.sort();
-    }
-    let empty = Vec::new();
-    let ds_of = |s: &str| ds.get(s).unwrap_or(&empty);
-
-    let nq = |s: &str| states[s].len();
-    let nd = |s: &str| ds_of(s).len();
-    let width = |s: &str| nq(s) + nd(s) * (1 + fr) + nq(s) * fr + 1;
-    let down_active = |s: &str, j: usize| nq(s) + j * (1 + fr);
-    let down_rank = |s: &str, j: usize| nq(s) + j * (1 + fr) + 1;
-    let rank_pos = |s: &str, q: usize| nq(s) + nd(s) * (1 + fr) + q * fr;
-    let valid_pos = |s: &str| width(s) - 1;
-    let qidx = |s: &str, st: &str| states[s].iter().position(|x| x == st);
-    let dsidx = |s: &str, e: &(String, usize, String)| ds_of(s).iter().position(|x| x == e);
-    let rslice = |term: &str, lo: usize| format!("((_ extract {} {}) {term})", lo + fr - 1, lo);
-    let zero = format!("(_ bv0 {fr})");
-
+    let e = Enc::new(states, ctors, gcs);
     let mut s = String::from("(set-logic BV)\n");
 
     for (sort, ctor_list) in ctors {
-        let w = width(sort);
+        let w = e.width(sort);
         for (ctor, arg_sorts) in ctor_list {
             let mut sig = format!("(define-fun {ctor} (");
             for (i, a) in arg_sorts.iter().enumerate() {
-                sig.push_str(&format!("(c{i} (_ BitVec {})) ", width(a)));
+                sig.push_str(&format!("(c{i} (_ BitVec {})) ", e.width(a)));
             }
             let ann_w = (w - 1).max(1);
             sig.push_str(&format!("(ann (_ BitVec {ann_w}))) (_ BitVec {w}) "));
-
-            let upb = |q: usize| format!("((_ extract {q} {q}) ann)");
-            let self_rank = |q: usize| rslice("ann", rank_pos(sort, q));
-            let dact = |j: usize| format!("((_ extract {p} {p}) ann)", p = down_active(sort, j));
-            let drank = |j: usize| rslice("ann", down_rank(sort, j));
-
-            let mut checks: Vec<String> = Vec::new();
-            for (i, a) in arg_sorts.iter().enumerate() {
-                checks.push(format!("(= ((_ extract {p} {p}) c{i}) #b1)", p = valid_pos(a)));
-            }
-            // up[q] ⟺ ∃ clause: all premises hold with strictly smaller rank
-            for (q, qst) in states[sort].iter().enumerate() {
-                let alts: Vec<String> = gcs
-                    .iter()
-                    .filter(|gc| &gc.ctor == ctor && &gc.head == qst)
-                    .map(|gc| {
-                        if gc.body.is_empty() {
-                            return "true".to_string();
-                        }
-                        let parts: Vec<String> = gc
-                            .body
-                            .iter()
-                            .map(|atom| match atom {
-                                GA::Child(ci, st) => {
-                                    let cs = &arg_sorts[*ci];
-                                    let qj = qidx(cs, st).unwrap();
-                                    format!(
-                                        "(and (= ((_ extract {qj} {qj}) c{ci}) #b1) (bvult {} {}))",
-                                        rslice(&format!("c{ci}"), rank_pos(cs, qj)),
-                                        self_rank(q)
-                                    )
-                                }
-                                GA::Selfp(st) => {
-                                    let qj = qidx(sort, st).unwrap();
-                                    format!("(and (= {} #b1) (bvult {} {}))", upb(qj), self_rank(qj), self_rank(q))
-                                }
-                                GA::Parent(pc, pos, st) => {
-                                    let j = dsidx(sort, &(pc.clone(), *pos, st.clone())).unwrap();
-                                    format!("(and (= {} #b1) (bvult {} {}))", dact(j), drank(j), self_rank(q))
-                                }
-                            })
-                            .collect();
-                        and_bool(&parts)
-                    })
-                    .collect();
-                let just = or_bool(&alts);
-                checks.push(if fold_on() && just == "true" {
-                    // up[q] ⟺ true  ⇒  the bit must be 1
-                    format!("(= {} #b1)", upb(q))
-                } else if fold_on() && just == "false" {
-                    // up[q] ⟺ false ⇒  the bit must be 0
-                    format!("(= {} #b0)", upb(q))
-                } else {
-                    format!("(= (= {} #b1) {})", upb(q), just)
-                });
-            }
-            // the parent certifies each child's parent-channel
-            for (i, a) in arg_sorts.iter().enumerate() {
-                for (j, (pc, pos, st)) in ds_of(a).iter().enumerate() {
-                    let cact = format!("((_ extract {p} {p}) c{i})", p = down_active(a, j));
-                    let crank = rslice(&format!("c{i}"), down_rank(a, j));
-                    if pc == ctor && *pos == i && qidx(sort, st).is_some() {
-                        let sq = qidx(sort, st).unwrap();
-                        checks.push(format!("(= {cact} {})", upb(sq)));
-                        checks.push(format!("(= {crank} (ite (= {} #b1) {} {zero}))", upb(sq), self_rank(sq)));
-                    } else {
-                        checks.push(format!("(= {cact} #b0)"));
-                        checks.push(format!("(= {crank} {zero})"));
-                    }
-                }
-            }
+            let kids: Vec<String> = (0..arg_sorts.len()).map(|i| format!("c{i}")).collect();
+            let (lets, checks) = e.node_checks(sort, ctor, arg_sorts, "ann", &kids, "");
             let valid = and_bool(&checks);
             let valid_bit = if fold_on() && valid == "true" {
                 "#b1".to_string()
             } else if fold_on() && valid == "false" {
                 "#b0".to_string()
-            } else {
+            } else if lets.is_empty() {
                 format!("(ite {valid} #b1 #b0)")
+            } else {
+                let bl = lets.iter().map(|(n, _w, x)| format!("({n} {x})")).collect::<Vec<_>>().join(" ");
+                format!("(let ({bl}) (ite {valid} #b1 #b0))")
             };
             let body = if ann_w == w - 1 {
                 format!("(concat {valid_bit} ann)")
@@ -611,10 +959,10 @@ fn faithful_sygus_ir(
     }
 
     // grammar (each node draws a free Ann constant)
-    let mut nts = vec![format!("(Start (_ BitVec {}))", width(start_sort))];
+    let mut nts = vec![format!("(Start (_ BitVec {}))", e.width(start_sort))];
     for sort in ctors.keys() {
-        nts.push(format!("(NT.{sort} (_ BitVec {}))", width(sort)));
-        nts.push(format!("(Ann.{sort} (_ BitVec {}))", (width(sort) - 1).max(1)));
+        nts.push(format!("(NT.{sort} (_ BitVec {}))", e.width(sort)));
+        nts.push(format!("(Ann.{sort} (_ BitVec {}))", (e.width(sort) - 1).max(1)));
     }
     let prod = |sort: &str| -> String {
         ctors[sort]
@@ -628,29 +976,32 @@ fn faithful_sygus_ir(
             .collect::<Vec<_>>()
             .join(" ")
     };
-    let mut rules_txt = vec![format!("(Start (_ BitVec {}) ({}))", width(start_sort), prod(start_sort))];
+    let mut rules_txt = vec![format!("(Start (_ BitVec {}) ({}))", e.width(start_sort), prod(start_sort))];
     for sort in ctors.keys() {
-        rules_txt.push(format!("(NT.{sort} (_ BitVec {}) ({}))", width(sort), prod(sort)));
-        let aw = (width(sort) - 1).max(1);
+        rules_txt.push(format!("(NT.{sort} (_ BitVec {}) ({}))", e.width(sort), prod(sort)));
+        let aw = (e.width(sort) - 1).max(1);
         rules_txt.push(format!("(Ann.{sort} (_ BitVec {aw}) ((Constant (_ BitVec {aw}))))"));
     }
     s.push_str(&format!(
         "(synth-fun {synth_name} () (_ BitVec {})\n ({})\n ({}))\n",
-        width(start_sort),
+        e.width(start_sort),
         nts.join(" "),
         rules_txt.join("\n  ")
     ));
 
-    // constraints: valid root; down[root]=0; goal on root up-bits
-    s.push_str(&format!("(constraint (= ((_ extract {p} {p}) g) #b1))\n", p = valid_pos(start_sort)));
-    if nd(start_sort) > 0 {
-        let lo = down_active(start_sort, 0);
-        let hi = down_rank(start_sort, nd(start_sort) - 1) + fr - 1;
-        s.push_str(&format!("(constraint (= ((_ extract {hi} {lo}) g) (_ bv0 {})))\n", hi - lo + 1));
+    // constraints: valid root; the root has no parent ⇒ its channel/up-demand
+    // (dact, ddem, udem) are all zero; goal on root up-bits.
+    s.push_str(&format!("(constraint (= {} #b1))\n", bit(synth_name, e.valid_pos(start_sort))));
+    let d = e.nd(start_sort);
+    if d > 0 {
+        let q = e.nq(start_sort);
+        let lo = e.dact_pos(start_sort, 0);
+        let hi = e.udem_pos(start_sort, q - 1, d - 1);
+        s.push_str(&format!("(constraint (= {} {}))\n", slice(synth_name, lo, hi), bv0(hi - lo + 1)));
     }
     for (qstate, want) in constraints {
-        if let Some(q) = qidx(start_sort, qstate) {
-            s.push_str(&format!("(constraint (= ((_ extract {q} {q}) g) #b{}))\n", if *want { 1 } else { 0 }));
+        if let Some(q) = e.qidx(start_sort, qstate) {
+            s.push_str(&format!("(constraint (= {} #b{}))\n", bit(synth_name, q), if *want { 1 } else { 0 }));
         }
     }
     s.push_str("(check-synth)\n");
@@ -822,6 +1173,208 @@ mod tests {
         so
     }
 
+    /// Run a plain `QF_BV` `(check-sat)` and return whether it is `sat`.
+    fn smt_sat(smt2: &str, tag: &str) -> bool {
+        let path = std::env::temp_dir().join(format!("delis_{tag}.smt2"));
+        std::fs::write(&path, smt2).unwrap();
+        let out = std::process::Command::new("cvc5").arg("--lang=smt2").arg(&path).output().expect("run cvc5");
+        let so = String::from_utf8_lossy(&out.stdout);
+        let t = so.trim();
+        if t.starts_with("unsat") {
+            false
+        } else if t.starts_with("sat") {
+            true
+        } else {
+            panic!("cvc5 on {tag}: stdout={t:?} stderr={:?}", String::from_utf8_lossy(&out.stderr))
+        }
+    }
+
+    /// A single-sort signature ("T") from abstract rules + a ground tree:
+    /// `ctors` with arities (all args sort "T"), `states` = all predicate names.
+    fn single_sort_sig(
+        rules: &[HornRule],
+        tree: &HT,
+    ) -> (HashMap<String, Vec<String>>, HashMap<String, Vec<(String, Vec<String>)>>) {
+        fn walk(t: &HT, ar: &mut std::collections::BTreeMap<String, usize>) {
+            if let HT::App { fun, args } = t {
+                ar.insert(fun.clone(), args.len());
+                for a in args {
+                    walk(a, ar);
+                }
+            }
+        }
+        let mut ar = std::collections::BTreeMap::new();
+        for r in rules {
+            walk(&r.head.arg, &mut ar);
+            for b in &r.body_atoms {
+                walk(&b.arg, &mut ar);
+            }
+        }
+        walk(tree, &mut ar);
+        let cs: Vec<(String, Vec<String>)> = ar.iter().map(|(f, n)| (f.clone(), vec!["T".to_string(); *n])).collect();
+        let mut ctors = HashMap::default();
+        ctors.insert("T".to_string(), cs);
+        let mut preds = std::collections::BTreeSet::new();
+        for r in rules {
+            preds.insert(r.head.pred.clone());
+            for b in &r.body_atoms {
+                preds.insert(b.pred.clone());
+            }
+        }
+        let mut states = HashMap::default();
+        states.insert("T".to_string(), preds.into_iter().collect::<Vec<_>>());
+        (states, ctors)
+    }
+
+    /// Partial-evaluate the node certificate on a FIXED ground tree: declare each
+    /// node's annotation as a free const, assert `node_checks` for every node plus
+    /// the root constraints, and report whether SOME annotation satisfies them.
+    /// By soundness+completeness this is `sat` iff `crossing_eval` accepts the goal.
+    fn local_check_sat(
+        states: &HashMap<String, Vec<String>>,
+        ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
+        gcs: &[GC],
+        constraints: &[(String, bool)],
+        gt: &Ground,
+    ) -> bool {
+        let e = Enc::new(states, ctors, gcs);
+        let sort = "T";
+        let w = e.width(sort);
+        let n_nodes = gt.ctor.len();
+        let mut smt = String::from("(set-logic QF_BV)\n");
+        for n in 0..n_nodes {
+            smt.push_str(&format!("(declare-const n{n} (_ BitVec {w}))\n"));
+        }
+        for n in 0..n_nodes {
+            let ctor = &gt.ctor[n];
+            let arg_sorts = &ctors[sort].iter().find(|(c, _)| c == ctor).expect("ctor in sig").1;
+            let kids: Vec<String> = gt.children[n].iter().map(|c| format!("n{c}")).collect();
+            let (lets, checks) = e.node_checks(sort, ctor, arg_sorts, &format!("n{n}"), &kids, &format!("d{n}_"));
+            for (name, bw, expr) in &lets {
+                smt.push_str(&format!("(declare-const {name} (_ BitVec {bw}))\n(assert (= {name} {expr}))\n"));
+            }
+            for chk in &checks {
+                smt.push_str(&format!("(assert {chk})\n"));
+            }
+        }
+        let d = e.nd(sort);
+        if d > 0 {
+            let q = e.nq(sort);
+            let lo = e.dact_pos(sort, 0);
+            let hi = e.udem_pos(sort, q - 1, d - 1);
+            smt.push_str(&format!("(assert (= {} {}))\n", slice("n0", lo, hi), bv0(hi - lo + 1)));
+        }
+        for (qst, want) in constraints {
+            if let Some(q) = e.qidx(sort, qst) {
+                smt.push_str(&format!("(assert (= {} #b{}))\n", bit("n0", q), if *want { 1 } else { 0 }));
+            }
+        }
+        smt.push_str("(check-sat)\n");
+        smt_sat(&smt, "oracle")
+    }
+
+    /// The crossing-relation certificate, partially evaluated on a fixed tree, is
+    /// `sat` iff the exact LFP (`crossing_eval`) accepts — across all clause
+    /// shapes, an unfounded cycle (rejected), and DEEP trees (no tree bound).
+    #[test]
+    fn local_checks_match_lfp_and_deep() {
+        if !cvc5_available() {
+            eprintln!("cvc5 not found; skipping");
+            return;
+        }
+        let check = |rules: &[HornRule], tree: &HT, cons: &[(String, bool)], label: &str| {
+            let (states, ctors) = single_sort_sig(rules, tree);
+            let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
+            let gt = build_ground(tree);
+            let holds = crossing_eval(rules, &gt);
+            let want = cons.iter().all(|(q, w)| holds.contains(&(q.clone(), 0)) == *w);
+            let got = local_check_sat(&states, &ctors, &gcs, cons, &gt);
+            let at0: Vec<&String> = holds.iter().filter(|(_, n)| *n == 0).map(|(s, _)| s).collect();
+            assert_eq!(got, want, "oracle({label}) got={got} want={want}; holds@root={at0:?}");
+        };
+        let cc = || c("c");
+        let topxy = || f("top", vec![v("x"), v("y")]);
+        let topcy = || f("top", vec![cc(), v("y")]);
+
+        // intersection (non-additive)
+        let inter = vec![
+            rule(atom("P", topxy()), vec![]),
+            rule(atom("Q", topxy()), vec![]),
+            rule(atom("A", cc()), vec![atom("P", topcy())]),
+            rule(atom("B", cc()), vec![atom("Q", topcy())]),
+            rule(atom("C", cc()), vec![atom("A", cc()), atom("B", cc())]),
+            rule(atom("Win", topxy()), vec![atom("C", v("x"))]),
+        ];
+        let tcc = f("top", vec![cc(), cc()]);
+        check(&inter, &tcc, &[("Win".into(), true)], "inter+");
+        check(&inter, &tcc, &[("Win".into(), false)], "inter-");
+
+        // mixed up+down
+        let gx = || f("g", vec![v("x")]);
+        let mixed = vec![
+            rule(atom("Good", cc()), vec![]),
+            rule(atom("T", topxy()), vec![]),
+            rule(atom("R", gx()), vec![atom("Good", v("x"))]),
+            rule(atom("W", gx()), vec![atom("T", f("top", vec![gx(), v("z")])), atom("R", gx())]),
+            rule(atom("Win", topxy()), vec![atom("W", v("x"))]),
+        ];
+        let tgc = f("top", vec![f("g", vec![cc()]), cc()]);
+        check(&mixed, &tgc, &[("Win".into(), true)], "mixed+");
+        check(&mixed, &tgc, &[("Win".into(), false)], "mixed-");
+
+        // multiple parent atoms
+        let multi = vec![
+            rule(atom("P", topxy()), vec![]),
+            rule(atom("Q", f("top", vec![v("x"), cc()])), vec![atom("Good", v("y"))]),
+            rule(atom("Good", cc()), vec![]),
+            rule(atom("U", cc()), vec![atom("P", topcy()), atom("Q", topcy())]),
+            rule(atom("Win", topxy()), vec![atom("U", v("x"))]),
+        ];
+        check(&multi, &tcc, &[("Win".into(), true)], "multi+");
+        check(&multi, &tcc, &[("Win".into(), false)], "multi-");
+
+        // unfounded cycle: A@child ⟷ B@parent with no base ⇒ LFP empty.
+        let cyc = vec![
+            rule(atom("A", cc()), vec![atom("B", topcy())]),
+            rule(atom("B", topxy()), vec![atom("A", v("x"))]),
+        ];
+        check(&cyc, &tcc, &[("B".into(), true)], "cyc-unfounded");
+        check(&cyc, &tcc, &[("B".into(), false)], "cyc-empty");
+        // founded once a base is added.
+        let mut cyc2 = cyc.clone();
+        cyc2.push(rule(atom("A", cc()), vec![]));
+        check(&cyc2, &tcc, &[("B".into(), true)], "cyc-founded");
+
+        // 3-level mutual cycle across grandparent–parent–child — the case a
+        // set-only channel would miss: Q0@R → Q1@M → Q2@c → Q3@M → Q0@R (no base
+        // ⇒ LFP empty; the relation must turn it into a same-node Q1↔Q3 cycle at M).
+        let mx = || f("M", vec![v("x")]);
+        let cyc3 = vec![
+            rule(atom("Q0", f("R", vec![v("x")])), vec![atom("Q1", v("x"))]),
+            rule(atom("Q1", mx()), vec![atom("Q2", v("x"))]),
+            rule(atom("Q2", cc()), vec![atom("Q3", f("M", vec![cc()]))]),
+            rule(atom("Q3", mx()), vec![atom("Q0", f("R", vec![mx()]))]),
+        ];
+        let t3 = f("R", vec![f("M", vec![cc()])]);
+        check(&cyc3, &t3, &[("Q0".into(), true)], "cyc3-unfounded");
+        check(&cyc3, &t3, &[("Q0".into(), false)], "cyc3-empty");
+        // founded once the child gets a base.
+        let mut cyc3f = cyc3.clone();
+        cyc3f.push(rule(atom("Q2", cc()), vec![]));
+        check(&cyc3f, &t3, &[("Q0".into(), true)], "cyc3-founded");
+
+        // DEEP pure-down chain (depth ≫ |Q|): no tree bound needed.
+        let deep = vec![
+            rule(atom("Acc", c("e")), vec![]),
+            rule(atom("Acc", f("s", vec![v("x")])), vec![atom("Acc", v("x"))]),
+        ];
+        let mut spine = c("e");
+        for _ in 0..20 {
+            spine = f("s", vec![spine]);
+        }
+        check(&deep, &spine, &[("Acc".into(), true)], "deep-chain");
+    }
+
     /// The faithful semantics equals the exact LFP on every clause shape:
     /// intersection (non-additive), mixed up+down, multiple parent atoms, and CFG.
     #[test]
@@ -934,7 +1487,7 @@ mod tests {
             GC { ctor: "top".into(), head: "Win".into(), body: vec![GA::Child(0, "B".into())] },
             GC { ctor: "r".into(), head: "B".into(), body: vec![GA::Parent("top".into(), 0, "A".into())] },
         ];
-        let sygus = faithful_sygus_ir(&states, &ctors, &gcs, "T", &[("Win".to_string(), true)], "g", 4);
+        let sygus = faithful_sygus_ir(&states, &ctors, &gcs, "T", &[("Win".to_string(), true)], "g");
         let so = cvc5_solve(&sygus, "faithful_toy", 60_000);
         assert!(so.contains("(top"), "expected top(...): {so}");
         assert!(so.contains("e2") && so.contains('r'), "expected top(r, e2): {so}");
