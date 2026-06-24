@@ -534,9 +534,11 @@ struct Enc<'a> {
     /// `pick` is a per-state *binary index* of the founding clause (every value a
     /// valid choice) instead of `P` one-hot bits (almost all patterns invalid).
     pos_in_group: Vec<usize>,
-    /// per sort, the binary width of a `pick` index = bits to hold the largest
-    /// `(ctor, head)` group (+ the "unfounded" = 0 value).
-    pw: HashMap<String, usize>,
+    /// per sort, prefix bit-offsets of each state's `pick` field within the pick
+    /// region (len `Q+1`; `[q]` = offset of state `q`, `[Q]` = total pick width).
+    /// Each state gets only `⌈log₂(maxgroup(q)+1)⌉` bits, not a global `pw` — a
+    /// singleton-only state costs ~1 bit, not the sort-wide max.
+    pick_off: HashMap<String, Vec<usize>>,
 }
 
 impl<'a> Enc<'a> {
@@ -642,15 +644,32 @@ impl<'a> Enc<'a> {
             *c += 1;
             pos_in_group[k] = *c;
         }
-        let mut pw: HashMap<String, usize> = HashMap::default();
-        for sort in ctors.keys() {
-            let maxg = sort_clauses
-                .get(sort)
-                .map(|ks| ks.iter().map(|&k| group_count[&(gcs[k].ctor.clone(), gcs[k].head.clone())]).max().unwrap_or(0))
-                .unwrap_or(0);
-            pw.insert(sort.clone(), (usize::BITS - maxg.leading_zeros()).max(1) as usize);
+        // Per-state pick width: state `q`'s field must hold `0..maxgroup(q)`
+        // where `maxgroup(q)` = the largest `(ctor,q)` group over all ctors.
+        let mut pick_off: HashMap<String, Vec<usize>> = HashMap::default();
+        for (sort, sts) in states {
+            let mut off = Vec::with_capacity(sts.len() + 1);
+            let mut acc = 0usize;
+            for q in sts {
+                off.push(acc);
+                let maxg = sort_clauses
+                    .get(sort)
+                    .map(|ks| {
+                        ks.iter()
+                            .filter(|&&k| &gcs[k].head == q)
+                            .map(|&k| group_count[&(gcs[k].ctor.clone(), gcs[k].head.clone())])
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .unwrap_or(0);
+                // bits to index `0..maxg`; a non-head state (maxg=0) costs 0 bits.
+                let w = if maxg == 0 { 0 } else { (usize::BITS - maxg.leading_zeros()) as usize };
+                acc += w;
+            }
+            off.push(acc);
+            pick_off.insert(sort.clone(), off);
         }
-        Enc { states, gcs, ds, sort_clauses, reach, route, ud_rank, pos_in_group, pw }
+        Enc { states, gcs, ds, sort_clauses, reach, route, ud_rank, pos_in_group, pick_off }
     }
 
     /// Can `y` (state index of `sort`) route up via DS triple `t` in some candidate?
@@ -757,11 +776,17 @@ impl<'a> Enc<'a> {
         self.ds_of(s).iter().position(|x| x == e)
     }
 
-    fn pw_of(&self, s: &str) -> usize {
-        self.pw[s]
+    /// Width of state `q`'s `pick` field (`⌈log₂(maxgroup(q)+1)⌉`, 0 if non-head).
+    fn pw_of(&self, s: &str, q: usize) -> usize {
+        let off = &self.pick_off[s];
+        off[q + 1] - off[q]
+    }
+    /// Total `pick` bits for sort `s` (sum of per-state widths).
+    fn pick_w(&self, s: &str) -> usize {
+        *self.pick_off[s].last().unwrap()
     }
 
-    // --- layout offsets: value = [dact:D | pick:Q·pw | up:Q | udem:Nud | valid:1] ---
+    // --- layout offsets: value = [dact:D | pick:ΣwQ | up:Q | udem:Nud | valid:1] ---
     // ONLY `dact`+`pick` are guessed (the Constant, low bits, so Constant offsets =
     // value offsets); `up`/`udem` are COMPUTED in the define-fun (high bits), and `R`
     // (the support relation) is computed *internally* (let-bound rows, never stored).
@@ -774,12 +799,12 @@ impl<'a> Enc<'a> {
     fn dact_pos(&self, _s: &str, j: usize) -> usize {
         j
     }
-    /// Low bit of state `q`'s `pick` index (a `pw`-bit binary clause selector).
+    /// Low bit of state `q`'s `pick` index (a per-state binary clause selector).
     fn pick_idx_lo(&self, s: &str, q: usize) -> usize {
-        self.nd(s) + q * self.pw_of(s)
+        self.nd(s) + self.pick_off[s][q]
     }
     fn up_pos(&self, s: &str, q: usize) -> usize {
-        self.nd(s) + self.nq(s) * self.pw_of(s) + q
+        self.nd(s) + self.pick_w(s) + q
     }
     /// Number of routable `(y,t)` pairs = width of the packed `udem` field.
     fn nud(&self, s: &str) -> usize {
@@ -787,7 +812,7 @@ impl<'a> Enc<'a> {
     }
     /// Low bit of the `udem` field (just above `up`).
     fn udem_base(&self, s: &str) -> usize {
-        self.nd(s) + self.nq(s) * self.pw_of(s) + self.nq(s)
+        self.nd(s) + self.pick_w(s) + self.nq(s)
     }
     /// Packed bit position of routable pair `(y,t)`. Only ever called for routable
     /// pairs (writer iterates `route`; reader gates on `routes_up`).
@@ -796,7 +821,7 @@ impl<'a> Enc<'a> {
     }
     /// Width of the `Constant` = the guess-only prefix `[dact | pick]`.
     fn ann_w(&self, s: &str) -> usize {
-        self.nd(s) + self.nq(s) * self.pw_of(s)
+        self.nd(s) + self.pick_w(s)
     }
     /// "Clause `k` is the one picked here" = `pick[head(k)] == position-of-k`.
     /// Read from the per-node `sel{k}` binding (CSE'd once by `node_checks`), not
@@ -807,7 +832,7 @@ impl<'a> Enc<'a> {
     /// The actual definition of `sel{k}` (a Bool `let`): `pick[head(k)] == pos(k)`.
     fn pick_sel_def(&self, s: &str, term: &str, k: usize) -> String {
         let q = self.qidx(s, &self.gcs[k].head).expect("clause head is a state");
-        let pw = self.pw_of(s);
+        let pw = self.pw_of(s, q);
         let lo = self.pick_idx_lo(s, q);
         format!("(= {} (_ bv{} {pw}))", slice(term, lo, lo + pw - 1), self.pos_in_group[k])
     }
@@ -1192,6 +1217,53 @@ mod tests {
     use crate::backends::smt2::ast::{HornAtom, HornRule};
     use crate::lang::runtime::Session;
     use crate::parser::DelisProg;
+
+    /// Per-state `pick` width layout: each state's field must (a) hold every
+    /// `pos_in_group` value of its clauses, (b) be contiguous and non-overlapping,
+    /// and (c) leave `ann_w`/`up`/`udem`/`valid` offsets consistent. Non-head
+    /// states cost 0 bits. Pure (no solver) — guards the #6 layout change.
+    #[test]
+    fn per_state_pick_widths_fit_and_pack() {
+        // q0: 3 clauses under ctor `k` (group 3 → 2 bits); q1: 1 (→ 1 bit);
+        // A,B,C: 1 leaf clause each (→ 1 bit); a non-head state gets 0 bits.
+        let kx = || f("k", vec![v("x")]);
+        let rules = vec![
+            rule(atom("q0", kx()), vec![atom("A", v("x"))]),
+            rule(atom("q0", kx()), vec![atom("B", v("x"))]),
+            rule(atom("q0", kx()), vec![atom("C", v("x"))]),
+            rule(atom("q1", kx()), vec![atom("A", v("x"))]),
+            rule(atom("A", c("c")), vec![]),
+            rule(atom("B", c("c")), vec![]),
+            rule(atom("C", c("c")), vec![]),
+        ];
+        let tree = f("k", vec![c("c")]);
+        let (states, ctors) = single_sort_sig(&rules, &tree);
+        let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
+        let e = Enc::new(&states, &ctors, &gcs);
+        let s = "T";
+        let qi = |n: &str| e.qidx(s, n).unwrap();
+        // (a) widths match group sizes (bits to index 0..g).
+        assert_eq!(e.pw_of(s, qi("q0")), 2, "group 3 needs 2 bits");
+        assert_eq!(e.pw_of(s, qi("q1")), 1, "group 1 needs 1 bit");
+        assert_eq!(e.pw_of(s, qi("A")), 1);
+        // a state that is never a clause head costs 0 pick bits.
+        if let Some(idx) = e.qidx(s, "Goal") {
+            assert_eq!(e.pw_of(s, idx), 0);
+        }
+        // (b) every clause's selector value fits its head's field.
+        for (k, gc) in gcs.iter().enumerate() {
+            let w = e.pw_of(s, qi(&gc.head));
+            assert!(e.pos_in_group[k] < (1usize << w), "pos {} overflows {w}-bit field for {}", e.pos_in_group[k], gc.head);
+        }
+        // (c) fields are contiguous & ordered; layout regions don't overlap.
+        let off = &e.pick_off[s];
+        assert!(off.windows(2).all(|w| w[0] <= w[1]), "pick offsets must be monotone");
+        assert_eq!(off[0], 0);
+        assert_eq!(e.ann_w(s), e.nd(s) + e.pick_w(s), "ann = dact + pick");
+        assert_eq!(e.up_pos(s, 0), e.nd(s) + e.pick_w(s), "up sits just above [dact|pick]");
+        assert_eq!(e.udem_base(s), e.up_pos(s, 0) + e.nq(s), "udem sits just above up");
+        assert!(e.valid_pos(s) >= e.udem_base(s) + e.nud(s), "valid is the top bit");
+    }
 
     fn v(n: &str) -> HT {
         HT::var(n)
