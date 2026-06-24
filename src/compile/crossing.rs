@@ -5,12 +5,14 @@
 //! The semantics of a FACET program is a two-way alternating tree automaton over
 //! the candidate syntax tree, accepted by a least fixpoint (reachability). The
 //! one-way encoding here is a **crossing-relation annotation certificate**: each
-//! node carries guessed `up[state]`, a same-node support relation `R ⊆ Q×Q`, a
-//! parent-channel (`dact`/`ddem`) and child→parent demand (`udem`), and clause
-//! `pick` bits. A computed `valid` bit checks, for every clause uniformly
-//! (child-ref / self-loop / parent-atom), that `up` is justified and that `R` is
-//! the chosen support — irreflexive and transitively closed, i.e. acyclic, hence
-//! the least fixpoint. `R` summarizes the up/down crossings (Shepherdson 1959;
+//! node's `ann` (`Constant`) guesses only a parent-channel `dact` and clause
+//! `pick` bits; `up[state]` (`= ⋁ pick`), the child→parent demand `udem`, and a
+//! `valid` bit are *computed* in the define-fun. A same-node support relation
+//! `R ⊆ Q×Q` is computed internally (never stored). The `valid` bit checks, for
+//! every clause uniformly (child-ref / self-loop / parent-atom), that `up` is
+//! justified and that `R` is the chosen support — irreflexive and transitively
+//! closed, i.e. acyclic, hence the least fixpoint. `R` summarizes the up/down
+//! crossings (Shepherdson 1959;
 //! Vardi 1998, specialized to no-parity since delis is monotone LFP), so its
 //! width depends only on `|Q|`, **never on tree size** — the encoding is sound and
 //! complete for unbounded trees and handles intersection, mixed up+down clauses,
@@ -483,26 +485,32 @@ pub(crate) fn decode_term(stdout: &str, synth_name: &str) -> Option<String> {
 }
 
 /// Per-sort node layout + the local `node_checks` certificate, shared by the
-/// SyGuS emitter and the fixed-tree validation oracle. Node layout per sort `s`
-/// (`Q=|states|`, `D=|DS|`, `P=#clauses producing s`):
+/// SyGuS emitter and the fixed-tree validation oracle. Node value per sort `s`
+/// (`Q=|states|`, `D=|DS|`, `pw=⌈log₂(max group)⌉`); low bits are the guessed
+/// `ann` (`Constant`), high bits are computed in the define-fun:
 ///
-/// `[ up:Q ][ R:Q² ][ dact:D ][ udem:Q·D ][ pick:Q·pw ][ valid:1 ]`
+/// `[ dact:D | pick:Q·pw | up:Q | udem:Q·D | valid:1 ]`   (low → high)
+///   └────── ann (guessed) ──────┘└──────── computed ─────────┘
 ///
-/// - `up[q]`            — guessed acceptance: state `q` holds at this node.
-/// - `R[p][q]`          — same-node support relation: `up[p]` (transitively)
-///   depends on `up[q]` at this node. Required irreflexive + transitively
-///   closed ⇒ acyclic support ⇒ least fixpoint. This replaces the old numeric
-///   rank; it is the Shepherdson/Vardi crossing relation (no parity, since delis
-///   is monotone LFP). Width depends only on `|Q|`, never on tree size.
 /// - `dact[j]`          — parent-channel for `DS` triple `j=(pc,pos,st)`: "my
 ///   parent is `pc`, I'm at `pos`, parent has `st`" (certified by the parent =
-///   parent's `up[st]`). This is the irreducible two-way guess.
+///   parent's `up[st]`). This is the irreducible two-way guess. *Guessed.*
+/// - `pick[q]`          — `pw`-bit binary index of the clause that founds `up[q]`
+///   (`0` = unfounded); makes the chosen derivation unambiguous so `R` is the
+///   chosen support, not an over-approx. *Guessed.*
+/// - `up[q]`            — `= ⋁ pick[q]`: state `q` holds at this node. *Computed.*
 /// - `udem[Y][j]`       — child→parent demand: my state `Y` routes up to `st@parent`
 ///   for triple `j`. Every support cycle is caught at its *top* node via this
 ///   down-routing, so the symmetric up-routing channel (`ddem`) is unnecessary.
-/// - `pick[q]`          — `pw`-bit binary index of the clause that founds `up[q]`
-///   (`0` = unfounded); makes the chosen derivation unambiguous so `R` is the
-///   chosen support, not an over-approx.
+///   *Computed.*
+/// - `valid`            — conjunction of all `node_checks`. *Computed.*
+///
+/// `R[p][q]` (same-node support relation: `up[p]` transitively depends on `up[q]`,
+/// required irreflexive ⇒ acyclic support ⇒ least fixpoint; the Shepherdson/Vardi
+/// crossing relation, no parity since delis is monotone LFP) is **never stored in
+/// the value** — it is `let`-bound internally per node, computed by
+/// SCC-condensation of the `may_dep` graph (see `node_checks`). Its width depends
+/// only on `|Q|`, never on tree size.
 struct Enc<'a> {
     states: &'a HashMap<String, Vec<String>>,
     gcs: &'a [GC],
@@ -642,6 +650,82 @@ impl<'a> Enc<'a> {
         self.reach.get(p).is_some_and(|r| r.contains(q))
     }
 
+    /// Strongly-connected components of the `may_dep` graph among `sort`'s
+    /// states. Returns `(scc_of, order)`: `scc_of[p]` is `p`'s component id, and
+    /// `order` lists components in sink-first order (a component appears before
+    /// every component that depends on it). Because every gated `R` edge lies in
+    /// `may_dep` (verified), each actual support cycle is contained in one
+    /// component — so the closure can square within components only, and treat
+    /// the inter-component edges as the DAG they are. Iterative Tarjan, which
+    /// yields components in reverse-topological (sink-first) finalization order.
+    fn sccs(&self, sort: &str) -> (Vec<usize>, Vec<Vec<usize>>) {
+        let sts = &self.states[sort];
+        let q = sts.len();
+        let idx: HashMap<&str, usize> =
+            sts.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+        let mut adj = vec![Vec::new(); q];
+        for (i, s) in sts.iter().enumerate() {
+            if let Some(r) = self.reach.get(s) {
+                for t in r {
+                    if let Some(&j) = idx.get(t.as_str()) {
+                        if i != j {
+                            adj[i].push(j);
+                        }
+                    }
+                }
+            }
+        }
+        let (mut id, mut low) = (vec![usize::MAX; q], vec![0usize; q]);
+        let mut on = vec![false; q];
+        let (mut stk, mut scc_of) = (Vec::new(), vec![usize::MAX; q]);
+        let (mut counter, mut nscc) = (0usize, 0usize);
+        for s0 in 0..q {
+            if id[s0] != usize::MAX {
+                continue;
+            }
+            let mut call = vec![(s0, 0usize)];
+            while let Some(&(v, pi)) = call.last() {
+                if pi == 0 {
+                    id[v] = counter;
+                    low[v] = counter;
+                    counter += 1;
+                    stk.push(v);
+                    on[v] = true;
+                }
+                if pi < adj[v].len() {
+                    let w = adj[v][pi];
+                    call.last_mut().unwrap().1 += 1;
+                    if id[w] == usize::MAX {
+                        call.push((w, 0));
+                    } else if on[w] {
+                        low[v] = low[v].min(id[w]);
+                    }
+                } else {
+                    if low[v] == id[v] {
+                        loop {
+                            let w = stk.pop().unwrap();
+                            on[w] = false;
+                            scc_of[w] = nscc;
+                            if w == v {
+                                break;
+                            }
+                        }
+                        nscc += 1;
+                    }
+                    call.pop();
+                    if let Some(&(p, _)) = call.last() {
+                        low[p] = low[p].min(low[v]);
+                    }
+                }
+            }
+        }
+        let mut order = vec![Vec::new(); nscc];
+        for (p, &c) in scc_of.iter().enumerate() {
+            order[c].push(p);
+        }
+        (scc_of, order)
+    }
+
     fn nq(&self, s: &str) -> usize {
         self.states[s].len()
     }
@@ -691,17 +775,14 @@ impl<'a> Enc<'a> {
     fn ann_w(&self, s: &str) -> usize {
         self.nd(s) + self.nq(s) * self.pw_of(s)
     }
-    /// `⌈log₂ Q⌉` repeated-squaring rounds — enough to close paths of length `< Q`.
-    fn closure_rounds(&self, s: &str) -> usize {
-        let q = self.nq(s);
-        if q <= 1 {
-            0
-        } else {
-            (usize::BITS - (q - 1).leading_zeros()) as usize
-        }
-    }
     /// "Clause `k` is the one picked here" = `pick[head(k)] == position-of-k`.
-    fn pick_sel(&self, s: &str, term: &str, k: usize) -> String {
+    /// Read from the per-node `sel{k}` binding (CSE'd once by `node_checks`), not
+    /// re-sliced from `ann` at every use — the slice reads were ~half the file.
+    fn pick_sel(&self, pfx: &str, k: usize) -> String {
+        format!("{pfx}sel{k}")
+    }
+    /// The actual definition of `sel{k}` (a Bool `let`): `pick[head(k)] == pos(k)`.
+    fn pick_sel_def(&self, s: &str, term: &str, k: usize) -> String {
         let q = self.qidx(s, &self.gcs[k].head).expect("clause head is a state");
         let pw = self.pw_of(s);
         let lo = self.pick_idx_lo(s, q);
@@ -729,13 +810,22 @@ impl<'a> Enc<'a> {
         pfx: &str,
     ) -> (Vec<Vec<(String, usize, String)>>, Vec<String>, String, String) {
         let q_n = self.nq(sort);
-        let rounds = self.closure_rounds(sort);
-        // nested let groups: group 0 = `up`+`R0` (independent), group `i` = `R{i}`
-        // (depends on `R{i-1}`). SMT `let` is parallel, so the emitter nests them.
-        let mut groups: Vec<Vec<(String, usize, String)>> = vec![Vec::new(); rounds + 1];
+        // Nested `let` groups, emitted outer→inner; a binding may reference any
+        // earlier group. Group 0 = `sel{k}` clause-selector Bools (CSE'd once,
+        // read by up/R0/Cpick/udem). Group 1 = `up` + `R0`. The R* closure then
+        // appends one group per SCC-condensation step (downstream incorporation,
+        // then per-component squaring rounds), in sink-first order. Bool bindings
+        // carry width 0 (sentinel) so the oracle declares them `Bool`, not BitVec.
+        let mut groups: Vec<Vec<(String, usize, String)>> = vec![Vec::new(), Vec::new()];
         let mut checks: Vec<String> = Vec::new();
         let up_name = |q: usize| format!("{pfx}up{q}");
-        let r_name = |p: usize| format!("{pfx}R{rounds}_{p}");
+        // (sel) one binding per clause of this ctor — the only read of `ann`'s
+        // `pick` field; everything else references the Bool by name.
+        for &k in self.clauses(sort) {
+            if self.gcs[k].ctor == *ctor {
+                groups[0].push((format!("{pfx}sel{k}"), 0, self.pick_sel_def(sort, ann, k)));
+            }
+        }
 
         // premises of clause `gc` hold (Child→child up, Selfp→own up, Parent→dact).
         let prem_active = |gc: &GC| -> String {
@@ -784,8 +874,8 @@ impl<'a> Enc<'a> {
         for (q, qst) in self.states[sort].iter().enumerate() {
             let mine: Vec<usize> =
                 self.clauses(sort).iter().copied().filter(|&k| self.gcs[k].ctor == *ctor && &self.gcs[k].head == qst).collect();
-            let picks: Vec<String> = mine.iter().map(|&k| self.pick_sel(sort, ann, k)).collect();
-            groups[0].push((up_name(q), 1, format!("(ite {} #b1 #b0)", or_bool(&picks))));
+            let picks: Vec<String> = mine.iter().map(|&k| self.pick_sel(pfx, k)).collect();
+            groups[1].push((up_name(q), 1, format!("(ite {} #b1 #b0)", or_bool(&picks))));
             let actives: Vec<String> = mine.iter().map(|&k| prem_active(&self.gcs[k])).collect();
             if !actives.is_empty() {
                 checks.push(format!("(=> {} (= {} #b1))", or_bool(&actives), up_name(q)));
@@ -796,36 +886,114 @@ impl<'a> Enc<'a> {
         // (Cpick) a picked clause must be active (its deps enter R automatically).
         for &k in self.clauses(sort) {
             if self.gcs[k].ctor == *ctor {
-                checks.push(format!("(=> {} {})", self.pick_sel(sort, ann, k), prem_active(&self.gcs[k])));
+                checks.push(format!("(=> {} {})", self.pick_sel(pfx, k), prem_active(&self.gcs[k])));
             }
         }
 
-        // (R) support relation by reach-pruned repeated squaring. Round 0 = the
-        // picked clause's direct deps; then square `rounds` times to close.
+        // (R) support relation R*, by SCC-condensation of the `may_dep` graph.
+        // Inter-component edges form a DAG: no squaring needed — incorporate the
+        // already-final rows of downstream components in sink-first order. Only
+        // states inside one strongly-connected component can lie on a cycle, so
+        // squaring is bounded by component size, not Q. R0[p] = this ctor's gated
+        // direct support. Sound for both the acyclicity check and udem's
+        // reachability reads because every gated edge is in `may_dep` (verified by
+        // `r0_support_edges_are_within_may_dep`).
+        let (scc_of, order) = self.sccs(sort);
+        let r0_name = |p: usize| format!("{pfx}R0_{p}");
+        let empty = bv0(q_n);
         for p in 0..q_n {
             let terms: Vec<String> = self
                 .clauses(sort)
                 .iter()
                 .filter(|&&k| self.gcs[k].ctor == *ctor && self.qidx(sort, &self.gcs[k].head) == Some(p))
-                .map(|&k| format!("(ite {} {} {})", self.pick_sel(sort, ann, k), deps_direct(&self.gcs[k]), bv0(q_n)))
+                // A clause with no same-node deps contributes `(ite pick 0 0)` ≡ 0
+                // to the bvor — drop it (these no-op ites were ~16k of the file).
+                .filter_map(|&k| {
+                    let d = deps_direct(&self.gcs[k]);
+                    (d != empty).then(|| format!("(ite {} {} {})", self.pick_sel(pfx, k), d, empty))
+                })
                 .collect();
-            groups[0].push((format!("{pfx}R0_{p}"), q_n, bvor_all(&terms, q_n)));
+            groups[1].push((r0_name(p), q_n, bvor_all(&terms, q_n)));
         }
-        for i in 1..=rounds {
-            for p in 0..q_n {
-                let prev = |x: usize| format!("{pfx}R{}_{x}", i - 1);
-                let mut terms = vec![prev(p)];
-                for m in 0..q_n {
-                    if m != p && self.may_dep(&self.states[sort][p], &self.states[sort][m]) {
-                        terms.push(format!("(ite (= {} #b1) {} {})", bit(&prev(p), m), prev(m), bv0(q_n)));
+        // Structural direct R0 targets of `p` for this ctor — splits `p`'s edges
+        // into intra-component (squared) vs downstream (DAG-incorporated). Mirrors
+        // `deps_direct`'s target set; an edge never points to a higher component.
+        let r0_targets = |p: usize| -> Vec<usize> {
+            let mut tg = Vec::new();
+            for &k in self.clauses(sort) {
+                if self.gcs[k].ctor != *ctor || self.qidx(sort, &self.gcs[k].head) != Some(p) {
+                    continue;
+                }
+                for atom in &self.gcs[k].body {
+                    match atom {
+                        GA::Parent(..) => {}
+                        GA::Selfp(st) => tg.extend(self.qidx(sort, st)),
+                        GA::Child(ci, st) => {
+                            let a = &arg_sorts[*ci];
+                            if let Some(qa) = self.qidx(a, st) {
+                                for (tj, (pc2, pos2, st2)) in self.ds_of(a).iter().enumerate() {
+                                    if pc2 == ctor && *pos2 == *ci && self.routes_up(a, qa, tj) {
+                                        tg.extend(self.qidx(sort, st2));
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                groups[i].push((format!("{pfx}R{i}_{p}"), q_n, bvor_all(&terms, q_n)));
+            }
+            tg.sort_unstable();
+            tg.dedup();
+            tg
+        };
+        // Final closure-row name per state, resolved sink-first.
+        let mut rf: Vec<String> = (0..q_n).map(|p| r0_name(p)).collect();
+        for comp in &order {
+            // Incorporate downstream rows: a live direct edge `p→w` to a lower
+            // component means `p` reaches everything `w` reaches (`rf[w]` final).
+            let mut g = groups.len();
+            groups.push(Vec::new());
+            for &p in comp {
+                let mut terms = vec![r0_name(p)];
+                for w in r0_targets(p) {
+                    if scc_of[w] != scc_of[p] {
+                        terms.push(format!("(ite (= {} #b1) {} {})", bit(&r0_name(p), w), rf[w], bv0(q_n)));
+                    }
+                }
+                groups[g].push((format!("{pfx}Rc_{p}"), q_n, bvor_all(&terms, q_n)));
+            }
+            for &p in comp {
+                rf[p] = format!("{pfx}Rc_{p}");
+            }
+            // Close cycles: square within this component only (≤⌈log₂|C|⌉ rounds).
+            if comp.len() > 1 {
+                let crounds = (usize::BITS - (comp.len() - 1).leading_zeros()) as usize;
+                for r in 1..=crounds {
+                    let prev: Vec<String> = comp.iter().map(|&p| rf[p].clone()).collect();
+                    g = groups.len();
+                    groups.push(Vec::new());
+                    for (pi, &p) in comp.iter().enumerate() {
+                        let mut terms = vec![prev[pi].clone()];
+                        for (mi, &m) in comp.iter().enumerate() {
+                            if m != p {
+                                terms.push(format!("(ite (= {} #b1) {} {})", bit(&prev[pi], m), prev[mi], bv0(q_n)));
+                            }
+                        }
+                        groups[g].push((format!("{pfx}Rs{r}_{p}"), q_n, bvor_all(&terms, q_n)));
+                    }
+                    for &p in comp {
+                        rf[p] = format!("{pfx}Rs{r}_{p}");
+                    }
+                }
             }
         }
-        // (R irreflexive) acyclicity — the entire well-foundedness check.
-        for q in 0..q_n {
-            checks.push(format!("(= {} #b0)", bit(&r_name(q), q)));
+        // (R irreflexive) acyclicity — only states that can lie on a cycle: those
+        // in a multi-state component, or with a structural self-edge.
+        for comp in &order {
+            for &p in comp {
+                if comp.len() > 1 || r0_targets(p).contains(&p) {
+                    checks.push(format!("(= {} #b0)", bit(&rf[p], p)));
+                }
+            }
         }
 
         // (udem) `y` routes up via `t` = picked Parent-t clause for `y`, or `y`
@@ -850,6 +1018,18 @@ impl<'a> Enc<'a> {
                 }
             }
         }
+        // CSE the per-`(t,z)` "z's picked clause routes up via t" disjunction —
+        // it is constant in `y`, but read once per `y` that depends on `z`.
+        let g = groups.len();
+        groups.push(Vec::new());
+        let mut od: Vec<Vec<String>> = vec![Vec::new(); nd];
+        for (t, users) in pu.iter().enumerate() {
+            for (zi, (_z, ks)) in users.iter().enumerate() {
+                let name = format!("{pfx}od{t}_{zi}");
+                groups[g].push((name.clone(), 0, or_bool(&ks.iter().map(|&k| self.pick_sel(pfx, k)).collect::<Vec<_>>())));
+                od[t].push(name);
+            }
+        }
         let mut ud_terms: Vec<String> = Vec::new();
         for y in (0..q_n).rev() {
             let yst = &self.states[sort][y];
@@ -859,12 +1039,11 @@ impl<'a> Enc<'a> {
                     continue;
                 }
                 let mut terms: Vec<String> = Vec::new();
-                for (z, ks) in &pu[t] {
-                    let du: Vec<String> = ks.iter().map(|&k| self.pick_sel(sort, ann, k)).collect();
+                for (zi, (z, _ks)) in pu[t].iter().enumerate() {
                     if *z == y {
-                        terms.extend(du);
+                        terms.push(od[t][zi].clone());
                     } else if self.may_dep(yst, &self.states[sort][*z]) {
-                        terms.push(format!("(and (= {} #b1) {})", bit(&r_name(y), *z), or_bool(&du)));
+                        terms.push(format!("(and (= {} #b1) {})", bit(&rf[y], *z), od[t][zi]));
                     }
                 }
                 ud_terms.push(format!("(ite {} #b1 #b0)", or_bool(&terms)));
@@ -924,7 +1103,8 @@ fn faithful_sygus_ir(
             }
             parts.push("ann".to_string());
             let mut body = concat_terms(&parts);
-            // nest the let groups (`R{i}` sees `R{i-1}` only across a real `let`).
+            // nest the let groups outer→inner: each SCC-condensation step (`Rc`,
+            // `Rs{r}`) sees the earlier (downstream) rows only across a real `let`.
             for grp in groups.iter().rev() {
                 if grp.is_empty() {
                     continue;
@@ -1134,8 +1314,16 @@ mod tests {
     fn cvc5_available() -> bool {
         std::process::Command::new("cvc5").arg("--version").output().is_ok()
     }
+    /// A per-call-unique temp path, so concurrent cvc5 tests never clobber a
+    /// shared file (the same `tag` running in two threads otherwise races).
+    fn unique_tmp(tag: &str, ext: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("delis_{tag}_{}_{n}.{ext}", std::process::id()))
+    }
     fn cvc5_solve(sygus: &str, tag: &str, tlimit_ms: u64) -> String {
-        let path = std::env::temp_dir().join(format!("delis_{tag}.sygus"));
+        let path = unique_tmp(tag, "sygus");
         std::fs::write(&path, sygus).unwrap();
         let out = std::process::Command::new("cvc5")
             .arg("--lang=sygus2")
@@ -1151,7 +1339,7 @@ mod tests {
 
     /// Run a plain `QF_BV` `(check-sat)` and return whether it is `sat`.
     fn smt_sat(smt2: &str, tag: &str) -> bool {
-        let path = std::env::temp_dir().join(format!("delis_{tag}.smt2"));
+        let path = unique_tmp(tag, "smt2");
         std::fs::write(&path, smt2).unwrap();
         let out = std::process::Command::new("cvc5").arg("--lang=smt2").arg(&path).output().expect("run cvc5");
         let so = String::from_utf8_lossy(&out.stdout);
@@ -1230,7 +1418,9 @@ mod tests {
             // bind the lets as aux consts and PIN the node's `up`/`udem` to them.
             let (groups, checks, up_val, udem_val) = e.node_checks(sort, ctor, arg_sorts, &nn, &kids, &format!("n{n}_"));
             for (name, bw, expr) in groups.iter().flatten() {
-                smt.push_str(&format!("(declare-const {name} (_ BitVec {bw}))\n(assert (= {name} {expr}))\n"));
+                // width 0 = the `sel{k}`/`od` Bool sentinel; everything else is a BitVec.
+                let sort_str = if *bw == 0 { "Bool".to_string() } else { format!("(_ BitVec {bw})") };
+                smt.push_str(&format!("(declare-const {name} {sort_str})\n(assert (= {name} {expr}))\n"));
             }
             let q_n = e.nq(sort);
             if q_n > 0 {
@@ -1546,5 +1736,138 @@ mod tests {
         assert!(cky(&prods, "ab"), "must accept ab");
         assert!(!cky(&prods, "a"), "must reject a");
         assert!(!cky(&prods, "ba"), "must reject ba");
+    }
+
+    /// The SCC-condensation closure must still reject large unfounded cycles
+    /// (multi-round within-component squaring) and accept founded ones. A 6-state
+    /// same-node ring is one SCC of size 6 — ⌈log₂6⌉ = 3 squaring rounds — well
+    /// past the ≤2-state cycles in the oracle above.
+    #[test]
+    fn scc_closure_handles_large_cycles() {
+        if !cvc5_available() {
+            eprintln!("cvc5 not found; skipping");
+            return;
+        }
+        let check = |rules: &[HornRule], cons: &[(String, bool)], label: &str| {
+            let tree = c("c");
+            let (states, ctors) = single_sort_sig(rules, &tree);
+            let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
+            let gt = build_ground(&tree);
+            let holds = crossing_eval(rules, &gt);
+            let want = cons.iter().all(|(q, w)| holds.contains(&(q.clone(), 0)) == *w);
+            let got = local_check_sat(&states, &ctors, &gcs, cons, &gt);
+            assert_eq!(got, want, "[{label}] got={got} want={want}");
+        };
+        // q0 ← q1 ← … ← q5 ← q0, all same-node (Selfp) ⇒ one SCC of size 6.
+        let ring = |base: bool| {
+            let n = 6;
+            let mut rs: Vec<HornRule> = (0..n)
+                .map(|i| rule(atom(&format!("q{i}"), c("c")), vec![atom(&format!("q{}", (i + 1) % n), c("c"))]))
+                .collect();
+            if base {
+                rs.push(rule(atom("q3", c("c")), vec![]));
+            }
+            rs
+        };
+        check(&ring(false), &[("q0".into(), false)], "ring-unfounded"); // no base ⇒ LFP empty
+        check(&ring(true), &[("q0".into(), true)], "ring-founded"); // base ⇒ all derivable
+    }
+
+    /// The precondition the per-SCC closure optimization rests on: every
+    /// structural support edge that *any* guess could place into `R0` — Selfp
+    /// edges and, crucially, the child→parent up-routed edges — must lie in
+    /// `may_dep` (= `reach`). If so, every actual support cycle is contained in
+    /// one `reach`-SCC, so restricting the transitive-closure squaring to SCCs
+    /// cannot drop a cycle. Pure structural check: no solver, always runs.
+    /// Returns the number of edges verified (so an empty/vacuous pass is visible).
+    fn r0_edges_within_may_dep(
+        states: &HashMap<String, Vec<String>>,
+        ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
+        gcs: &[GC],
+    ) -> Result<usize, String> {
+        let e = Enc::new(states, ctors, gcs);
+        let mut checked = 0usize;
+        for sort in states.keys() {
+            for &k in e.clauses(sort) {
+                let gc = &gcs[k];
+                let Some(p) = e.qidx(sort, &gc.head) else { continue };
+                let arg_sorts = &ctors[sort]
+                    .iter()
+                    .find(|(c, _)| *c == gc.ctor)
+                    .ok_or_else(|| format!("ctor {} missing from sort {sort}", gc.ctor))?
+                    .1;
+                let mut targets: Vec<usize> = Vec::new();
+                for atom in &gc.body {
+                    match atom {
+                        GA::Parent(..) => {}
+                        GA::Selfp(st) => targets.extend(e.qidx(sort, st)),
+                        GA::Child(ci, st) => {
+                            let a = &arg_sorts[*ci];
+                            let Some(qa) = e.qidx(a, st) else { continue };
+                            for (tj, (pc2, pos2, st2)) in e.ds_of(a).iter().enumerate() {
+                                if pc2 == &gc.ctor && *pos2 == *ci && e.routes_up(a, qa, tj) {
+                                    targets.extend(e.qidx(sort, st2));
+                                }
+                            }
+                        }
+                    }
+                }
+                for m in targets {
+                    let (ps, ms) = (&states[sort][p], &states[sort][m]);
+                    if !e.may_dep(ps, ms) {
+                        return Err(format!(
+                            "R0 edge {ps} -> {ms} (sort {sort}, ctor {}, clause #{k}) escapes may_dep",
+                            gc.ctor
+                        ));
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        Ok(checked)
+    }
+
+    #[test]
+    fn r0_support_edges_are_within_may_dep() {
+        let cc = || c("c");
+        let topxy = || f("top", vec![v("x"), v("y")]);
+        let topcy = || f("top", vec![cc(), v("y")]);
+        let mx = || f("M", vec![v("x")]);
+
+        let inter = vec![
+            rule(atom("P", topxy()), vec![]),
+            rule(atom("A", cc()), vec![atom("P", topcy())]),
+            rule(atom("C", cc()), vec![atom("A", cc()), atom("B", cc())]),
+            rule(atom("Win", topxy()), vec![atom("C", v("x"))]),
+        ];
+        let three = vec![
+            rule(atom("Q0", f("R", vec![v("x"), v("y")])), vec![atom("Q1", v("x"))]),
+            rule(atom("Q1", mx()), vec![atom("Q2", v("x"))]),
+            rule(atom("Q2", cc()), vec![atom("Q3", f("M", vec![cc()]))]),
+            rule(atom("Q3", mx()), vec![atom("Q0", f("R", vec![mx(), v("z")]))]),
+        ];
+        let cases: Vec<(&str, Vec<HornRule>, HT)> = vec![
+            ("inter", inter, f("top", vec![cc(), cc()])),
+            ("three-level-cycle", three, f("R", vec![f("M", vec![cc()]), cc()])),
+        ];
+        let mut total = 0;
+        for (label, rules, tree) in &cases {
+            let (states, ctors) = single_sort_sig(rules, tree);
+            let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
+            let n = r0_edges_within_may_dep(&states, &ctors, &gcs)
+                .unwrap_or_else(|err| panic!("[{label}] {err}"));
+            total += n;
+        }
+
+        let prog = load_chc_prog("benchmark/CFG/0001_tiny.sl");
+        let (_start, constraints) = goal(&prog);
+        let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
+        let relevant = relevant_states(&prog, &seeds);
+        let (states, ctors) = build_sig(&prog, &relevant);
+        let gcs = general_clauses(&prog, &relevant);
+        let n = r0_edges_within_may_dep(&states, &ctors, &gcs)
+            .unwrap_or_else(|err| panic!("[cfg-tiny] {err}"));
+        total += n;
+        assert!(total > 0, "vacuous: no R0 edges were checked");
     }
 }
