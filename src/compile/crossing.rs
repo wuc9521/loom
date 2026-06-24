@@ -1375,6 +1375,105 @@ mod tests {
         check(&deep, &spine, &[("Acc".into(), true)], "deep-chain");
     }
 
+    /// COMPUTE-STYLE (no annotation): for a **one-way** program (no `Parent`
+    /// atoms) a node's up-states are a pure bottom-up fold of its children —
+    /// the deterministic run, no `ann`, no SMT. This is what "remove `ann`"
+    /// looks like where it works. `build_ground` numbers nodes pre-order, so
+    /// reverse id order is children-first.
+    fn compute_up_oneway(gt: &Ground, gcs: &[GC]) -> Vec<HashSet<String>> {
+        let n = gt.ctor.len();
+        let mut up: Vec<HashSet<String>> = vec![HashSet::default(); n];
+        for node in (0..n).rev() {
+            let f = &gt.ctor[node];
+            loop {
+                let mut changed = false;
+                for gc in gcs.iter().filter(|gc| &gc.ctor == f) {
+                    if up[node].contains(&gc.head) {
+                        continue;
+                    }
+                    let ok = gc.body.iter().all(|a| match a {
+                        GA::Child(i, st) => up[gt.children[node][*i]].contains(st),
+                        GA::Selfp(st) => up[node].contains(st),
+                        GA::Parent(..) => false, // one-way fold cannot see the parent
+                    });
+                    if ok {
+                        up[node].insert(gc.head.clone());
+                        changed = true;
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+        }
+        up
+    }
+
+    /// The compute-style fold equals the exact LFP for one-way programs — so for
+    /// these, `ann` is unnecessary (the run is a deterministic value, ideal as the
+    /// exact-path DP key). The cases include intersection (AND) and a deep chain.
+    #[test]
+    fn compute_oneway_matches_lfp() {
+        let check = |rules: &[HornRule], tree: &HT, label: &str| {
+            let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
+            let gt = build_ground(tree);
+            let got = compute_up_oneway(&gt, &gcs);
+            let want: HashSet<String> =
+                crossing_eval(rules, &gt).into_iter().filter(|(_, node)| *node == 0).map(|(s, _)| s).collect();
+            assert_eq!(got[0], want, "compute_up_oneway != LFP for {label}");
+        };
+        let cc = || c("c");
+        // pure-down intersection (AND): C(f(x,y)) :- A(x),B(y).
+        let inter = vec![
+            rule(atom("A", cc()), vec![]),
+            rule(atom("B", cc()), vec![]),
+            rule(atom("C", f("f", vec![v("x"), v("y")])), vec![atom("A", v("x")), atom("B", v("y"))]),
+        ];
+        check(&inter, &f("f", vec![cc(), cc()]), "inter-down");
+        // and the case it *can't* derive without parent info: a base only present at
+        // the root would need a down-move; with only the leaf base it still folds.
+        let deep = vec![
+            rule(atom("Acc", c("e")), vec![]),
+            rule(atom("Acc", f("s", vec![v("x")])), vec![atom("Acc", v("x"))]),
+        ];
+        let mut spine = c("e");
+        for _ in 0..20 {
+            spine = f("s", vec![spine]);
+        }
+        check(&deep, &spine, "deep-chain");
+    }
+
+    /// The wall: once a `Parent` atom appears (two-way), a node's up-states depend
+    /// on the parent context, which a bottom-up fold cannot see — so the
+    /// annotation-free fold gives the WRONG answer, while the LFP (and the
+    /// `ann`-certified encoder) is correct. This is why `ann` is essential for
+    /// two-way: removing it forces either the exponential determinized response
+    /// (the 2WATA→1NTA blow-up) or backend iteration — not a free bottom-up fold.
+    #[test]
+    fn compute_fold_insufficient_for_twoway() {
+        let cc = || c("c");
+        let gx = || f("g", vec![v("x")]);
+        // mixed up+down: W(g(x)) :- T(top(g(x),z)) ∧ R(g(x)); Win(top(x,y)) :- W(x).
+        let mixed = vec![
+            rule(atom("Good", cc()), vec![]),
+            rule(atom("T", f("top", vec![v("x"), v("y")])), vec![]),
+            rule(atom("R", gx()), vec![atom("Good", v("x"))]),
+            rule(atom("W", gx()), vec![atom("T", f("top", vec![gx(), v("z")])), atom("R", gx())]),
+            rule(atom("Win", f("top", vec![v("x"), v("y")])), vec![atom("W", v("x"))]),
+        ];
+        let tree = f("top", vec![f("g", vec![cc()]), cc()]);
+        let gcs: Vec<GC> = mixed.iter().filter_map(extract_gc).collect();
+        let gt = build_ground(&tree);
+        let fold0 = &compute_up_oneway(&gt, &gcs)[0];
+        let lfp0: HashSet<String> =
+            crossing_eval(&mixed, &gt).into_iter().filter(|(_, n)| *n == 0).map(|(s, _)| s).collect();
+        // the LFP accepts `Win` at the root; the bottom-up fold misses it (it cannot
+        // see that the parent provides `T` via the up-move) — they MUST differ.
+        assert!(lfp0.contains("Win"), "LFP should accept Win");
+        assert!(!fold0.contains("Win"), "fold cannot derive Win without parent info");
+        assert_ne!(fold0, &lfp0, "two-way: fold ≠ LFP — ann is doing real work here");
+    }
+
     /// The faithful semantics equals the exact LFP on every clause shape:
     /// intersection (non-additive), mixed up+down, multiple parent atoms, and CFG.
     #[test]
