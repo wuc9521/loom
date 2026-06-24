@@ -786,33 +786,36 @@ impl<'a> Enc<'a> {
         *self.pick_off[s].last().unwrap()
     }
 
-    // --- layout offsets: value = [dact:D | pick:ΣwQ | up:Q | udem:Nud | valid:1] ---
-    // ONLY `dact`+`pick` are guessed (the Constant, low bits, so Constant offsets =
-    // value offsets); `up`/`udem` are COMPUTED in the define-fun (high bits), and `R`
-    // (the support relation) is computed *internally* (let-bound rows, never stored).
-    // `udem` carries only the ROUTABLE `(y,t)` pairs (`Nud = |route[s]|`): a
-    // non-routable bit is forced `#b0` by `node_checks` AND only ever read under the
-    // same `routes_up` gate, so it is dead — dropping it is behavior-preserving.
+    // --- two layouts ---
+    // ANN (Constant, the guess) = [dact:D | pick:ΣwQ].  `dact_pos`/`pick_idx_lo`/
+    //   `ann_w` are offsets into THIS.
+    // VALUE (the define-fun output, read by the parent) = [dact:D | up:Q | udem:Nud
+    //   | valid:1].  `up_pos`/`udem_base`/`valid_pos` are offsets into THIS. `pick`
+    //   is NOT echoed into the value — no consumer reads it (only `node_checks` reads
+    //   the ann's pick via the `sel` lets), so dropping it from the value is sound.
+    // `dact` lives in both, at [0,D), and the body ties value.dact = ann.dact so the
+    // parent's `Cchannel` (reading child value.dact) sees the guess. `R` is internal.
     fn width(&self, s: &str) -> usize {
         self.udem_base(s) + self.nud(s) + 1
     }
     fn dact_pos(&self, _s: &str, j: usize) -> usize {
         j
     }
-    /// Low bit of state `q`'s `pick` index (a per-state binary clause selector).
+    /// Low bit of state `q`'s `pick` index — an offset into the ANN constant.
     fn pick_idx_lo(&self, s: &str, q: usize) -> usize {
         self.nd(s) + self.pick_off[s][q]
     }
+    /// Offset into the VALUE (no pick region: up sits just above dact).
     fn up_pos(&self, s: &str, q: usize) -> usize {
-        self.nd(s) + self.pick_w(s) + q
+        self.nd(s) + q
     }
     /// Number of routable `(y,t)` pairs = width of the packed `udem` field.
     fn nud(&self, s: &str) -> usize {
         self.ud_rank.get(s).map(HashMap::len).unwrap_or(0)
     }
-    /// Low bit of the `udem` field (just above `up`).
+    /// Low bit of the `udem` field in the VALUE (just above `up`; no pick region).
     fn udem_base(&self, s: &str) -> usize {
-        self.nd(s) + self.pick_w(s) + self.nq(s)
+        self.nd(s) + self.nq(s)
     }
     /// Packed bit position of routable pair `(y,t)`. Only ever called for routable
     /// pairs (writer iterates `route`; reader gates on `routes_up`).
@@ -1140,7 +1143,10 @@ fn faithful_sygus_ir(
             let kids: Vec<String> = (0..arg_sorts.len()).map(|i| format!("c{i}")).collect();
             let (groups, checks, up_val, udem_val) = e.node_checks(sort, ctor, arg_sorts, "ann", &kids, "");
             let valid = and_bool(&checks);
-            // value = [ dact|pick (=ann, low) | up_val | udem_val | valid (top) ]
+            // value = [ dact (=ann's low D bits) | up_val | udem_val | valid (top) ].
+            // `pick` is NOT echoed — only the `dact` low bits of `ann` carry into the
+            // value (read by the parent's Cchannel); `pick` is read only via the
+            // `sel` lets straight off `ann`.
             let mut parts = vec![format!("(ite {valid} #b1 #b0)")];
             if !udem_val.is_empty() {
                 parts.push(udem_val);
@@ -1148,7 +1154,10 @@ fn faithful_sygus_ir(
             if !up_val.is_empty() {
                 parts.push(up_val);
             }
-            parts.push("ann".to_string());
+            let d = e.nd(sort);
+            if d > 0 {
+                parts.push(slice("ann", 0, d - 1));
+            }
             let mut body = concat_terms(&parts);
             // nest the let groups outer→inner: each SCC-condensation step (`Rc`,
             // `Rs{r}`) sees the earlier (downstream) rows only across a real `let`.
@@ -1259,8 +1268,9 @@ mod tests {
         let off = &e.pick_off[s];
         assert!(off.windows(2).all(|w| w[0] <= w[1]), "pick offsets must be monotone");
         assert_eq!(off[0], 0);
+        // ann (Constant) = [dact | pick]; value = [dact | up | udem | valid] (no pick).
         assert_eq!(e.ann_w(s), e.nd(s) + e.pick_w(s), "ann = dact + pick");
-        assert_eq!(e.up_pos(s, 0), e.nd(s) + e.pick_w(s), "up sits just above [dact|pick]");
+        assert_eq!(e.up_pos(s, 0), e.nd(s), "in the value, up sits just above dact (no pick)");
         assert_eq!(e.udem_base(s), e.up_pos(s, 0) + e.nq(s), "udem sits just above up");
         assert!(e.valid_pos(s) >= e.udem_base(s) + e.nud(s), "valid is the top bit");
     }
@@ -1498,19 +1508,30 @@ mod tests {
         let e = Enc::new(states, ctors, gcs);
         let sort = "T";
         let w = e.width(sort);
+        let aw = e.ann_w(sort);
+        let d = e.nd(sort);
         let n_nodes = gt.ctor.len();
         let mut smt = String::from("(set-logic QF_BV)\n");
         for n in 0..n_nodes {
+            // `n{n}` = the VALUE (read by parents); `n{n}_a` = the guessed ANN
+            // Constant ([dact|pick]). They are separate since pick left the value.
             smt.push_str(&format!("(declare-const n{n} (_ BitVec {w}))\n"));
+            smt.push_str(&format!("(declare-const n{n}_a (_ BitVec {aw}))\n"));
+            // value.dact == ann.dact, so the parent's Cchannel (reading value.dact)
+            // sees the guessed dact.
+            if d > 0 {
+                smt.push_str(&format!("(assert (= {} {}))\n", slice(&format!("n{n}"), 0, d - 1), slice(&format!("n{n}_a"), 0, d - 1)));
+            }
         }
         for n in 0..n_nodes {
             let ctor = &gt.ctor[n];
             let arg_sorts = &ctors[sort].iter().find(|(c, _)| c == ctor).expect("ctor in sig").1;
             let kids: Vec<String> = gt.children[n].iter().map(|c| format!("n{c}")).collect();
             let nn = format!("n{n}");
-            // The node is a free const of value width; `up`/`udem` are computed, so
-            // bind the lets as aux consts and PIN the node's `up`/`udem` to them.
-            let (groups, checks, up_val, udem_val) = e.node_checks(sort, ctor, arg_sorts, &nn, &kids, &format!("n{n}_"));
+            let an = format!("n{n}_a");
+            // The node's VALUE is a free const; `up`/`udem` are computed and PINNED.
+            // The ANN const `an` carries the guessed dact/pick that `node_checks` reads.
+            let (groups, checks, up_val, udem_val) = e.node_checks(sort, ctor, arg_sorts, &an, &kids, &format!("n{n}_"));
             for (name, bw, expr) in groups.iter().flatten() {
                 // width 0 = the `sel{k}`/`od` Bool sentinel; everything else is a BitVec.
                 let sort_str = if *bw == 0 { "Bool".to_string() } else { format!("(_ BitVec {bw})") };
