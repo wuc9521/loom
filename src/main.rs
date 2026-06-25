@@ -90,10 +90,20 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     // over-approximating — it can return grammars that fail their own examples)
     // is opt-in via DELIS_LEGACY. Parent-free programs always use the (sound,
     // fast) direct path below.
-    if delis_file.is_parent_bearing().map_err(io::Error::other)?
-        && std::env::var("DELIS_LEGACY").is_err()
-    {
+    let parent_bearing = delis_file.is_parent_bearing().map_err(io::Error::other)?;
+    if parent_bearing && std::env::var("DELIS_LEGACY").is_err() {
         return crossing_solve(delis_file, args.verbose);
+    }
+    if parent_bearing {
+        // Reachable only with DELIS_LEGACY set on a `(parent n)` program. The
+        // saturation path's free-sibling up-move encoding is sound for emptiness
+        // but over-approximates per-tree membership, so it can return a grammar
+        // that rejects its own positive examples. Never let that be silent.
+        eprintln!(
+            "warning: DELIS_LEGACY selects the free-sibling saturation encoding, which \
+             over-approximates `(parent n)` up-moves and may return an unsound grammar \
+             (one that fails its own examples). Unset DELIS_LEGACY for the sound crossing encoding."
+        );
     }
 
     // Both backends solve the same SyGuS BV problem; first-to-finish wins.

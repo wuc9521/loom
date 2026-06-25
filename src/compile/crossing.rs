@@ -1643,6 +1643,18 @@ mod tests {
         let mut cyc2 = cyc.clone();
         cyc2.push(rule(atom("A", cc()), vec![]));
         check(&cyc2, &tcc, &[("B".into(), true)], "cyc-founded");
+        // discriminator for any `pick`-removal: X is founded by a base, but its
+        // CYCLIC clause is listed first. A naive "R = deps of all active clauses"
+        // or a canonical "lowest-index clause" would take the cycle → false reject.
+        // The founding (grow-from-∅) must select the base. Win holds iff X holds.
+        let cycf = vec![
+            rule(atom("X", cc()), vec![atom("Y", topcy())]),
+            rule(atom("Y", topxy()), vec![atom("X", v("x"))]),
+            rule(atom("X", cc()), vec![]),
+            rule(atom("Win", topxy()), vec![atom("X", v("x"))]),
+        ];
+        check(&cycf, &tcc, &[("Win".into(), true)], "founded-cyclic-first");
+        check(&cycf, &tcc, &[("Win".into(), false)], "founded-cyclic-first-neg");
 
         // 3-level mutual cycle across grandparent–parent–child — the case a
         // set-only channel would miss: Q0@R → Q1@M → Q2@c → Q3@M → Q0@R (no base
@@ -1948,6 +1960,31 @@ mod tests {
             }
         }
         Ok(checked)
+    }
+
+    #[test]
+    fn check_parent_additivity() {
+        // The Constant-free "compute the relation" encoding is sound+complete AND
+        // polynomial iff the parent-channel is ADDITIVE — i.e. no single clause
+        // demands TWO+ parent states at once (≥2 Parent atoms). Measure it.
+        let prog = load_chc_prog("benchmark/CFG/0001_tiny.sl");
+        let (_s, cons) = goal(&prog);
+        let seeds: HashSet<String> = cons.iter().map(|(q, _)| q.clone()).collect();
+        let relevant = relevant_states(&prog, &seeds);
+        let gcs = general_clauses(&prog, &relevant);
+        let mut max_parent = 0usize;
+        let mut conj = 0usize;
+        for gc in &gcs {
+            let np = gc.body.iter().filter(|a| matches!(a, GA::Parent(..))).count();
+            max_parent = max_parent.max(np);
+            if np >= 2 {
+                conj += 1;
+            }
+        }
+        eprintln!(
+            "PARENT-ADDITIVITY: clauses={} max_parent_atoms_per_clause={max_parent} conjunctive(>=2)={conj}",
+            gcs.len()
+        );
     }
 
     #[test]
