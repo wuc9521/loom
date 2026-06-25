@@ -107,6 +107,22 @@ impl DelisProg {
     pub fn semantic_program(&self) -> Result<SemanticProgram, String> {
         compile_semantic_program(self)
     }
+
+    /// True if any semantics navigates up to the parent (`(parent n)`). Checked
+    /// on the parsed specs ONLY — `SemanticSpec::from_cmd` is just parsing, no
+    /// aspect enumeration and no bisim. (Previously this built the whole
+    /// `semantic_program`, so `main::solve` paid TWO bisim quotients: one here to
+    /// pick the encoder, one in `faithful_sygus`. Now the bisim runs once.)
+    pub fn is_parent_bearing(&self) -> Result<bool, String> {
+        for cmd in &self.cmds {
+            if let DelisCmd::Semantics(c) = cmd {
+                if contains_parent_navigation(&SemanticSpec::from_cmd(c)?.body) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
 }
 
 fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, String> {

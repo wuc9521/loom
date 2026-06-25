@@ -124,17 +124,6 @@ impl DelisProg {
         Ok(out)
     }
 
-    /// True if any semantic spec navigates up to the parent (`(parent n)`). Such
-    /// programs need the sound crossing encoder; the legacy saturation path
-    /// over-approximates them.
-    pub fn is_parent_bearing(&self) -> Result<bool, String> {
-        let program = self.semantic_program()?;
-        Ok(program
-            .semantics
-            .iter()
-            .any(|spec| aspects::contains_parent_navigation(&spec.body)))
-    }
-
     /// Sound & complete crossing encoding for a parent-bearing program. Returns
     /// `(sygus-text, synth-target sort, synth-fun name)`; solve the text with an
     /// SMT-backed SyGuS solver (it contains `Constant` holes) and decode with
