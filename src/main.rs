@@ -26,18 +26,20 @@ use std::{
 mod cegis;
 use sygus_parser::SyGuSCmd;
 
-
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
             let program = if std::env::var("DELIS_DUMP_CHC_SATURATED").is_ok() {
-                delis_file.to_chc_ast_saturated().map_err(io::Error::other)?
+                delis_file
+                    .to_chc_ast_saturated()
+                    .map_err(io::Error::other)?
             } else {
                 delis_file.to_chc_ast().map_err(io::Error::other)?
             };
             println!(
                 "{}",
-                program.to_smt()
+                program
+                    .to_smt()
                     .iter()
                     .map(|sexpr| sexpr.to_string())
                     .collect::<Vec<_>>()
@@ -47,12 +49,14 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         if args.dump_sygus || args.dump_sygus_stats {
             let compile_start = Instant::now();
             // Dump the same encoding the solver uses: parent-bearing programs
-            // get the sound crossing encoding (with `Constant` annotation holes);
+            // get the crossing refuter encoding (with `Constant` annotation holes);
             // parent-free / DELIS_LEGACY get the direct `to_sygus`.
             let use_crossing = delis_file.is_parent_bearing().map_err(io::Error::other)?
                 && std::env::var("DELIS_LEGACY").is_err();
             let sygus_bytes = if use_crossing {
-                let (sygus, _, _) = delis_file.faithful_sygus().map_err(io::Error::other)?;
+                let (sygus, _, _) = delis_file
+                    .faithful_refuter_sygus()
+                    .map_err(io::Error::other)?;
                 sygus.into_bytes()
             } else {
                 delis_file.to_sygus_bytes().map_err(io::Error::other)?
@@ -74,8 +78,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     }
 
     if args.r#enum {
-        let result =
-            delis_file.solve_by_closure().map_err(io::Error::other)?;
+        let result = delis_file.solve_by_closure().map_err(io::Error::other)?;
         if let Some(output) = result {
             println!("{output}");
             return Ok(());
@@ -136,7 +139,11 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     let bv_tx = tx.clone();
     let bv_file = delis_file.clone();
     let bv_cmds = sygus_cmds.clone();
-    let bv_cegis = if args.cegis > 0 { Some(args.cegis) } else { None };
+    let bv_cegis = if args.cegis > 0 {
+        Some(args.cegis)
+    } else {
+        None
+    };
     let bv_backend = SygusBackend::from_cli(args);
     let bv_verbose = args.verbose;
     let bv_min = args.min;
@@ -145,14 +152,8 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .name("bv-searcher".to_string())
         .stack_size(BV_STACK_BYTES)
         .spawn(move || {
-            let result = solve_with_sygus(
-                &bv_file,
-                &bv_backend,
-                bv_cegis,
-                bv_verbose,
-                bv_min,
-                bv_cmds,
-            );
+            let result =
+                solve_with_sygus(&bv_file, &bv_backend, bv_cegis, bv_verbose, bv_min, bv_cmds);
             let _ = bv_tx.send(BackendResult::Sygus(result));
         })?;
 
@@ -187,13 +188,21 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 /// in-process via its library — no external binary on PATH, no env var.
 /// `DELIS_LEGACY` selects the old over-approximating path instead.
 fn crossing_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> {
-    let (sygus, sort, synth_name) = delis_file.faithful_sygus().map_err(io::Error::other)?;
-    // Solve the emitted crossing encoding in-process through the dryadsynth-bv
-    // library. `solve_sygus_file` runs the same const-hole search the binary did,
-    // on its own large-stack worker, and honors `verbose` for diagnostics.
+    if let Ok(max_size) = std::env::var("DELIS_CROSSING_EVAL_BENCH") {
+        let max_size = max_size.parse::<usize>().unwrap_or(5);
+        return delis_file
+            .crossing_eval_bench(max_size)
+            .map_err(io::Error::other);
+    }
+    let (sygus, sort, synth_name) = delis_file
+        .faithful_refuter_sygus()
+        .map_err(io::Error::other)?;
+    // Solve the emitted crossing refuter encoding in-process through the
+    // dryadsynth-bv library. The const-hole search prunes skeletons with a SAT
+    // refuter and returns the first skeleton whose refuter query is UNSAT.
     let file = sygus_parser::SyGuSFile::from_str(&sygus)
         .map_err(|e| io::Error::other(format!("crossing: failed to parse emitted SyGuS: {e}")))?;
-    let out = dryadsynth_bv::solve_sygus_file(&file, None, &synth_name, verbose, true)
+    let out = dryadsynth_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose, true)
         .map_err(|e| io::Error::other(format!("crossing backend (dryadsynth-bv): {e}")))?;
     match compile::decode_faithful_term(&out, &synth_name) {
         Some(term) => {
@@ -242,11 +251,7 @@ fn external_solver_args(path: &str) -> Vec<String> {
     }
 }
 
-fn spawn_solver(
-    solver: &Solver,
-    cmds: &[SyGuSCmd],
-    min: bool,
-) -> Result<Child, io::Error> {
+fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd], min: bool) -> Result<Child, io::Error> {
     let mut args = solver.1.clone();
     if !min {
         let path_buf = PathBuf::from(&solver.0);
@@ -288,14 +293,9 @@ fn solve_cmds_with_backend(
     min: bool,
 ) -> Result<String, io::Error> {
     match backend {
-        SygusBackend::InProcessDryadSynth => dryadsynth_bv::solve_sygus_cmds(
-            cmds,
-            None,
-            "",
-            verbose,
-            min,
-        )
-        .map_err(io::Error::other),
+        SygusBackend::InProcessDryadSynth => {
+            dryadsynth_bv::solve_sygus_cmds(cmds, None, "", verbose, min).map_err(io::Error::other)
+        }
         SygusBackend::External(solver) => {
             let child = spawn_solver(solver, cmds, min)?;
             solver_stdout(child, &solver.0)
@@ -320,20 +320,21 @@ fn solve_with_sygus(
             }
             match backend {
                 SygusBackend::InProcessDryadSynth => Ok(output),
-                SygusBackend::External(_) => {
-                    delis_file.decode_response(&output).map_err(io::Error::other)
-                }
+                SygusBackend::External(_) => delis_file
+                    .decode_response(&output)
+                    .map_err(io::Error::other),
             }
         })?;
         log::info!("cegis: solved in {:?}", solve_start.elapsed());
         solved
     } else {
-        let output =
-            solve_cmds_with_backend(backend, &sygus_cmds, verbose, min)?;
+        let output = solve_cmds_with_backend(backend, &sygus_cmds, verbose, min)?;
         log::info!("sygus backend: solved in {:?}", solve_start.elapsed());
         match backend {
             SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => delis_file.decode_response(&output).map_err(io::Error::other)?,
+            SygusBackend::External(_) => delis_file
+                .decode_response(&output)
+                .map_err(io::Error::other)?,
         }
     };
     Ok(delis_file.filter_synth_output(&decoded))

@@ -1,4 +1,3 @@
-
 use crate::backends::smt2::ast::{HornAtom, HornProg, HornRule, HornTerm};
 use crate::compile::bexpr::{arg_name, self_bit_name, BoolExpr};
 use crate::compile::context::CompileContext;
@@ -177,7 +176,10 @@ pub fn aggregate_constructor_bits(
             let Some(var_to_arg) = rule_builds_cons(rule, cons) else {
                 continue;
             };
-            if prog.predicates.get(&rule.head.pred).map(|i| i.sort.as_str())
+            if prog
+                .predicates
+                .get(&rule.head.pred)
+                .map(|i| i.sort.as_str())
                 != Some(cons.result_sort.as_str())
             {
                 continue;

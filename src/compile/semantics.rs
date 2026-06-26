@@ -1,7 +1,7 @@
 use crate::{compile::types::AspectValue, lang::model::InterpedValue};
-use sygus_parser::SExpr as Value;
 use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::Literal;
+use sygus_parser::SExpr as Value;
 
 #[derive(Clone)]
 pub struct Case {

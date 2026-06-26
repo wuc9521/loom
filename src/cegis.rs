@@ -257,13 +257,13 @@ fn constraint_expected_truth(term: &sygus_parser::SyGuSTerm, negated: bool) -> O
 fn binary_truth_value(term: &sygus_parser::SyGuSTerm) -> Option<bool> {
     match term {
         sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::Bool(value)) => Some(*value),
-        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => match bits
-            .as_str()
-        {
-            "#b1" => Some(true),
-            "#b0" => Some(false),
-            _ => None,
-        },
+        sygus_parser::SyGuSTerm::Literal(sygus_parser::Literal::BinConst(bits)) => {
+            match bits.as_str() {
+                "#b1" => Some(true),
+                "#b0" => Some(false),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

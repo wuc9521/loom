@@ -136,9 +136,7 @@ impl BoolExpr {
         let order = match topo_sort_bits(&deps) {
             Ok(o) => o,
             Err(msg) => {
-                log::warn!(
-                    "self-closure body: {msg}; falling back to runtime self-references"
-                );
+                log::warn!("self-closure body: {msg}; falling back to runtime self-references");
                 return BoolExpr::compact(bits.to_vec());
             }
         };
@@ -218,10 +216,14 @@ fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
             let op = id.get_name();
             match op {
                 "and" => BoolExpr::and(
-                    args.iter().map(|a| resolve_self_refs(a, resolved)).collect(),
+                    args.iter()
+                        .map(|a| resolve_self_refs(a, resolved))
+                        .collect(),
                 ),
                 "or" => BoolExpr::or(
-                    args.iter().map(|a| resolve_self_refs(a, resolved)).collect(),
+                    args.iter()
+                        .map(|a| resolve_self_refs(a, resolved))
+                        .collect(),
                 ),
                 "not" if args.len() == 1 => resolve_self_refs(&args[0], resolved).not(),
                 _ => BoolExpr::Dynamic(term.clone()),
@@ -252,9 +254,7 @@ fn collect_self_bit_deps(term: &SyGuSTerm, out: &mut HashSet<usize>) {
             }
             collect_self_bit_deps(body, out);
         }
-        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => {
-            collect_self_bit_deps(body, out)
-        }
+        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => collect_self_bit_deps(body, out),
         SyGuSTerm::Literal(_) => {}
     }
 }
@@ -299,7 +299,9 @@ fn compute_sccs(deps: &[HashSet<usize>]) -> Vec<usize> {
         on_stack[v] = true;
         for &w in &deps[v] {
             if idx[w] == usize::MAX {
-                strongconnect(w, deps, index, idx, lowlink, on_stack, stack, scc_of, next_scc);
+                strongconnect(
+                    w, deps, index, idx, lowlink, on_stack, stack, scc_of, next_scc,
+                );
                 lowlink[v] = lowlink[v].min(lowlink[w]);
             } else if on_stack[w] {
                 lowlink[v] = lowlink[v].min(idx[w]);
@@ -370,8 +372,7 @@ fn topo_sort_bits(deps: &[HashSet<usize>]) -> Result<Vec<usize>, String> {
             rev[j].push(i);
         }
     }
-    let mut queue: std::collections::VecDeque<usize> =
-        (0..n).filter(|&i| in_deg[i] == 0).collect();
+    let mut queue: std::collections::VecDeque<usize> = (0..n).filter(|&i| in_deg[i] == 0).collect();
     let mut order = Vec::with_capacity(n);
     while let Some(i) = queue.pop_front() {
         order.push(i);

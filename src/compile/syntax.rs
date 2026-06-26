@@ -1,12 +1,7 @@
-use crate::{
-    backends::smt2::ast::HornTerm,
-    compile::AspectKey,
-    parser::ast::TermTypes,
-};
+use crate::{backends::smt2::ast::HornTerm, compile::AspectKey, parser::ast::TermTypes};
 use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{
-    DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSGTerm,
-    SyGuSTerm,
+    DTConsDecl, GrammarDef, GroupedRuleList, Identifier, Sort, SortedVar, SyGuSGTerm, SyGuSTerm,
 };
 
 pub fn term_sort() -> Sort {

@@ -280,10 +280,7 @@ fn build_precedence(clauses: &[Clause], sig: &Sig) -> Prec {
         };
         for b in &c.body {
             if let Some(arg) = &b.arg {
-                if is_var(arg)
-                    && b.pred != c.head.pred
-                    && state_set.contains(&b.pred)
-                {
+                if is_var(arg) && b.pred != c.head.pred && state_set.contains(&b.pred) {
                     succ.entry(c.head.pred.clone())
                         .or_default()
                         .insert(b.pred.clone());
@@ -300,11 +297,7 @@ fn build_precedence(clauses: &[Clause], sig: &Sig) -> Prec {
     }
     // Kahn: indeg-0 heads first
     let mut order: Vec<String> = Vec::new();
-    let mut avail: Vec<String> = states
-        .iter()
-        .filter(|s| indeg[*s] == 0)
-        .cloned()
-        .collect();
+    let mut avail: Vec<String> = states.iter().filter(|s| indeg[*s] == 0).cloned().collect();
     avail.sort();
     let mut indeg2 = indeg.clone();
     while let Some(s) = (!avail.is_empty()).then(|| avail.remove(0)) {
@@ -371,7 +364,6 @@ fn flatten(clauses: &[Clause], fresh: &mut Fresh) -> Vec<Clause> {
     out
 }
 
-
 /// Keep body atoms that are child-var refs of `node` or self-loops on `node`
 /// (a body atom whose arg is the whole node term — a delis intersection edge).
 /// Deep non-head atoms (pop / parent-navigation) are dropped.
@@ -393,7 +385,10 @@ fn flatten_into(pred: &str, term: &Term, body: &[Atom], fresh: &mut Fresh, out: 
         HornTerm::App { args, .. } if !args.is_empty() => args,
         _ => {
             out.push(normalize_clause(&Clause {
-                head: Atom { pred: pred.to_string(), arg: Some(term.clone()) },
+                head: Atom {
+                    pred: pred.to_string(),
+                    arg: Some(term.clone()),
+                },
                 body: kept_for(body, term),
                 origin: "flatten".into(),
             }));
@@ -424,13 +419,19 @@ fn flatten_into(pred: &str, term: &Term, body: &[Atom], fresh: &mut Fresh, out: 
             let st = fresh.state();
             flatten_into(&st, a, &atoms_here, fresh, out);
             if let HornTerm::Var(vn) = &v {
-                top_body.push(Atom { pred: st, arg: Some(HornTerm::Var(vn.clone())) });
+                top_body.push(Atom {
+                    pred: st,
+                    arg: Some(HornTerm::Var(vn.clone())),
+                });
             }
             new_args.push(v);
         }
     }
     // keep self-loop atoms on the (reconstructed) node term
-    let new_head = HornTerm::App { fun: fun.clone(), args: new_args };
+    let new_head = HornTerm::App {
+        fun: fun.clone(),
+        args: new_args,
+    };
     for b in body {
         if (b.arg.as_ref() == Some(&new_head) || b.arg.as_ref() == Some(term))
             && !top_body.contains(b)
@@ -439,7 +440,10 @@ fn flatten_into(pred: &str, term: &Term, body: &[Atom], fresh: &mut Fresh, out: 
         }
     }
     out.push(normalize_clause(&Clause {
-        head: Atom { pred: pred.to_string(), arg: Some(new_head) },
+        head: Atom {
+            pred: pred.to_string(),
+            arg: Some(new_head),
+        },
         body: top_body,
         origin: "flatten".into(),
     }));
@@ -494,10 +498,16 @@ fn eps_split(c: &Clause) -> Vec<Clause> {
         let atoms = &by_var[v];
         let preds: BTreeSet<String> = atoms.iter().map(|a| a.pred.clone()).collect();
         let q = guard_name(&preds);
-        kept.push(Atom { pred: q.clone(), arg: None });
+        kept.push(Atom {
+            pred: q.clone(),
+            arg: None,
+        });
         let body: Vec<Atom> = preds
             .iter()
-            .map(|p| Atom { pred: p.clone(), arg: Some(HornTerm::Var(v.clone())) })
+            .map(|p| Atom {
+                pred: p.clone(),
+                arg: Some(HornTerm::Var(v.clone())),
+            })
             .collect();
         guards.push(normalize_clause(&Clause {
             head: Atom { pred: q, arg: None },
@@ -541,7 +551,11 @@ fn rename_apart(c: &Clause, fresh: &mut Fresh) -> Clause {
     };
     let head = ra(&c.head, &mut m, fresh);
     let body = c.body.iter().map(|b| ra(b, &mut m, fresh)).collect();
-    Clause { head, body, origin: c.origin.clone() }
+    Clause {
+        head,
+        body,
+        origin: c.origin.clone(),
+    }
 }
 
 fn resolve(main: &Clause, idx: usize, side: &Clause, fresh: &mut Fresh) -> Option<Clause> {
@@ -634,7 +648,10 @@ fn reachable_types(automaton: &[Clause], sig: &Sig) -> HashSet<(String, BTreeSet
         if c.body.is_empty() {
             if let HornTerm::App { fun, args } = harg {
                 if args.is_empty() {
-                    const_seed.entry(fun.clone()).or_default().insert(c.head.pred.clone());
+                    const_seed
+                        .entry(fun.clone())
+                        .or_default()
+                        .insert(c.head.pred.clone());
                 }
             }
             continue;
@@ -726,7 +743,10 @@ fn reachable_types(automaton: &[Clause], sig: &Sig) -> HashSet<(String, BTreeSet
     type Rule = (String, Vec<(String, usize)>, Vec<String>); // head, child obligations, self-loop preds
     let mut rules_by_f: HashMap<String, Vec<Rule>> = HashMap::default();
     for (p, f, obs, sp) in &pushes {
-        rules_by_f.entry(f.clone()).or_default().push((p.clone(), obs.clone(), sp.clone()));
+        rules_by_f
+            .entry(f.clone())
+            .or_default()
+            .push((p.clone(), obs.clone(), sp.clone()));
     }
 
     // Node-level type for a constructor node, given its children's types: fire
@@ -773,8 +793,12 @@ fn reachable_types(automaton: &[Clause], sig: &Sig) -> HashSet<(String, BTreeSet
         }
         let mut fresh_types: Vec<(String, BTreeSet<String>)> = Vec::new();
         for (f, rules) in &rules_by_f {
-            let Some(arg_sorts) = sig.arg_sorts(f) else { continue };
-            let Some(result_sort) = sig.result_sort(f) else { continue };
+            let Some(arg_sorts) = sig.arg_sorts(f) else {
+                continue;
+            };
+            let Some(result_sort) = sig.result_sort(f) else {
+                continue;
+            };
             if arg_sorts.is_empty() {
                 continue;
             }
@@ -896,8 +920,8 @@ fn clause_repr(c: &Clause) -> String {
 struct Db {
     clauses: Vec<Clause>,
     active: Vec<bool>,
-    by_head: HashMap<String, Vec<usize>>,        // for subsumption (same head pred)
-    sides: HashMap<String, Vec<usize>>,          // side-eligible clauses by head pred
+    by_head: HashMap<String, Vec<usize>>, // for subsumption (same head pred)
+    sides: HashMap<String, Vec<usize>>,   // side-eligible clauses by head pred
     mains: HashMap<String, Vec<(usize, usize)>>, // by selected-literal pred -> (clause, lit idx)
     seen: HashSet<String>,
 }
@@ -921,7 +945,10 @@ impl Db {
             return None;
         }
         if let Some(cands) = self.by_head.get(&c.head.pred) {
-            if cands.iter().any(|&i| self.active[i] && subsumes(&self.clauses[i], &c)) {
+            if cands
+                .iter()
+                .any(|&i| self.active[i] && subsumes(&self.clauses[i], &c))
+            {
                 return None;
             }
         }
@@ -933,9 +960,15 @@ impl Db {
             }
         }
         let idx = self.clauses.len();
-        self.by_head.entry(c.head.pred.clone()).or_default().push(idx);
+        self.by_head
+            .entry(c.head.pred.clone())
+            .or_default()
+            .push(idx);
         if let Some(li) = selected_literal(&c, prec) {
-            self.mains.entry(c.body[li].pred.clone()).or_default().push((idx, li));
+            self.mains
+                .entry(c.body[li].pred.clone())
+                .or_default()
+                .push((idx, li));
         } else if is_side_eligible(&c, prec) {
             self.sides.entry(c.head.pred.clone()).or_default().push(idx);
         }
@@ -966,14 +999,22 @@ fn saturate_clauses(clauses: Vec<Clause>, sig: &Sig) -> Vec<Clause> {
         let mut next: Vec<Clause> = Vec::new();
         for given in gen.drain(..) {
             let mut given = normalize_clause(&given);
-            if given.body.iter().any(|b| b.arg.is_none() && true_guards.contains(&b.pred)) {
+            if given
+                .body
+                .iter()
+                .any(|b| b.arg.is_none() && true_guards.contains(&b.pred))
+            {
                 let body = given
                     .body
                     .iter()
                     .filter(|b| !(b.arg.is_none() && true_guards.contains(&b.pred)))
                     .cloned()
                     .collect();
-                given = normalize_clause(&Clause { head: given.head.clone(), body, origin: given.origin });
+                given = normalize_clause(&Clause {
+                    head: given.head.clone(),
+                    body,
+                    origin: given.origin,
+                });
             }
             let role_main = selected_literal(&given, &prec);
             let role_side = role_main.is_none() && is_side_eligible(&given, &prec);
@@ -1021,12 +1062,19 @@ fn saturate_clauses(clauses: Vec<Clause>, sig: &Sig) -> Vec<Clause> {
 /// Decide pending product-state guards exactly (subset construction), latch the
 /// non-empty ones, and re-enqueue every clause that carried a now-true guard
 /// with that atom erased.  Returns true iff a new guard became true.
-fn discharge(db: &Db, sig: &Sig, true_guards: &mut HashSet<String>, work: &mut Vec<Clause>) -> bool {
+fn discharge(
+    db: &Db,
+    sig: &Sig,
+    true_guards: &mut HashSet<String>,
+    work: &mut Vec<Clause>,
+) -> bool {
     let pending: Vec<&Clause> = db
         .clauses
         .iter()
         .zip(db.active.iter())
-        .filter(|(c, a)| **a && c.head.arg.is_none() && !c.body.is_empty() && !true_guards.contains(&c.head.pred))
+        .filter(|(c, a)| {
+            **a && c.head.arg.is_none() && !c.body.is_empty() && !true_guards.contains(&c.head.pred)
+        })
         .map(|(c, _)| c)
         .collect();
     if pending.is_empty() {
@@ -1050,14 +1098,22 @@ fn discharge(db: &Db, sig: &Sig, true_guards: &mut HashSet<String>, work: &mut V
         return false;
     }
     for (c, a) in db.clauses.iter().zip(db.active.iter()) {
-        if *a && c.body.iter().any(|b| b.arg.is_none() && true_guards.contains(&b.pred)) {
+        if *a
+            && c.body
+                .iter()
+                .any(|b| b.arg.is_none() && true_guards.contains(&b.pred))
+        {
             let body = c
                 .body
                 .iter()
                 .filter(|b| !(b.arg.is_none() && true_guards.contains(&b.pred)))
                 .cloned()
                 .collect();
-            work.push(Clause { head: c.head.clone(), body, origin: format!("{}/g", c.origin) });
+            work.push(Clause {
+                head: c.head.clone(),
+                body,
+                origin: format!("{}/g", c.origin),
+            });
         }
     }
     true
@@ -1068,7 +1124,10 @@ fn discharge(db: &Db, sig: &Sig, true_guards: &mut HashSet<String>, work: &mut V
 // ===========================================================================
 impl HornAtom {
     fn to_atom(&self) -> Atom {
-        Atom { pred: self.pred.clone(), arg: Some(self.arg.clone()) }
+        Atom {
+            pred: self.pred.clone(),
+            arg: Some(self.arg.clone()),
+        }
     }
 }
 
@@ -1102,8 +1161,7 @@ impl HornProg {
             if let HornDecl::DeclareDatatypes(sorts, groups) = decl {
                 for (sort_decl, group) in sorts.iter().zip(groups.iter()) {
                     for cd in group {
-                        let arg_sorts =
-                            cd.args.iter().map(|sv| sv.sort.to_string()).collect();
+                        let arg_sorts = cd.args.iter().map(|sv| sv.sort.to_string()).collect();
                         cons.insert(cd.name.clone(), (arg_sorts, sort_decl.symbol.clone()));
                     }
                 }
@@ -1124,60 +1182,128 @@ pub fn saturate(prog: &mut HornProg) {
 mod tests {
     use super::*;
 
-    fn v(n: &str) -> Term { HornTerm::Var(n.into()) }
-    fn c(n: &str) -> Term { HornTerm::App { fun: n.into(), args: vec![] } }
-    fn f(n: &str, args: Vec<Term>) -> Term { HornTerm::App { fun: n.into(), args } }
-    fn at(p: &str, t: Term) -> Atom { Atom { pred: p.into(), arg: Some(t) } }
-    fn cl(head: Atom, body: Vec<Atom>) -> Clause { Clause { head, body, origin: "t".into() } }
+    fn v(n: &str) -> Term {
+        HornTerm::Var(n.into())
+    }
+    fn c(n: &str) -> Term {
+        HornTerm::App {
+            fun: n.into(),
+            args: vec![],
+        }
+    }
+    fn f(n: &str, args: Vec<Term>) -> Term {
+        HornTerm::App {
+            fun: n.into(),
+            args,
+        }
+    }
+    fn at(p: &str, t: Term) -> Atom {
+        Atom {
+            pred: p.into(),
+            arg: Some(t),
+        }
+    }
+    fn cl(head: Atom, body: Vec<Atom>) -> Clause {
+        Clause {
+            head,
+            body,
+            origin: "t".into(),
+        }
+    }
 
     fn tata_762() -> Vec<Clause> {
         let (x1, x2, x3, x, y) = (v("x1"), v("x2"), v("x3"), v("x"), v("y"));
         vec![
-            cl(at("P1", f("f", vec![f("f", vec![x1.clone(), x2.clone()]), x3.clone()])),
-               vec![at("P2", x1.clone()), at("P2", x2.clone()), at("P2", x3.clone())]),
+            cl(
+                at(
+                    "P1",
+                    f("f", vec![f("f", vec![x1.clone(), x2.clone()]), x3.clone()]),
+                ),
+                vec![
+                    at("P2", x1.clone()),
+                    at("P2", x2.clone()),
+                    at("P2", x3.clone()),
+                ],
+            ),
             cl(at("P2", c("a")), vec![]),
-            cl(at("P1", f("f", vec![c("a"), x.clone()])), vec![at("P2", x.clone())]),
-            cl(at("P3", f("f", vec![x.clone(), y.clone()])), vec![at("P1", x.clone()), at("P2", y.clone())]),
-            cl(at("P4", x.clone()), vec![at("P3", x.clone()), at("P1", x.clone())]),
-            cl(at("P2", x.clone()), vec![at("P4", f("f", vec![x.clone(), y.clone()]))]),
-            cl(at("P1", y.clone()), vec![at("P4", f("f", vec![x.clone(), y.clone()]))]),
+            cl(
+                at("P1", f("f", vec![c("a"), x.clone()])),
+                vec![at("P2", x.clone())],
+            ),
+            cl(
+                at("P3", f("f", vec![x.clone(), y.clone()])),
+                vec![at("P1", x.clone()), at("P2", y.clone())],
+            ),
+            cl(
+                at("P4", x.clone()),
+                vec![at("P3", x.clone()), at("P1", x.clone())],
+            ),
+            cl(
+                at("P2", x.clone()),
+                vec![at("P4", f("f", vec![x.clone(), y.clone()]))],
+            ),
+            cl(
+                at("P1", y.clone()),
+                vec![at("P4", f("f", vec![x.clone(), y.clone()]))],
+            ),
         ]
     }
 
     fn sig_af() -> Sig {
         let mut cons = HashMap::default();
         cons.insert("a".to_string(), (vec![], "T".to_string()));
-        cons.insert("f".to_string(), (vec!["T".into(), "T".into()], "T".to_string()));
+        cons.insert(
+            "f".to_string(),
+            (vec!["T".into(), "T".into()], "T".to_string()),
+        );
         Sig { cons }
     }
 
     fn universe(sig: &Sig, height: usize) -> Vec<Term> {
-        let mut u: Vec<Term> = sig.cons.iter().filter(|(_, (a, _))| a.is_empty())
-            .map(|(n, _)| c(n)).collect();
+        let mut u: Vec<Term> = sig
+            .cons
+            .iter()
+            .filter(|(_, (a, _))| a.is_empty())
+            .map(|(n, _)| c(n))
+            .collect();
         for _ in 0..height {
             let prev = u.clone();
             for (name, (args, _)) in &sig.cons {
-                if args.is_empty() { continue; }
+                if args.is_empty() {
+                    continue;
+                }
                 let mut combos: Vec<Vec<Term>> = vec![vec![]];
                 for _ in 0..args.len() {
                     let mut next = vec![];
-                    for cmb in &combos { for t in &prev {
-                        let mut cc = cmb.clone(); cc.push(t.clone()); next.push(cc);
-                    }}
+                    for cmb in &combos {
+                        for t in &prev {
+                            let mut cc = cmb.clone();
+                            cc.push(t.clone());
+                            next.push(cc);
+                        }
+                    }
                     combos = next;
                 }
                 for cmb in combos {
                     let t = f(name, cmb);
-                    if !u.contains(&t) { u.push(t); }
+                    if !u.contains(&t) {
+                        u.push(t);
+                    }
                 }
             }
         }
         u
     }
 
-    fn solve_body(body: &[Atom], model: &HashMap<String, HashSet<Term>>,
-                  nullary: &HashSet<String>, s: Subst) -> Vec<Subst> {
-        let Some((first, rest)) = body.split_first() else { return vec![s]; };
+    fn solve_body(
+        body: &[Atom],
+        model: &HashMap<String, HashSet<Term>>,
+        nullary: &HashSet<String>,
+        s: Subst,
+    ) -> Vec<Subst> {
+        let Some((first, rest)) = body.split_first() else {
+            return vec![s];
+        };
         let mut out = vec![];
         if first.arg.is_none() {
             if nullary.contains(&first.pred) {
@@ -1197,7 +1323,10 @@ mod tests {
         out
     }
 
-    fn least_model(clauses: &[Clause], uni: &[Term]) -> (HashMap<String, HashSet<Term>>, HashSet<String>) {
+    fn least_model(
+        clauses: &[Clause],
+        uni: &[Term],
+    ) -> (HashMap<String, HashSet<Term>>, HashSet<String>) {
         let uset: HashSet<Term> = uni.iter().cloned().collect();
         let mut model: HashMap<String, HashSet<Term>> = HashMap::default();
         let mut nullary: HashSet<String> = HashSet::default();
@@ -1207,7 +1336,11 @@ mod tests {
             for cl in clauses {
                 for sub in solve_body(&cl.body, &model, &nullary, HashMap::default()) {
                     match &cl.head.arg {
-                        None => { if nullary.insert(cl.head.pred.clone()) { changed = true; } }
+                        None => {
+                            if nullary.insert(cl.head.pred.clone()) {
+                                changed = true;
+                            }
+                        }
                         Some(t) => {
                             let g = t.apply(&sub);
                             let fv: Vec<String> = g.vars().into_iter().collect();
@@ -1215,17 +1348,20 @@ mod tests {
                             let mut combos: Vec<Subst> = vec![HashMap::default()];
                             for fvn in &fv {
                                 let mut next = vec![];
-                                for pre in &combos { for u in uni {
-                                    let mut m = pre.clone();
-                                    m.insert(fvn.clone(), u.clone());
-                                    next.push(m);
-                                }}
+                                for pre in &combos {
+                                    for u in uni {
+                                        let mut m = pre.clone();
+                                        m.insert(fvn.clone(), u.clone());
+                                        next.push(m);
+                                    }
+                                }
                                 combos = next;
                             }
                             for m in &combos {
                                 let gg = g.apply(m);
                                 if uset.contains(&gg)
-                                    && model.entry(cl.head.pred.clone()).or_default().insert(gg) {
+                                    && model.entry(cl.head.pred.clone()).or_default().insert(gg)
+                                {
                                     changed = true;
                                 }
                             }
@@ -1243,8 +1379,14 @@ mod tests {
         let sig = sig_af();
         let out = saturate_clauses(input.clone(), &sig);
         // every output clause is a one-way automaton clause
-        assert!(out.iter().all(is_automaton_clause), "projection left non-automaton clauses");
-        assert!(out.iter().all(|c| c.head.arg.is_some()), "guard def survived projection");
+        assert!(
+            out.iter().all(is_automaton_clause),
+            "projection left non-automaton clauses"
+        );
+        assert!(
+            out.iter().all(|c| c.head.arg.is_some()),
+            "guard def survived projection"
+        );
         // Language preserved. The two-way input may need a taller witness term
         // to place a height-k term in a state, so models are computed with
         // headroom and compared only on terms well below the model height.
@@ -1253,11 +1395,19 @@ mod tests {
         let (mi, _) = least_model(&input, &uni);
         let (mo, _) = least_model(&out, &uni);
         let restrict = |m: &HashMap<String, HashSet<Term>>, p: &str| -> HashSet<Term> {
-            m.get(p).cloned().unwrap_or_default().into_iter()
-                .filter(|t| t.depth() <= cutoff).collect()
+            m.get(p)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| t.depth() <= cutoff)
+                .collect()
         };
         for p in ["P1", "P2", "P3", "P4"] {
-            assert_eq!(restrict(&mi, p), restrict(&mo, p), "language differs for {p}");
+            assert_eq!(
+                restrict(&mi, p),
+                restrict(&mo, p),
+                "language differs for {p}"
+            );
         }
     }
 
@@ -1266,7 +1416,10 @@ mod tests {
         cons.insert("r".to_string(), (vec![], "T".to_string()));
         cons.insert("e1".to_string(), (vec![], "T".to_string()));
         cons.insert("e2".to_string(), (vec![], "T".to_string()));
-        cons.insert("top".to_string(), (vec!["T".into(), "T".into()], "T".to_string()));
+        cons.insert(
+            "top".to_string(),
+            (vec!["T".into(), "T".into()], "T".to_string()),
+        );
         Sig { cons }
     }
 
@@ -1291,11 +1444,20 @@ mod tests {
         let (x, y) = (v("x"), v("y"));
         let input = vec![
             cl(at("Good", c("e2")), vec![]),
-            cl(at("A", f("top", vec![x.clone(), y.clone()])), vec![at("Good", y.clone())]),
+            cl(
+                at("A", f("top", vec![x.clone(), y.clone()])),
+                vec![at("Good", y.clone())],
+            ),
             // PUSH: head over the subterm `r`, body over the parent `top(r, y)`
             // with y a FRESH sibling not constrained to r's real sibling.
-            cl(at("B", c("r")), vec![at("A", f("top", vec![c("r"), y.clone()]))]),
-            cl(at("Win", f("top", vec![x.clone(), y.clone()])), vec![at("B", x.clone())]),
+            cl(
+                at("B", c("r")),
+                vec![at("A", f("top", vec![c("r"), y.clone()]))],
+            ),
+            cl(
+                at("Win", f("top", vec![x.clone(), y.clone()])),
+                vec![at("B", x.clone())],
+            ),
         ];
 
         let cutoff = 1;
@@ -1310,15 +1472,30 @@ mod tests {
         let win_out = mo.get("Win").map_or(false, |s| s.contains(&target));
 
         // (1) The ENCODING over-accepts: top(r, e1) wins despite e1 not being Good.
-        assert!(win_in, "expected the fresh-sibling encoding to over-accept Win(top(r,e1))");
+        assert!(
+            win_in,
+            "expected the fresh-sibling encoding to over-accept Win(top(r,e1))"
+        );
         // (2) saturate is language-preserving (VGL faithful): same verdict, and
         //     more strongly the whole Win/B languages match below the cutoff.
-        assert!(win_out, "saturate dropped the (over-)accepted Win(top(r,e1)) -- not language preserving");
+        assert!(
+            win_out,
+            "saturate dropped the (over-)accepted Win(top(r,e1)) -- not language preserving"
+        );
         let restrict = |m: &HashMap<String, HashSet<Term>>, p: &str| -> HashSet<Term> {
-            m.get(p).cloned().unwrap_or_default().into_iter().filter(|t| t.depth() <= cutoff).collect()
+            m.get(p)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| t.depth() <= cutoff)
+                .collect()
         };
         for p in ["Good", "A", "B", "Win"] {
-            assert_eq!(restrict(&mi, p), restrict(&mo, p), "language differs for {p} -- saturate not faithful");
+            assert_eq!(
+                restrict(&mi, p),
+                restrict(&mo, p),
+                "language differs for {p} -- saturate not faithful"
+            );
         }
     }
 
@@ -1333,37 +1510,79 @@ mod tests {
     type Table = BTreeMap<(Option<String>, i64, BTreeSet<String>), BTreeSet<String>>;
 
     #[derive(Clone)]
-    enum Spec { S(String), Ch(String, usize), Pa(String, String, usize) }
+    enum Spec {
+        S(String),
+        Ch(String, usize),
+        Pa(String, String, usize),
+    }
 
     fn tnodes(t: &Term, path: &mut Vec<usize>, out: &mut Vec<(Vec<usize>, Term)>) {
         out.push((path.clone(), t.clone()));
         if let HornTerm::App { args, .. } = t {
-            for (i, a) in args.iter().enumerate() { path.push(i); tnodes(a, path, out); path.pop(); }
+            for (i, a) in args.iter().enumerate() {
+                path.push(i);
+                tnodes(a, path, out);
+                path.pop();
+            }
         }
     }
     fn tsub<'a>(t: &'a Term, path: &[usize]) -> &'a Term {
         let mut cur = t;
-        for &i in path { if let HornTerm::App { args, .. } = cur { cur = &args[i]; } }
+        for &i in path {
+            if let HornTerm::App { args, .. } = cur {
+                cur = &args[i];
+            }
+        }
         cur
     }
-    fn fun_of(t: &Term) -> Option<&str> { if let HornTerm::App { fun, .. } = t { Some(fun) } else { None } }
+    fn fun_of(t: &Term) -> Option<&str> {
+        if let HornTerm::App { fun, .. } = t {
+            Some(fun)
+        } else {
+            None
+        }
+    }
 
     // --- applicable (used by the construction) ----------------------------
-    enum HB { Selfv(String), Ctor(HashMap<String, usize>) }
-    enum BC { S(String), ChVar(String, String), Pa(String, String, usize), Bad }
+    enum HB {
+        Selfv(String),
+        Ctor(HashMap<String, usize>),
+    }
+    enum BC {
+        S(String),
+        ChVar(String, String),
+        Pa(String, String, usize),
+        Bad,
+    }
 
     fn head_binding(harg: &Term, node: &Term) -> Option<HB> {
         match harg {
             HornTerm::Var(v) => Some(HB::Selfv(v.clone())),
             HornTerm::App { fun, args } => {
-                if args.is_empty() { return if harg == node { Some(HB::Ctor(HashMap::default())) } else { None }; }
-                let HornTerm::App { fun: nf, args: na } = node else { return None; };
-                if nf != fun || na.len() != args.len() { return None; }
+                if args.is_empty() {
+                    return if harg == node {
+                        Some(HB::Ctor(HashMap::default()))
+                    } else {
+                        None
+                    };
+                }
+                let HornTerm::App { fun: nf, args: na } = node else {
+                    return None;
+                };
+                if nf != fun || na.len() != args.len() {
+                    return None;
+                }
                 let mut b = HashMap::default();
                 for (i, p) in args.iter().enumerate() {
                     match p {
-                        HornTerm::Var(pv) => { b.insert(pv.clone(), i); }
-                        _ => { if p != &na[i] { return None; } }
+                        HornTerm::Var(pv) => {
+                            b.insert(pv.clone(), i);
+                        }
+                        _ => {
+                            if p != &na[i] {
+                                return None;
+                            }
+                        }
                     }
                 }
                 Some(HB::Ctor(b))
@@ -1377,13 +1596,22 @@ mod tests {
         //   arg = g(.., head_arg, ..)       -> parent atom (node wrapped); siblings free
         //   arg = a child var of the head   -> down/child atom
         let Some(arg) = &b.arg else { return BC::Bad };
-        if arg == head_arg { return BC::S(b.pred.clone()); }
+        if arg == head_arg {
+            return BC::S(b.pred.clone());
+        }
         match arg {
-            HornTerm::Var(v) =>
-                if sv == Some(v.as_str()) { BC::S(b.pred.clone()) } else { BC::ChVar(b.pred.clone(), v.clone()) },
+            HornTerm::Var(v) => {
+                if sv == Some(v.as_str()) {
+                    BC::S(b.pred.clone())
+                } else {
+                    BC::ChVar(b.pred.clone(), v.clone())
+                }
+            }
             HornTerm::App { fun, args } => {
                 for (i, ch) in args.iter().enumerate() {
-                    if ch == head_arg { return BC::Pa(b.pred.clone(), fun.clone(), i); }
+                    if ch == head_arg {
+                        return BC::Pa(b.pred.clone(), fun.clone(), i);
+                    }
                 }
                 BC::Bad
             }
@@ -1392,17 +1620,23 @@ mod tests {
     fn applicable(cl: &Clause, node: &Term) -> Option<(String, Vec<Spec>)> {
         let head_arg = cl.head.arg.as_ref()?;
         let hb = head_binding(head_arg, node)?;
-        let (sv, ci): (Option<String>, HashMap<String, usize>) =
-            match hb { HB::Selfv(v) => (Some(v), HashMap::default()), HB::Ctor(m) => (None, m) };
+        let (sv, ci): (Option<String>, HashMap<String, usize>) = match hb {
+            HB::Selfv(v) => (Some(v), HashMap::default()),
+            HB::Ctor(m) => (None, m),
+        };
         let mut specs = vec![];
         for b in &cl.body {
             match classify_body(b, head_arg, sv.as_deref()) {
                 BC::S(p) => specs.push(Spec::S(p)),
                 BC::Pa(p, c2, i) => specs.push(Spec::Pa(p, c2, i)),
                 BC::ChVar(p, vn) => {
-                    if let Some(&idx) = ci.get(&vn) { specs.push(Spec::Ch(p, idx)); }
-                    else if sv.as_deref() == Some(vn.as_str()) { specs.push(Spec::S(p)); }
-                    else { return None; }
+                    if let Some(&idx) = ci.get(&vn) {
+                        specs.push(Spec::Ch(p, idx));
+                    } else if sv.as_deref() == Some(vn.as_str()) {
+                        specs.push(Spec::S(p));
+                    } else {
+                        return None;
+                    }
                 }
                 BC::Bad => return None,
             }
@@ -1416,36 +1650,71 @@ mod tests {
     // --- INDEPENDENT by-position oracle (shares no logic with applicable) --
     fn head_bind_p(harg: &Term, p: &[usize], tp: &Term) -> Option<HashMap<String, Vec<usize>>> {
         match harg {
-            HornTerm::Var(v) => { let mut m = HashMap::default(); m.insert(v.clone(), p.to_vec()); Some(m) }
+            HornTerm::Var(v) => {
+                let mut m = HashMap::default();
+                m.insert(v.clone(), p.to_vec());
+                Some(m)
+            }
             HornTerm::App { fun, args } => {
-                if args.is_empty() { return if harg == tp { Some(HashMap::default()) } else { None }; }
-                let HornTerm::App { fun: nf, args: na } = tp else { return None; };
-                if nf != fun || na.len() != args.len() { return None; }
+                if args.is_empty() {
+                    return if harg == tp {
+                        Some(HashMap::default())
+                    } else {
+                        None
+                    };
+                }
+                let HornTerm::App { fun: nf, args: na } = tp else {
+                    return None;
+                };
+                if nf != fun || na.len() != args.len() {
+                    return None;
+                }
                 let mut m = HashMap::default();
                 for (i, pat) in args.iter().enumerate() {
                     match pat {
-                        HornTerm::Var(pv) => { let mut pp = p.to_vec(); pp.push(i); m.insert(pv.clone(), pp); }
-                        _ => { if pat != &na[i] { return None; } }
+                        HornTerm::Var(pv) => {
+                            let mut pp = p.to_vec();
+                            pp.push(i);
+                            m.insert(pv.clone(), pp);
+                        }
+                        _ => {
+                            if pat != &na[i] {
+                                return None;
+                            }
+                        }
                     }
                 }
                 Some(m)
             }
         }
     }
-    fn body_ok_p(b: &Atom, head_arg: &Term, bind: &HashMap<String, Vec<usize>>, p: &[usize],
-                 state: &HashMap<Vec<usize>, BTreeSet<String>>, tree: &Term,
-                 parent: &HashMap<Vec<usize>, (Vec<usize>, usize)>) -> bool {
+    fn body_ok_p(
+        b: &Atom,
+        head_arg: &Term,
+        bind: &HashMap<String, Vec<usize>>,
+        p: &[usize],
+        state: &HashMap<Vec<usize>, BTreeSet<String>>,
+        tree: &Term,
+        parent: &HashMap<Vec<usize>, (Vec<usize>, usize)>,
+    ) -> bool {
         let Some(arg) = &b.arg else { return false };
-        if arg == head_arg { return state.get(p).map_or(false, |s| s.contains(&b.pred)); } // self-loop
+        if arg == head_arg {
+            return state.get(p).map_or(false, |s| s.contains(&b.pred));
+        } // self-loop
         match arg {
-            HornTerm::Var(v) =>
-                bind.get(v).map_or(false, |path| state.get(path).map_or(false, |s| s.contains(&b.pred))),
+            HornTerm::Var(v) => bind.get(v).map_or(false, |path| {
+                state.get(path).map_or(false, |s| s.contains(&b.pred))
+            }),
             HornTerm::App { fun, args } => {
                 // parent atom: an immediate child equals the head term pattern.
                 for (i, ch) in args.iter().enumerate() {
                     if ch == head_arg {
-                        let Some((par, mypos)) = parent.get(p) else { return false };
-                        if *mypos != i || fun_of(tsub(tree, par)) != Some(fun.as_str()) { return false; }
+                        let Some((par, mypos)) = parent.get(p) else {
+                            return false;
+                        };
+                        if *mypos != i || fun_of(tsub(tree, par)) != Some(fun.as_str()) {
+                            return false;
+                        }
                         return state.get(par).map_or(false, |s| s.contains(&b.pred));
                     }
                 }
@@ -1454,22 +1723,37 @@ mod tests {
         }
     }
     fn pinned_lfp(tree: &Term, clauses: &[Clause]) -> HashMap<Vec<usize>, BTreeSet<String>> {
-        let mut ns = vec![]; tnodes(tree, &mut vec![], &mut ns);
+        let mut ns = vec![];
+        tnodes(tree, &mut vec![], &mut ns);
         let mut parent: HashMap<Vec<usize>, (Vec<usize>, usize)> = HashMap::default();
         for (p, _) in &ns {
-            if !p.is_empty() { let mut pp = p.clone(); let last = pp.pop().unwrap(); parent.insert(p.clone(), (pp, last)); }
+            if !p.is_empty() {
+                let mut pp = p.clone();
+                let last = pp.pop().unwrap();
+                parent.insert(p.clone(), (pp, last));
+            }
         }
-        let mut state: HashMap<Vec<usize>, BTreeSet<String>> =
-            ns.iter().map(|(p, _)| (p.clone(), BTreeSet::new())).collect();
+        let mut state: HashMap<Vec<usize>, BTreeSet<String>> = ns
+            .iter()
+            .map(|(p, _)| (p.clone(), BTreeSet::new()))
+            .collect();
         let mut changed = true;
         while changed {
             changed = false;
             for (p, tp) in &ns {
                 for cl in clauses {
                     let Some(harg) = &cl.head.arg else { continue };
-                    if state[p].contains(&cl.head.pred) { continue; }
-                    let Some(bind) = head_bind_p(harg, p, tp) else { continue };
-                    if cl.body.iter().all(|b| body_ok_p(b, harg, &bind, p, &state, tree, &parent)) {
+                    if state[p].contains(&cl.head.pred) {
+                        continue;
+                    }
+                    let Some(bind) = head_bind_p(harg, p, tp) else {
+                        continue;
+                    };
+                    if cl
+                        .body
+                        .iter()
+                        .all(|b| body_ok_p(b, harg, &bind, p, &state, tree, &parent))
+                    {
                         state.get_mut(p).unwrap().insert(cl.head.pred.clone());
                         changed = true;
                     }
@@ -1480,7 +1764,9 @@ mod tests {
     }
     fn oracle_accepts(tree: &Term, flat: &[Clause], goal: &str) -> bool {
         let empty: Vec<usize> = vec![];
-        pinned_lfp(tree, flat).get(&empty).map_or(false, |s| s.contains(goal))
+        pinned_lfp(tree, flat)
+            .get(&empty)
+            .map_or(false, |s| s.contains(goal))
     }
 
     // --- the construction --------------------------------------------------
@@ -1492,7 +1778,9 @@ mod tests {
             let Some(ha) = &c.head.arg else { continue };
             for b in &c.body {
                 if let Some(HornTerm::App { args, .. }) = &b.arg {
-                    if args.iter().any(|ch| ch == ha) { demand.insert(b.pred.clone()); }
+                    if args.iter().any(|ch| ch == ha) {
+                        demand.insert(b.pred.clone());
+                    }
                 }
             }
         }
@@ -1502,27 +1790,52 @@ mod tests {
         let mut consts: BTreeSet<String> = BTreeSet::new();
         for cla in clauses {
             if let Some(HornTerm::App { args, .. }) = &cla.head.arg {
-                for a in args { if let HornTerm::App { fun, args: aa } = a { if aa.is_empty() { consts.insert(fun.clone()); } } }
+                for a in args {
+                    if let HornTerm::App { fun, args: aa } = a {
+                        if aa.is_empty() {
+                            consts.insert(fun.clone());
+                        }
+                    }
+                }
             }
         }
-        let mut out: Vec<Clause> = consts.iter().map(|k| cl(at(&format!("is_{k}"), c(k)), vec![])).collect();
+        let mut out: Vec<Clause> = consts
+            .iter()
+            .map(|k| cl(at(&format!("is_{k}"), c(k)), vec![]))
+            .collect();
         let mut n = 0usize;
         for cla in clauses {
             if let Some(HornTerm::App { fun, args }) = &cla.head.arg {
-                if !args.is_empty() && args.iter().any(|a| matches!(a, HornTerm::App { args, .. } if args.is_empty())) {
-                    let mut new_args = vec![]; let mut body = vec![];
+                if !args.is_empty()
+                    && args
+                        .iter()
+                        .any(|a| matches!(a, HornTerm::App { args, .. } if args.is_empty()))
+                {
+                    let mut new_args = vec![];
+                    let mut body = vec![];
                     for a in args {
                         if let HornTerm::App { fun: af, args: aa } = a {
                             if aa.is_empty() {
-                                let z = format!("__z{n}"); n += 1;
-                                new_args.push(v(&z)); body.push(at(&format!("is_{af}"), v(&z)));
+                                let z = format!("__z{n}");
+                                n += 1;
+                                new_args.push(v(&z));
+                                body.push(at(&format!("is_{af}"), v(&z)));
                                 continue;
                             }
                         }
                         new_args.push(a.clone());
                     }
                     body.extend(cla.body.clone());
-                    out.push(cl(Atom { pred: cla.head.pred.clone(), arg: Some(HornTerm::App { fun: fun.clone(), args: new_args }) }, body));
+                    out.push(cl(
+                        Atom {
+                            pred: cla.head.pred.clone(),
+                            arg: Some(HornTerm::App {
+                                fun: fun.clone(),
+                                args: new_args,
+                            }),
+                        },
+                        body,
+                    ));
                     continue;
                 }
             }
@@ -1533,17 +1846,40 @@ mod tests {
     fn subsets(s: &BTreeSet<String>) -> Vec<BTreeSet<String>> {
         let items: Vec<&String> = s.iter().collect();
         let n = items.len();
-        (0..(1usize << n)).map(|mask|
-            items.iter().enumerate().filter(|(i, _)| mask >> i & 1 == 1).map(|(_, x)| (*x).clone()).collect()
-        ).collect()
+        (0..(1usize << n))
+            .map(|mask| {
+                items
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask >> i & 1 == 1)
+                    .map(|(_, x)| (*x).clone())
+                    .collect()
+            })
+            .collect()
     }
-    fn crossing_table(apps: &[(String, Vec<Spec>)], ctor: Option<&str>, child: &[&Table],
-                      demand: &BTreeSet<String>, sig: &Sig) -> Table {
-        let funcs: Vec<(String, usize)> = sig.cons.iter()
-            .filter(|(_, (a, _))| !a.is_empty()).map(|(n, (a, _))| (n.clone(), a.len())).collect();
+    fn crossing_table(
+        apps: &[(String, Vec<Spec>)],
+        ctor: Option<&str>,
+        child: &[&Table],
+        demand: &BTreeSet<String>,
+        sig: &Sig,
+    ) -> Table {
+        let funcs: Vec<(String, usize)> = sig
+            .cons
+            .iter()
+            .filter(|(_, (a, _))| !a.is_empty())
+            .map(|(n, (a, _))| (n.clone(), a.len()))
+            .collect();
         let dsubs = subsets(demand);
-        let mut domain: Vec<(Option<String>, i64, BTreeSet<String>)> = vec![(None, -1, BTreeSet::new())];
-        for (fname, k) in &funcs { for pos in 0..*k { for s in &dsubs { domain.push((Some(fname.clone()), pos as i64, s.clone())); } } }
+        let mut domain: Vec<(Option<String>, i64, BTreeSet<String>)> =
+            vec![(None, -1, BTreeSet::new())];
+        for (fname, k) in &funcs {
+            for pos in 0..*k {
+                for s in &dsubs {
+                    domain.push((Some(fname.clone()), pos as i64, s.clone()));
+                }
+            }
+        }
         let mut table = BTreeMap::new();
         for (pc, pp, s) in &domain {
             let mut t: BTreeSet<String> = BTreeSet::new();
@@ -1551,21 +1887,37 @@ mod tests {
             while changed {
                 changed = false;
                 for (pred, specs) in apps {
-                    if t.contains(pred) { continue; }
+                    if t.contains(pred) {
+                        continue;
+                    }
                     let mut ok = true;
                     for spec in specs {
                         ok = match spec {
                             Spec::S(p) => t.contains(p),
                             Spec::Ch(p, idx) => {
-                                let key = (ctor.map(|x| x.to_string()), *idx as i64,
-                                           t.intersection(demand).cloned().collect::<BTreeSet<String>>());
+                                let key = (
+                                    ctor.map(|x| x.to_string()),
+                                    *idx as i64,
+                                    t.intersection(demand)
+                                        .cloned()
+                                        .collect::<BTreeSet<String>>(),
+                                );
                                 child[*idx].get(&key).map_or(false, |set| set.contains(p))
                             }
-                            Spec::Pa(p, c2, pos) => pc.as_deref() == Some(c2.as_str()) && *pp == *pos as i64 && s.contains(p),
+                            Spec::Pa(p, c2, pos) => {
+                                pc.as_deref() == Some(c2.as_str())
+                                    && *pp == *pos as i64
+                                    && s.contains(p)
+                            }
                         };
-                        if !ok { break; }
+                        if !ok {
+                            break;
+                        }
                     }
-                    if ok { t.insert(pred.clone()); changed = true; }
+                    if ok {
+                        t.insert(pred.clone());
+                        changed = true;
+                    }
                 }
             }
             table.insert((pc.clone(), *pp, s.clone()), t);
@@ -1576,13 +1928,25 @@ mod tests {
         let mut res = vec![vec![]];
         for _ in 0..k {
             let mut nx = vec![];
-            for r in &res { for it in items { let mut rr = r.clone(); rr.push(it.clone()); nx.push(rr); } }
+            for r in &res {
+                for it in items {
+                    let mut rr = r.clone();
+                    rr.push(it.clone());
+                    nx.push(rr);
+                }
+            }
             res = nx;
         }
         res
     }
-    fn reg(tag: &mut HashMap<Table, String>, by_tag: &mut HashMap<String, Table>, t: Table) -> (String, bool) {
-        if let Some(tg) = tag.get(&t) { return (tg.clone(), false); }
+    fn reg(
+        tag: &mut HashMap<Table, String>,
+        by_tag: &mut HashMap<String, Table>,
+        t: Table,
+    ) -> (String, bool) {
+        if let Some(tg) = tag.get(&t) {
+            return (tg.clone(), false);
+        }
         let tg = format!("Q{}", tag.len());
         tag.insert(t.clone(), tg.clone());
         by_tag.insert(tg.clone(), t);
@@ -1592,13 +1956,28 @@ mod tests {
         let flat = flatten(clauses, &mut Fresh(0));
         let base = recognizer_rewrite(&flat);
         let demand = pop_demands(&base);
-        let consts: Vec<String> = sig.cons.iter().filter(|(_, (a, _))| a.is_empty()).map(|(n, _)| n.clone()).collect();
-        let funcs: Vec<(String, usize)> = sig.cons.iter().filter(|(_, (a, _))| !a.is_empty()).map(|(n, (a, _))| (n.clone(), a.len())).collect();
+        let consts: Vec<String> = sig
+            .cons
+            .iter()
+            .filter(|(_, (a, _))| a.is_empty())
+            .map(|(n, _)| n.clone())
+            .collect();
+        let funcs: Vec<(String, usize)> = sig
+            .cons
+            .iter()
+            .filter(|(_, (a, _))| !a.is_empty())
+            .map(|(n, (a, _))| (n.clone(), a.len()))
+            .collect();
         let mut leaf_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = HashMap::default();
-        for cc in &consts { leaf_apps.insert(cc.clone(), apps_for(&base, &c(cc))); }
+        for cc in &consts {
+            leaf_apps.insert(cc.clone(), apps_for(&base, &c(cc)));
+        }
         let mut func_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = HashMap::default();
         for (fname, k) in &funcs {
-            let dummy = HornTerm::App { fun: fname.clone(), args: (0..*k).map(|i| v(&format!("__c{i}"))).collect() };
+            let dummy = HornTerm::App {
+                fun: fname.clone(),
+                args: (0..*k).map(|i| v(&format!("__c{i}"))).collect(),
+            };
             func_apps.insert(fname.clone(), apps_for(&base, &dummy));
         }
         let mut tag: HashMap<Table, String> = HashMap::default();
@@ -1617,19 +1996,26 @@ mod tests {
             let mut added = vec![];
             for (fname, k) in &funcs {
                 for combo in product_tags(&cur, *k) {
-                    if !combo.iter().any(|ct| new_tags.contains(ct)) { continue; }
+                    if !combo.iter().any(|ct| new_tags.contains(ct)) {
+                        continue;
+                    }
                     let child: Vec<Table> = combo.iter().map(|tg| by_tag[tg].clone()).collect();
                     let refs: Vec<&Table> = child.iter().collect();
                     let t = crossing_table(&func_apps[fname], Some(fname), &refs, &demand, sig);
                     let (tg, is_new) = reg(&mut tag, &mut by_tag, t);
-                    if is_new { added.push(tg.clone()); }
+                    if is_new {
+                        added.push(tg.clone());
+                    }
                     edges.push((fname.clone(), combo, tg));
                 }
             }
             all_tags.extend(added.iter().cloned());
             new_tags = added.into_iter().collect();
         }
-        let mut out: Vec<Clause> = consts.iter().map(|cc| cl(at(&leaf_tag[cc], c(cc)), vec![])).collect();
+        let mut out: Vec<Clause> = consts
+            .iter()
+            .map(|cc| cl(at(&leaf_tag[cc], c(cc)), vec![]))
+            .collect();
         for (fname, combo, rtag) in &edges {
             let k = combo.len();
             let xs: Vec<Term> = (0..k).map(|i| v(&format!("x{i}"))).collect();
@@ -1639,20 +2025,30 @@ mod tests {
         let accept = "Accept__".to_string();
         let root = (None, -1i64, BTreeSet::new());
         for (t, tg) in &tag {
-            if t.get(&root).map_or(false, |s| s.contains(goal)) { out.push(cl(at(&accept, v("x")), vec![at(tg, v("x"))])); }
+            if t.get(&root).map_or(false, |s| s.contains(goal)) {
+                out.push(cl(at(&accept, v("x")), vec![at(tg, v("x"))]));
+            }
         }
         (out, accept)
     }
 
     // --- bottom-up summary (stage A: tables vs oracle on each fixed tree) --
-    fn tree_table(t: &Term, demand: &BTreeSet<String>, sig: &Sig,
-                  leaf_apps: &HashMap<String, Vec<(String, Vec<Spec>)>>,
-                  func_apps: &HashMap<String, Vec<(String, Vec<Spec>)>>) -> Table {
+    fn tree_table(
+        t: &Term,
+        demand: &BTreeSet<String>,
+        sig: &Sig,
+        leaf_apps: &HashMap<String, Vec<(String, Vec<Spec>)>>,
+        func_apps: &HashMap<String, Vec<(String, Vec<Spec>)>>,
+    ) -> Table {
         match t {
-            HornTerm::App { fun, args } if args.is_empty() =>
-                crossing_table(&leaf_apps[fun], None, &[], demand, sig),
+            HornTerm::App { fun, args } if args.is_empty() => {
+                crossing_table(&leaf_apps[fun], None, &[], demand, sig)
+            }
             HornTerm::App { fun, args } => {
-                let child: Vec<Table> = args.iter().map(|a| tree_table(a, demand, sig, leaf_apps, func_apps)).collect();
+                let child: Vec<Table> = args
+                    .iter()
+                    .map(|a| tree_table(a, demand, sig, leaf_apps, func_apps))
+                    .collect();
                 let refs: Vec<&Table> = child.iter().collect();
                 crossing_table(&func_apps[fun], Some(fun), &refs, demand, sig)
             }
@@ -1662,28 +2058,57 @@ mod tests {
 
     fn sig_h() -> Sig {
         let mut cons = HashMap::default();
-        for k in ["a", "b", "d"] { cons.insert(k.to_string(), (vec![], "T".to_string())); }
-        cons.insert("h".to_string(), (vec!["T".into(), "T".into()], "T".to_string()));
+        for k in ["a", "b", "d"] {
+            cons.insert(k.to_string(), (vec![], "T".to_string()));
+        }
+        cons.insert(
+            "h".to_string(),
+            (vec!["T".into(), "T".into()], "T".to_string()),
+        );
         Sig { cons }
     }
     fn toy_crossing() -> Vec<Clause> {
         let (x, y) = (v("x"), v("y"));
         vec![
             cl(at("Good", c("e2")), vec![]),
-            cl(at("A", f("top", vec![x.clone(), y.clone()])), vec![at("Good", y.clone())]),
-            cl(at("B", x.clone()), vec![at("A", f("top", vec![x.clone(), y.clone()]))]),
-            cl(at("Win", f("top", vec![x.clone(), y.clone()])), vec![at("B", x.clone())]),
+            cl(
+                at("A", f("top", vec![x.clone(), y.clone()])),
+                vec![at("Good", y.clone())],
+            ),
+            cl(
+                at("B", x.clone()),
+                vec![at("A", f("top", vec![x.clone(), y.clone()]))],
+            ),
+            cl(
+                at("Win", f("top", vec![x.clone(), y.clone()])),
+                vec![at("B", x.clone())],
+            ),
         ]
     }
     fn intersection() -> Vec<Clause> {
         let (x, y) = (v("x"), v("y"));
         vec![
-            cl(at("Up1", f("h", vec![x.clone(), y.clone()])), vec![at("L", x.clone())]),
-            cl(at("Up2", f("h", vec![x.clone(), y.clone()])), vec![at("M", y.clone())]),
+            cl(
+                at("Up1", f("h", vec![x.clone(), y.clone()])),
+                vec![at("L", x.clone())],
+            ),
+            cl(
+                at("Up2", f("h", vec![x.clone(), y.clone()])),
+                vec![at("M", y.clone())],
+            ),
             cl(at("L", c("a")), vec![]),
             cl(at("M", c("b")), vec![]),
-            cl(at("R", x.clone()), vec![at("Up1", f("h", vec![x.clone(), y.clone()])), at("Up2", f("h", vec![x.clone(), y.clone()]))]),
-            cl(at("Acc", f("h", vec![x.clone(), y.clone()])), vec![at("R", x.clone())]),
+            cl(
+                at("R", x.clone()),
+                vec![
+                    at("Up1", f("h", vec![x.clone(), y.clone()])),
+                    at("Up2", f("h", vec![x.clone(), y.clone()])),
+                ],
+            ),
+            cl(
+                at("Acc", f("h", vec![x.clone(), y.clone()])),
+                vec![at("R", x.clone())],
+            ),
         ]
     }
 
@@ -1694,9 +2119,13 @@ mod tests {
         let mut leaf_apps = HashMap::default();
         let mut func_apps = HashMap::default();
         for (n, (a, _)) in &sig.cons {
-            if a.is_empty() { leaf_apps.insert(n.clone(), apps_for(&base, &c(n))); }
-            else {
-                let dummy = HornTerm::App { fun: n.clone(), args: (0..a.len()).map(|i| v(&format!("__c{i}"))).collect() };
+            if a.is_empty() {
+                leaf_apps.insert(n.clone(), apps_for(&base, &c(n)));
+            } else {
+                let dummy = HornTerm::App {
+                    fun: n.clone(),
+                    args: (0..a.len()).map(|i| v(&format!("__c{i}"))).collect(),
+                };
                 func_apps.insert(n.clone(), apps_for(&base, &dummy));
             }
         }
@@ -1707,16 +2136,27 @@ mod tests {
         for tree in &uni {
             let rt = tree_table(tree, &demand, sig, &leaf_apps, &func_apps);
             let phi = rt.get(&root_ctx).map_or(false, |s| s.contains(goal));
-            assert_eq!(phi, oracle_accepts(tree, &flat, goal), "{name} stageA {tree:?}");
+            assert_eq!(
+                phi,
+                oracle_accepts(tree, &flat, goal),
+                "{name} stageA {tree:?}"
+            );
         }
 
         // Stage B: emitted one-way CHC least-model vs oracle.
         let (oneway, accept) = build_oneway(clauses, sig, goal);
-        assert!(oneway.iter().all(is_automaton_clause), "{name}: emit left a non-one-way clause");
+        assert!(
+            oneway.iter().all(is_automaton_clause),
+            "{name}: emit left a non-one-way clause"
+        );
         let (m, _) = least_model(&oneway, &uni);
         let acc = m.get(&accept).cloned().unwrap_or_default();
         for tree in &uni {
-            assert_eq!(acc.contains(tree), oracle_accepts(tree, &flat, goal), "{name} stageB {tree:?}");
+            assert_eq!(
+                acc.contains(tree),
+                oracle_accepts(tree, &flat, goal),
+                "{name} stageB {tree:?}"
+            );
         }
 
         // Stage C: emit -> existing VGL saturation -> oracle.
@@ -1724,16 +2164,27 @@ mod tests {
         let (m2, _) = least_model(&sat, &uni);
         let acc2 = m2.get(&accept).cloned().unwrap_or_default();
         for tree in &uni {
-            assert_eq!(acc2.contains(tree), oracle_accepts(tree, &flat, goal), "{name} stageC {tree:?}");
+            assert_eq!(
+                acc2.contains(tree),
+                oracle_accepts(tree, &flat, goal),
+                "{name} stageC {tree:?}"
+            );
         }
 
         // Stage D: the LAZY (reachable-contexts-only) construction vs oracle.
         let (oneway_l, accept_l) = build_oneway_lazy(&flat, sig, goal);
-        assert!(oneway_l.iter().all(is_automaton_clause), "{name}: lazy emit left a non-one-way clause");
+        assert!(
+            oneway_l.iter().all(is_automaton_clause),
+            "{name}: lazy emit left a non-one-way clause"
+        );
         let (ml, _) = least_model(&oneway_l, &uni);
         let accl = ml.get(&accept_l).cloned().unwrap_or_default();
         for tree in &uni {
-            assert_eq!(accl.contains(tree), oracle_accepts(tree, &flat, goal), "{name} stageD-lazy {tree:?}");
+            assert_eq!(
+                accl.contains(tree),
+                oracle_accepts(tree, &flat, goal),
+                "{name} stageD-lazy {tree:?}"
+            );
         }
     }
 
@@ -1745,8 +2196,14 @@ mod tests {
         let uni = universe(&sig_upmove(), 2);
         let (m, _) = least_model(&oneway, &uni);
         let acc = m.get(&accept).cloned().unwrap_or_default();
-        assert!(!acc.contains(&f("top", vec![c("r"), c("e1")])), "top(r,e1) must be rejected (e1 not Good)");
-        assert!(acc.contains(&f("top", vec![c("r"), c("e2")])), "top(r,e2) must be accepted (e2 Good)");
+        assert!(
+            !acc.contains(&f("top", vec![c("r"), c("e1")])),
+            "top(r,e1) must be rejected (e1 not Good)"
+        );
+        assert!(
+            acc.contains(&f("top", vec![c("r"), c("e2")])),
+            "top(r,e2) must be accepted (e2 Good)"
+        );
     }
 
     #[test]
@@ -1783,26 +2240,40 @@ mod tests {
         let base = recognizer_rewrite(&flat);
         let demand = pop_demands(&base);
         let states: BTreeSet<String> = base.iter().map(|c| c.head.pred.clone()).collect();
-        eprintln!("0001_tiny: rules={} states={} demand(down-channel width)={}",
-                  clauses.len(), states.len(), demand.len());
+        eprintln!(
+            "0001_tiny: rules={} states={} demand(down-channel width)={}",
+            clauses.len(),
+            states.len(),
+            demand.len()
+        );
         let mut bysort: BTreeMap<String, usize> = BTreeMap::new();
-        for (_, (_, rs)) in &sig.cons { *bysort.entry(rs.clone()).or_default() += 1; }
+        for (_, (_, rs)) in &sig.cons {
+            *bysort.entry(rs.clone()).or_default() += 1;
+        }
         eprintln!("ctors per sort: {:?}", bysort);
         // shape census: how do bodies look? (var head vs ctor head; deep body atoms)
-        let mut var_head = 0; let mut ctor_head = 0; let mut deep_body = 0;
+        let mut var_head = 0;
+        let mut ctor_head = 0;
+        let mut deep_body = 0;
         for cla in &flat {
             match &cla.head.arg {
                 Some(HornTerm::Var(_)) => var_head += 1,
                 Some(HornTerm::App { .. }) => ctor_head += 1,
                 None => {}
             }
-            if cla.body.iter().any(|b| matches!(&b.arg, Some(HornTerm::App { args, .. }) if !args.is_empty())) {
+            if cla
+                .body
+                .iter()
+                .any(|b| matches!(&b.arg, Some(HornTerm::App { args, .. }) if !args.is_empty()))
+            {
                 deep_body += 1;
             }
         }
         eprintln!("var_head={var_head} ctor_head={ctor_head} clauses_with_deep_body={deep_body}");
         // Does goal-relevance (backward cone of influence) collapse demand?
-        let mut relevant: BTreeSet<String> = horn.rules.iter()
+        let mut relevant: BTreeSet<String> = horn
+            .rules
+            .iter()
             .find(|r| r.head.pred == "Goal")
             .map(|r| r.body_atoms.iter().map(|a| a.pred.clone()).collect())
             .unwrap_or_default();
@@ -1811,26 +2282,49 @@ mod tests {
             changed = false;
             for cla in &base {
                 if relevant.contains(&cla.head.pred) {
-                    for b in &cla.body { if relevant.insert(b.pred.clone()) { changed = true; } }
+                    for b in &cla.body {
+                        if relevant.insert(b.pred.clone()) {
+                            changed = true;
+                        }
+                    }
                 }
             }
         }
         let eff: BTreeSet<String> = demand.intersection(&relevant).cloned().collect();
-        eprintln!("relevant states={} ; demand∩relevant={} -> worst-case 2^{} down-contexts",
-                  relevant.len(), eff.len(), eff.len());
+        eprintln!(
+            "relevant states={} ; demand∩relevant={} -> worst-case 2^{} down-contexts",
+            relevant.len(),
+            eff.len(),
+            eff.len()
+        );
 
         // Restrict to the goal cone, then LAZY-discover reachable down-contexts.
-        let base_rel: Vec<Clause> = base.iter().filter(|c| relevant.contains(&c.head.pred)).cloned().collect();
+        let base_rel: Vec<Clause> = base
+            .iter()
+            .filter(|c| relevant.contains(&c.head.pred))
+            .cloned()
+            .collect();
         let (ctxs, _t, maxs) = crossing_reachable(&base_rel, &sig, &demand);
-        eprintln!("REACHABLE down-contexts={ctxs}, max demand-states co-occurring={maxs}  (vs 2^{})", eff.len());
+        eprintln!(
+            "REACHABLE down-contexts={ctxs}, max demand-states co-occurring={maxs}  (vs 2^{})",
+            eff.len()
+        );
 
         // Actually build the lazy one-way automaton on the goal cone.
-        let goal = horn.rules.iter().find(|r| r.head.pred == "Goal")
-            .and_then(|r| r.body_atoms.first()).map(|a| a.pred.clone()).unwrap_or_default();
+        let goal = horn
+            .rules
+            .iter()
+            .find(|r| r.head.pred == "Goal")
+            .and_then(|r| r.body_atoms.first())
+            .map(|a| a.pred.clone())
+            .unwrap_or_default();
         let t0 = std::time::Instant::now();
         let (oneway, accept) = build_oneway_lazy(&base_rel, &sig, &goal);
-        eprintln!("build_oneway_lazy: {} one-way clauses (goal={goal}, accept={accept}) in {:?}",
-                  oneway.len(), t0.elapsed());
+        eprintln!(
+            "build_oneway_lazy: {} one-way clauses (goal={goal}, accept={accept}) in {:?}",
+            oneway.len(),
+            t0.elapsed()
+        );
     }
 
     type DCtx = (Option<String>, i64, BTreeSet<String>);
@@ -1838,57 +2332,120 @@ mod tests {
 
     // A node's state-set at down-context `ctx`, given children's tables; records
     // child down-contexts into `queries` (for lazy discovery).
-    fn node_value(apps: &[(String, Vec<Spec>)], ctor: Option<&str>, children: &[&Tab],
-                  ctx: &DCtx, demand: &BTreeSet<String>,
-                  queries: &mut HashMap<String, BTreeSet<DCtx>>, arg_sorts: &[String]) -> BTreeSet<String> {
+    fn node_value(
+        apps: &[(String, Vec<Spec>)],
+        ctor: Option<&str>,
+        children: &[&Tab],
+        ctx: &DCtx,
+        demand: &BTreeSet<String>,
+        queries: &mut HashMap<String, BTreeSet<DCtx>>,
+        arg_sorts: &[String],
+    ) -> BTreeSet<String> {
         let (pc, pp, s) = ctx;
         let mut t: BTreeSet<String> = BTreeSet::new();
         let mut changed = true;
         while changed {
             changed = false;
             for (pred, specs) in apps {
-                if t.contains(pred) { continue; }
+                if t.contains(pred) {
+                    continue;
+                }
                 let mut ok = true;
                 for spec in specs {
                     ok = match spec {
                         Spec::S(p) => t.contains(p),
                         Spec::Ch(p, idx) => {
-                            let key = (ctor.map(|x| x.to_string()), *idx as i64, t.intersection(demand).cloned().collect());
-                            queries.entry(arg_sorts[*idx].clone()).or_default().insert(key.clone());
-                            children[*idx].get(&key).map_or(false, |set| set.contains(p))
+                            let key = (
+                                ctor.map(|x| x.to_string()),
+                                *idx as i64,
+                                t.intersection(demand).cloned().collect(),
+                            );
+                            queries
+                                .entry(arg_sorts[*idx].clone())
+                                .or_default()
+                                .insert(key.clone());
+                            children[*idx]
+                                .get(&key)
+                                .map_or(false, |set| set.contains(p))
                         }
-                        Spec::Pa(p, c2, pos) => pc.as_deref() == Some(c2.as_str()) && *pp == *pos as i64 && s.contains(p),
+                        Spec::Pa(p, c2, pos) => {
+                            pc.as_deref() == Some(c2.as_str())
+                                && *pp == *pos as i64
+                                && s.contains(p)
+                        }
                     };
-                    if !ok { break; }
+                    if !ok {
+                        break;
+                    }
                 }
-                if ok { t.insert(pred.clone()); changed = true; }
+                if ok {
+                    t.insert(pred.clone());
+                    changed = true;
+                }
             }
         }
         t
     }
 
-    fn ctor_meta(sig: &Sig) -> (Vec<String>, Vec<(String, Vec<String>, String)>, HashMap<String, String>) {
-        let consts = sig.cons.iter().filter(|(_, (a, _))| a.is_empty()).map(|(n, _)| n.clone()).collect();
-        let funcs = sig.cons.iter().filter(|(_, (a, _))| !a.is_empty())
-            .map(|(n, (a, r))| (n.clone(), a.clone(), r.clone())).collect();
-        let cons_sort = sig.cons.iter().map(|(n, (_, r))| (n.clone(), r.clone())).collect();
+    fn ctor_meta(
+        sig: &Sig,
+    ) -> (
+        Vec<String>,
+        Vec<(String, Vec<String>, String)>,
+        HashMap<String, String>,
+    ) {
+        let consts = sig
+            .cons
+            .iter()
+            .filter(|(_, (a, _))| a.is_empty())
+            .map(|(n, _)| n.clone())
+            .collect();
+        let funcs = sig
+            .cons
+            .iter()
+            .filter(|(_, (a, _))| !a.is_empty())
+            .map(|(n, (a, r))| (n.clone(), a.clone(), r.clone()))
+            .collect();
+        let cons_sort = sig
+            .cons
+            .iter()
+            .map(|(n, (_, r))| (n.clone(), r.clone()))
+            .collect();
         (consts, funcs, cons_sort)
     }
 
     // Lazy: discover the down-contexts that actually arise (a least fixpoint
     // grown from the root context), never enumerating 2^demand.
-    fn reachable_contexts(base: &[Clause], sig: &Sig, demand: &BTreeSet<String>)
-        -> HashMap<String, BTreeSet<DCtx>> {
+    fn reachable_contexts(
+        base: &[Clause],
+        sig: &Sig,
+        demand: &BTreeSet<String>,
+    ) -> HashMap<String, BTreeSet<DCtx>> {
         let (consts, funcs, cons_sort) = ctor_meta(sig);
-        let leaf_apps: HashMap<String, Vec<(String, Vec<Spec>)>> =
-            consts.iter().map(|cc| (cc.clone(), apps_for(base, &c(cc)))).collect();
-        let func_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = funcs.iter().map(|(f, a, _)| {
-            let dummy = HornTerm::App { fun: f.clone(), args: (0..a.len()).map(|i| v(&format!("__c{i}"))).collect() };
-            (f.clone(), apps_for(base, &dummy))
-        }).collect();
+        let leaf_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = consts
+            .iter()
+            .map(|cc| (cc.clone(), apps_for(base, &c(cc))))
+            .collect();
+        let func_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = funcs
+            .iter()
+            .map(|(f, a, _)| {
+                let dummy = HornTerm::App {
+                    fun: f.clone(),
+                    args: (0..a.len()).map(|i| v(&format!("__c{i}"))).collect(),
+                };
+                (f.clone(), apps_for(base, &dummy))
+            })
+            .collect();
         let mut live: HashMap<String, BTreeSet<DCtx>> = HashMap::default();
-        for s in sig.cons.values().map(|(_, r)| r.clone()).collect::<BTreeSet<_>>() {
-            live.entry(s).or_default().insert((None, -1, BTreeSet::new()));
+        for s in sig
+            .cons
+            .values()
+            .map(|(_, r)| r.clone())
+            .collect::<BTreeSet<_>>()
+        {
+            live.entry(s)
+                .or_default()
+                .insert((None, -1, BTreeSet::new()));
         }
         // Phase A: discover the down-contexts that arise.  This must track the
         // DISTINCT reachable crossing-tables (not a max summary): each distinct
@@ -1906,13 +2463,21 @@ mod tests {
                 let s = &cons_sort[cc];
                 let mut tab = BTreeMap::new();
                 for ctx in snap.get(s).into_iter().flatten() {
-                    tab.insert(ctx.clone(), node_value(&leaf_apps[cc], None, &[], ctx, demand, &mut queries, &[]));
+                    tab.insert(
+                        ctx.clone(),
+                        node_value(&leaf_apps[cc], None, &[], ctx, demand, &mut queries, &[]),
+                    );
                 }
-                if seen.insert((s.clone(), tab.clone())) { by_sort.entry(s.clone()).or_default().push(tab.clone()); wl.push((s.clone(), tab)); }
+                if seen.insert((s.clone(), tab.clone())) {
+                    by_sort.entry(s.clone()).or_default().push(tab.clone());
+                    wl.push((s.clone(), tab));
+                }
             }
             let mut slots: HashMap<String, Vec<usize>> = HashMap::default();
             for (fi, (_, arg_sorts, _)) in funcs.iter().enumerate() {
-                for s in arg_sorts { slots.entry(s.clone()).or_default().push(fi); }
+                for s in arg_sorts {
+                    slots.entry(s.clone()).or_default().push(fi);
+                }
             }
             while let Some((s, t)) = wl.pop() {
                 for fi in slots.get(&s).cloned().unwrap_or_default() {
@@ -1920,34 +2485,71 @@ mod tests {
                     for p in (0..arg_sorts.len()).filter(|&p| arg_sorts[p] == s) {
                         let mut combos: Vec<Vec<Tab>> = vec![vec![]];
                         for (q, as_) in arg_sorts.iter().enumerate() {
-                            let opts: Vec<Tab> = if q == p { vec![t.clone()] } else { by_sort.get(as_).cloned().unwrap_or_default() };
+                            let opts: Vec<Tab> = if q == p {
+                                vec![t.clone()]
+                            } else {
+                                by_sort.get(as_).cloned().unwrap_or_default()
+                            };
                             let mut nx = vec![];
-                            for c0 in &combos { for o in &opts { let mut cc2 = c0.clone(); cc2.push(o.clone()); nx.push(cc2); } }
+                            for c0 in &combos {
+                                for o in &opts {
+                                    let mut cc2 = c0.clone();
+                                    cc2.push(o.clone());
+                                    nx.push(cc2);
+                                }
+                            }
                             combos = nx;
                         }
                         for combo in combos {
                             let refs: Vec<&Tab> = combo.iter().collect();
                             let mut tab = BTreeMap::new();
                             for ctx in snap.get(rs).into_iter().flatten() {
-                                tab.insert(ctx.clone(), node_value(&func_apps[f], Some(f), &refs, ctx, demand, &mut queries, arg_sorts));
+                                tab.insert(
+                                    ctx.clone(),
+                                    node_value(
+                                        &func_apps[f],
+                                        Some(f),
+                                        &refs,
+                                        ctx,
+                                        demand,
+                                        &mut queries,
+                                        arg_sorts,
+                                    ),
+                                );
                             }
-                            if seen.insert((rs.clone(), tab.clone())) { by_sort.entry(rs.clone()).or_default().push(tab.clone()); wl.push((rs.clone(), tab)); }
+                            if seen.insert((rs.clone(), tab.clone())) {
+                                by_sort.entry(rs.clone()).or_default().push(tab.clone());
+                                wl.push((rs.clone(), tab));
+                            }
                         }
                     }
                 }
             }
             let mut new_ctx = false;
-            for (s, cs) in queries { let e = live.entry(s).or_default(); for c0 in cs { if e.insert(c0) { new_ctx = true; } } }
+            for (s, cs) in queries {
+                let e = live.entry(s).or_default();
+                for c0 in cs {
+                    if e.insert(c0) {
+                        new_ctx = true;
+                    }
+                }
+            }
             if std::env::var("DELIS_CROSSING_DBG").is_ok() {
                 let nlive: usize = live.values().map(|v| v.len()).sum();
                 eprintln!("  phaseA pass: live={nlive} distinct_tables={}", seen.len());
             }
-            if !new_ctx { break; }
+            if !new_ctx {
+                break;
+            }
         }
         live
     }
 
-    fn crossing_reachable(base: &[Clause], sig: &Sig, demand: &BTreeSet<String>) -> (usize, usize, usize) {
+    fn crossing_reachable(
+        base: &[Clause],
+        sig: &Sig,
+        demand: &BTreeSet<String>,
+    ) -> (usize, usize, usize) {
         let live = reachable_contexts(base, sig, demand);
         let ctxs: BTreeSet<DCtx> = live.values().flatten().cloned().collect();
         let maxs = ctxs.iter().map(|(_, _, s)| s.len()).max().unwrap_or(0);
@@ -1959,18 +2561,34 @@ mod tests {
         let base = recognizer_rewrite(clauses);
         let demand = pop_demands(&base);
         let (consts, funcs, cons_sort) = ctor_meta(sig);
-        let leaf_apps: HashMap<String, Vec<(String, Vec<Spec>)>> =
-            consts.iter().map(|cc| (cc.clone(), apps_for(&base, &c(cc)))).collect();
-        let func_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = funcs.iter().map(|(f, a, _)| {
-            let dummy = HornTerm::App { fun: f.clone(), args: (0..a.len()).map(|i| v(&format!("__c{i}"))).collect() };
-            (f.clone(), apps_for(&base, &dummy))
-        }).collect();
+        let leaf_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = consts
+            .iter()
+            .map(|cc| (cc.clone(), apps_for(&base, &c(cc))))
+            .collect();
+        let func_apps: HashMap<String, Vec<(String, Vec<Spec>)>> = funcs
+            .iter()
+            .map(|(f, a, _)| {
+                let dummy = HornTerm::App {
+                    fun: f.clone(),
+                    args: (0..a.len()).map(|i| v(&format!("__c{i}"))).collect(),
+                };
+                (f.clone(), apps_for(&base, &dummy))
+            })
+            .collect();
         let live = reachable_contexts(&base, sig, &demand);
-        let tab_over = |apps: &[(String, Vec<Spec>)], ctor: Option<&str>, ch: &[&Tab], s: &str, arg_sorts: &[String]| -> Tab {
+        let tab_over = |apps: &[(String, Vec<Spec>)],
+                        ctor: Option<&str>,
+                        ch: &[&Tab],
+                        s: &str,
+                        arg_sorts: &[String]|
+         -> Tab {
             let mut t = BTreeMap::new();
             for ctx in live.get(s).into_iter().flatten() {
                 let mut qq: HashMap<String, BTreeSet<DCtx>> = HashMap::default();
-                t.insert(ctx.clone(), node_value(apps, ctor, ch, ctx, &demand, &mut qq, arg_sorts));
+                t.insert(
+                    ctx.clone(),
+                    node_value(apps, ctor, ch, ctx, &demand, &mut qq, arg_sorts),
+                );
             }
             t
         };
@@ -1982,21 +2600,30 @@ mod tests {
         let mut by_tag: HashMap<String, Tab> = HashMap::default();
         let mut sort_of: HashMap<String, String> = HashMap::default();
         let mut tabs_by_sort: HashMap<String, Vec<String>> = HashMap::default();
-        macro_rules! intern { ($t:expr, $s:expr) => {{
-            let t = $t;
-            if let Some(tg) = tag.get(&t) { (tg.clone(), false) } else {
-                let tg = format!("Q{}", tag.len());
-                tag.insert(t.clone(), tg.clone());
-                by_tag.insert(tg.clone(), t);
-                sort_of.insert(tg.clone(), $s.to_string());
-                tabs_by_sort.entry($s.to_string()).or_default().push(tg.clone());
-                (tg, true)
-            }
-        }}; }
+        macro_rules! intern {
+            ($t:expr, $s:expr) => {{
+                let t = $t;
+                if let Some(tg) = tag.get(&t) {
+                    (tg.clone(), false)
+                } else {
+                    let tg = format!("Q{}", tag.len());
+                    tag.insert(t.clone(), tg.clone());
+                    by_tag.insert(tg.clone(), t);
+                    sort_of.insert(tg.clone(), $s.to_string());
+                    tabs_by_sort
+                        .entry($s.to_string())
+                        .or_default()
+                        .push(tg.clone());
+                    (tg, true)
+                }
+            }};
+        }
         // which (func index, child position) each sort can fill
         let mut child_slots: HashMap<String, Vec<(usize, usize)>> = HashMap::default();
         for (fi, (_, arg_sorts, _)) in funcs.iter().enumerate() {
-            for (p, s) in arg_sorts.iter().enumerate() { child_slots.entry(s.clone()).or_default().push((fi, p)); }
+            for (p, s) in arg_sorts.iter().enumerate() {
+                child_slots.entry(s.clone()).or_default().push((fi, p));
+            }
         }
         let mut leaf_tag = HashMap::default();
         let mut worklist: Vec<String> = Vec::new();
@@ -2004,7 +2631,9 @@ mod tests {
             let s = cons_sort[cc].clone();
             let (tg, isnew) = intern!(tab_over(&leaf_apps[cc], None, &[], &s, &[]), &s);
             leaf_tag.insert(cc.clone(), tg.clone());
-            if isnew { worklist.push(tg); }
+            if isnew {
+                worklist.push(tg);
+            }
         }
         let mut edges: HashSet<(String, Vec<String>, String)> = HashSet::default();
         while let Some(tg) = worklist.pop() {
@@ -2013,21 +2642,37 @@ mod tests {
                 let (f, arg_sorts, rs) = &funcs[fi];
                 let mut combos: Vec<Vec<String>> = vec![vec![]];
                 for (q, as_) in arg_sorts.iter().enumerate() {
-                    let opts: Vec<String> = if q == p { vec![tg.clone()] } else { tabs_by_sort.get(as_).cloned().unwrap_or_default() };
+                    let opts: Vec<String> = if q == p {
+                        vec![tg.clone()]
+                    } else {
+                        tabs_by_sort.get(as_).cloned().unwrap_or_default()
+                    };
                     let mut nx = vec![];
-                    for c0 in &combos { for o in &opts { let mut cc2 = c0.clone(); cc2.push(o.clone()); nx.push(cc2); } }
+                    for c0 in &combos {
+                        for o in &opts {
+                            let mut cc2 = c0.clone();
+                            cc2.push(o.clone());
+                            nx.push(cc2);
+                        }
+                    }
                     combos = nx;
                 }
                 for combo in combos {
                     let ch_owned: Vec<Tab> = combo.iter().map(|t| by_tag[t].clone()).collect();
                     let ch: Vec<&Tab> = ch_owned.iter().collect();
-                    let (ntg, isnew) = intern!(tab_over(&func_apps[f], Some(f), &ch, rs, arg_sorts), rs);
+                    let (ntg, isnew) =
+                        intern!(tab_over(&func_apps[f], Some(f), &ch, rs, arg_sorts), rs);
                     edges.insert((f.clone(), combo, ntg.clone()));
-                    if isnew { worklist.push(ntg); }
+                    if isnew {
+                        worklist.push(ntg);
+                    }
                 }
             }
         }
-        let mut out: Vec<Clause> = consts.iter().map(|cc| cl(at(&leaf_tag[cc], c(cc)), vec![])).collect();
+        let mut out: Vec<Clause> = consts
+            .iter()
+            .map(|cc| cl(at(&leaf_tag[cc], c(cc)), vec![]))
+            .collect();
         for (fname, combo, rtag) in &edges {
             let k = combo.len();
             let xs: Vec<Term> = (0..k).map(|i| v(&format!("x{i}"))).collect();
@@ -2037,7 +2682,9 @@ mod tests {
         let accept = "Accept__".to_string();
         let root = (None, -1i64, BTreeSet::new());
         for (t, tg) in &tag {
-            if t.get(&root).map_or(false, |s| s.contains(goal)) { out.push(cl(at(&accept, v("x")), vec![at(tg, v("x"))])); }
+            if t.get(&root).map_or(false, |s| s.contains(goal)) {
+                out.push(cl(at(&accept, v("x")), vec![at(tg, v("x"))]));
+            }
         }
         (out, accept)
     }

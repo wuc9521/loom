@@ -88,7 +88,11 @@ fn dual(expr: &Value, rels: &HashSet<String>) -> Value {
         ]),
         "exists" | "forall" if items.len() == 3 => {
             let flipped = if op == "exists" { "forall" } else { "exists" };
-            Value::list(vec![Value::symbol(flipped), cl(items[1]), dual(items[2], rels)])
+            Value::list(vec![
+                Value::symbol(flipped),
+                cl(items[1]),
+                dual(items[2], rels),
+            ])
         }
         "match" if items.len() >= 2 => {
             let mut out = vec![Value::symbol("match"), cl(items[1])]; // scrutinee

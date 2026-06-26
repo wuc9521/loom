@@ -2,21 +2,18 @@ use crate::{
     compile::{
         expr::{eval_bool, eval_sygus_int},
         types::{
-            AspectKey, AspectValue, BitMapping, ConstraintBit, DomainBit, Encoding, FieldDecl,
-            FieldDomain, AspectSpace, SemanticConstraint, SemanticDomain, SemanticKind,
+            AspectKey, AspectSpace, AspectValue, BitMapping, ConstraintBit, DomainBit, Encoding,
+            FieldDecl, FieldDomain, SemanticConstraint, SemanticDomain, SemanticKind,
             SemanticProgram, SemanticSpec,
         },
     },
-    lang::{
-        eval::collect_loaded_models,
-        model::Model,
-    },
+    lang::{eval::collect_loaded_models, model::Model},
     parser::{DelisCmd, DelisProg},
 };
 use itertools::Itertools;
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
 use sygus_parser::SExpr as Value;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use sygus_parser::{Identifier, SyGuSTerm};
 
 type AspectAssignment = Vec<(String, AspectValue)>;
@@ -530,9 +527,7 @@ fn parse_aspect_term(
                     name: Arc::from(value),
                 }
             }
-            FieldDomain::Sort(_sort) => {
-                AspectValue::Symbol(arg.to_string())
-            }
+            FieldDomain::Sort(_sort) => AspectValue::Symbol(arg.to_string()),
             FieldDomain::Enum(values) => {
                 let value = arg.to_string();
                 if !values.contains(&value) {
@@ -618,29 +613,29 @@ fn eval_model_expr(term: &SyGuSTerm, model: &Model) -> Result<String, String> {
 
 impl AspectSpace {
     fn from_cmd(cmd: &crate::parser::ast::DefineAspects) -> Result<Self, String> {
-    let record_src = cmd
-        .body
-        .first()
-        .ok_or_else(|| format!("define-aspects {} expects a record body", cmd.name))?;
-    let record = sygus_parser::SExpr::from_str(record_src)
-        .map_err(|e| format!("failed to parse define-aspects {} record: {e}", cmd.name))?;
-    let fields = parse_record_fields(&record)?;
-    let where_expr = cmd
-        .body
-        .iter()
-        .position(|item| item == ":where")
-        .and_then(|idx| cmd.body.get(idx + 1))
-        .map(|src| {
-            sygus_parser::SExpr::from_str(src)
-                .map_err(|e| format!("failed to parse define-aspects {} :where: {e}", cmd.name))
+        let record_src = cmd
+            .body
+            .first()
+            .ok_or_else(|| format!("define-aspects {} expects a record body", cmd.name))?;
+        let record = sygus_parser::SExpr::from_str(record_src)
+            .map_err(|e| format!("failed to parse define-aspects {} record: {e}", cmd.name))?;
+        let fields = parse_record_fields(&record)?;
+        let where_expr = cmd
+            .body
+            .iter()
+            .position(|item| item == ":where")
+            .and_then(|idx| cmd.body.get(idx + 1))
+            .map(|src| {
+                sygus_parser::SExpr::from_str(src)
+                    .map_err(|e| format!("failed to parse define-aspects {} :where: {e}", cmd.name))
+            })
+            .transpose()?;
+        Ok(AspectSpace {
+            name: cmd.name.clone(),
+            fields,
+            where_expr,
         })
-        .transpose()?;
-    Ok(AspectSpace {
-        name: cmd.name.clone(),
-        fields,
-        where_expr,
-    })
-}
+    }
 }
 
 fn parse_record_fields(record: &Value) -> Result<Vec<FieldDecl>, String> {
@@ -778,7 +773,11 @@ fn univs_by_sort(model: &crate::lang::model::Model) -> HashMap<String, Vec<Strin
         .map(|sort_interp| {
             (
                 sort_interp.sort.to_string(),
-                sort_interp.elems.iter().map(|elem| elem.name.clone()).collect(),
+                sort_interp
+                    .elems
+                    .iter()
+                    .map(|elem| elem.name.clone())
+                    .collect(),
             )
         })
         .collect()
@@ -794,73 +793,73 @@ fn model_universe_sorts(model: &crate::lang::model::Model) -> Vec<String> {
 
 impl SemanticSpec {
     fn from_cmd(cmd: &crate::parser::ast::Semantics) -> Result<Self, String> {
-    let header = sygus_parser::SExpr::from_str(&cmd.header)
-        .map_err(|e| format!("failed to parse define-semantics header: {e}"))?;
-    let outer = header
-        .to_ref_vec()
-        .ok_or_else(|| format!("define-semantics header must be a list: {}", cmd.header))?;
-    let signature = match outer.as_slice() {
-        [single] => single,
-        _ => &header,
-    };
-    let items = signature
-        .to_ref_vec()
-        .ok_or_else(|| format!("define-semantics signature must be a list: {signature}"))?;
-    let relation = items
-        .first()
-        .and_then(|value| value.as_symbol())
-        .ok_or_else(|| format!("define-semantics signature is missing relation: {signature}"))?
-        .to_string();
-    let [term_arg, aspect_arg] = items
-        .get(1..)
-        .ok_or_else(|| format!("define-semantics signature is malformed: {signature}"))?
-    else {
-        return Err(format!(
-            "define-semantics signature must have term and aspect arguments: {signature}"
-        ));
-    };
-    let term_items = term_arg
-        .to_ref_vec()
-        .ok_or_else(|| format!("term argument must be sorted: {term_arg}"))?;
-    let aspect_items = aspect_arg
-        .to_ref_vec()
-        .ok_or_else(|| format!("aspect argument must be sorted: {aspect_arg}"))?;
-    if term_items.len() != 2 || aspect_items.len() != 2 {
-        return Err(format!(
-            "define-semantics arguments must have shape (name Sort): {signature}"
-        ));
+        let header = sygus_parser::SExpr::from_str(&cmd.header)
+            .map_err(|e| format!("failed to parse define-semantics header: {e}"))?;
+        let outer = header
+            .to_ref_vec()
+            .ok_or_else(|| format!("define-semantics header must be a list: {}", cmd.header))?;
+        let signature = match outer.as_slice() {
+            [single] => single,
+            _ => &header,
+        };
+        let items = signature
+            .to_ref_vec()
+            .ok_or_else(|| format!("define-semantics signature must be a list: {signature}"))?;
+        let relation = items
+            .first()
+            .and_then(|value| value.as_symbol())
+            .ok_or_else(|| format!("define-semantics signature is missing relation: {signature}"))?
+            .to_string();
+        let [term_arg, aspect_arg] = items
+            .get(1..)
+            .ok_or_else(|| format!("define-semantics signature is malformed: {signature}"))?
+        else {
+            return Err(format!(
+                "define-semantics signature must have term and aspect arguments: {signature}"
+            ));
+        };
+        let term_items = term_arg
+            .to_ref_vec()
+            .ok_or_else(|| format!("term argument must be sorted: {term_arg}"))?;
+        let aspect_items = aspect_arg
+            .to_ref_vec()
+            .ok_or_else(|| format!("aspect argument must be sorted: {aspect_arg}"))?;
+        if term_items.len() != 2 || aspect_items.len() != 2 {
+            return Err(format!(
+                "define-semantics arguments must have shape (name Sort): {signature}"
+            ));
+        }
+        let term_sort = term_items[1]
+            .as_symbol()
+            .ok_or_else(|| format!("term argument sort must be a symbol: {}", term_items[1]))?
+            .to_string();
+        let aspect_var = aspect_items[0]
+            .as_symbol()
+            .ok_or_else(|| format!("aspect argument name must be a symbol: {}", aspect_items[0]))?
+            .to_string();
+        let aspect_space = aspect_items[1]
+            .as_symbol()
+            .ok_or_else(|| format!("aspect argument sort must be a symbol: {}", aspect_items[1]))?
+            .to_string();
+        let body = sygus_parser::SExpr::from_str(&cmd.body)
+            .map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
+        let return_sort = cmd
+            .return_sort
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "Bool".to_string());
+        let return_kind = if return_sort == "Bool" {
+            SemanticKind::Bool
+        } else {
+            SemanticKind::FiniteValue { sort: return_sort }
+        };
+        Ok(SemanticSpec {
+            relation,
+            term_sort,
+            aspect_var,
+            aspect_space,
+            return_kind,
+            body,
+        })
     }
-    let term_sort = term_items[1]
-        .as_symbol()
-        .ok_or_else(|| format!("term argument sort must be a symbol: {}", term_items[1]))?
-        .to_string();
-    let aspect_var = aspect_items[0]
-        .as_symbol()
-        .ok_or_else(|| format!("aspect argument name must be a symbol: {}", aspect_items[0]))?
-        .to_string();
-    let aspect_space = aspect_items[1]
-        .as_symbol()
-        .ok_or_else(|| format!("aspect argument sort must be a symbol: {}", aspect_items[1]))?
-        .to_string();
-    let body = sygus_parser::SExpr::from_str(&cmd.body)
-        .map_err(|e| format!("failed to parse define-semantics body: {e}"))?;
-    let return_sort = cmd
-        .return_sort
-        .as_ref()
-        .map(ToString::to_string)
-        .unwrap_or_else(|| "Bool".to_string());
-    let return_kind = if return_sort == "Bool" {
-        SemanticKind::Bool
-    } else {
-        SemanticKind::FiniteValue { sort: return_sort }
-    };
-    Ok(SemanticSpec {
-        relation,
-        term_sort,
-        aspect_var,
-        aspect_space,
-        return_kind,
-        body,
-    })
-}
 }

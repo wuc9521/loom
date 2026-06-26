@@ -457,10 +457,7 @@ fn shift_formula_refs(formula: &BitFormula, expected_idx: usize) -> Option<BitFo
     }
 }
 
-pub fn try_lift_native_bv(
-    bits: &[BoolExpr],
-    arg_names: &[String],
-) -> Option<SyGuSTerm> {
+pub fn try_lift_native_bv(bits: &[BoolExpr], arg_names: &[String]) -> Option<SyGuSTerm> {
     if bits.is_empty() {
         return None;
     }

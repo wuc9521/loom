@@ -183,7 +183,10 @@ pub struct AspectSpace {
 pub enum AspectValue {
     Model(String),
     Int(usize),
-    Univ { sort: std::sync::Arc<str>, name: std::sync::Arc<str> },
+    Univ {
+        sort: std::sync::Arc<str>,
+        name: std::sync::Arc<str>,
+    },
     Symbol(String),
 }
 

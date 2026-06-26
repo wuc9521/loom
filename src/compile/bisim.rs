@@ -1,8 +1,6 @@
 use crate::compile::eval_ctx::{EnvView, SemanticContext};
 use crate::compile::semantics::{parse_cases, Case};
-use crate::compile::types::{
-    AspectKey, AspectValue, DomainBit, SemanticKind, SemanticProgram,
-};
+use crate::compile::types::{AspectKey, AspectValue, DomainBit, SemanticKind, SemanticProgram};
 use crate::lang::model::{InterpedValue, Model};
 use crate::parser::DelisProg;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet, FxHasher};
@@ -176,12 +174,7 @@ impl SemanticProgram {
             .filter(|(_, members)| members.len() > 1)
             .map(|(&id, _)| id)
             .collect();
-        let mut next_class_id = classes
-            .values()
-            .max()
-            .copied()
-            .map(|m| m + 1)
-            .unwrap_or(0);
+        let mut next_class_id = classes.values().max().copied().map(|m| m + 1).unwrap_or(0);
 
         let mut iters = 0usize;
         const MAX_ITERS: usize = 64;
@@ -197,8 +190,7 @@ impl SemanticProgram {
                 // Group members of this class by their refined signature.
                 let mut by_sig: HashMap<SigHash, Vec<ClassKey>> = HashMap::default();
                 for member in &members {
-                    let sig =
-                        refiner.signature(&member.0, &member.1, &member.2, &classes);
+                    let sig = refiner.signature(&member.0, &member.1, &member.2, &classes);
                     by_sig.entry(sig).or_default().push(member.clone());
                 }
                 if by_sig.len() == 1 {
@@ -437,9 +429,9 @@ impl<'a> Refiner<'a> {
 
 #[derive(Clone)]
 struct WalkEnv {
-    aspects: HashMap<String, AspectKey>, // "asp" → current aspect
+    aspects: HashMap<String, AspectKey>,  // "asp" → current aspect
     values: HashMap<String, AspectValue>, // quantifier bindings
-    subterms: HashMap<String, usize>,    // constructor pattern vars
+    subterms: HashMap<String, usize>,     // constructor pattern vars
 }
 
 impl EnvView for WalkEnv {
@@ -836,16 +828,8 @@ impl<'a> Refiner<'a> {
                 // k ∈ [lo, hi], so the bisim signature must use the same
                 // range or the partition won't reflect the formulas the
                 // synthesizer actually sees.
-                let lo = self
-                    .ctx
-                    .eval_int_expr(items[1], env)
-                    .unwrap_or(0)
-                    .max(0) as usize;
-                let hi = self
-                    .ctx
-                    .eval_int_expr(items[2], env)
-                    .unwrap_or(0)
-                    .max(0) as usize;
+                let lo = self.ctx.eval_int_expr(items[1], env).unwrap_or(0).max(0) as usize;
+                let hi = self.ctx.eval_int_expr(items[2], env).unwrap_or(0).max(0) as usize;
                 if hi < lo {
                     Vec::new()
                 } else {

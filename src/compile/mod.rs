@@ -2,7 +2,7 @@ use crate::backends::smt2::ast::HornProg;
 use crate::parser::DelisProg;
 use std::sync::OnceLock;
 use std::time::Instant;
-use sygus_parser::SyGuSCmd;
+use sygus_parser::{SyGuSCmd, SyGuSFile};
 
 mod aspects;
 mod bexpr;
@@ -51,7 +51,10 @@ pub fn init_options(opts: CompileOptions) {
 }
 
 pub fn opts() -> CompileOptions {
-    COMPILE_OPTS.get().cloned().unwrap_or_else(CompileOptions::default)
+    COMPILE_OPTS
+        .get()
+        .cloned()
+        .unwrap_or_else(CompileOptions::default)
 }
 
 pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {
@@ -78,10 +81,7 @@ impl DelisProg {
     pub fn to_sygus(&self) -> Result<Vec<SyGuSCmd>, String> {
         let semantic_start = Instant::now();
         let program = self.semantic_program()?;
-        log::info!(
-            "semantic program built in {:?}",
-            semantic_start.elapsed()
-        );
+        log::info!("semantic program built in {:?}", semantic_start.elapsed());
         self.to_sygus_with(program)
     }
 
@@ -98,6 +98,8 @@ impl DelisProg {
         let encode_start = Instant::now();
         let result = if use_direct {
             ctx.compile()
+        } else if !parent_free && std::env::var("DELIS_LEGACY").is_err() {
+            self.faithful_sygus_cmds_from_ctx(ctx)
         } else {
             emit::compile_via_horn(ctx)
         };
@@ -133,20 +135,56 @@ impl DelisProg {
         let synth_name = ctx.synth_name.clone();
         let horn = ctx.compile_chc()?;
         let (sygus, sort) = crossing::faithful_sygus(&horn, &synth_name);
+        let sygus = self.with_axiom_assumes(sygus);
+        Ok((sygus, sort, synth_name))
+    }
+
+    /// Counterexample crossing encoding for a parent-bearing program. For a fixed
+    /// skeleton, SAT means the skeleton violates some root demand; UNSAT means no
+    /// violation certificate exists.
+    pub fn faithful_refuter_sygus(&self) -> Result<(String, String, String), String> {
+        let ctx = CompileContext::new(self)?;
+        let synth_name = ctx.synth_name.clone();
+        let horn = ctx.compile_chc()?;
+        let (sygus, sort) = crossing::faithful_refuter_sygus(&horn, &synth_name);
+        let sygus = self.with_axiom_assumes(sygus);
+        Ok((sygus, sort, synth_name))
+    }
+
+    fn faithful_sygus_cmds_from_ctx(
+        &self,
+        ctx: CompileContext<'_>,
+    ) -> Result<Vec<SyGuSCmd>, String> {
+        let synth_name = ctx.synth_name.clone();
+        let horn = ctx.compile_chc()?;
+        let (sygus, _) = crossing::faithful_sygus(&horn, &synth_name);
+        let sygus = self.with_axiom_assumes(sygus);
+        SyGuSFile::from_str(&sygus)
+            .map(|file| file.cmds)
+            .map_err(|e| format!("crossing SyGuS emission produced unparsable output: {e}"))
+    }
+
+    fn with_axiom_assumes(&self, sygus: String) -> String {
         // Carry the program's `declare-axiom` operator laws to the solver as
-        // `(assume …)` (a SyGuS command): the synthesis backend uses them to
-        // recognize semantically-equivalent candidates and dedup the search.
+        // `(assume ...)` commands: the synthesis backend uses them to recognize
+        // semantically-equivalent candidates and dedup the search.
         let assumes: String = self
             .axioms()
             .iter()
             .map(|a| format!("(assume {a})\n"))
             .collect();
-        let sygus = if assumes.is_empty() {
+        if assumes.is_empty() {
             sygus
         } else {
             sygus.replace("(check-synth)\n", &format!("{assumes}(check-synth)\n"))
-        };
-        Ok((sygus, sort, synth_name))
+        }
+    }
+
+    pub fn crossing_eval_bench(&self, max_size: usize) -> Result<(), String> {
+        let ctx = CompileContext::new(self)?;
+        let horn = ctx.compile_chc()?;
+        crossing::crossing_eval_bench(&horn, max_size);
+        Ok(())
     }
 }
 

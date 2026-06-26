@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::{Literal, SortedVar, SyGuSCmd, SyGuSFile, SyGuSTerm};
 
 use super::eval::{
-    Bits, DefineFun, EvalContext, EvalEnv, EvalValue, is_closure_constraint, term_mentions_symbol,
+    is_closure_constraint, term_mentions_symbol, Bits, DefineFun, EvalContext, EvalEnv, EvalValue,
 };
 
 pub struct Verifier {
@@ -40,9 +40,7 @@ impl Verifier {
                             name.clone(),
                             DefineFun {
                                 args: Vec::new(),
-                                body: SyGuSTerm::Literal(Literal::BinConst(
-                                    "0".repeat(width),
-                                )),
+                                body: SyGuSTerm::Literal(Literal::BinConst("0".repeat(width))),
                                 width,
                             },
                         );
@@ -125,9 +123,9 @@ impl Verifier {
                 || pending
                     .iter()
                     .any(|(_, _, def_body)| term_mentions_symbol(def_body, &self.synth_name))
-                || funcs
-                    .iter()
-                    .any(|(name, func)| name != &self.synth_name && term_mentions_symbol(&func.body, &self.synth_name));
+                || funcs.iter().any(|(name, func)| {
+                    name != &self.synth_name && term_mentions_symbol(&func.body, &self.synth_name)
+                });
             let bits = if requires_self_fixpoint {
                 let mut current = Bits::zero(self.synth_width);
                 let mut converged = None;
@@ -154,17 +152,26 @@ impl Verifier {
                         }
                         remaining = next_remaining;
                     }
-                    let next =
-                        evaluator.eval_bv(&body, &mut EvalEnv::with_base(iter_base), self.synth_width)?;
+                    let next = evaluator.eval_bv(
+                        &body,
+                        &mut EvalEnv::with_base(iter_base),
+                        self.synth_width,
+                    )?;
                     if next == current {
                         converged = Some(next);
                         break;
                     }
                     current = next;
                 }
-                converged.ok_or_else(|| "verifier: self-closure candidate did not converge".to_string())?
+                converged.ok_or_else(|| {
+                    "verifier: self-closure candidate did not converge".to_string()
+                })?
             } else {
-                evaluator.eval_bv(&body, &mut EvalEnv::with_base(base.clone()), self.synth_width)?
+                evaluator.eval_bv(
+                    &body,
+                    &mut EvalEnv::with_base(base.clone()),
+                    self.synth_width,
+                )?
             };
             log::debug!(
                 "verifier: synth_width={} bits={}",
@@ -191,7 +198,10 @@ impl Verifier {
 fn is_constant_grammar(grammar: &sygus_parser::GrammarDef) -> bool {
     grammar.grouped_rule_lists.len() == 1
         && grammar.grouped_rule_lists[0].terms.len() == 1
-        && matches!(&grammar.grouped_rule_lists[0].terms[0], sygus_parser::SyGuSGTerm::Constant(_))
+        && matches!(
+            &grammar.grouped_rule_lists[0].terms[0],
+            sygus_parser::SyGuSGTerm::Constant(_)
+        )
 }
 
 fn parse_solution_define_funs(

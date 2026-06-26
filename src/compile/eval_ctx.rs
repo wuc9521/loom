@@ -2,7 +2,7 @@ use crate::{
     compile::{
         semantics::Case,
         types::{
-            AspectKey, AspectValue, AspectSpace, SemanticDomain, SemanticKind, SemanticProgram,
+            AspectKey, AspectSpace, AspectValue, SemanticDomain, SemanticKind, SemanticProgram,
             SemanticSpec,
         },
     },
@@ -115,9 +115,7 @@ impl<'a> SemanticContext<'a> {
                 if sig.arg_sorts.is_empty() {
                     let value = self
                         .eval_model_symbols(model_ref, symbol, &[])
-                        .ok_or_else(|| {
-                            format!("model {model} has no value for {symbol}")
-                        })?;
+                        .ok_or_else(|| format!("model {model} has no value for {symbol}"))?;
                     return interped_aspect_value(&sig.ret_sort.to_string(), &value);
                 }
             }
@@ -319,7 +317,8 @@ impl<'a> SemanticContext<'a> {
             .map(|sort| {
                 let sort = sort.to_string();
                 let sort_arc: Arc<str> = Arc::from(sort.as_str());
-                model.univ_for_sort(&sort)
+                model
+                    .univ_for_sort(&sort)
                     .ok_or_else(|| format!("model {} has no universe for sort {sort}", model.name))
                     .map(|values| {
                         values
@@ -527,7 +526,12 @@ impl<'a> SemanticContext<'a> {
                 .collect::<Result<_, String>>()?;
             let value = self
                 .eval_model_symbols(model_ref, func, &arg_strs)
-                .ok_or_else(|| format!("model {model} has no value for {func}({})", arg_strs.join(", ")))?;
+                .ok_or_else(|| {
+                    format!(
+                        "model {model} has no value for {func}({})",
+                        arg_strs.join(", ")
+                    )
+                })?;
             return interped_aspect_value(&sig.ret_sort.to_string(), &value);
         }
         if items.len() == 2 {
@@ -574,21 +578,19 @@ impl<'a> SemanticContext<'a> {
                 _ => Err(String::new()),
             };
         }
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(String::new)?;
+        let items = expr.to_ref_vec().ok_or_else(String::new)?;
         let op = items
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(String::new)?;
         match op {
             "not" if items.len() == 2 => Ok(!self.eval_bool_value(items[1], env)?),
-            "and" => items[1..]
-                .iter()
-                .try_fold(true, |acc, item| Ok(acc && self.eval_bool_value(item, env)?)),
-            "or" => items[1..]
-                .iter()
-                .try_fold(false, |acc, item| Ok(acc || self.eval_bool_value(item, env)?)),
+            "and" => items[1..].iter().try_fold(true, |acc, item| {
+                Ok(acc && self.eval_bool_value(item, env)?)
+            }),
+            "or" => items[1..].iter().try_fold(false, |acc, item| {
+                Ok(acc || self.eval_bool_value(item, env)?)
+            }),
             "ite" if items.len() == 4 => {
                 if self.eval_bool_value(items[1], env)? {
                     self.eval_bool_value(items[2], env)
@@ -597,9 +599,10 @@ impl<'a> SemanticContext<'a> {
                 }
             }
             "=" if items.len() == 3 => {
-                if let (Ok(lhs), Ok(rhs)) =
-                    (self.eval_value(items[1], env), self.eval_value(items[2], env))
-                {
+                if let (Ok(lhs), Ok(rhs)) = (
+                    self.eval_value(items[1], env),
+                    self.eval_value(items[2], env),
+                ) {
                     return self.values_equal(&lhs, &rhs, env);
                 }
                 Ok(self.eval_int_expr(items[1], env)? == self.eval_int_expr(items[2], env)?)
@@ -666,7 +669,8 @@ impl<'a> SemanticContext<'a> {
                     .ok_or_else(|| format!("size sort must be a symbol: {sort_expr}"))?;
                 let model = self.eval_model_name(model_expr, env)?;
                 let model_ref = self.model(&model)?;
-                let values = model_ref.univ_for_sort(sort)
+                let values = model_ref
+                    .univ_for_sort(sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
                 Ok(values.len() as isize)
             }
@@ -747,8 +751,7 @@ impl<'a> SemanticContext<'a> {
             // can't avoid this on the miss path). Convert the InterpedValue
             // to AspectValue here so the cache stores the already-interpreted
             // form — subsequent hits skip `interped_aspect_value`.
-            let arg_strings: Vec<String> =
-                arg_values.iter().map(|v| v.display()).collect();
+            let arg_strings: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
             let raw = model_ref.eval_symbols(func, &arg_strings).cloned();
             let owned_ret;
             let ret_str: &str = if let Some(s) = sig.ret_sort.as_simple_name() {
@@ -886,7 +889,10 @@ impl<'a> SemanticContext<'a> {
         rhs: &AspectValue,
         env: &impl EnvView,
     ) -> Result<bool, String> {
-        Ok(self.value_matches_target(lhs, rhs, env)? && self.value_matches_target(rhs, lhs, env)?)
+        Ok(
+            self.value_matches_target(lhs, rhs, env)?
+                && self.value_matches_target(rhs, lhs, env)?,
+        )
     }
 
     pub fn value_matches_target(
@@ -903,7 +909,9 @@ impl<'a> SemanticContext<'a> {
                 let Some(univ) = model_ref.univ_for_sort(sort) else {
                     return Ok(false);
                 };
-                Ok(univ.get(*idx).is_some_and(|candidate| candidate.as_str() == &**name))
+                Ok(univ
+                    .get(*idx)
+                    .is_some_and(|candidate| candidate.as_str() == &**name))
             }
             _ => Ok(value == target),
         }

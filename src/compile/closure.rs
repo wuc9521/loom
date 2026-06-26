@@ -1,12 +1,10 @@
 use crate::{parser::DelisProg, sorts::SortEnv};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::time::Instant;
-use sygus_parser::{
-    GrammarDef, Identifier, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSTerm,
-};
+use sygus_parser::{GrammarDef, Identifier, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSTerm};
 
 use super::eval::{
-    Bits, DefineFun, EvalContext, EvalEnv, EvalValue, is_closure_constraint, term_mentions_symbol,
+    is_closure_constraint, term_mentions_symbol, Bits, DefineFun, EvalContext, EvalEnv, EvalValue,
 };
 
 #[derive(Clone)]
@@ -79,7 +77,10 @@ impl DelisProg {
 fn is_constant_grammar(grammar: &GrammarDef) -> bool {
     grammar.grouped_rule_lists.len() == 1
         && grammar.grouped_rule_lists[0].terms.len() == 1
-        && matches!(&grammar.grouped_rule_lists[0].terms[0], SyGuSGTerm::Constant(_))
+        && matches!(
+            &grammar.grouped_rule_lists[0].terms[0],
+            SyGuSGTerm::Constant(_)
+        )
 }
 
 struct ClosureSolver<'a> {
@@ -132,14 +133,13 @@ impl<'a> ClosureSolver<'a> {
                             name.clone(),
                             DefineFun {
                                 args: Vec::new(),
-                                body: SyGuSTerm::Literal(Literal::BinConst(
-                                    "0".repeat(width),
-                                )),
+                                body: SyGuSTerm::Literal(Literal::BinConst("0".repeat(width))),
                                 width,
                             },
                         );
                     } else if args.is_empty() {
-                        let g = grammar.ok_or_else(|| "closure requires SyGuS grammar".to_string())?;
+                        let g =
+                            grammar.ok_or_else(|| "closure requires SyGuS grammar".to_string())?;
                         synth = Some((name, sort, g));
                     }
                 }
@@ -217,11 +217,7 @@ impl<'a> ClosureSolver<'a> {
                 return Ok("infeasible".to_string());
             }
             if iteration <= 5 || iteration % 25 == 0 {
-                log::debug!(
-                    "closure: iteration {} in {:?}",
-                    iteration,
-                    start.elapsed()
-                );
+                log::debug!("closure: iteration {} in {:?}", iteration, start.elapsed());
             }
         }
     }
@@ -355,10 +351,7 @@ impl<'a> ClosureSolver<'a> {
         let mut env = HashMap::default();
         if let Some(bits) = self_binding {
             let width = self.nonterminals[self.start_nt_idx].width;
-            env.insert(
-                self.synth_name.clone(),
-                EvalValue::Bv(bits.clone(), width),
-            );
+            env.insert(self.synth_name.clone(), EvalValue::Bv(bits.clone(), width));
         }
         for (name, value) in func.args.iter().zip(args) {
             env.insert(name.clone(), EvalValue::Bv(value.bits.clone(), value.width));
@@ -370,11 +363,7 @@ impl<'a> ClosureSolver<'a> {
     /// Compute the least fixed point of `body(args, r)` starting from
     /// `r = 0`. The body is monotone in `r` under the finite-aspect
     /// encoding, so iteration converges in at most `width + 1` steps.
-    fn eval_constructor_lfp(
-        &self,
-        func: &DefineFun,
-        args: &[Value],
-    ) -> Result<Bits, String> {
+    fn eval_constructor_lfp(&self, func: &DefineFun, args: &[Value]) -> Result<Bits, String> {
         let width = self.nonterminals[self.start_nt_idx].width;
         let mut current = Bits::zero(width);
         for _ in 0..=width {
@@ -531,48 +520,48 @@ fn build_nonterminals(
 
 impl Production {
     fn from_gterm(term: SyGuSGTerm) -> Result<Self, String> {
-    let SyGuSGTerm::SyGuSTerm(term) = term else {
-        return Err("closure does not support Constant/Variable grammar terms".to_string());
-    };
-    match term {
-        SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(Production {
-            ctor: name,
-            args: Vec::new(),
-        }),
-        SyGuSTerm::Application(Identifier::Symbol(name), args) => Ok(Production {
-            ctor: name,
-            args: args
-                .into_iter()
-                .map(|arg| match arg {
-                    SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(name),
-                    _ => Err(format!(
-                        "grammar constructor argument must be a nonterminal: {arg}"
-                    )),
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        other => Err(format!("unsupported grammar term {other}")),
-    }
+        let SyGuSGTerm::SyGuSTerm(term) = term else {
+            return Err("closure does not support Constant/Variable grammar terms".to_string());
+        };
+        match term {
+            SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(Production {
+                ctor: name,
+                args: Vec::new(),
+            }),
+            SyGuSTerm::Application(Identifier::Symbol(name), args) => Ok(Production {
+                ctor: name,
+                args: args
+                    .into_iter()
+                    .map(|arg| match arg {
+                        SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(name),
+                        _ => Err(format!(
+                            "grammar constructor argument must be a nonterminal: {arg}"
+                        )),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            }),
+            other => Err(format!("unsupported grammar term {other}")),
+        }
     }
 }
 
 impl BoolOps {
     fn classify(&mut self, prod: &Production) {
-    if !prod.args.is_empty() {
-        if prod.args.len() == 1 && prod.ctor.ends_with(".not") {
-            self.not_ctor = Some(prod.ctor.clone());
-        } else if prod.args.len() == 2 && prod.ctor.ends_with(".and") {
-            self.and_ctor = Some(prod.ctor.clone());
-        } else if prod.args.len() == 2 && prod.ctor.ends_with(".or") {
-            self.or_ctor = Some(prod.ctor.clone());
+        if !prod.args.is_empty() {
+            if prod.args.len() == 1 && prod.ctor.ends_with(".not") {
+                self.not_ctor = Some(prod.ctor.clone());
+            } else if prod.args.len() == 2 && prod.ctor.ends_with(".and") {
+                self.and_ctor = Some(prod.ctor.clone());
+            } else if prod.args.len() == 2 && prod.ctor.ends_with(".or") {
+                self.or_ctor = Some(prod.ctor.clone());
+            }
+            return;
         }
-        return;
-    }
-    if prod.ctor.ends_with(".true") {
-        self.true_ctor = Some(prod.ctor.clone());
-    } else if prod.ctor.ends_with(".false") {
-        self.false_ctor = Some(prod.ctor.clone());
-    }
+        if prod.ctor.ends_with(".true") {
+            self.true_ctor = Some(prod.ctor.clone());
+        } else if prod.ctor.ends_with(".false") {
+            self.false_ctor = Some(prod.ctor.clone());
+        }
     }
 }
 

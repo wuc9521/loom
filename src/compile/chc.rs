@@ -18,7 +18,6 @@ use crate::{
     },
     parser::DelisProg,
 };
-use sygus_parser::SExpr as Value;
 use rustc_hash::FxHashMap as HashMap;
 use std::{
     cell::RefCell,
@@ -26,6 +25,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use sygus_parser::SExpr as Value;
 use sygus_parser::Sort;
 
 #[derive(Clone)]
@@ -145,8 +145,13 @@ impl EnvView for Env {
 
 impl<'a> CompileContext<'a> {
     pub fn compile_chc(self) -> Result<HornProg, String> {
-        ChcCompiler::new(self.problem, self.semantic_program, self.sig, self.semantic_cases)?
-            .compile()
+        ChcCompiler::new(
+            self.problem,
+            self.semantic_program,
+            self.sig,
+            self.semantic_cases,
+        )?
+        .compile()
     }
 }
 
@@ -251,7 +256,8 @@ impl<'a> ChcCompiler<'a> {
         for domain in &self.program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, bit);
-                out.aspect_state.insert(state_name(&bit.aspect), state.clone());
+                out.aspect_state
+                    .insert(state_name(&bit.aspect), state.clone());
                 out.aspect_state.insert(
                     aspect_value_state_name(&bit.aspect, bit.value.as_ref()),
                     state.clone(),
@@ -397,7 +403,11 @@ impl<'a> ChcCompiler<'a> {
         log_quantifier_bucket(&cons.name, "exists_neg", &profile.exists_neg);
         let lowering = self.lowering_profile.borrow().clone();
         log_stage_timing(&cons.name, "eval_bool_pair", &lowering.eval_bool_pair);
-        log_stage_timing(&cons.name, "semantic_bool_call", &lowering.semantic_bool_call);
+        log_stage_timing(
+            &cons.name,
+            "semantic_bool_call",
+            &lowering.semantic_bool_call,
+        );
         log_stage_timing(
             &cons.name,
             "semantic_finite_call",
@@ -549,98 +559,98 @@ impl<'a> ChcCompiler<'a> {
     fn eval_bool_pair(&self, expr: &Value, env: &Env) -> Result<BoolPair, String> {
         let start = Instant::now();
         let result = (|| {
-        if let Some(symbol) = expr.as_symbol() {
-            return match symbol {
-                "true" => Ok(BoolPair {
-                    pos: formula_true(),
-                    neg: formula_false(),
-                }),
-                "false" => Ok(BoolPair {
-                    pos: formula_false(),
-                    neg: formula_true(),
-                }),
-                _ => Err(format!("expected Bool expression, got {expr}")),
-            };
-        }
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("expected Bool expression, got {expr}"))?;
-        let op = items
-            .first()
-            .and_then(|item| item.as_symbol())
-            .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
-        match op {
-            "not" if items.len() == 2 => {
-                let pair = self.eval_bool_pair(items[1], env)?;
-                Ok(BoolPair {
-                    pos: pair.neg,
-                    neg: pair.pos,
-                })
+            if let Some(symbol) = expr.as_symbol() {
+                return match symbol {
+                    "true" => Ok(BoolPair {
+                        pos: formula_true(),
+                        neg: formula_false(),
+                    }),
+                    "false" => Ok(BoolPair {
+                        pos: formula_false(),
+                        neg: formula_true(),
+                    }),
+                    _ => Err(format!("expected Bool expression, got {expr}")),
+                };
             }
-            "and" => {
-                let mut pos = formula_true();
-                let mut neg = formula_false();
-                for item in &items[1..] {
-                    let pair = self.eval_bool_pair(item, env)?;
-                    pos = formula_and(pos, pair.pos);
-                    neg = formula_or(neg, pair.neg);
-                    if matches!(pos, PredFormula::False) && matches!(neg, PredFormula::True) {
-                        break;
-                    }
+            let items = expr
+                .to_ref_vec()
+                .ok_or_else(|| format!("expected Bool expression, got {expr}"))?;
+            let op = items
+                .first()
+                .and_then(|item| item.as_symbol())
+                .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
+            match op {
+                "not" if items.len() == 2 => {
+                    let pair = self.eval_bool_pair(items[1], env)?;
+                    Ok(BoolPair {
+                        pos: pair.neg,
+                        neg: pair.pos,
+                    })
                 }
-                Ok(BoolPair { pos, neg })
-            }
-            "or" => {
-                let mut pos = formula_false();
-                let mut neg = formula_true();
-                for item in &items[1..] {
-                    let pair = self.eval_bool_pair(item, env)?;
-                    pos = formula_or(pos, pair.pos);
-                    neg = formula_and(neg, pair.neg);
-                    if matches!(pos, PredFormula::True) && matches!(neg, PredFormula::False) {
-                        break;
+                "and" => {
+                    let mut pos = formula_true();
+                    let mut neg = formula_false();
+                    for item in &items[1..] {
+                        let pair = self.eval_bool_pair(item, env)?;
+                        pos = formula_and(pos, pair.pos);
+                        neg = formula_or(neg, pair.neg);
+                        if matches!(pos, PredFormula::False) && matches!(neg, PredFormula::True) {
+                            break;
+                        }
                     }
+                    Ok(BoolPair { pos, neg })
                 }
-                Ok(BoolPair { pos, neg })
+                "or" => {
+                    let mut pos = formula_false();
+                    let mut neg = formula_true();
+                    for item in &items[1..] {
+                        let pair = self.eval_bool_pair(item, env)?;
+                        pos = formula_or(pos, pair.pos);
+                        neg = formula_and(neg, pair.neg);
+                        if matches!(pos, PredFormula::True) && matches!(neg, PredFormula::False) {
+                            break;
+                        }
+                    }
+                    Ok(BoolPair { pos, neg })
+                }
+                "ite" if items.len() == 4 => {
+                    let cond = self.eval_bool_pair(items[1], env)?;
+                    let then_pair = self.eval_bool_pair(items[2], env)?;
+                    let else_pair = self.eval_bool_pair(items[3], env)?;
+                    Ok(BoolPair {
+                        pos: formula_or(
+                            formula_and(cond.pos.clone(), then_pair.pos),
+                            formula_and(cond.neg.clone(), else_pair.pos),
+                        ),
+                        neg: formula_or(
+                            formula_and(cond.pos, then_pair.neg),
+                            formula_and(cond.neg, else_pair.neg),
+                        ),
+                    })
+                }
+                "=" if items.len() == 3 => Ok(BoolPair {
+                    pos: self.eval_equality(items[1], items[2], env, true)?,
+                    neg: self.eval_equality(items[1], items[2], env, false)?,
+                }),
+                "<" if items.len() == 3 => Ok(BoolPair {
+                    pos: self.eval_int_compare(items[1], items[2], env, IntCmp::Lt)?,
+                    neg: self.eval_int_compare(items[1], items[2], env, IntCmp::Ge)?,
+                }),
+                "<=" if items.len() == 3 => Ok(BoolPair {
+                    pos: self.eval_int_compare(items[1], items[2], env, IntCmp::Le)?,
+                    neg: self.eval_int_compare(items[1], items[2], env, IntCmp::Gt)?,
+                }),
+                "forall" | "exists" if items.len() == 3 => {
+                    self.eval_quantifier_pair(op == "forall", items[1], items[2], env)
+                }
+                relation if self.ctx.has_relation(relation) => {
+                    self.eval_semantic_bool_call_pair(relation, &items[1..], env)
+                }
+                func if self.ctx.has_func(func) => {
+                    self.eval_model_bool_call_pair(func, &items[1..], env)
+                }
+                _ => Err(format!("unsupported Bool expression: {expr}")),
             }
-            "ite" if items.len() == 4 => {
-                let cond = self.eval_bool_pair(items[1], env)?;
-                let then_pair = self.eval_bool_pair(items[2], env)?;
-                let else_pair = self.eval_bool_pair(items[3], env)?;
-                Ok(BoolPair {
-                    pos: formula_or(
-                        formula_and(cond.pos.clone(), then_pair.pos),
-                        formula_and(cond.neg.clone(), else_pair.pos),
-                    ),
-                    neg: formula_or(
-                        formula_and(cond.pos, then_pair.neg),
-                        formula_and(cond.neg, else_pair.neg),
-                    ),
-                })
-            }
-            "=" if items.len() == 3 => Ok(BoolPair {
-                pos: self.eval_equality(items[1], items[2], env, true)?,
-                neg: self.eval_equality(items[1], items[2], env, false)?,
-            }),
-            "<" if items.len() == 3 => Ok(BoolPair {
-                pos: self.eval_int_compare(items[1], items[2], env, IntCmp::Lt)?,
-                neg: self.eval_int_compare(items[1], items[2], env, IntCmp::Ge)?,
-            }),
-            "<=" if items.len() == 3 => Ok(BoolPair {
-                pos: self.eval_int_compare(items[1], items[2], env, IntCmp::Le)?,
-                neg: self.eval_int_compare(items[1], items[2], env, IntCmp::Gt)?,
-            }),
-            "forall" | "exists" if items.len() == 3 => {
-                self.eval_quantifier_pair(op == "forall", items[1], items[2], env)
-            }
-            relation if self.ctx.has_relation(relation) => {
-                self.eval_semantic_bool_call_pair(relation, &items[1..], env)
-            }
-            func if self.ctx.has_func(func) => {
-                self.eval_model_bool_call_pair(func, &items[1..], env)
-            }
-            _ => Err(format!("unsupported Bool expression: {expr}")),
-        }
         })();
         let elapsed = start.elapsed();
         let mut profile = self.lowering_profile.borrow_mut();
@@ -921,7 +931,8 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for equality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.univ_for_sort(&sort)
+        let values = model_ref
+            .univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let sort_arc: Arc<str> = Arc::from(sort.as_str());
         let mut out = formula_false();
@@ -954,7 +965,8 @@ impl<'a> ChcCompiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for inequality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.univ_for_sort(&sort)
+        let values = model_ref
+            .univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let sort_arc: Arc<str> = Arc::from(sort.as_str());
         let mut out = formula_false();
@@ -1148,62 +1160,61 @@ impl<'a> ChcCompiler<'a> {
 
     fn child_terms(&self, expr: &Value, env: &Env) -> Result<Vec<TypedTerm>, String> {
         let start = Instant::now();
-        let result = (|| {
-        if let Some(child) = expr.as_symbol() {
-            if env.current_var.as_deref().map(String::as_str) == Some(child) {
-                let term = env.current_term.clone().ok_or_else(|| {
-                    "missing current term for recursive semantic call".to_string()
+        let result =
+            (|| {
+                if let Some(child) = expr.as_symbol() {
+                    if env.current_var.as_deref().map(String::as_str) == Some(child) {
+                        let term = env.current_term.clone().ok_or_else(|| {
+                            "missing current term for recursive semantic call".to_string()
+                        })?;
+                        let sort = env.current_sort.clone().ok_or_else(|| {
+                            "missing current sort for recursive semantic call".to_string()
+                        })?;
+                        return Ok(vec![TypedTerm {
+                            term: term.as_ref().clone(),
+                            sort: sort.as_ref().clone(),
+                        }]);
+                    }
+                    let child = env
+                        .children
+                        .get(child)
+                        .cloned()
+                        .ok_or_else(|| format!("unknown semantic child variable {child}"))?;
+                    return Ok(vec![TypedTerm {
+                        term: child.term,
+                        sort: child.sort,
+                    }]);
+                }
+                let items = expr.to_ref_vec().ok_or_else(|| {
+                    format!("semantic call term must be a child variable: {expr}")
                 })?;
-                let sort = env.current_sort.clone().ok_or_else(|| {
-                    "missing current sort for recursive semantic call".to_string()
-                })?;
-                return Ok(vec![TypedTerm {
-                    term: term.as_ref().clone(),
-                    sort: sort.as_ref().clone(),
-                }]);
-            }
-            let child = env
-                .children
-                .get(child)
-                .cloned()
-                .ok_or_else(|| format!("unknown semantic child variable {child}"))?;
-            return Ok(vec![TypedTerm {
-                term: child.term,
-                sort: child.sort,
-            }]);
-        }
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("semantic call term must be a child variable: {expr}"))?;
-        match items.as_slice() {
-            [op, inner] if op.as_symbol() == Some("parent") => {
-                if inner.as_symbol().is_none() {
-                    return Err(format!(
+                match items.as_slice() {
+                    [op, inner] if op.as_symbol() == Some("parent") => {
+                        if inner.as_symbol().is_none() {
+                            return Err(format!(
                         "parent navigation target must be a symbol naming the current term: {expr}"
                     ));
+                        }
+                        let sort = env.current_sort.as_deref().ok_or_else(|| {
+                            "missing current sort for parent navigation".to_string()
+                        })?;
+                        let term = env.current_term.clone().ok_or_else(|| {
+                            "missing current term for parent navigation".to_string()
+                        })?;
+                        self.sig
+                            .parent_contexts(sort, term.as_ref().clone())
+                            .into_iter()
+                            .map(|term| {
+                                Ok(TypedTerm {
+                                    sort: self.parent_result_sort(&term)?,
+                                    term,
+                                })
+                            })
+                            .collect()
+                    }
+                    _ => Err(format!("unsupported semantic call term navigation: {expr}")),
                 }
-                let sort = env
-                    .current_sort
-                    .as_deref()
-                    .ok_or_else(|| "missing current sort for parent navigation".to_string())?;
-                let term = env
-                    .current_term
-                    .clone()
-                    .ok_or_else(|| "missing current term for parent navigation".to_string())?;
-                self.sig
-                    .parent_contexts(sort, term.as_ref().clone())
-                    .into_iter()
-                    .map(|term| {
-                        Ok(TypedTerm {
-                            sort: self.parent_result_sort(&term)?,
-                            term,
-                        })
-                    })
-                    .collect()
-            }
-            _ => Err(format!("unsupported semantic call term navigation: {expr}")),
-        }
-        })();
+            })();
         let elapsed = start.elapsed();
         let mut profile = self.lowering_profile.borrow_mut();
         profile.child_terms.calls += 1;
@@ -1219,78 +1230,81 @@ impl<'a> ChcCompiler<'a> {
     ) -> Result<Vec<(PredFormula, AspectKey)>, String> {
         let start = Instant::now();
         let result = (|| {
-        if let Some(symbol) = expr.as_symbol() {
-            let aspect = env
-                .aspect
-                .get(symbol)
-                .ok_or_else(|| format!("unknown aspect variable {symbol}"))?;
-            let mut aspect = aspect.clone();
-            aspect.relation = relation.to_string();
-            return Ok(vec![(formula_true(), aspect)]);
-        }
-        let domain = self.ctx.domain_for_relation(relation)?;
-        let space = self.ctx.aspect_space(&domain.aspect_space)?;
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("aspect expression must be a list: {expr}"))?;
-        let cons = items
-            .first()
-            .and_then(|item| item.as_symbol())
-            .ok_or_else(|| format!("aspect constructor must be a symbol: {expr}"))?;
-        if cons != space.name {
-            return Err(format!("aspect constructor must be {}", space.name));
-        }
-        if items.len() - 1 != space.fields.len() {
-            return Err(format!(
-                "aspect constructor {} provides {} scalar fields, expected {}",
-                cons,
-                items.len().saturating_sub(2),
-                space.fields.len().saturating_sub(1)
-            ));
-        }
-
-        let mut partials = vec![(formula_true(), None, Vec::new())];
-        for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
-            let variants = self.aspect_field_variants(field, arg, env)?;
-            let mut next = Vec::new();
-            for (guard0, model0, fields0) in &partials {
-                for (guard1, value) in &variants {
-                    let mut fields = fields0.clone();
-                    let model = match (&field.domain, value) {
-                        (FieldDomain::Sort(sort), AspectValue::Model(name)) if sort == "Model" => {
-                            Some(name.clone())
-                        }
-                        (FieldDomain::Sort(sort), _) if sort == "Model" => {
-                            return Err(format!(
-                                "aspect field {} expected model value, got {}",
-                                field.name,
-                                value.display()
-                            ));
-                        }
-                        _ => {
-                            fields.push((field.name.clone(), value.clone()));
-                            model0.clone()
-                        }
-                    };
-                    next.push((formula_and(guard0.clone(), guard1.clone()), model, fields));
-                }
+            if let Some(symbol) = expr.as_symbol() {
+                let aspect = env
+                    .aspect
+                    .get(symbol)
+                    .ok_or_else(|| format!("unknown aspect variable {symbol}"))?;
+                let mut aspect = aspect.clone();
+                aspect.relation = relation.to_string();
+                return Ok(vec![(formula_true(), aspect)]);
             }
-            partials = next;
-        }
+            let domain = self.ctx.domain_for_relation(relation)?;
+            let space = self.ctx.aspect_space(&domain.aspect_space)?;
+            let items = expr
+                .to_ref_vec()
+                .ok_or_else(|| format!("aspect expression must be a list: {expr}"))?;
+            let cons = items
+                .first()
+                .and_then(|item| item.as_symbol())
+                .ok_or_else(|| format!("aspect constructor must be a symbol: {expr}"))?;
+            if cons != space.name {
+                return Err(format!("aspect constructor must be {}", space.name));
+            }
+            if items.len() - 1 != space.fields.len() {
+                return Err(format!(
+                    "aspect constructor {} provides {} scalar fields, expected {}",
+                    cons,
+                    items.len().saturating_sub(2),
+                    space.fields.len().saturating_sub(1)
+                ));
+            }
 
-        partials
-            .into_iter()
-            .map(|(guard, model, fields)| {
-                Ok((
-                    guard,
-                    AspectKey {
-                        relation: relation.to_string(),
-                        model: model.ok_or_else(|| format!("aspect {cons} has no model field"))?,
-                        fields,
-                    },
-                ))
-            })
-            .collect()
+            let mut partials = vec![(formula_true(), None, Vec::new())];
+            for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
+                let variants = self.aspect_field_variants(field, arg, env)?;
+                let mut next = Vec::new();
+                for (guard0, model0, fields0) in &partials {
+                    for (guard1, value) in &variants {
+                        let mut fields = fields0.clone();
+                        let model = match (&field.domain, value) {
+                            (FieldDomain::Sort(sort), AspectValue::Model(name))
+                                if sort == "Model" =>
+                            {
+                                Some(name.clone())
+                            }
+                            (FieldDomain::Sort(sort), _) if sort == "Model" => {
+                                return Err(format!(
+                                    "aspect field {} expected model value, got {}",
+                                    field.name,
+                                    value.display()
+                                ));
+                            }
+                            _ => {
+                                fields.push((field.name.clone(), value.clone()));
+                                model0.clone()
+                            }
+                        };
+                        next.push((formula_and(guard0.clone(), guard1.clone()), model, fields));
+                    }
+                }
+                partials = next;
+            }
+
+            partials
+                .into_iter()
+                .map(|(guard, model, fields)| {
+                    Ok((
+                        guard,
+                        AspectKey {
+                            relation: relation.to_string(),
+                            model: model
+                                .ok_or_else(|| format!("aspect {cons} has no model field"))?,
+                            fields,
+                        },
+                    ))
+                })
+                .collect()
         })();
         let elapsed = start.elapsed();
         let mut profile = self.lowering_profile.borrow_mut();
@@ -1345,7 +1359,8 @@ impl<'a> ChcCompiler<'a> {
         }
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.univ_for_sort(sort)
+        let values = model_ref
+            .univ_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let sort_arc: Arc<str> = Arc::from(sort);
         values
@@ -1372,7 +1387,8 @@ impl<'a> ChcCompiler<'a> {
         value: Option<&AspectValue>,
     ) -> Result<Pred, String> {
         let start = Instant::now();
-        let result = self.predicates
+        let result = self
+            .predicates
             .get(&(
                 relation.to_string(),
                 sort.to_string(),
@@ -1430,7 +1446,8 @@ impl<'a> ChcCompiler<'a> {
         }
         let model_ref = self.ctx.model(model)?;
         let sort_arc: Arc<str> = Arc::from(sort);
-        let values = model_ref.univ_for_sort(sort)
+        let values = model_ref
+            .univ_for_sort(sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?
             .into_iter()
             .map(|name| AspectValue::Univ {

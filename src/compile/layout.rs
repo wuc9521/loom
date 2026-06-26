@@ -1,4 +1,3 @@
-
 use crate::backends::smt2::ast::{HornProg, PredicatePolarity};
 use rustc_hash::FxHashMap as HashMap;
 

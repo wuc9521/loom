@@ -11,19 +11,17 @@ use crate::{
     },
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
-use sygus_parser::SExpr as Value;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::{
     cell::RefCell,
     sync::Arc,
     time::{Duration, Instant},
 };
+use sygus_parser::SExpr as Value;
 use sygus_parser::{
-    BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar,
-    SyGuSCmd, SyGuSGTerm, SyGuSTerm, Term,
+    BitVec, Bool, Cmd, GrammarDef, GroupedRuleList, Identifier, Literal, Sort, SortedVar, SyGuSCmd,
+    SyGuSGTerm, SyGuSTerm, Term,
 };
-
-
 
 #[derive(Clone)]
 struct ChildBinding {
@@ -285,7 +283,6 @@ impl<'a> Compiler<'a> {
             });
         }
 
-
         // Phase 3: emit commands with remapped bits
         let emit_start = Instant::now();
         let mut cmds = vec![SyGuSCmd::SetLogic("BV".to_string())];
@@ -389,9 +386,7 @@ impl<'a> Compiler<'a> {
     /// bool_bits that contain `__delis_self_b{j}` placeholders, which need
     /// the `build_self_closure_body` post-pass to be wrapped in let-bindings.
     fn is_self_closure_sort(&self, sort: &str) -> bool {
-        self.recurrence
-            .self_closure_sorts
-            .contains(sort)
+        self.recurrence.self_closure_sorts.contains(sort)
     }
 
     fn lower_top_level_constraint(&self, term: &Value, env: &Env) -> Result<SyGuSTerm, String> {
@@ -421,9 +416,7 @@ impl<'a> Compiler<'a> {
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("constraint operator must be a symbol: {term}"))?;
         match op {
-            "not" if items.len() == 2 => {
-                Ok(Bool::not(self.lower_constraint(items[1], env)?))
-            }
+            "not" if items.len() == 2 => Ok(Bool::not(self.lower_constraint(items[1], env)?)),
             "and" => {
                 let conjuncts = items[1..]
                     .iter()
@@ -473,22 +466,19 @@ impl<'a> Compiler<'a> {
         let aspect_expr = args[1];
         let model = self.extract_model_from_aspect(relation, aspect_expr)?;
         let seed_env = self.constraint_model_env(&model);
-        let aspect = self.strip_param_fields(
-            &self.cached_eval_aspect(aspect_expr, relation, &seed_env)?,
-        );
+        let aspect =
+            self.strip_param_fields(&self.cached_eval_aspect(aspect_expr, relation, &seed_env)?);
         let bit = self.bit_for(relation, &aspect, None)?;
         let bv_ref = self.synth_bv_ref(&model)?;
-        Ok(Bool::eq(BitVec::extract(bit, bit, bv_ref), BitVec::const_(1, 1)))
+        Ok(Bool::eq(
+            BitVec::extract(bit, bit, bv_ref),
+            BitVec::const_(1, 1),
+        ))
     }
 
     /// Lower `(= lhs rhs)` in a constraint. One side is a semantic relation
     /// call on the synth target; the other is a ground value expression.
-    fn lower_equality(
-        &self,
-        lhs: &Value,
-        rhs: &Value,
-        _env: &Env,
-    ) -> Result<SyGuSTerm, String> {
+    fn lower_equality(&self, lhs: &Value, rhs: &Value, _env: &Env) -> Result<SyGuSTerm, String> {
         let (call, out_expr) = if self.is_value_synth_call(lhs) {
             (lhs, rhs)
         } else if self.is_value_synth_call(rhs) {
@@ -509,12 +499,14 @@ impl<'a> Compiler<'a> {
         let model = self.extract_model_from_aspect(relation, aspect_expr)?;
         let seed_env = self.constraint_model_env(&model);
         let out_value = self.cached_eval_value(out_expr, &seed_env)?;
-        let aspect = self.strip_param_fields(
-            &self.cached_eval_aspect(aspect_expr, relation, &seed_env)?,
-        );
+        let aspect =
+            self.strip_param_fields(&self.cached_eval_aspect(aspect_expr, relation, &seed_env)?);
         let bit = self.bit_for(relation, &aspect, Some(&out_value))?;
         let bv_ref = self.synth_bv_ref(&model)?;
-        Ok(Bool::eq(BitVec::extract(bit, bit, bv_ref), BitVec::const_(1, 1)))
+        Ok(Bool::eq(
+            BitVec::extract(bit, bit, bv_ref),
+            BitVec::const_(1, 1),
+        ))
     }
 
     /// True if `expr` is `(Rel synthName asp)` where Rel is a FiniteValue relation.
@@ -584,9 +576,9 @@ impl<'a> Compiler<'a> {
             let domain = self.ctx.domain_for_relation(relation)?;
             self.ctx.aspect_space(&domain.aspect_space)?
         };
-        let aspect_args = aspect_expr.to_ref_vec().ok_or_else(|| {
-            format!("aspect expression must be a list: {aspect_expr}")
-        })?;
+        let aspect_args = aspect_expr
+            .to_ref_vec()
+            .ok_or_else(|| format!("aspect expression must be a list: {aspect_expr}"))?;
         for (field, arg) in space.fields.iter().zip(aspect_args.iter().skip(1)) {
             if matches!(&field.domain, crate::compile::types::FieldDomain::Sort(s) if s == "Model")
             {
@@ -618,20 +610,17 @@ impl<'a> Compiler<'a> {
     /// Compute the BV constant for a synth parameter in a specific model.
     /// Evaluates the parameter's constructor semantics across all domains of
     /// the start sort, collecting each bit's ground truth for that model.
-    fn param_bv_const(
-        &self,
-        param_name: &str,
-        model: &str,
-    ) -> Result<SyGuSTerm, String> {
+    fn param_bv_const(&self, param_name: &str, model: &str) -> Result<SyGuSTerm, String> {
         let start = self.sig.start_sort();
         let width = self.sort_width(start)?;
         let mut bits_vec = vec![false; width];
         let mut offset = 0usize;
         for domain in self.ctx.domains_for_sort(start)? {
             let spec = self.ctx.spec_for_relation(&domain.relation)?;
-            let cases = self.ctx.cases().get(&spec.relation).ok_or_else(|| {
-                format!("missing semantic cases for relation {}", spec.relation)
-            })?;
+            let cases =
+                self.ctx.cases().get(&spec.relation).ok_or_else(|| {
+                    format!("missing semantic cases for relation {}", spec.relation)
+                })?;
             let case = cases.get(param_name).ok_or_else(|| {
                 format!(
                     "missing semantic case for param constructor {} in {}",
@@ -646,7 +635,8 @@ impl<'a> Compiler<'a> {
                 if bit.aspect.model != model {
                     continue;
                 }
-                env.aspect.insert(case.aspect_var.clone(), bit.aspect.clone());
+                env.aspect
+                    .insert(case.aspect_var.clone(), bit.aspect.clone());
                 let val = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
                     (SemanticKind::FiniteValue { .. }, Some(value)) => {
@@ -766,7 +756,8 @@ impl<'a> Compiler<'a> {
                 if filled[bit.bit] {
                     continue;
                 }
-                env.aspect.insert(case.aspect_var.clone(), bit.aspect.clone());
+                env.aspect
+                    .insert(case.aspect_var.clone(), bit.aspect.clone());
                 let eval_start = Instant::now();
                 let bool_expr = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) if body_is_ground => {
@@ -983,14 +974,9 @@ impl<'a> Compiler<'a> {
                 }
             }
             if rest.len() == 1 {
-                if let Some(result) = self.lower_guarded_projection(
-                    "exists",
-                    var,
-                    domain_expr,
-                    guard,
-                    rest[0],
-                    env,
-                )? {
+                if let Some(result) =
+                    self.lower_guarded_projection("exists", var, domain_expr, guard, rest[0], env)?
+                {
                     return Ok(Some(result));
                 }
             }
@@ -1027,14 +1013,9 @@ impl<'a> Compiler<'a> {
                 }
             }
             if rest.len() == 1 {
-                if let Some(result) = self.lower_guarded_projection(
-                    "forall",
-                    var,
-                    domain_expr,
-                    guard,
-                    rest[0],
-                    env,
-                )? {
+                if let Some(result) =
+                    self.lower_guarded_projection("forall", var, domain_expr, guard, rest[0], env)?
+                {
                     return Ok(Some(result));
                 }
             }
@@ -1081,14 +1062,8 @@ impl<'a> Compiler<'a> {
         }
         let term_expr = items[1];
         let aspect_expr = items[2];
-        let bits = self.guarded_projection_bits(
-            var,
-            domain_expr,
-            guard_expr,
-            relation,
-            aspect_expr,
-            env,
-        )?;
+        let bits =
+            self.guarded_projection_bits(var, domain_expr, guard_expr, relation, aspect_expr, env)?;
         let mut terms = Vec::with_capacity(bits.len());
         for bit in bits {
             terms.push(self.semantic_term_bit(term_expr, bit, env)?);
@@ -1325,7 +1300,8 @@ impl<'a> Compiler<'a> {
             _ => {
                 let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
                 let model_ref = self.ctx.model(&model)?;
-                let values = model_ref.univ_for_sort(&sort)
+                let values = model_ref
+                    .univ_for_sort(&sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
                 let sort_arc: Arc<str> = Arc::from(sort.as_str());
                 values
@@ -1418,7 +1394,8 @@ impl<'a> Compiler<'a> {
             .ok_or_else(|| format!("cannot infer finite sort for equality (= {lhs} {rhs})"))?;
         let model = self.ctx.current_model(env)?;
         let model_ref = self.ctx.model(&model)?;
-        let values = model_ref.univ_for_sort(&sort)
+        let values = model_ref
+            .univ_for_sort(&sort)
             .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
         let sort_arc: Arc<str> = Arc::from(sort.as_str());
         let disjuncts = values
@@ -1438,14 +1415,17 @@ impl<'a> Compiler<'a> {
     }
 
     fn eval_equality(&self, lhs: &Value, rhs: &Value, env: &Env) -> Result<BoolExpr, String> {
-        if let (Ok(lhs_value), Ok(rhs_value)) =
-            (self.cached_eval_value(lhs, env), self.cached_eval_value(rhs, env))
-        {
+        if let (Ok(lhs_value), Ok(rhs_value)) = (
+            self.cached_eval_value(lhs, env),
+            self.cached_eval_value(rhs, env),
+        ) {
             return Ok(BoolExpr::Const(
                 self.ctx.values_equal(&lhs_value, &rhs_value, env)?,
             ));
         }
-        if self.cached_eval_int_expr(lhs, env).is_ok() && self.cached_eval_int_expr(rhs, env).is_ok() {
+        if self.cached_eval_int_expr(lhs, env).is_ok()
+            && self.cached_eval_int_expr(rhs, env).is_ok()
+        {
             return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
         }
         self.eval_finite_terms_equal(lhs, rhs, env)
@@ -1687,7 +1667,6 @@ impl<'a> Compiler<'a> {
             .max(1))
     }
 
-
     fn remapped_sort_alias_cmds(&self) -> Result<Vec<SyGuSCmd>, String> {
         let mut cmds = self
             .sig
@@ -1768,7 +1747,9 @@ impl<'a> Compiler<'a> {
             return Ok(cached.clone());
         }
         let value = self.ctx.eval_value(expr, env)?;
-        self.value_eval_cache.borrow_mut().insert(key, value.clone());
+        self.value_eval_cache
+            .borrow_mut()
+            .insert(key, value.clone());
         Ok(value)
     }
 
@@ -1800,7 +1781,9 @@ impl<'a> Compiler<'a> {
             return Ok(cached.clone());
         }
         let value = self.ctx.eval_aspect(expr, relation, env)?;
-        self.aspect_eval_cache.borrow_mut().insert(key, value.clone());
+        self.aspect_eval_cache
+            .borrow_mut()
+            .insert(key, value.clone());
         Ok(value)
     }
 
@@ -1824,7 +1807,6 @@ impl<'a> Compiler<'a> {
             .insert(key, value.clone());
         Ok(value)
     }
-
 }
 
 fn gterm(name: &str, args: Vec<String>) -> Result<SyGuSGTerm, String> {
@@ -1935,7 +1917,11 @@ fn contains_self_call(relation: &str, self_var: &str, expr: &sygus_parser::SExpr
         .any(|item| contains_self_call(relation, self_var, item))
 }
 
-fn collect_relation_calls(expr: &sygus_parser::SExpr, relations: &HashSet<String>, out: &mut HashSet<String>) {
+fn collect_relation_calls(
+    expr: &sygus_parser::SExpr,
+    relations: &HashSet<String>,
+    out: &mut HashSet<String>,
+) {
     let Some(items) = expr.to_ref_vec() else {
         return;
     };
@@ -1977,11 +1963,13 @@ fn strongly_connected_components(
                         self.visit(next);
                         let next_low = self.lowlink[next];
                         let current = self.lowlink[relation];
-                        self.lowlink.insert(relation.to_string(), current.min(next_low));
+                        self.lowlink
+                            .insert(relation.to_string(), current.min(next_low));
                     } else if self.on_stack.contains(next) {
                         let next_index = self.indices[next];
                         let current = self.lowlink[relation];
-                        self.lowlink.insert(relation.to_string(), current.min(next_index));
+                        self.lowlink
+                            .insert(relation.to_string(), current.min(next_index));
                     }
                 }
             }

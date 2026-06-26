@@ -174,7 +174,12 @@ impl<'a> EvalContext<'a> {
     }
 
     #[inline]
-    pub fn eval_bv(&self, term: &SyGuSTerm, env: &mut EvalEnv, width: usize) -> Result<Bits, String> {
+    pub fn eval_bv(
+        &self,
+        term: &SyGuSTerm,
+        env: &mut EvalEnv,
+        width: usize,
+    ) -> Result<Bits, String> {
         match self.eval(term, env)? {
             EvalValue::Bv(bits, actual) => {
                 if actual == width {
@@ -396,10 +401,14 @@ pub fn term_mentions_symbol(term: &SyGuSTerm, target: &str) -> bool {
         }
         SyGuSTerm::Annotated(inner, _) => term_mentions_symbol(inner, target),
         SyGuSTerm::Let(bindings, body) => {
-            bindings.iter().any(|binding| term_mentions_symbol(&binding.term, target))
+            bindings
+                .iter()
+                .any(|binding| term_mentions_symbol(&binding.term, target))
                 || term_mentions_symbol(body, target)
         }
-        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => term_mentions_symbol(body, target),
+        SyGuSTerm::Forall(_, body) | SyGuSTerm::Exists(_, body) => {
+            term_mentions_symbol(body, target)
+        }
         SyGuSTerm::Literal(_) => false,
     }
 }

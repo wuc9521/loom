@@ -1,21 +1,19 @@
 use crate::{compile::types::AspectValue, lang::model::Model};
-use sygus_parser::SExpr as Value;
 use rustc_hash::FxHashMap as HashMap;
+use sygus_parser::SExpr as Value;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
 
 pub fn sygus_term_to_value(term: &SyGuSTerm) -> Result<Value, String> {
     match term {
         SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(Value::symbol(name.as_str())),
         SyGuSTerm::Identifier(other) => Ok(Value::symbol(other.to_string())),
-        SyGuSTerm::Literal(Literal::Bool(value)) => Ok(Value::symbol(if *value {
-            "true"
-        } else {
-            "false"
-        })),
-        SyGuSTerm::Literal(Literal::Numeral(value)) => Ok(Value::from(*value as i64)),
-        SyGuSTerm::Literal(Literal::Decimal(value)) => {
-            Err(format!("decimal literals are unsupported in Delis constraints: {value}"))
+        SyGuSTerm::Literal(Literal::Bool(value)) => {
+            Ok(Value::symbol(if *value { "true" } else { "false" }))
         }
+        SyGuSTerm::Literal(Literal::Numeral(value)) => Ok(Value::from(*value as i64)),
+        SyGuSTerm::Literal(Literal::Decimal(value)) => Err(format!(
+            "decimal literals are unsupported in Delis constraints: {value}"
+        )),
         SyGuSTerm::Literal(Literal::BinConst(value))
         | SyGuSTerm::Literal(Literal::HexConst(value)) => Ok(Value::symbol(value.as_str())),
         SyGuSTerm::Application(id, args) => {
@@ -41,7 +39,9 @@ pub fn sygus_term_to_value(term: &SyGuSTerm) -> Result<Value, String> {
             Ok(Value::list(lets))
         }
         SyGuSTerm::Annotated(inner, _) => sygus_term_to_value(inner),
-        other => Err(format!("unsupported SyGuS term in Delis constraint lowering: {other}")),
+        other => Err(format!(
+            "unsupported SyGuS term in Delis constraint lowering: {other}"
+        )),
     }
 }
 
@@ -181,9 +181,9 @@ fn sorted_model_univ_expr(
     env: &[(String, AspectValue)],
     models: &HashMap<String, &Model>,
 ) -> Result<(String, String, Vec<String>), String> {
-    let items = expr.to_ref_vec().ok_or_else(|| {
-        format!("expected sorted model univ expression (Sort model), got {expr}")
-    })?;
+    let items = expr
+        .to_ref_vec()
+        .ok_or_else(|| format!("expected sorted model univ expression (Sort model), got {expr}"))?;
     let [sort_expr, model_expr] = items.as_slice() else {
         return Err(format!(
             "sorted model univ expression must have shape (Sort model), got {expr}"
@@ -197,7 +197,8 @@ fn sorted_model_univ_expr(
     let model = models
         .get(&model_name)
         .ok_or_else(|| format!("unknown model {model_name}"))?;
-    let univ = model.univ_for_sort(&sort)
+    let univ = model
+        .univ_for_sort(&sort)
         .ok_or_else(|| format!("model {model_name} has no universe for sort {sort}"))?;
     Ok((sort, model_name, univ))
 }
