@@ -194,16 +194,32 @@ fn crossing_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> 
             .crossing_eval_bench(max_size)
             .map_err(io::Error::other);
     }
+    let encode_start = Instant::now();
     let (sygus, sort, synth_name) = delis_file
         .faithful_refuter_sygus()
         .map_err(io::Error::other)?;
+    log::info!(
+        "crossing: encoded refuter SyGuS in {:?} ({} bytes)",
+        encode_start.elapsed(),
+        sygus.len()
+    );
     // Solve the emitted crossing refuter encoding in-process through the
     // dryadsynth-bv library. The const-hole search prunes skeletons with a SAT
     // refuter and returns the first skeleton whose refuter query is UNSAT.
+    let parse_start = Instant::now();
     let file = sygus_parser::SyGuSFile::from_str(&sygus)
         .map_err(|e| io::Error::other(format!("crossing: failed to parse emitted SyGuS: {e}")))?;
+    log::debug!(
+        "crossing: parsed emitted SyGuS in {:?}",
+        parse_start.elapsed()
+    );
+    let solve_start = Instant::now();
     let out = dryadsynth_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose, true)
         .map_err(|e| io::Error::other(format!("crossing backend (dryadsynth-bv): {e}")))?;
+    log::info!(
+        "crossing: dryadsynth-bv refuter solved in {:?}",
+        solve_start.elapsed()
+    );
     match compile::decode_faithful_term(&out, &synth_name) {
         Some(term) => {
             println!("(\n(define-fun {synth_name} () {sort} {term})\n)");

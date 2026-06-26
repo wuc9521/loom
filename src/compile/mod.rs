@@ -97,11 +97,11 @@ impl DelisProg {
         let ctx = CompileContext::with_program(self, program)?;
         let encode_start = Instant::now();
         let result = if use_direct {
-            ctx.compile()
+            self.with_axiom_assume_cmds(ctx.compile()?)
         } else if !parent_free && std::env::var("DELIS_LEGACY").is_err() {
             self.faithful_sygus_cmds_from_ctx(ctx)
         } else {
-            emit::compile_via_horn(ctx)
+            self.with_axiom_assume_cmds(emit::compile_via_horn(ctx)?)
         };
         log::info!("encoded to SyGuS BV in {:?}", encode_start.elapsed());
         result
@@ -178,6 +178,16 @@ impl DelisProg {
         } else {
             sygus.replace("(check-synth)\n", &format!("{assumes}(check-synth)\n"))
         }
+    }
+
+    fn with_axiom_assume_cmds(&self, mut cmds: Vec<SyGuSCmd>) -> Result<Vec<SyGuSCmd>, String> {
+        let assumes = self.axioms().into_iter().map(SyGuSCmd::Assume);
+        let insert_at = cmds
+            .iter()
+            .position(|cmd| matches!(cmd, SyGuSCmd::CheckSynth))
+            .unwrap_or(cmds.len());
+        cmds.splice(insert_at..insert_at, assumes);
+        Ok(cmds)
     }
 
     pub fn crossing_eval_bench(&self, max_size: usize) -> Result<(), String> {

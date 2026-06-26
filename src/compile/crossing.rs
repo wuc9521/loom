@@ -742,6 +742,15 @@ pub(crate) fn faithful_sygus(prog: &HornProg, synth_name: &str) -> (String, Stri
     let relevant = relevant_states(prog, &seeds);
     let (states, ctors) = build_sig(prog, &relevant);
     let gcs = general_clauses(prog, &relevant);
+    log_crossing_summary(
+        QueryKind::Solution,
+        &start,
+        &constraints,
+        &relevant,
+        &states,
+        &ctors,
+        &gcs,
+    );
     (
         faithful_sygus_ir(
             &states,
@@ -766,6 +775,15 @@ pub(crate) fn faithful_refuter_sygus(prog: &HornProg, synth_name: &str) -> (Stri
     let relevant = relevant_states(prog, &seeds);
     let (states, ctors) = build_sig(prog, &relevant);
     let gcs = general_clauses(prog, &relevant);
+    log_crossing_summary(
+        QueryKind::Refuter,
+        &start,
+        &constraints,
+        &relevant,
+        &states,
+        &ctors,
+        &gcs,
+    );
     (
         faithful_sygus_ir(
             &states,
@@ -778,6 +796,29 @@ pub(crate) fn faithful_refuter_sygus(prog: &HornProg, synth_name: &str) -> (Stri
         ),
         start,
     )
+}
+
+fn log_crossing_summary(
+    kind: QueryKind,
+    start: &str,
+    constraints: &[(String, bool)],
+    relevant: &HashSet<String>,
+    states: &HashMap<String, Vec<String>>,
+    ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
+    gcs: &[GC],
+) {
+    let state_count = states.values().map(Vec::len).sum::<usize>();
+    let ctor_count = ctors.values().map(Vec::len).sum::<usize>();
+    log::debug!(
+        "crossing encoding: kind={:?} start={} constraints={} relevant={} states={} ctors={} clauses={}",
+        kind,
+        start,
+        constraints.len(),
+        relevant.len(),
+        state_count,
+        ctor_count,
+        gcs.len()
+    );
 }
 
 // --- decode a cvc5 solution `g` into the plain term (strip the Ann args) ---
