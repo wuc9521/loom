@@ -759,23 +759,58 @@ pub(crate) fn parent_sygus(
     synth_name: &str,
     kind: QueryKind,
 ) -> (String, String) {
-    let (start, constraints) = goal(prog);
-    let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
-    let relevant = relevant_states(prog, &seeds);
-    let (states, ctors) = build_sig(prog, &relevant);
-    let gcs = general_clauses(prog, &relevant);
-    log_crossing_summary(kind, &start, &constraints, &relevant, &states, &ctors, &gcs);
-    (
-        parent_sygus_ir(&states, &ctors, &gcs, &start, &constraints, synth_name, kind),
-        start,
-    )
+    ParentInput::from_horn(prog).into_sygus(synth_name, kind)
+}
+
+/// The complete input to the crossing encoder, decoupled from the Horn IR: the
+/// state set (per sort), the constructors (per sort), the general clauses, and
+/// the root start sort + constraints. `parent_sygus_ir` consumes only this —
+/// nothing else of the source representation reaches the encoder. Build it from
+/// a `HornProg` today (`from_horn`); a direct `from_semantic` builder will let
+/// us drop the Horn IR entirely.
+pub(crate) struct ParentInput {
+    states: HashMap<String, Vec<String>>,
+    ctors: HashMap<String, Vec<(String, Vec<String>)>>,
+    gcs: Vec<GC>,
+    start: String,
+    constraints: Vec<(String, bool)>,
+}
+
+impl ParentInput {
+    fn from_horn(prog: &HornProg) -> Self {
+        let (start, constraints) = goal(prog);
+        let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
+        let relevant = relevant_states(prog, &seeds);
+        let (states, ctors) = build_sig(prog, &relevant);
+        let gcs = general_clauses(prog, &relevant);
+        Self {
+            states,
+            ctors,
+            gcs,
+            start,
+            constraints,
+        }
+    }
+
+    fn into_sygus(self, synth_name: &str, kind: QueryKind) -> (String, String) {
+        log_crossing_summary(kind, &self.start, &self.constraints, &self.states, &self.ctors, &self.gcs);
+        let ir = parent_sygus_ir(
+            &self.states,
+            &self.ctors,
+            &self.gcs,
+            &self.start,
+            &self.constraints,
+            synth_name,
+            kind,
+        );
+        (ir, self.start)
+    }
 }
 
 fn log_crossing_summary(
     kind: QueryKind,
     start: &str,
     constraints: &[(String, bool)],
-    relevant: &HashSet<String>,
     states: &HashMap<String, Vec<String>>,
     ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
     gcs: &[GC],
@@ -783,11 +818,10 @@ fn log_crossing_summary(
     let state_count = states.values().map(Vec::len).sum::<usize>();
     let ctor_count = ctors.values().map(Vec::len).sum::<usize>();
     log::debug!(
-        "crossing encoding: kind={:?} start={} constraints={} relevant={} states={} ctors={} clauses={}",
+        "crossing encoding: kind={:?} start={} constraints={} states={} ctors={} clauses={}",
         kind,
         start,
         constraints.len(),
-        relevant.len(),
         state_count,
         ctor_count,
         gcs.len()

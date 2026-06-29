@@ -104,7 +104,15 @@ impl DelisProg {
     pub fn parent_refuter_sygus(&self) -> Result<(String, String, String), String> {
         let ctx = CompileContext::new(self)?;
         let synth_name = ctx.synth_name.clone();
-        let horn = ctx.compile_chc()?;
+        let mut horn = ctx.compile_chc()?;
+        // Sound bisimulation quotient: merge predicate states with identical
+        // least-model behaviour before encoding (set DELIS_MIN_STATES=0 to skip,
+        // for A/B verdict checks).
+        if std::env::var("DELIS_MIN_STATES").map_or(true, |v| v != "0") {
+            let before = horn.live_predicates().len();
+            let after = horn.quotient_bisim();
+            log::debug!("state quotient: {before} -> {after} states");
+        }
         let (sygus, sort) = parent::parent_sygus(&horn, &synth_name, parent::QueryKind::Refuter);
         let sygus = self.with_axiom_assumes(sygus);
         Ok((sygus, sort, synth_name))

@@ -122,6 +122,180 @@ impl HornProg {
         }
         live
     }
+
+    /// Merge predicate states that are bisimilar — identical least-model
+    /// behaviour — and rename each class to a representative. This is the exact
+    /// coarsest partition: refine to a true fixpoint, seeded only on the
+    /// intrinsic (polarity, sort) of each predicate; a predicate absent from
+    /// `predicates` (e.g. `Goal`) is seeded uniquely so it never merges. Two
+    /// predicates land in the same class iff, for every rule with that predicate
+    /// as head, the rule's term shape and the *classes* of its body predicates
+    /// coincide (variables alpha-canonicalised, fresh/up siblings anonymised by
+    /// position). Bisimilar predicates are mutually substitutable, so renaming
+    /// to a representative preserves the least model — and hence every accept/
+    /// reject verdict of the downstream encoding. Returns the class count.
+    pub fn quotient_bisim(&mut self) -> usize {
+        use std::collections::BTreeSet;
+        let preds: Vec<String> = {
+            let mut v: Vec<String> = self.live_predicates().into_iter().collect();
+            v.sort();
+            v
+        };
+        let pidx: HashMap<String, usize> = preds
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, p)| (p, i))
+            .collect();
+
+        // Per-rule canonical structure, computed once.
+        struct RS {
+            head: usize,
+            hshape: String,
+            body: Vec<(usize, String)>,
+        }
+        let rstructs: Vec<RS> = self
+            .rules
+            .iter()
+            .map(|r| {
+                let mut vmap: HashMap<String, usize> = HashMap::default();
+                number_vars(&r.head.arg, &mut vmap);
+                let mut fresh: HashMap<String, usize> = HashMap::default();
+                let hshape = canon_shape(&r.head.arg, &vmap, &mut fresh);
+                let body = r
+                    .body_atoms
+                    .iter()
+                    .map(|b| (pidx[&b.pred], canon_shape(&b.arg, &vmap, &mut fresh)))
+                    .collect();
+                RS {
+                    head: pidx[&r.head.pred],
+                    hshape,
+                    body,
+                }
+            })
+            .collect();
+
+        // Seed: (polarity, sort), or a unique singleton when unknown.
+        let mut class: Vec<usize> = {
+            let mut m: HashMap<String, usize> = HashMap::default();
+            preds
+                .iter()
+                .map(|p| {
+                    let key = match self.predicates.get(p) {
+                        Some(info) => format!("S{:?}.{}", info.polarity, info.sort),
+                        None => format!("U.{p}"),
+                    };
+                    let n = m.len();
+                    *m.entry(key).or_insert(n)
+                })
+                .collect()
+        };
+        let mut ncur = class.iter().copied().max().map_or(0, |x| x + 1);
+
+        type Sig = BTreeSet<(String, Vec<(usize, String)>)>;
+        loop {
+            let mut sigs: Vec<Sig> = vec![BTreeSet::new(); preds.len()];
+            for rs in &rstructs {
+                let mut body: Vec<(usize, String)> =
+                    rs.body.iter().map(|(pi, sh)| (class[*pi], sh.clone())).collect();
+                body.sort();
+                sigs[rs.head].insert((rs.hshape.clone(), body));
+            }
+            let mut m: HashMap<(usize, Sig), usize> = HashMap::default();
+            let mut next = vec![0usize; preds.len()];
+            for i in 0..preds.len() {
+                let key = (class[i], std::mem::take(&mut sigs[i]));
+                let n = m.len();
+                next[i] = *m.entry(key).or_insert(n);
+            }
+            if m.len() == ncur {
+                break;
+            }
+            class = next;
+            ncur = m.len();
+        }
+
+        // Representative = lexicographically-smallest name in the class.
+        let mut rep: HashMap<usize, String> = HashMap::default();
+        for (i, p) in preds.iter().enumerate() {
+            rep.entry(class[i])
+                .and_modify(|r| {
+                    if p < r {
+                        *r = p.clone();
+                    }
+                })
+                .or_insert_with(|| p.clone());
+        }
+        let rename: HashMap<String, String> = preds
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.clone(), rep[&class[i]].clone()))
+            .collect();
+
+        for r in &mut self.rules {
+            r.head.pred = rename[&r.head.pred].clone();
+            for b in &mut r.body_atoms {
+                b.pred = rename[&b.pred].clone();
+            }
+            // A conjunction: drop duplicate body atoms exposed by the rename.
+            let mut seen = HashSet::default();
+            r.body_atoms.retain(|a| seen.insert((a.pred.clone(), a.arg.clone())));
+        }
+        for q in &mut self.queries {
+            for b in &mut q.body_atoms {
+                b.pred = rename[&b.pred].clone();
+            }
+        }
+        let mut newpreds: HashMap<String, PredicateInfo> = HashMap::default();
+        for (name, info) in &self.predicates {
+            if let Some(r) = rename.get(name) {
+                newpreds.entry(r.clone()).or_insert_with(|| info.clone());
+            }
+        }
+        self.predicates = newpreds;
+
+        // Drop rules made structurally identical by the rename.
+        let mut seen: HashSet<String> = HashSet::default();
+        self.rules.retain(|r| seen.insert(r.to_string()));
+
+        ncur
+    }
+}
+
+/// Number a term's variables by first (left-to-right) occurrence.
+fn number_vars(term: &HornTerm, vmap: &mut HashMap<String, usize>) {
+    match term {
+        HornTerm::Var(n) => {
+            let next = vmap.len();
+            vmap.entry(n.clone()).or_insert(next);
+        }
+        HornTerm::App { args, .. } => {
+            for a in args {
+                number_vars(a, vmap);
+            }
+        }
+    }
+}
+
+/// Alpha-canonical string shape of a term: head variables become `v{i}` by the
+/// `vmap` numbering; any other variable (a fresh/up sibling) becomes `f{i}` by
+/// order of appearance within the rule (`fresh` is shared across the rule's
+/// atoms so the same sibling aligns). Constructor names are kept verbatim.
+fn canon_shape(term: &HornTerm, vmap: &HashMap<String, usize>, fresh: &mut HashMap<String, usize>) -> String {
+    match term {
+        HornTerm::Var(n) => match vmap.get(n) {
+            Some(i) => format!("v{i}"),
+            None => {
+                let next = fresh.len();
+                let id = *fresh.entry(n.clone()).or_insert(next);
+                format!("f{id}")
+            }
+        },
+        HornTerm::App { fun, args } => {
+            let inner: Vec<String> = args.iter().map(|a| canon_shape(a, vmap, fresh)).collect();
+            format!("({} {})", fun, inner.join(" "))
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

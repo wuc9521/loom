@@ -177,7 +177,6 @@ impl SemanticProgram {
         let mut next_class_id = classes.values().max().copied().map(|m| m + 1).unwrap_or(0);
 
         let mut iters = 0usize;
-        const MAX_ITERS: usize = 64;
         while !multi_aspect.is_empty() {
             iters += 1;
             let mut any_split = false;
@@ -227,13 +226,11 @@ impl SemanticProgram {
                 break;
             }
             multi_aspect = next_multi;
-            if iters >= MAX_ITERS {
-                log::warn!(
-                    "bisim: refinement did not converge in {} iterations; using current partition",
-                    MAX_ITERS
-                );
-                break;
-            }
+            // No iteration cap: refinement only ever splits (≤ #aspects times)
+            // and the `any_split` check above detects the fixpoint, so this
+            // always converges to the true bisimulation. A cap here would stop
+            // at a partition coarser than the bisimulation — an unsound
+            // over-merge.
         }
 
         let eval_hits = ctx.eval_cache_hits();
