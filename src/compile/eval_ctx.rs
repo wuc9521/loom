@@ -613,13 +613,6 @@ impl<'a> SemanticContext<'a> {
             "<=" if items.len() == 3 => {
                 Ok(self.eval_int_expr(items[1], env)? <= self.eval_int_expr(items[2], env)?)
             }
-            "ite" if items.len() == 4 => {
-                if self.eval_bool_value(items[1], env)? {
-                    self.eval_bool_value(items[2], env)
-                } else {
-                    self.eval_bool_value(items[3], env)
-                }
-            }
             _ => Err(String::new()),
         }
     }

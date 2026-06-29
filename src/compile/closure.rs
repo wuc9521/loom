@@ -223,7 +223,9 @@ impl<'a> ClosureSolver<'a> {
     }
 
     fn define_fun(&self, body: SyGuSTerm) -> String {
-        let (name, args, sort) = synth_signature_parts(self.problem)
+        let (name, args, sort) = self
+            .problem
+            .synth_signature()
             .unwrap_or_else(|| (self.synth_name.clone(), Vec::new(), self.synth_sort.clone()));
         let cmd = SyGuSCmd::DefineFun(name, args, sort, body);
         format!("(\n{}\n)", cmd)
@@ -584,13 +586,3 @@ fn collect_tuples(
     }
 }
 
-fn synth_signature_parts(
-    problem: &DelisProg,
-) -> Option<(String, Vec<sygus_parser::SortedVar>, Sort)> {
-    problem.cmds.iter().find_map(|cmd| match cmd {
-        crate::parser::DelisCmd::As(SyGuSCmd::SynthFun(name, args, sort, _)) => {
-            Some((name.clone(), args.clone(), sort.clone()))
-        }
-        _ => None,
-    })
-}

@@ -144,12 +144,12 @@ impl EnvView for Env {
 }
 
 impl<'a> CompileContext<'a> {
-    pub fn compile_chc(self) -> Result<HornProg, String> {
+    pub fn compile_chc(&self) -> Result<HornProg, String> {
         ChcCompiler::new(
             self.problem,
-            self.semantic_program,
-            self.sig,
-            self.semantic_cases,
+            self.semantic_program.clone(),
+            self.sig.clone(),
+            self.semantic_cases.clone(),
         )?
         .compile()
     }

@@ -85,4 +85,15 @@ impl<'a> CompileContext<'a> {
     pub fn semantic_context(&self) -> Result<SemanticContext<'a>, String> {
         SemanticContext::with_cases(self.problem, &self.semantic_program, &self.semantic_cases)
     }
+
+    /// True if no semantic spec navigates to a node's parent. Parent-free
+    /// programs compile via the direct bit encoder; parent-bearing ones use the
+    /// crossing-relation certificate encoder. See [`CompileContext::compile`].
+    pub fn is_parent_free(&self) -> bool {
+        !self
+            .semantic_program
+            .semantics
+            .iter()
+            .any(|spec| super::aspects::contains_parent_navigation(&spec.body))
+    }
 }

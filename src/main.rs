@@ -29,13 +29,7 @@ use sygus_parser::SyGuSCmd;
 fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
-            let program = if std::env::var("DELIS_DUMP_CHC_SATURATED").is_ok() {
-                delis_file
-                    .to_chc_ast_saturated()
-                    .map_err(io::Error::other)?
-            } else {
-                delis_file.to_chc_ast().map_err(io::Error::other)?
-            };
+            let program = delis_file.to_chc_ast().map_err(io::Error::other)?;
             println!(
                 "{}",
                 program
@@ -50,12 +44,11 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             let compile_start = Instant::now();
             // Dump the same encoding the solver uses: parent-bearing programs
             // get the crossing refuter encoding (with `Constant` annotation holes);
-            // parent-free / DELIS_LEGACY get the direct `to_sygus`.
-            let use_crossing = delis_file.is_parent_bearing().map_err(io::Error::other)?
-                && std::env::var("DELIS_LEGACY").is_err();
-            let sygus_bytes = if use_crossing {
+            // parent-free programs get the direct `to_sygus`.
+            let use_parent = delis_file.is_parent_bearing().map_err(io::Error::other)?;
+            let sygus_bytes = if use_parent {
                 let (sygus, _, _) = delis_file
-                    .faithful_refuter_sygus()
+                    .parent_refuter_sygus()
                     .map_err(io::Error::other)?;
                 sygus.into_bytes()
             } else {
@@ -88,37 +81,19 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         ));
     }
 
-    // Parent-bearing programs (with `(parent n)` up-moves) default to the sound
-    // crossing encoding solved by cvc5; the legacy saturation path (faster but
-    // over-approximating — it can return grammars that fail their own examples)
-    // is opt-in via DELIS_LEGACY. Parent-free programs always use the (sound,
-    // fast) direct path below.
+    // Parent-bearing programs (with `(parent n)` up-moves) use the sound crossing
+    // certificate encoding. Parent-free programs use the fast direct path below.
     let parent_bearing = delis_file.is_parent_bearing().map_err(io::Error::other)?;
-    if parent_bearing && std::env::var("DELIS_LEGACY").is_err() {
-        return crossing_solve(delis_file, args.verbose);
-    }
     if parent_bearing {
-        // Reachable only with DELIS_LEGACY set on a `(parent n)` program. The
-        // saturation path's free-sibling up-move encoding is sound for emptiness
-        // but over-approximates per-tree membership, so it can return a grammar
-        // that rejects its own positive examples. Never let that be silent.
-        eprintln!(
-            "warning: DELIS_LEGACY selects the free-sibling saturation encoding, which \
-             over-approximates `(parent n)` up-moves and may return an unsound grammar \
-             (one that fails its own examples). Unset DELIS_LEGACY for the sound crossing encoding."
-        );
+        return parent_solve(delis_file, args.verbose);
     }
 
     // Both backends solve the same SyGuS BV problem; first-to-finish wins.
     // The "term enumerator" works at the SyGuSTerm level (fast for small/nullary
     // problems). The "BV searcher" compiles to BitCircuits and does bottom-up
     // enumeration with dedup + composition (handles larger problems).
-    let semantic_program = delis_file.semantic_program().map_err(io::Error::other)?;
-    let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(
-        delis_file
-            .to_sygus_with(semantic_program)
-            .map_err(io::Error::other)?,
-    );
+    let sygus_cmds: Arc<Vec<SyGuSCmd>> =
+        Arc::new(delis_file.to_sygus().map_err(io::Error::other)?);
 
     let (tx, rx) = mpsc::channel();
 
@@ -180,53 +155,52 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
 
-/// Sound (crossing) path for parent-bearing programs: emit the founded
+/// Sound parent path for parent-bearing programs: emit the founded
 /// annotation SyGuS and solve it with dryadsynth-bv, whose const-hole mode
 /// enumerates the syntax tree and SMT-solves the `Constant` annotation holes
 /// per skeleton (the sound, terminating route — cvc5's monolithic SyGuS search
 /// hangs on this encoding). dryadsynth-bv is a path dependency, so we solve
 /// in-process via its library — no external binary on PATH, no env var.
-/// `DELIS_LEGACY` selects the old over-approximating path instead.
-fn crossing_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> {
-    if let Ok(max_size) = std::env::var("DELIS_CROSSING_EVAL_BENCH") {
+fn parent_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> {
+    if let Ok(max_size) = std::env::var("DELIS_PARENT_EVAL_BENCH") {
         let max_size = max_size.parse::<usize>().unwrap_or(5);
         return delis_file
-            .crossing_eval_bench(max_size)
+            .parent_eval_bench(max_size)
             .map_err(io::Error::other);
     }
     let encode_start = Instant::now();
     let (sygus, sort, synth_name) = delis_file
-        .faithful_refuter_sygus()
+        .parent_refuter_sygus()
         .map_err(io::Error::other)?;
     log::info!(
-        "crossing: encoded refuter SyGuS in {:?} ({} bytes)",
+        "parent: encoded refuter SyGuS in {:?} ({} bytes)",
         encode_start.elapsed(),
         sygus.len()
     );
-    // Solve the emitted crossing refuter encoding in-process through the
+    // Solve the emitted refuter encoding in-process through the
     // dryadsynth-bv library. The const-hole search prunes skeletons with a SAT
     // refuter and returns the first skeleton whose refuter query is UNSAT.
     let parse_start = Instant::now();
     let file = sygus_parser::SyGuSFile::from_str(&sygus)
-        .map_err(|e| io::Error::other(format!("crossing: failed to parse emitted SyGuS: {e}")))?;
+        .map_err(|e| io::Error::other(format!("parent: failed to parse emitted SyGuS: {e}")))?;
     log::debug!(
-        "crossing: parsed emitted SyGuS in {:?}",
+        "parent: parsed emitted SyGuS in {:?}",
         parse_start.elapsed()
     );
     let solve_start = Instant::now();
     let out = dryadsynth_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose, true)
-        .map_err(|e| io::Error::other(format!("crossing backend (dryadsynth-bv): {e}")))?;
+        .map_err(|e| io::Error::other(format!("parent backend (dryadsynth-bv): {e}")))?;
     log::info!(
-        "crossing: dryadsynth-bv refuter solved in {:?}",
+        "parent: dryadsynth-bv refuter solved in {:?}",
         solve_start.elapsed()
     );
-    match compile::decode_faithful_term(&out, &synth_name) {
+    match compile::decode_parent_term(&out, &synth_name) {
         Some(term) => {
             println!("(\n(define-fun {synth_name} () {sort} {term})\n)");
             Ok(())
         }
         None => Err(io::Error::other(
-            "crossing backend (dryadsynth-bv): no solution decoded. If a deeper solution \
+            "parent backend (dryadsynth-bv): no solution decoded. If a deeper solution \
              is expected, raise DRYAD_HOLE_MAX_SIZE.",
         )),
     }

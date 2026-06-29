@@ -389,7 +389,7 @@ fn detects_two_way_navigation() {
 }
 
 #[test]
-fn parent_navigation_to_sygus_uses_crossing_encoding() {
+fn parent_navigation_to_sygus_uses_parent_encoding() {
     let problem = parse(
         r#"
 
@@ -416,13 +416,13 @@ fn parent_navigation_to_sygus_uses_crossing_encoding() {
     let sygus = String::from_utf8(
         problem
             .to_sygus_bytes()
-            .expect("parent-bearing program should emit crossing SyGuS"),
+            .expect("parent-bearing program should emit the parent SyGuS encoding"),
     )
     .expect("SyGuS output should be UTF-8");
 
     assert!(
         sygus.contains("(Constant"),
-        "parent-bearing to_sygus must use the crossing certificate encoding, not the legacy saturated one-way emitter"
+        "parent-bearing to_sygus must use the parent certificate encoding (Constant holes)"
     );
 }
 

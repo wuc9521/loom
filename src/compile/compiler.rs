@@ -153,9 +153,16 @@ struct ValueForSortMemoKey {
 }
 
 impl<'a> CompileContext<'a> {
+    /// Compile this context to SyGuS BV. Parent-free programs use the direct bit
+    /// encoder; parent-bearing programs use the crossing-relation certificate
+    /// encoder. `-O` tunes the direct encoder — the encoder choice follows the
+    /// program, not the flag.
     pub fn compile(&self) -> Result<Vec<SyGuSCmd>, String> {
-        let mut compiler = Compiler::from_context(self, super::opts().optimize)?;
-        compiler.compile()
+        if self.is_parent_free() {
+            Compiler::from_context(self, super::opts().optimize)?.compile()
+        } else {
+            self.compile_parent()
+        }
     }
 }
 

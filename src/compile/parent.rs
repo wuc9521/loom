@@ -1,12 +1,16 @@
 //! Sound & complete compilation of delis programs **with `parent` (up-moves)**
-//! into SyGuS-BV, via the faithful two-way → one-way crossing construction
+//! into SyGuS-BV, via the two-way → one-way crossing-relation construction
 //! (Shepherdson 1959; Vardi/Cachat, as cited by Krogmeier–Madhusudan 2023).
+//!
+//! This is the **parent path**: the encoder for programs that navigate to a
+//! node's parent. ("Crossing" below names the Shepherdson/Vardi relation the
+//! encoding is built on, not the path.)
 //!
 //! The semantics of a FACET program is a two-way alternating tree automaton over
 //! the candidate syntax tree, accepted by a least fixpoint (reachability). The
 //! one-way encoding here is a **crossing-relation annotation certificate**: each
 //! node's `ann` (`Constant`) guesses only a parent-channel `dact` and clause
-//! `pick` bits; `up[state]` (`= ⋁ pick`), the child→parent demand `udem`, and a
+//! `strategy` bits; `up[state]` (`= ⋁ strategy`), the child→parent demand `udem`, and a
 //! `valid` bit are *computed* in the define-fun. A same-node support relation
 //! `R ⊆ Q×Q` is computed internally (never stored). The `valid` bit checks, for
 //! every clause uniformly (child-ref / self-loop / parent-atom), that `up` is
@@ -18,14 +22,12 @@
 //! complete for unbounded trees and handles intersection, mixed up+down clauses,
 //! and multiple parent atoms (arbitrary delis programs, not just CFG).
 //!
-//! `crossing_eval` (the exact ground LFP) and `respond_gen` (the exact faithful
-//! per-node semantics) are the reference oracles the encoder is validated against.
+//! `crossing_eval` (the exact ground LFP) and `respond_gen` (the exact per-node
+//! semantics) are the reference oracles the encoder is validated against.
 //!
-//! The module is `#![cfg(test)]` while it matures behind validation; wiring it
-//! is the default delis path for parent-bearing programs (set `DELIS_LEGACY` for
-//! the old saturation path). It is solved by cvc5 (the `Constant` holes need an
-//! SMT backend); making the in-process enumerator solve it is the dryadsynth-bv
-//! `constant-via-smt` branch.
+//! This is the default (and only) delis path for parent-bearing programs. The
+//! `Constant` holes need an SMT backend; the in-process enumerator solves them
+//! via the dryadsynth-bv `constant-via-smt` branch.
 
 use crate::backends::smt2::ast::{HornDecl, HornProg, HornRule, HornTerm as HT, PredicatePolarity};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -195,7 +197,7 @@ impl Judgment {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum QueryKind {
+pub(crate) enum QueryKind {
     Solution,
     Refuter,
 }
@@ -310,7 +312,6 @@ fn general_clauses(prog: &HornProg, relevant: &HashSet<String>) -> Vec<GC> {
 
 /// A fixed ground tree, flattened: per node its ctor, child node ids, and
 /// (parent id, position-in-parent).
-#[allow(dead_code)]
 struct Ground {
     ctor: Vec<String>,
     children: Vec<Vec<usize>>,
@@ -318,7 +319,6 @@ struct Ground {
     subterm: Vec<HT>,
 }
 
-#[allow(dead_code)]
 fn build_ground(tree: &HT) -> Ground {
     fn go(g: &mut Ground, t: &HT, parent: Option<(usize, usize)>) -> usize {
         let HT::App { fun, args } = t else {
@@ -347,7 +347,6 @@ fn build_ground(tree: &HT) -> Ground {
     g
 }
 
-#[allow(dead_code)]
 fn arg_position_of(parent_ctx: &HT, head: &HT) -> Option<usize> {
     match parent_ctx {
         HT::App { args, .. } => args.iter().position(|a| a == head),
@@ -357,7 +356,6 @@ fn arg_position_of(parent_ctx: &HT, head: &HT) -> Option<usize> {
 
 /// Exact two-way LFP reachability over a fixed ground tree: the set of
 /// `(predicate, node-id)` pairs that hold. Handles any clause shape.
-#[allow(dead_code)]
 fn crossing_eval(rules: &[HornRule], gt: &Ground) -> HashSet<(String, usize)> {
     let rules: Vec<&HornRule> = rules
         .iter()
@@ -405,7 +403,6 @@ fn crossing_eval(rules: &[HornRule], gt: &Ground) -> HashSet<(String, usize)> {
     holds
 }
 
-#[allow(dead_code)]
 fn body_holds_ground(
     body: &[crate::backends::smt2::ast::HornAtom],
     n: usize,
@@ -428,7 +425,7 @@ fn body_holds_ground(
     })
 }
 
-pub(crate) fn crossing_eval_bench(prog: &HornProg, max_size: usize) {
+pub(crate) fn parent_eval_bench(prog: &HornProg, max_size: usize) {
     let (start, constraints) = goal(prog);
     let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
     let relevant = relevant_states(prog, &seeds);
@@ -734,66 +731,42 @@ fn concat_terms(terms: &[String]) -> String {
     }
 }
 
-/// Encode a compiled CHC program, naming the synth-fun `synth_name` (the source
-/// program's synth-fun name). Returns `(sygus-text, synth-target sort)`.
-pub(crate) fn faithful_sygus(prog: &HornProg, synth_name: &str) -> (String, String) {
-    let (start, constraints) = goal(prog);
-    let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
-    let relevant = relevant_states(prog, &seeds);
-    let (states, ctors) = build_sig(prog, &relevant);
-    let gcs = general_clauses(prog, &relevant);
-    log_crossing_summary(
-        QueryKind::Solution,
-        &start,
-        &constraints,
-        &relevant,
-        &states,
-        &ctors,
-        &gcs,
-    );
-    (
-        faithful_sygus_ir(
-            &states,
-            &ctors,
-            &gcs,
-            &start,
-            &constraints,
-            synth_name,
-            QueryKind::Solution,
-        ),
-        start,
-    )
+impl crate::compile::context::CompileContext<'_> {
+    /// The parent path's encoder, mirroring the direct [`CompileContext::compile`]:
+    /// lower to CHC, emit the crossing-relation certificate SyGuS, and parse it
+    /// back into commands. Dispatched to by `compile` for parent-bearing programs.
+    pub(super) fn compile_parent(&self) -> Result<Vec<sygus_parser::SyGuSCmd>, String> {
+        let horn = self.compile_chc()?;
+        let (sygus, _) = parent_sygus(&horn, &self.synth_name, QueryKind::Solution);
+        // ponytail: parse the emitted text back into cmds; parent_sygus builds
+        // SMT-BV text directly. Native-cmd emission would avoid the round-trip
+        // but means reworking the ~700-line string builder — not worth it yet.
+        sygus_parser::SyGuSFile::from_str(&sygus)
+            .map(|file| file.cmds)
+            .map_err(|e| format!("parent SyGuS emission produced unparsable output: {e}"))
+    }
 }
 
-/// Emit the self-contained counterexample/refuter query for the same crossing
-/// semantics. It is meant for an inverted per-skeleton check: SAT means the
-/// skeleton violates some root demand; UNSAT means no violation certificate exists.
-#[allow(dead_code)]
-pub(crate) fn faithful_refuter_sygus(prog: &HornProg, synth_name: &str) -> (String, String) {
+/// Encode a compiled CHC program, naming the synth-fun `synth_name` (the source
+/// program's synth-fun name). Returns `(sygus-text, synth-target sort)`.
+///
+/// `QueryKind::Solution` emits the direct certificate; `QueryKind::Refuter` emits
+/// the self-contained counterexample query for the same crossing semantics (for an
+/// inverted per-skeleton check: SAT ⇒ the skeleton violates some root demand, UNSAT
+/// ⇒ no violation certificate exists).
+pub(crate) fn parent_sygus(
+    prog: &HornProg,
+    synth_name: &str,
+    kind: QueryKind,
+) -> (String, String) {
     let (start, constraints) = goal(prog);
     let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
     let relevant = relevant_states(prog, &seeds);
     let (states, ctors) = build_sig(prog, &relevant);
     let gcs = general_clauses(prog, &relevant);
-    log_crossing_summary(
-        QueryKind::Refuter,
-        &start,
-        &constraints,
-        &relevant,
-        &states,
-        &ctors,
-        &gcs,
-    );
+    log_crossing_summary(kind, &start, &constraints, &relevant, &states, &ctors, &gcs);
     (
-        faithful_sygus_ir(
-            &states,
-            &ctors,
-            &gcs,
-            &start,
-            &constraints,
-            synth_name,
-            QueryKind::Refuter,
-        ),
+        parent_sygus_ir(&states, &ctors, &gcs, &start, &constraints, synth_name, kind),
         start,
     )
 }
@@ -899,7 +872,7 @@ pub(crate) fn decode_term(stdout: &str, synth_name: &str) -> Option<String> {
 /// SyGuS emitter and the fixed-tree validation oracle. For sort `s`,
 /// `Q=|states|`, `D=|DS|`, and `Nud=|routable (state,parent-triple) pairs|`.
 ///
-/// `ANN_c = [ live-dact:DL_c | pick:Σw_c | live-inv-dact?:DL_c | inv?:I_c ]`
+/// `ANN_c = [ live-dact:DL_c | strategy:Σw_c | live-inv-dact?:DL_c | inv?:I_c ]`
 /// for constructor `c` (low → high)
 /// `VALUE = [ dact:D | dneed?:D | up:Q | udem:Nud | inv_dact?:D | inv?:Q | valid:1 ]`
 /// (low → high)
@@ -908,11 +881,11 @@ pub(crate) fn decode_term(stdout: &str, synth_name: &str) -> Option<String> {
 ///   can read in a `Parent` premise. The value expands it to the sort-wide `dact`
 ///   field and emits `dneed`, a computed mask telling the parent which bits must
 ///   equal the parent's `up` bits.
-/// - `pick[q]`          — constructor-local binary index for real support choices
+/// - `strategy[q]`          — constructor-local binary index for real support choices
 ///   (`0` = unfounded); support-free and singleton non-self selectors are computed
 ///   instead of guessed. This makes the chosen derivation unambiguous so `R` is
 ///   the chosen support, not an over-approx.
-/// - `up[q]`            — founded lower-bound proof bits. *Computed from picks.*
+/// - `up[q]`            — founded lower-bound proof bits. *Computed from strategies.*
 /// - `udem[Y][j]`       — child→parent demand: my state `Y` routes up to `st@parent`
 ///   for triple `j`. Every support cycle is caught at its *top* node via this
 ///   down-routing, so the symmetric up-routing channel (`ddem`) is unnecessary.
@@ -936,7 +909,7 @@ struct Enc<'a> {
     /// Whether this query needs a non-membership certificate (`q ∉ μF`).
     need_out: bool,
     ds: HashMap<String, Vec<(String, usize, String)>>,
-    /// per sort: indices into `gcs` of clauses producing that sort (pick order).
+    /// per sort: indices into `gcs` of clauses producing that sort (strategy order).
     sort_clauses: HashMap<String, Vec<usize>>,
     /// reflexive-transitive closure of the predicate dependency graph
     /// (`Y → Z` iff `Z` appears in some premise of a clause for `Y`). Over-
@@ -962,13 +935,13 @@ struct Enc<'a> {
     /// per clause, its 1-based position within the real-choice part of its
     /// `(ctor, head)` group. Clauses whose selector is computed have position 0.
     pos_in_group: Vec<usize>,
-    /// Whether clause `k` reads the pick field. False means `sel{k}` is computed
+    /// Whether clause `k` reads the strategy field. False means `sel{k}` is computed
     /// from premise activity and, for support-bearing singleton cases, the absence
     /// of an already-active support-free alternative.
-    pick_hole: Vec<bool>,
-    /// Whether clause `k` shares its pick value with other clauses and therefore
+    strategy_hole: Vec<bool>,
+    /// Whether clause `k` shares its strategy value with other clauses and therefore
     /// must gate `sel{k}` by its own active premise.
-    pick_guard_active: Vec<bool>,
+    strategy_guard_active: Vec<bool>,
     /// Representative selector for each clause. Clauses in one same-effect class
     /// can share the representative's `sel`; non-representatives are emitted as
     /// `false` and skipped by the support writers.
@@ -977,11 +950,11 @@ struct Enc<'a> {
     sel_members: HashMap<usize, Vec<usize>>,
     /// ctor → sort lookup (each constructor builds exactly one sort).
     ctor_sort: HashMap<String, String>,
-    /// per **constructor**, prefix bit-offsets of each state's `pick` field within
-    /// that ctor's pick region (len `Q+1`). State `q` gets
+    /// per **constructor**, prefix bit-offsets of each state's `strategy` field within
+    /// that ctor's strategy region (len `Q+1`). State `q` gets
     /// `⌈log₂(real_choices(ctor,q)+1)⌉` bits. So each ctor's `Ann` carries only
     /// the choices it can actually use.
-    pick_off: HashMap<String, Vec<usize>>,
+    strategy_off: HashMap<String, Vec<usize>>,
     /// per constructor, prefix bit-offsets of non-forced invariant state bits within
     /// the ctor's invariant region. If `inv_off[c][q] == inv_off[c][q+1]`, state `q`
     /// is forced by an unconditional clause for `c` and is computed as `#b1`.
@@ -1222,8 +1195,8 @@ impl<'a> Enc<'a> {
         // clause is selected directly when active. Support-bearing clauses whose
         // direct certificate effect is the same share one selector bit; if there
         // is only one such effect class, it is selected directly when active.
-        let mut pick_hole = vec![false; gcs.len()];
-        let mut pick_guard_active = vec![false; gcs.len()];
+        let mut strategy_hole = vec![false; gcs.len()];
+        let mut strategy_guard_active = vec![false; gcs.len()];
         let mut sel_rep: Vec<usize> = (0..gcs.len()).collect();
         let mut sel_members: HashMap<usize, Vec<usize>> = HashMap::default();
         let mut selector_count: HashMap<(String, String), usize> = HashMap::default();
@@ -1274,8 +1247,8 @@ impl<'a> Enc<'a> {
                         for (ks, guard_active) in units {
                             pos += 1;
                             for k in ks {
-                                pick_hole[k] = true;
-                                pick_guard_active[k] = guard_active;
+                                strategy_hole[k] = true;
+                                strategy_guard_active[k] = guard_active;
                                 pos_in_group[k] = pos;
                             }
                         }
@@ -1288,7 +1261,7 @@ impl<'a> Enc<'a> {
         // `q` gets one bit per real support choice. Binary coding is smaller but
         // couples all alternatives through extract-and-compare terms; direct bits
         // make the existential certificate cheap Boolean data.
-        let mut pick_off: HashMap<String, Vec<usize>> = HashMap::default();
+        let mut strategy_off: HashMap<String, Vec<usize>> = HashMap::default();
         for (sort, cs) in ctors {
             let sts = &states[sort];
             for (ctor, _) in cs {
@@ -1303,7 +1276,7 @@ impl<'a> Enc<'a> {
                     acc += w;
                 }
                 off.push(acc);
-                pick_off.insert(ctor.clone(), off);
+                strategy_off.insert(ctor.clone(), off);
             }
         }
         // Per-constructor invariant layout. Empty-body clauses are unconditional
@@ -1350,12 +1323,12 @@ impl<'a> Enc<'a> {
             dact_rank,
             dneed_sorts,
             pos_in_group,
-            pick_hole,
-            pick_guard_active,
+            strategy_hole,
+            strategy_guard_active,
             sel_rep,
             sel_members,
             ctor_sort,
-            pick_off,
+            strategy_off,
             inv_off,
         }
     }
@@ -1473,21 +1446,21 @@ impl<'a> Enc<'a> {
     /// Number of direct selector bits for state `q` in ctor `c`'s Ann (0 if `q`
     /// has no real support choice for this constructor).
     fn pw_of(&self, ctor: &str, q: usize) -> usize {
-        let off = &self.pick_off[ctor];
+        let off = &self.strategy_off[ctor];
         off[q + 1] - off[q]
     }
     /// Total direct selector bits in ctor `c`'s Ann.
-    fn pick_w(&self, ctor: &str) -> usize {
-        *self.pick_off[ctor].last().unwrap()
+    fn strategy_w(&self, ctor: &str) -> usize {
+        *self.strategy_off[ctor].last().unwrap()
     }
 
     // --- two layouts ---
     // ANN_c (Constant, the guess) =
     //   [live-dact:DL_c | sel:Σchoices | live-inv-dact?:DL_c | inv?:Q].
-    // `pick_idx_lo` / `ann_w` are offsets into this constructor-local annotation.
+    // `strategy_idx_lo` / `ann_w` are offsets into this constructor-local annotation.
     // VALUE_s (define-fun output, read by the parent) =
     //   [dact:D | dneed?:D | up:Q | udem:Nud | inv_dact?:D | inv?:Q | valid:1].
-    // `dneed` is an adaptive computed constructor mask; `pick` is not echoed.
+    // `dneed` is an adaptive computed constructor mask; `strategy` is not echoed.
     fn width(&self, s: &str) -> usize {
         self.out_width(s) + 1
     }
@@ -1513,10 +1486,10 @@ impl<'a> Enc<'a> {
     }
     /// Low bit of state `q`'s direct selector region — an offset into ctor `c`'s
     /// ANN constant.
-    fn pick_idx_lo(&self, ctor: &str, q: usize) -> usize {
-        self.ann_dact_w(ctor) + self.pick_off[ctor][q]
+    fn strategy_idx_lo(&self, ctor: &str, q: usize) -> usize {
+        self.ann_dact_w(ctor) + self.strategy_off[ctor][q]
     }
-    /// Offset into the VALUE (no pick region: up sits just above dact+dneed).
+    /// Offset into the VALUE (no strategy region: up sits just above dact+dneed).
     fn up_pos(&self, s: &str, q: usize) -> usize {
         self.dact_w(s) + self.dneed_w(s) + q
     }
@@ -1524,7 +1497,7 @@ impl<'a> Enc<'a> {
     fn nud(&self, s: &str) -> usize {
         self.ud_rank.get(s).map(HashMap::len).unwrap_or(0)
     }
-    /// Low bit of the `udem` field in the VALUE (just above `up`; no pick region).
+    /// Low bit of the `udem` field in the VALUE (just above `up`; no strategy region).
     fn udem_base(&self, s: &str) -> usize {
         self.dact_w(s) + self.dneed_w(s) + if self.need_in { self.nq(s) } else { 0 }
     }
@@ -1550,7 +1523,7 @@ impl<'a> Enc<'a> {
     }
     fn ann_in_w(&self, ctor: &str) -> usize {
         if self.need_in {
-            self.ann_dact_w(ctor) + self.pick_w(ctor)
+            self.ann_dact_w(ctor) + self.strategy_w(ctor)
         } else {
             0
         }
@@ -1639,14 +1612,14 @@ impl<'a> Enc<'a> {
     fn ann_arg_w(&self, ctor: &str) -> usize {
         self.ann_w(ctor).max(1)
     }
-    /// "Clause `k` is picked here" = its direct selector bit is set.
+    /// "Clause `k` is chosen here" = its direct selector bit is set.
     /// Read from the per-node `sel{k}` binding (CSE'd once by `node_checks`), not
     /// re-sliced from `ann` at every use.
-    fn pick_sel(&self, pfx: &str, k: usize) -> String {
+    fn strategy_sel(&self, pfx: &str, k: usize) -> String {
         format!("{pfx}sel{k}")
     }
     /// The actual definition of `sel{k}` (a Bool `let`), reading ctor `k`'s own Ann.
-    fn pick_sel_def(&self, term: &str, k: usize) -> String {
+    fn strategy_sel_def(&self, term: &str, k: usize) -> String {
         let ctor = &self.gcs[k].ctor;
         let q = self
             .qidx(self.sort_of(ctor), &self.gcs[k].head)
@@ -1654,13 +1627,13 @@ impl<'a> Enc<'a> {
         let pw = self.pw_of(ctor, q);
         debug_assert!(
             pw > 0,
-            "computed singleton picks are defined from premise activity"
+            "computed singleton strategies are defined from premise activity"
         );
         debug_assert!(
             self.pos_in_group[k] > 0 && self.pos_in_group[k] <= pw,
             "direct selector position must fit its per-state selector region"
         );
-        let pos = self.pick_idx_lo(ctor, q) + self.pos_in_group[k] - 1;
+        let pos = self.strategy_idx_lo(ctor, q) + self.pos_in_group[k] - 1;
         format!("(= {} #b1)", bit(term, pos))
     }
     fn valid_pos(&self, s: &str) -> usize {
@@ -1694,7 +1667,7 @@ impl<'a> Enc<'a> {
         let q_n = self.nq(sort);
         // Nested `let` groups, emitted outer→inner; a binding may reference any
         // earlier group. Group 0 = `sel{k}` clause-selector Bools (CSE'd once,
-        // read by up/R0/Cpick/udem). Group 1 = `up` + `R0`. The R* closure then
+        // read by up/R0/Cstrategy/udem). Group 1 = `up` + `R0`. The R* closure then
         // appends one group per SCC-condensation step (downstream incorporation,
         // then per-component squaring rounds), in sink-first order. Bool bindings
         // carry width 0 (sentinel) so the oracle declares them `Bool`, not BitVec.
@@ -1813,7 +1786,7 @@ impl<'a> Enc<'a> {
         };
 
         // (sel) one binding per clause of this ctor. Real choices read `ann`'s
-        // pick field. Support-free alternatives are selected directly when active;
+        // strategy field. Support-free alternatives are selected directly when active;
         // support-bearing computed singletons are selected when active and no
         // support-free alternative already proves the same head.
         if self.need_in {
@@ -1828,12 +1801,12 @@ impl<'a> Enc<'a> {
                     }
                     None => prem_active(k),
                 };
-                let sel = if self.pick_hole[k] {
-                    let picked = self.pick_sel_def(ann, k);
-                    if self.pick_guard_active[k] {
-                        gate_support(and_bool(&[picked, active]), &free_active)
+                let sel = if self.strategy_hole[k] {
+                    let chosen = self.strategy_sel_def(ann, k);
+                    if self.strategy_guard_active[k] {
+                        gate_support(and_bool(&[chosen, active]), &free_active)
                     } else {
-                        gate_support(picked, &free_active)
+                        gate_support(chosen, &free_active)
                     }
                 } else if matters(k) {
                     gate_support(active, &free_active)
@@ -1874,7 +1847,7 @@ impl<'a> Enc<'a> {
             bvor_all(&parts, q_n)
         };
 
-        // (up) up[q] = ⋁ pick for (ctor,q); closure: any active clause ⇒ up[q].
+        // (up) up[q] = ⋁ strategy for (ctor,q); closure: any active clause ⇒ up[q].
         let up_val = if self.need_in {
             for (q, qst) in self.states[sort].iter().enumerate() {
                 let mine: Vec<usize> = ctor_clauses
@@ -1882,12 +1855,12 @@ impl<'a> Enc<'a> {
                     .copied()
                     .filter(|&k| &self.gcs[k].head == qst)
                     .collect();
-                let picks: Vec<String> = mine
+                let strategies: Vec<String> = mine
                     .iter()
                     .filter(|&&k| self.sel_rep[k] == k)
-                    .map(|&k| self.pick_sel(pfx, k))
+                    .map(|&k| self.strategy_sel(pfx, k))
                     .collect();
-                groups[G_UP].push((up_name(q), 1, format!("(ite {} #b1 #b0)", or_bool(&picks))));
+                groups[G_UP].push((up_name(q), 1, format!("(ite {} #b1 #b0)", or_bool(&strategies))));
             }
             concat_terms(&(0..q_n).rev().map(up_name).collect::<Vec<_>>())
         } else {
@@ -1917,10 +1890,10 @@ impl<'a> Enc<'a> {
         }
 
         let udem_val = if self.need_in {
-            // (Cpick) a picked clause must be active (its deps enter R automatically).
+            // (Cstrategy) a chosen clause must be active (its deps enter R automatically).
             for &k in &ctor_clauses {
-                if self.pick_hole[k] && self.sel_rep[k] == k && !self.pick_guard_active[k] {
-                    checks.push(format!("(=> {} {})", self.pick_sel(pfx, k), prem_active(k)));
+                if self.strategy_hole[k] && self.sel_rep[k] == k && !self.strategy_guard_active[k] {
+                    checks.push(format!("(=> {} {})", self.strategy_sel(pfx, k), prem_active(k)));
                 }
             }
 
@@ -1940,12 +1913,12 @@ impl<'a> Enc<'a> {
                     .iter()
                     .filter(|&&k| self.qidx(sort, &self.gcs[k].head) == Some(p))
                     .filter(|&&k| self.sel_rep[k] == k)
-                    // A clause with no same-node deps contributes `(ite pick 0 0)` ≡ 0
+                    // A clause with no same-node deps contributes `(ite strategy 0 0)` ≡ 0
                     // to the bvor — drop it (these no-op ites were ~16k of the file).
                     .filter_map(|&k| {
                         let d = deps_direct(&self.gcs[k]);
                         (d != empty)
-                            .then(|| format!("(ite {} {} {})", self.pick_sel(pfx, k), d, empty))
+                            .then(|| format!("(ite {} {} {})", self.strategy_sel(pfx, k), d, empty))
                     })
                     .collect();
                 groups[G_UP].push((r0_name(p), q_n, bvor_all(&terms, q_n)));
@@ -2045,9 +2018,9 @@ impl<'a> Enc<'a> {
                 }
             }
 
-            // (udem) `y` routes up via `t` = picked Parent-t clause for `y`, or `y`
+            // (udem) `y` routes up via `t` = chosen Parent-t clause for `y`, or `y`
             // depends (R) on some `z` that does. Precompute the Parent-`t` *users* once
-            // (per triple, the few states whose picked clause directly routes up) —
+            // (per triple, the few states whose chosen clause directly routes up) —
             // scanning clauses inside the `Q²·D` loop is `O(Q²·D·P)` and is what hung.
             let nd = self.nd(sort);
             let mut pu: Vec<Vec<(usize, Vec<usize>)>> = vec![Vec::new(); nd];
@@ -2067,7 +2040,7 @@ impl<'a> Enc<'a> {
                     }
                 }
             }
-            // CSE the per-`(t,z)` "z's picked clause routes up via t" disjunction —
+            // CSE the per-`(t,z)` "z's chosen clause routes up via t" disjunction —
             // it is constant in `y`, but read once per `y` that depends on `z`.
             let g = groups.len();
             groups.push(Vec::new());
@@ -2080,7 +2053,7 @@ impl<'a> Enc<'a> {
                         0,
                         or_bool(
                             &ks.iter()
-                                .map(|&k| self.pick_sel(pfx, k))
+                                .map(|&k| self.strategy_sel(pfx, k))
                                 .collect::<Vec<_>>(),
                         ),
                     ));
@@ -2155,7 +2128,7 @@ impl<'a> Enc<'a> {
 }
 
 /// The encoder, decoupled from `HornProg`. See [`Enc`] for the node layout.
-fn faithful_sygus_ir(
+fn parent_sygus_ir(
     states: &HashMap<String, Vec<String>>,
     ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
     gcs: &[GC],
@@ -2329,7 +2302,7 @@ mod tests {
     /// consistent. Support-free alternatives and non-choice singleton groups are
     /// computed. Pure (no solver).
     #[test]
-    fn per_state_pick_widths_fit_and_pack() {
+    fn per_state_strategy_widths_fit_and_pack() {
         // q0: two support-free child alternatives plus two parent-demand
         // alternatives. Only the latter are real choices (2 choices -> 2 bits).
         // q1 and all base facts are computed. q2 has two syntactic clauses with
@@ -2399,7 +2372,7 @@ mod tests {
         // (b) every clause's selector bit fits its ctor's region for its head.
         for (k, gc) in gcs.iter().enumerate() {
             let w = e.pw_of(&gc.ctor, qi(&gc.head));
-            if e.pick_hole[k] {
+            if e.strategy_hole[k] {
                 assert!(
                     e.pos_in_group[k] > 0 && e.pos_in_group[k] <= w,
                     "selector pos {} overflows {w}-bit region for {}.{}",
@@ -2416,10 +2389,10 @@ mod tests {
         }
         for (k, gc) in gcs.iter().enumerate().filter(|(_, gc)| gc.head == "q0") {
             match gc.body.as_slice() {
-                [GA::Parent(..)] => assert!(e.pick_hole[k], "parent-demand q0 clauses need picks"),
+                [GA::Parent(..)] => assert!(e.strategy_hole[k], "parent-demand q0 clauses need strategies"),
                 [GA::Child(..)] => {
                     assert!(
-                        !e.pick_hole[k],
+                        !e.strategy_hole[k],
                         "support-free child q0 clauses are computed"
                     )
                 }
@@ -2428,19 +2401,19 @@ mod tests {
         }
         // (c) each ctor's selector offsets are contiguous & ordered.
         for ctor in ["k", "c", "top"] {
-            let off = &e.pick_off[ctor];
+            let off = &e.strategy_off[ctor];
             assert!(
                 off.windows(2).all(|w| w[0] <= w[1]),
-                "{ctor} pick offsets must be monotone"
+                "{ctor} strategy offsets must be monotone"
             );
             assert_eq!(off[0], 0);
             let sort = e.sort_of(ctor);
             assert_eq!(
                 e.ann_w(ctor),
-                2 * e.ann_dact_w(ctor) + e.pick_w(ctor) + e.inv_w(ctor),
+                2 * e.ann_dact_w(ctor) + e.strategy_w(ctor) + e.inv_w(ctor),
                 "ann = live-dact + selector bits + live-inv-dact + non-forced inv bits for {ctor}"
             );
-            let inv_base = e.ann_dact_w(ctor) + e.pick_w(ctor) + e.ann_dact_w(ctor);
+            let inv_base = e.ann_dact_w(ctor) + e.strategy_w(ctor) + e.ann_dact_w(ctor);
             let inv_off = &e.inv_off[ctor];
             assert_eq!(inv_off[0], 0);
             assert_eq!(*inv_off.last().unwrap(), e.inv_w(ctor));
@@ -2457,12 +2430,12 @@ mod tests {
                 );
             }
         }
-        // value layout (per-sort, pick-free) puts the invariant certificate above
+        // value layout (per-sort, strategy-free) puts the invariant certificate above
         // the positive proof certificate.
         assert_eq!(
             e.up_pos(s, 0),
             2 * e.nd(s),
-            "in the value, up sits just above dact+dneed (no pick)"
+            "in the value, up sits just above dact+dneed (no strategy)"
         );
         assert_eq!(e.dneed_pos(s, 0), e.nd(s), "dneed sits just above dact");
         assert_eq!(
@@ -2751,7 +2724,7 @@ mod tests {
         let mut smt = String::from("(set-logic QF_BV)\n");
         for n in 0..n_nodes {
             // `n{n}` = the VALUE (read by parents); `n{n}_a` = the guessed ANN
-            // Constant ([live-dact|pick]) for THIS node's ctor.
+            // Constant ([live-dact|strategy]) for THIS node's ctor.
             let aw = e.ann_arg_w(&gt.ctor[n]);
             smt.push_str(&format!("(declare-const n{n} (_ BitVec {w}))\n"));
             smt.push_str(&format!("(declare-const n{n}_a (_ BitVec {aw}))\n"));
@@ -2954,7 +2927,7 @@ mod tests {
         let mut cyc2 = cyc.clone();
         cyc2.push(rule(atom("A", cc()), vec![]));
         check(&cyc2, &tcc, &[("B".into(), true)], "cyc-founded");
-        // discriminator for any `pick`-removal: X is founded by a base, but its
+        // discriminator for any `strategy`-removal: X is founded by a base, but its
         // CYCLIC clause is listed first. A naive "R = deps of all active clauses"
         // or a canonical "lowest-index clause" would take the cycle → false reject.
         // The founding (grow-from-∅) must select the base. Win holds iff X holds.
@@ -3071,7 +3044,7 @@ mod tests {
     /// The faithful semantics equals the exact LFP on every clause shape:
     /// intersection (non-additive), mixed up+down, multiple parent atoms, and CFG.
     #[test]
-    fn faithful_semantics_match_lfp_all_shapes() {
+    fn parent_semantics_match_lfp_all_shapes() {
         let check = |rules: &[HornRule], tree: &HT, label: &str| {
             let gt = build_ground(tree);
             let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
@@ -3212,7 +3185,7 @@ mod tests {
                 body: vec![GA::Parent("top".into(), 0, "A".into())],
             },
         ];
-        let sygus = faithful_sygus_ir(
+        let sygus = parent_sygus_ir(
             &states,
             &ctors,
             &gcs,
@@ -3221,7 +3194,7 @@ mod tests {
             "g",
             QueryKind::Solution,
         );
-        let so = cvc5_solve(&sygus, "faithful_toy", 60_000);
+        let so = cvc5_solve(&sygus, "parent_toy", 60_000);
         assert!(so.contains("(top"), "expected top(...): {so}");
         assert!(
             so.contains("e2") && so.contains('r'),
@@ -3239,7 +3212,7 @@ mod tests {
             return;
         }
         let prog = load_chc_prog("benchmark/CFG/0001_tiny.sl");
-        let so = cvc5_solve(&faithful_sygus(&prog, "g").0, "faithful_cfg", 600_000);
+        let so = cvc5_solve(&parent_sygus(&prog, "g", QueryKind::Solution).0, "parent_cfg", 600_000);
         assert!(so.contains("define-fun g"), "no solution: {so}");
         let prods = productions(&decode_g(&so));
         assert!(cky(&prods, "ab"), "must accept ab");

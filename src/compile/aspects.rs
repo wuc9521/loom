@@ -2,9 +2,8 @@ use crate::{
     compile::{
         expr::{eval_bool, eval_sygus_int},
         types::{
-            AspectKey, AspectSpace, AspectValue, BitMapping, ConstraintBit, DomainBit, Encoding,
-            FieldDecl, FieldDomain, SemanticConstraint, SemanticDomain, SemanticKind,
-            SemanticProgram, SemanticSpec,
+            AspectKey, AspectSpace, AspectValue, DomainBit, FieldDecl, FieldDomain,
+            SemanticConstraint, SemanticDomain, SemanticKind, SemanticProgram, SemanticSpec,
         },
     },
     lang::{eval::collect_loaded_models, model::Model},
@@ -18,15 +17,15 @@ use sygus_parser::{Identifier, SyGuSTerm};
 
 type AspectAssignment = Vec<(String, AspectValue)>;
 
-impl DelisProg {
-    #[allow(dead_code)]
-    pub fn encode(&self) -> Result<Encoding, String> {
-        encode(self)
-    }
-}
+#[cfg(test)]
+use super::types::{BitMapping, ConstraintBit, Encoding};
 
-fn encode(problem: &DelisProg) -> Result<Encoding, String> {
-    let program = problem.semantic_program()?;
+impl DelisProg {
+    /// Summarize the compiled aspect/bit layout. Used only by tests to assert on
+    /// the encoding shape; the solver paths go through `to_sygus` / `to_chc_ast`.
+    #[cfg(test)]
+    pub fn encode(&self) -> Result<Encoding, String> {
+        let program = self.semantic_program()?;
 
     let bool_domains = program
         .domains
@@ -98,9 +97,8 @@ fn encode(problem: &DelisProg) -> Result<Encoding, String> {
         bit_mappings,
         constraint_bits,
     })
-}
+    }
 
-impl DelisProg {
     pub fn semantic_program(&self) -> Result<SemanticProgram, String> {
         compile_semantic_program(self)
     }
