@@ -18,9 +18,12 @@ use std::{
     io::{self, BufWriter, Read, Write},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{mpsc, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 mod cegis;
@@ -95,12 +98,29 @@ fn solve(delis_file: &mut DelisProg, args: &CLI, input: &str) -> Result<(), io::
     let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(delis_file.to_sygus().map_err(io::Error::other)?);
 
     let (tx, rx) = mpsc::channel();
+    let done = Arc::new(AtomicBool::new(false));
 
     let term_tx = tx.clone();
-    let enum_child = spawn_enum_child(args, input)?;
+    let term_args = args.clone();
+    let term_input = input.to_string();
+    let term_done = done.clone();
     thread::Builder::new()
         .name("term-enumerator".to_string())
         .spawn(move || {
+            let delay = closure_delay();
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
+            if term_done.load(Ordering::Relaxed) {
+                return;
+            }
+            let enum_child = match spawn_enum_child(&term_args, &term_input) {
+                Ok(child) => child,
+                Err(err) => {
+                    let _ = term_tx.send(BackendResult::Closure(Err(err)));
+                    return;
+                }
+            };
             let result = solver_stdout(enum_child, "closure backend");
             let _ = term_tx.send(BackendResult::Closure(result));
         })?;
@@ -134,6 +154,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI, input: &str) -> Result<(), io::
         pending -= 1;
         match result {
             BackendResult::Closure(Ok(output)) | BackendResult::Sygus(Ok(output)) => {
+                done.store(true, Ordering::Relaxed);
                 println!("{output}");
                 cleanup_children();
                 return Ok(());
@@ -144,8 +165,18 @@ fn solve(delis_file: &mut DelisProg, args: &CLI, input: &str) -> Result<(), io::
         }
     }
     cleanup_children();
+    done.store(true, Ordering::Relaxed);
     Err(first_error
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
+}
+
+fn closure_delay() -> Duration {
+    const DEFAULT_MS: u64 = 3000;
+    let ms = std::env::var("DELIS_CLOSURE_DELAY_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_MS);
+    Duration::from_millis(ms)
 }
 
 fn spawn_enum_child(args: &CLI, input: &str) -> Result<Child, io::Error> {
@@ -174,7 +205,10 @@ fn spawn_enum_child(args: &CLI, input: &str) -> Result<Child, io::Error> {
     }
     command.stdout(Stdio::piped()).stderr(Stdio::inherit());
 
+    #[cfg(target_os = "linux")]
     let as_limit = closure_as_limit_bytes()?;
+    #[cfg(not(target_os = "linux"))]
+    let as_limit = None;
     if let Some(bytes) = as_limit {
         log::debug!(
             "closure child address-space limit: {} MiB",
@@ -201,6 +235,7 @@ fn spawn_enum_child(args: &CLI, input: &str) -> Result<Child, io::Error> {
     Ok(child)
 }
 
+#[cfg(target_os = "linux")]
 fn closure_as_limit_bytes() -> Result<Option<u64>, io::Error> {
     const MIB: u64 = 1024 * 1024;
     if let Ok(raw) = std::env::var("DELIS_CLOSURE_AS_LIMIT_MB") {
@@ -219,7 +254,7 @@ fn closure_as_limit_bytes() -> Result<Option<u64>, io::Error> {
     }))
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn physical_memory_bytes() -> Option<u64> {
     let pages = unsafe { libc::sysconf(libc::_SC_PHYS_PAGES) };
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
@@ -227,11 +262,6 @@ fn physical_memory_bytes() -> Option<u64> {
         return None;
     }
     Some((pages as u64).saturating_mul(page_size as u64))
-}
-
-#[cfg(not(unix))]
-fn physical_memory_bytes() -> Option<u64> {
-    None
 }
 
 #[cfg(target_os = "linux")]
@@ -450,7 +480,7 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
 }
 
 /// Command-line interface for Delis.
-#[derive(clap::Parser, Debug)]
+#[derive(clap::Parser, Clone, Debug)]
 #[command(
     author,
     version,
