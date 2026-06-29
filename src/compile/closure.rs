@@ -14,6 +14,13 @@ struct Value {
     term: SyGuSTerm,
 }
 
+#[derive(Clone, Copy)]
+struct ValueRef<'a> {
+    bits: &'a Bits,
+    width: usize,
+    term: &'a SyGuSTerm,
+}
+
 struct Nonterminal {
     width: usize,
     values: Vec<Value>,
@@ -92,7 +99,7 @@ struct ClosureSolver<'a> {
     nonterminals: Vec<Nonterminal>,
     nt_by_symbol: HashMap<String, usize>,
     constraints: Vec<SyGuSTerm>,
-    processed: HashMap<(usize, usize), HashSet<Vec<usize>>>,
+    processed: HashMap<(usize, usize), Vec<usize>>,
     /// True if any constructor's body references the synth-fun by name (e.g.
     /// `re.*`'s body extracts bits of `r`). Such constructors encode a
     /// finite-aspect least fixed point: their meaning at a given argument
@@ -264,13 +271,17 @@ impl<'a> ClosureSolver<'a> {
 
     fn apply_production(&mut self, nt_idx: usize, prod_idx: usize) -> Result<bool, String> {
         let prod = self.nonterminals[nt_idx].productions[prod_idx].clone();
+        let key = (nt_idx, prod_idx);
         if prod.args.is_empty() {
-            let key = (nt_idx, prod_idx);
-            let done = self.processed.entry(key).or_default();
-            if !done.insert(Vec::new()) {
+            if self.processed.contains_key(&key) {
                 return Ok(false);
             }
-            let (bits, term) = self.eval_constructor(&prod, &[])?;
+            self.processed.insert(key, Vec::new());
+            let bits = self.eval_constructor_bits(&prod, &[])?;
+            if self.nonterminals[nt_idx].seen.contains(&bits) {
+                return Ok(false);
+            }
+            let term = self.constructor_term(&prod, &[]);
             return Ok(self.insert_value(nt_idx, bits, term));
         }
         let arg_indices = prod
@@ -283,36 +294,68 @@ impl<'a> ClosureSolver<'a> {
                     .ok_or_else(|| format!("unknown grammar nonterminal {arg}"))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let mut tuples = Vec::new();
-        collect_tuples(
-            &self.nonterminals,
-            &arg_indices,
-            0,
-            &mut Vec::new(),
-            &mut tuples,
-        );
-        let mut changed = false;
-        for tuple in tuples {
-            let key = (nt_idx, prod_idx);
-            if !self.processed.entry(key).or_default().insert(tuple.clone()) {
-                continue;
-            }
-            let args = tuple
-                .iter()
-                .zip(&arg_indices)
-                .map(|(value_idx, nt)| self.nonterminals[*nt].values[*value_idx].clone())
-                .collect::<Vec<_>>();
-            let (bits, term) = self.eval_constructor(&prod, &args)?;
-            changed |= self.insert_value(nt_idx, bits, term);
+        let current_lengths = arg_indices
+            .iter()
+            .map(|nt| self.nonterminals[*nt].values.len())
+            .collect::<Vec<_>>();
+        let previous_lengths = self
+            .processed
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| vec![0; arg_indices.len()]);
+        if current_lengths.iter().any(|len| *len == 0) {
+            self.processed.insert(key, current_lengths);
+            return Ok(false);
         }
+        let mut changed = false;
+        for_each_tuple_index(&current_lengths, &mut Vec::new(), &mut |tuple| {
+            if tuple_is_inside_lengths(tuple, &previous_lengths) {
+                return Ok(());
+            }
+            changed |= self.apply_tuple(nt_idx, &prod, &arg_indices, tuple)?;
+            Ok(())
+        })?;
+        self.processed.insert(key, current_lengths);
         Ok(changed)
     }
 
-    fn eval_constructor(
+    fn apply_tuple(
+        &mut self,
+        nt_idx: usize,
+        prod: &Production,
+        arg_indices: &[usize],
+        tuple: &[usize],
+    ) -> Result<bool, String> {
+        let Some((bits, term)) = ({
+            let args = tuple
+                .iter()
+                .zip(arg_indices)
+                .map(|(value_idx, nt)| {
+                    let value = &self.nonterminals[*nt].values[*value_idx];
+                    ValueRef {
+                        bits: &value.bits,
+                        width: value.width,
+                        term: &value.term,
+                    }
+                })
+                .collect::<Vec<_>>();
+            let bits = self.eval_constructor_bits(prod, &args)?;
+            if self.nonterminals[nt_idx].seen.contains(&bits) {
+                None
+            } else {
+                Some((bits, self.constructor_term(prod, &args)))
+            }
+        }) else {
+            return Ok(false);
+        };
+        Ok(self.insert_value(nt_idx, bits, term))
+    }
+
+    fn eval_constructor_bits(
         &self,
         prod: &Production,
-        args: &[Value],
-    ) -> Result<(Bits, SyGuSTerm), String> {
+        args: &[ValueRef<'_>],
+    ) -> Result<Bits, String> {
         let func = self
             .funcs
             .get(&prod.ctor)
@@ -331,15 +374,18 @@ impl<'a> ClosureSolver<'a> {
         } else {
             self.eval_constructor_once(func, args, None)?
         };
-        let term = if args.is_empty() {
+        Ok(bits)
+    }
+
+    fn constructor_term(&self, prod: &Production, args: &[ValueRef<'_>]) -> SyGuSTerm {
+        if args.is_empty() {
             SyGuSTerm::Identifier(Identifier::Symbol(prod.ctor.clone()))
         } else {
             SyGuSTerm::Application(
                 Identifier::Symbol(prod.ctor.clone()),
                 args.iter().map(|arg| arg.term.clone()).collect(),
             )
-        };
-        Ok((bits, term))
+        }
     }
 
     /// Evaluate a constructor body once with the given args, optionally
@@ -347,7 +393,7 @@ impl<'a> ClosureSolver<'a> {
     fn eval_constructor_once(
         &self,
         func: &DefineFun,
-        args: &[Value],
+        args: &[ValueRef<'_>],
         self_binding: Option<&Bits>,
     ) -> Result<Bits, String> {
         let mut env = HashMap::default();
@@ -365,7 +411,11 @@ impl<'a> ClosureSolver<'a> {
     /// Compute the least fixed point of `body(args, r)` starting from
     /// `r = 0`. The body is monotone in `r` under the finite-aspect
     /// encoding, so iteration converges in at most `width + 1` steps.
-    fn eval_constructor_lfp(&self, func: &DefineFun, args: &[Value]) -> Result<Bits, String> {
+    fn eval_constructor_lfp(
+        &self,
+        func: &DefineFun,
+        args: &[ValueRef<'_>],
+    ) -> Result<Bits, String> {
         let width = self.nonterminals[self.start_nt_idx].width;
         let mut current = Bits::zero(width);
         for _ in 0..=width {
@@ -409,12 +459,11 @@ impl<'a> ClosureSolver<'a> {
         if width > 24 || self.nonterminals[nt_idx].values.is_empty() {
             return Ok(false);
         }
-        let generators = self.nonterminals[nt_idx].values.clone();
+        let generator_count = self.nonterminals[nt_idx].values.len();
         let mut signatures: HashMap<Vec<bool>, Vec<usize>> = HashMap::default();
         for bit in 0..width {
-            let sig = generators
-                .iter()
-                .map(|value| value.bits.get(bit))
+            let sig = (0..generator_count)
+                .map(|idx| self.nonterminals[nt_idx].values[idx].bits.get(bit))
                 .collect::<Vec<_>>();
             signatures.entry(sig).or_default().push(bit);
         }
@@ -437,45 +486,51 @@ impl<'a> ClosureSolver<'a> {
             if self.nonterminals[nt_idx].seen.contains(&bits) {
                 continue;
             }
-            let term = if mask == 0 {
-                false_term.clone()
-            } else if mask + 1 == (1usize << blocks.len()) {
-                true_term.clone()
-            } else {
-                let mut disjuncts = Vec::new();
-                for (block_idx, block) in blocks.iter().enumerate() {
-                    if ((mask >> block_idx) & 1) == 0 {
-                        continue;
+            let term = {
+                if mask == 0 {
+                    false_term.clone()
+                } else if mask + 1 == (1usize << blocks.len()) {
+                    true_term.clone()
+                } else {
+                    let mut disjuncts = Vec::new();
+                    for (block_idx, block) in blocks.iter().enumerate() {
+                        if ((mask >> block_idx) & 1) == 0 {
+                            continue;
+                        }
+                        let sample = block[0];
+                        let mut conjunct = None;
+                        for gen_idx in 0..generator_count {
+                            let gen = &self.nonterminals[nt_idx].values[gen_idx];
+                            let lit = if gen.bits.get(sample) {
+                                gen.term.clone()
+                            } else {
+                                SyGuSTerm::Application(
+                                    Identifier::Symbol(not_ctor.clone()),
+                                    vec![gen.term.clone()],
+                                )
+                            };
+                            conjunct = Some(match conjunct {
+                                Some(prev) => SyGuSTerm::Application(
+                                    Identifier::Symbol(and_ctor.clone()),
+                                    vec![prev, lit],
+                                ),
+                                None => lit,
+                            });
+                        }
+                        if let Some(term) = conjunct {
+                            disjuncts.push(term);
+                        }
                     }
-                    let sample = block[0];
-                    let mut conjunct = None;
-                    for gen in &generators {
-                        let lit = if gen.bits.get(sample) {
-                            gen.term.clone()
-                        } else {
+                    disjuncts
+                        .into_iter()
+                        .reduce(|lhs, rhs| {
                             SyGuSTerm::Application(
-                                Identifier::Symbol(not_ctor.clone()),
-                                vec![gen.term.clone()],
+                                Identifier::Symbol(or_ctor.clone()),
+                                vec![lhs, rhs],
                             )
-                        };
-                        conjunct = Some(match conjunct {
-                            Some(prev) => SyGuSTerm::Application(
-                                Identifier::Symbol(and_ctor.clone()),
-                                vec![prev, lit],
-                            ),
-                            None => lit,
-                        });
-                    }
-                    if let Some(term) = conjunct {
-                        disjuncts.push(term);
-                    }
+                        })
+                        .unwrap_or(false_term.clone())
                 }
-                disjuncts
-                    .into_iter()
-                    .reduce(|lhs, rhs| {
-                        SyGuSTerm::Application(Identifier::Symbol(or_ctor.clone()), vec![lhs, rhs])
-                    })
-                    .unwrap_or(false_term.clone())
             };
             changed |= self.insert_value(nt_idx, bits, term);
         }
@@ -567,22 +622,134 @@ impl BoolOps {
     }
 }
 
-fn collect_tuples(
-    nonterminals: &[Nonterminal],
-    arg_indices: &[usize],
-    pos: usize,
-    current: &mut Vec<usize>,
-    out: &mut Vec<Vec<usize>>,
-) {
-    if pos == arg_indices.len() {
-        out.push(current.clone());
-        return;
-    }
-    let nt = &nonterminals[arg_indices[pos]];
-    for idx in 0..nt.values.len() {
-        current.push(idx);
-        collect_tuples(nonterminals, arg_indices, pos + 1, current, out);
-        current.pop();
-    }
+fn tuple_is_inside_lengths(tuple: &[usize], lengths: &[usize]) -> bool {
+    tuple
+        .iter()
+        .zip(lengths)
+        .all(|(idx, processed_len)| *idx < *processed_len)
 }
 
+fn for_each_tuple_index(
+    lengths: &[usize],
+    current: &mut Vec<usize>,
+    f: &mut impl FnMut(&[usize]) -> Result<(), String>,
+) -> Result<(), String> {
+    if current.len() == lengths.len() {
+        return f(current);
+    }
+    let pos = current.len();
+    for idx in 0..lengths[pos] {
+        current.push(idx);
+        for_each_tuple_index(lengths, current, f)?;
+        current.pop();
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn symbol(name: &str) -> SyGuSTerm {
+        SyGuSTerm::Identifier(Identifier::Symbol(name.to_string()))
+    }
+
+    fn value(bits: &str, width: usize, name: &str) -> Value {
+        Value {
+            bits: Bits::from_bin(bits),
+            width,
+            term: symbol(name),
+        }
+    }
+
+    fn nonterminal(width: usize, values: Vec<Value>, productions: Vec<Production>) -> Nonterminal {
+        let seen = values.iter().map(|value| value.bits.clone()).collect();
+        Nonterminal {
+            width,
+            values,
+            seen,
+            productions,
+            bool_ops: BoolOps::default(),
+        }
+    }
+
+    #[test]
+    fn tuple_frontier_identifies_previous_rectangle() {
+        assert!(tuple_is_inside_lengths(&[0, 0], &[2, 1]));
+        assert!(tuple_is_inside_lengths(&[1, 0], &[2, 1]));
+        assert!(!tuple_is_inside_lengths(&[0, 1], &[2, 1]));
+        assert!(!tuple_is_inside_lengths(&[2, 0], &[2, 1]));
+
+        let mut tuples = Vec::new();
+        for_each_tuple_index(&[2, 2], &mut Vec::new(), &mut |tuple| {
+            tuples.push(tuple.to_vec());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(tuples, vec![vec![0, 0], vec![0, 1], vec![1, 0], vec![1, 1]]);
+    }
+
+    #[test]
+    fn apply_production_tracks_compact_frontier_as_child_pools_grow() {
+        let problem = DelisProg { cmds: Vec::new() };
+        let pair_body = SyGuSTerm::Application(
+            Identifier::Symbol("concat".to_string()),
+            vec![symbol("x"), symbol("y")],
+        );
+        let mut funcs = HashMap::default();
+        funcs.insert(
+            "pair".to_string(),
+            DefineFun {
+                args: vec!["x".to_string(), "y".to_string()],
+                body: pair_body,
+                width: 2,
+            },
+        );
+
+        let mut nt_by_symbol = HashMap::default();
+        nt_by_symbol.insert("A".to_string(), 0);
+        nt_by_symbol.insert("B".to_string(), 1);
+        nt_by_symbol.insert("Out".to_string(), 2);
+
+        let mut solver = ClosureSolver {
+            problem: &problem,
+            synth_name: "g".to_string(),
+            synth_sort: Sort::Simple(Identifier::Symbol("Out".to_string())),
+            start: "Out".to_string(),
+            funcs,
+            nonterminals: vec![
+                nonterminal(1, vec![value("0", 1, "a0"), value("1", 1, "a1")], vec![]),
+                nonterminal(1, vec![value("0", 1, "b0")], vec![]),
+                nonterminal(
+                    2,
+                    vec![],
+                    vec![Production {
+                        ctor: "pair".to_string(),
+                        args: vec!["A".to_string(), "B".to_string()],
+                    }],
+                ),
+            ],
+            nt_by_symbol,
+            constraints: Vec::new(),
+            processed: HashMap::default(),
+            synth_self_ref: false,
+            start_nt_idx: 2,
+        };
+
+        assert!(solver.apply_production(2, 0).unwrap());
+        assert_eq!(solver.nonterminals[2].values.len(), 2);
+        assert_eq!(solver.processed[&(2, 0)], vec![2, 1]);
+
+        let new_b = value("1", 1, "b1");
+        solver.nonterminals[1].seen.insert(new_b.bits.clone());
+        solver.nonterminals[1].values.push(new_b);
+
+        assert!(solver.apply_production(2, 0).unwrap());
+        assert_eq!(solver.nonterminals[2].values.len(), 4);
+        assert_eq!(solver.processed[&(2, 0)], vec![2, 2]);
+
+        assert!(!solver.apply_production(2, 0).unwrap());
+        assert_eq!(solver.nonterminals[2].values.len(), 4);
+        assert_eq!(solver.processed[&(2, 0)], vec![2, 2]);
+    }
+}
