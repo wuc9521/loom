@@ -138,21 +138,18 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 
     let summary = problem.encode().expect("compilation should summarize");
 
-    assert_eq!(summary.bit_mappings.len(), 32);
-    assert_eq!(problem.bv_sz().expect("BV length should compile"), 32);
-    assert_eq!(
-        summary.semantic_relations,
-        vec!["Regex.Sem", "Regex.Sem.dual"]
-    );
+    assert_eq!(summary.bit_mappings.len(), 16);
+    assert_eq!(problem.bv_sz().expect("BV length should compile"), 16);
+    assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert_eq!(summary.constraint_bits[0].relation, "Regex.Sem");
     assert_eq!(summary.constraint_bits[0].model, "w1");
     assert!(summary.constraint_bits[0].expected);
     assert_eq!(summary.constraint_bits[0].bit, 2);
-    assert_eq!(summary.constraint_bits[1].relation, "Regex.Sem.dual");
+    assert_eq!(summary.constraint_bits[1].relation, "Regex.Sem");
     assert_eq!(summary.constraint_bits[1].model, "w5");
-    assert!(summary.constraint_bits[1].expected);
-    assert_eq!(summary.constraint_bits[1].bit, 25);
+    assert!(!summary.constraint_bits[1].expected);
+    assert_eq!(summary.constraint_bits[1].bit, 9);
 }
 
 #[test]
@@ -255,16 +252,16 @@ fn parses_direct_semantic_constraints() {
 
     let summary = problem.encode().expect("compilation should summarize");
 
-    assert_eq!(summary.bit_mappings.len(), 32);
+    assert_eq!(summary.bit_mappings.len(), 16);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert_eq!(summary.constraint_bits[0].relation, "Regex.Sem");
     assert_eq!(summary.constraint_bits[0].model, "w1");
     assert!(summary.constraint_bits[0].expected);
     assert_eq!(summary.constraint_bits[0].bit, 2);
-    assert_eq!(summary.constraint_bits[1].relation, "Regex.Sem.dual");
+    assert_eq!(summary.constraint_bits[1].relation, "Regex.Sem");
     assert_eq!(summary.constraint_bits[1].model, "w5");
-    assert!(summary.constraint_bits[1].expected);
-    assert_eq!(summary.constraint_bits[1].bit, 25);
+    assert!(!summary.constraint_bits[1].expected);
+    assert_eq!(summary.constraint_bits[1].bit, 9);
 }
 
 #[test]
@@ -389,6 +386,44 @@ fn detects_two_way_navigation() {
 }
 
 #[test]
+fn parent_bearing_negatives_use_dual_relation() {
+    let problem = parse(
+        r#"
+
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w1
+  (interp-sort Pos ($0))
+  (interp-fun a (match (((_) true)))))
+(declare-term-types ((Root 0)) (((leaf) (cfg.top.S Root Root))))
+(define-aspects CfgAsp
+  (record (model Model) (i Int))
+  :where (and (<= 0 i) (<= i (size (Pos model)))))
+(define-semantics
+  ((Cfg.Sem (r Root) (asp CfgAsp)))
+  ((match r
+     ((leaf) false)
+     ((cfg.top.S x y) (Cfg.Sem (parent x) asp)))))
+(synth-fun r () Root)
+(constraint (not (Cfg.Sem r (CfgAsp w1 0))))
+(check-synth)
+"#,
+    );
+
+    let semantic_program = problem
+        .semantic_program()
+        .expect("parent-bearing semantic program should compile");
+
+    assert!(semantic_program
+        .semantics
+        .iter()
+        .any(|spec| spec.relation == "Cfg.Sem.dual"));
+    assert_eq!(semantic_program.constraints.len(), 1);
+    assert_eq!(semantic_program.constraints[0].relation, "Cfg.Sem.dual");
+    assert!(semantic_program.constraints[0].expected);
+}
+
+#[test]
 fn parent_navigation_to_sygus_uses_parent_encoding() {
     let problem = parse(
         r#"
@@ -456,12 +491,12 @@ fn aspects_and_predicates_use_declared_universe_sorts() {
         .encode()
         .expect("many-sorted aspects should compile");
 
-    assert_eq!(summary.bit_mappings.len(), 4);
+    assert_eq!(summary.bit_mappings.len(), 2);
     assert_eq!(summary.constraint_bits.len(), 2);
     assert_eq!(summary.constraint_bits[0].relation, "FO.Sem");
     assert!(summary.constraint_bits[0].expected);
-    assert_eq!(summary.constraint_bits[1].relation, "FO.Sem.dual");
-    assert!(summary.constraint_bits[1].expected);
+    assert_eq!(summary.constraint_bits[1].relation, "FO.Sem");
+    assert!(!summary.constraint_bits[1].expected);
 
     let sygus = problem
         .to_sygus()

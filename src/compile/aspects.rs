@@ -27,76 +27,76 @@ impl DelisProg {
     pub fn encode(&self) -> Result<Encoding, String> {
         let program = self.semantic_program()?;
 
-    let bool_domains = program
-        .domains
-        .iter()
-        .filter(|domain| domain.kind == SemanticKind::Bool)
-        .collect::<Vec<_>>();
-    let mut bit_mappings = Vec::new();
-    let mut bit_by_aspect = HashMap::default();
-    for domain in bool_domains {
-        for domain_bit in &domain.bits {
-            let bit = bit_mappings.len();
-            bit_by_aspect.insert(domain_bit.aspect.clone(), bit);
-            bit_mappings.push(BitMapping {
-                bit,
-                aspect: domain_bit.aspect.clone(),
-            });
-        }
-    }
-
-    let kind_by_relation = program
-        .domains
-        .iter()
-        .map(|domain| (domain.relation.clone(), domain.kind.clone()))
-        .collect::<HashMap<_, _>>();
-    let constraint_bits = program
-        .constraints
-        .iter()
-        .map(|constraint| {
-            if kind_by_relation.get(&constraint.relation) != Some(&SemanticKind::Bool) {
-                return Err(format!(
-                    "top-level constraint {} must target Bool-returning semantics",
-                    constraint.relation
-                ));
+        let bool_domains = program
+            .domains
+            .iter()
+            .filter(|domain| domain.kind == SemanticKind::Bool)
+            .collect::<Vec<_>>();
+        let mut bit_mappings = Vec::new();
+        let mut bit_by_aspect = HashMap::default();
+        for domain in bool_domains {
+            for domain_bit in &domain.bits {
+                let bit = bit_mappings.len();
+                bit_by_aspect.insert(domain_bit.aspect.clone(), bit);
+                bit_mappings.push(BitMapping {
+                    bit,
+                    aspect: domain_bit.aspect.clone(),
+                });
             }
-            let key = AspectKey {
-                relation: constraint.relation.clone(),
-                model: constraint.model.clone(),
-                fields: constraint.fields.clone(),
-            };
-            let bit = bit_by_aspect.get(&key).copied().ok_or_else(|| {
-                format!(
-                    "constraint aspect does not belong to aspect space: {}({}; {})",
-                    key.relation,
-                    key.model,
-                    key.display_fields()
-                )
-            })?;
-            Ok(ConstraintBit {
-                relation: constraint.relation.clone(),
-                model: constraint.model.clone(),
-                expected: constraint.expected,
-                bit,
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+        }
 
-    Ok(Encoding {
-        aspect_spaces: program
-            .aspect_spaces
+        let kind_by_relation = program
+            .domains
             .iter()
-            .map(|space| space.name.clone())
-            .collect(),
-        semantic_relations: program
-            .semantics
+            .map(|domain| (domain.relation.clone(), domain.kind.clone()))
+            .collect::<HashMap<_, _>>();
+        let constraint_bits = program
+            .constraints
             .iter()
-            .map(|semantics| semantics.relation.clone())
-            .collect(),
-        semantic_domains: program.domains,
-        bit_mappings,
-        constraint_bits,
-    })
+            .map(|constraint| {
+                if kind_by_relation.get(&constraint.relation) != Some(&SemanticKind::Bool) {
+                    return Err(format!(
+                        "top-level constraint {} must target Bool-returning semantics",
+                        constraint.relation
+                    ));
+                }
+                let key = AspectKey {
+                    relation: constraint.relation.clone(),
+                    model: constraint.model.clone(),
+                    fields: constraint.fields.clone(),
+                };
+                let bit = bit_by_aspect.get(&key).copied().ok_or_else(|| {
+                    format!(
+                        "constraint aspect does not belong to aspect space: {}({}; {})",
+                        key.relation,
+                        key.model,
+                        key.display_fields()
+                    )
+                })?;
+                Ok(ConstraintBit {
+                    relation: constraint.relation.clone(),
+                    model: constraint.model.clone(),
+                    expected: constraint.expected,
+                    bit,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        Ok(Encoding {
+            aspect_spaces: program
+                .aspect_spaces
+                .iter()
+                .map(|space| space.name.clone())
+                .collect(),
+            semantic_relations: program
+                .semantics
+                .iter()
+                .map(|semantics| semantics.relation.clone())
+                .collect(),
+            semantic_domains: program.domains,
+            bit_mappings,
+            constraint_bits,
+        })
     }
 
     pub fn semantic_program(&self) -> Result<SemanticProgram, String> {
@@ -153,12 +153,16 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         .iter()
         .map(|cmd| SemanticSpec::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
-    // Sound negative examples: a negative `(not (P g σ))` cannot be witnessed by
-    // negating P's acceptance bit (P is existential/least-fixpoint acceptance).
-    // When any negative semantic constraint exists, derive the dual relations
-    // `P.dual ≡ ¬P` and compile negatives as the dual's acceptance
-    // (Krogmeier–Madhusudan 2023 §4.4). See `compile::dual`.
-    if has_negative_semantic_constraint(problem, &semantic_specs) {
+    // Parent-bearing programs use the crossing/certificate path, where a
+    // negative example needs its own existential rejection witness. Parent-free
+    // direct BV compilation computes the semantics exactly, so a negative
+    // example is just the primal bit constrained to false; adding dual domains
+    // there only bloats the search space.
+    let dualize_negatives = semantic_specs
+        .iter()
+        .any(|spec| contains_parent_navigation(&spec.body))
+        && has_negative_semantic_constraint(problem, &semantic_specs);
+    if dualize_negatives {
         let duals = crate::compile::dual::dual_specs(&semantic_specs);
         semantic_specs.extend(duals);
     }
@@ -182,8 +186,13 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
             _ => None,
         })
         .collect::<HashMap<_, _>>();
-    let semantic_constraints =
-        collect_semantic_constraints(problem, &semantic_specs, &spaces_by_name, &models_by_name)?;
+    let semantic_constraints = collect_semantic_constraints(
+        problem,
+        &semantic_specs,
+        &spaces_by_name,
+        &models_by_name,
+        dualize_negatives,
+    )?;
     let mut model_names = Vec::new();
     let mut seen_model_names = HashSet::default();
     for constraint in &semantic_constraints {
@@ -379,6 +388,7 @@ fn collect_semantic_constraints(
     semantic_specs: &[SemanticSpec],
     spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &Model>,
+    dualize_negatives: bool,
 ) -> Result<Vec<SemanticConstraint>, String> {
     let semantics_by_relation = semantic_specs
         .iter()
@@ -391,9 +401,13 @@ fn collect_semantic_constraints(
             DelisCmd::DeclareAxiom(_) => continue,
             _ => continue,
         };
-        if let Some(constraint) =
-            parse_semantic_constraint(term, &semantics_by_relation, spaces_by_name, models_by_name)?
-        {
+        if let Some(constraint) = parse_semantic_constraint(
+            term,
+            &semantics_by_relation,
+            spaces_by_name,
+            models_by_name,
+            dualize_negatives,
+        )? {
             constraints.push(constraint);
         }
     }
@@ -419,6 +433,7 @@ fn parse_semantic_constraint(
     semantics_by_relation: &HashMap<String, &SemanticSpec>,
     spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
+    dualize_negatives: bool,
 ) -> Result<Option<SemanticConstraint>, String> {
     let (negated, term) = match term {
         SyGuSTerm::Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
@@ -442,14 +457,14 @@ fn parse_semantic_constraint(
         .get(&spec.aspect_space)
         .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
     let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name)?;
-    // A negative `(not (P …))` compiles to the dual relation's *acceptance*
-    // (`P.dual ≡ ¬P`); the dual spec was appended to the program above. We
-    // therefore always assert `expected = true`, but against `P.dual` for
-    // negatives. This is sound where naively asserting `P = 0` is vacuous.
-    let (relation, expected) = if negated {
+    // In the crossing/certificate path, a negative `(not (P …))` compiles to
+    // the dual relation's acceptance (`P.dual ≡ ¬P`). In the parent-free direct
+    // BV path, relation bits are exact truth values, so keep the primal relation
+    // and constrain the bit to false.
+    let (relation, expected) = if negated && dualize_negatives {
         (crate::compile::dual::dual_name(&relation), true)
     } else {
-        (relation, true)
+        (relation, !negated)
     };
     Ok(Some(SemanticConstraint {
         relation,
