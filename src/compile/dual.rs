@@ -16,7 +16,7 @@ use std::collections::HashSet;
 
 use sygus_parser::SExpr as Value;
 
-use crate::compile::types::SemanticSpec;
+use crate::compile::types::{SemanticKind, SemanticSpec};
 
 const DUAL_SUFFIX: &str = ".dual";
 
@@ -25,12 +25,17 @@ pub fn dual_name(relation: &str) -> String {
     format!("{relation}{DUAL_SUFFIX}")
 }
 
-/// Dual specs for the whole (mutually-recursive) relation set: each computes
-/// the negation of its primal, with recursive calls redirected to the dual.
+/// Dual specs for the Bool-returning relation set: each computes the negation
+/// of its primal, with recursive Bool calls redirected to the dual.
 pub fn dual_specs(specs: &[SemanticSpec]) -> Vec<SemanticSpec> {
-    let rels: HashSet<String> = specs.iter().map(|s| s.relation.clone()).collect();
+    let rels: HashSet<String> = specs
+        .iter()
+        .filter(|s| s.return_kind == SemanticKind::Bool)
+        .map(|s| s.relation.clone())
+        .collect();
     specs
         .iter()
+        .filter(|s| s.return_kind == SemanticKind::Bool)
         .map(|s| SemanticSpec {
             relation: dual_name(&s.relation),
             term_sort: s.term_sort.clone(),

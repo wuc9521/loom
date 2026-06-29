@@ -5,9 +5,9 @@ use crate::{
         context::CompileContext,
         eval_ctx::{EnvView, SemanticContext},
         expr::sygus_term_to_value,
-        semantics::{interped_bool, interped_value_matches},
+        semantics::{interped_bool, interped_value_matches, Case},
         syntax::{TermConstructor, TermSignature},
-        types::{AspectKey, AspectValue, SemanticKind},
+        types::{AspectKey, AspectValue, DomainBit, SemanticDomain, SemanticKind},
     },
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
@@ -770,13 +770,17 @@ impl<'a> Compiler<'a> {
                     (SemanticKind::Bool, None) if body_is_ground => {
                         self.eval_bool(&case.body, &env)?
                     }
-                    (SemanticKind::FiniteValue { sort: _ }, Some(value)) if body_is_ground => {
-                        self.eval_finite_eq(&case.body, value, &env)?
-                    }
+                    (SemanticKind::FiniteValue { sort: _ }, Some(value)) if body_is_ground => self
+                        .eval_finite_eq(&case.body, value, &env)
+                        .map_err(|err| {
+                            self.constructor_eval_error(cons, domain, bit, case, &err)
+                        })?,
                     (SemanticKind::Bool, None) => self.eval_bool(&case.body, &env)?,
-                    (SemanticKind::FiniteValue { sort: _ }, Some(value)) => {
-                        self.eval_finite_eq(&case.body, value, &env)?
-                    }
+                    (SemanticKind::FiniteValue { sort: _ }, Some(value)) => self
+                        .eval_finite_eq(&case.body, value, &env)
+                        .map_err(|err| {
+                            self.constructor_eval_error(cons, domain, bit, case, &err)
+                        })?,
                     _ => {
                         return Err(format!(
                             "malformed semantic domain bit {} for {}",
@@ -820,6 +824,20 @@ impl<'a> Compiler<'a> {
             self.ctx.eval_cache_hits() + self.ctx.eval_cache_misses(),
         );
         Ok(bool_bits)
+    }
+
+    fn constructor_eval_error(
+        &self,
+        cons: &TermConstructor,
+        domain: &SemanticDomain,
+        bit: &DomainBit,
+        case: &Case,
+        err: &str,
+    ) -> String {
+        format!(
+            "while compiling constructor {} for relation {} ({:?}), bit {} target {:?}, body {}: {}",
+            cons.name, domain.relation, domain.kind, bit.bit, bit.value, case.body, err
+        )
     }
 
     fn eval_bool(&self, expr: &Value, env: &Env) -> Result<BoolExpr, String> {
