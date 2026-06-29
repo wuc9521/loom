@@ -26,7 +26,7 @@ use std::{
 mod cegis;
 use sygus_parser::SyGuSCmd;
 
-fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
+fn solve(delis_file: &mut DelisProg, args: &CLI, input: &str) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
             let program = delis_file.to_chc_ast().map_err(io::Error::other)?;
@@ -89,25 +89,19 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     }
 
     // Both backends solve the same SyGuS BV problem; first-to-finish wins.
-    // The "term enumerator" works at the SyGuSTerm level (fast for small/nullary
-    // problems). The "BV searcher" compiles to BitCircuits and does bottom-up
-    // enumeration with dedup + composition (handles larger problems).
-    let sygus_cmds: Arc<Vec<SyGuSCmd>> =
-        Arc::new(delis_file.to_sygus().map_err(io::Error::other)?);
+    // The closure backend is a separate `delis --enum` child so its heap growth
+    // cannot starve the BV backend running in this process. This keeps closure
+    // available for unrealizability without letting it drag down fast SAT cases.
+    let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(delis_file.to_sygus().map_err(io::Error::other)?);
 
     let (tx, rx) = mpsc::channel();
 
     let term_tx = tx.clone();
-    let term_file = delis_file.clone();
-    let term_cmds = sygus_cmds.clone();
-    const TERM_STACK_BYTES: usize = 64 * 1024 * 1024;
+    let enum_child = spawn_enum_child(args, input)?;
     thread::Builder::new()
         .name("term-enumerator".to_string())
-        .stack_size(TERM_STACK_BYTES)
         .spawn(move || {
-            let result = term_file
-                .solve_by_closure_with_cmds((*term_cmds).clone())
-                .map_err(io::Error::other);
+            let result = solver_stdout(enum_child, "closure backend");
             let _ = term_tx.send(BackendResult::Closure(result));
         })?;
 
@@ -139,12 +133,11 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         let result = rx.recv().map_err(io::Error::other)?;
         pending -= 1;
         match result {
-            BackendResult::Closure(Ok(Some(output))) | BackendResult::Sygus(Ok(output)) => {
+            BackendResult::Closure(Ok(output)) | BackendResult::Sygus(Ok(output)) => {
                 println!("{output}");
                 cleanup_children();
                 return Ok(());
             }
-            BackendResult::Closure(Ok(None)) => {}
             BackendResult::Closure(Err(e)) | BackendResult::Sygus(Err(e)) => {
                 first_error.get_or_insert(e);
             }
@@ -154,6 +147,114 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     Err(first_error
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
+
+fn spawn_enum_child(args: &CLI, input: &str) -> Result<Child, io::Error> {
+    let mut command = Command::new(std::env::current_exe()?);
+    command.arg("--enum");
+    for _ in 0..args.verbose {
+        command.arg("-v");
+    }
+    if !args.optimize {
+        command.arg("--optimize=false");
+    }
+    if !args.bisim {
+        command.arg("--bisim=false");
+    }
+
+    if args.r#in {
+        command.arg("--in").stdin(Stdio::piped());
+    } else {
+        let file = args.file.as_ref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Either provide a file path or use --in to read from stdin",
+            )
+        })?;
+        command.arg(file).stdin(Stdio::null());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::inherit());
+
+    let as_limit = closure_as_limit_bytes()?;
+    if let Some(bytes) = as_limit {
+        log::debug!(
+            "closure child address-space limit: {} MiB",
+            bytes / (1024 * 1024)
+        );
+    }
+    apply_child_address_space_limit(&mut command, as_limit);
+
+    let mut child = command.spawn()?;
+    register_pid(child.id());
+    if args.r#in {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("closure child stdin was not piped"))?;
+        let input = input.as_bytes().to_vec();
+        thread::Builder::new()
+            .name("closure-stdin-writer".to_string())
+            .spawn(move || {
+                let _ = stdin.write_all(&input);
+                let _ = stdin.flush();
+            })?;
+    }
+    Ok(child)
+}
+
+fn closure_as_limit_bytes() -> Result<Option<u64>, io::Error> {
+    const MIB: u64 = 1024 * 1024;
+    if let Ok(raw) = std::env::var("DELIS_CLOSURE_AS_LIMIT_MB") {
+        let mb = raw.parse::<u64>().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("DELIS_CLOSURE_AS_LIMIT_MB must be an integer MiB value: {e}"),
+            )
+        })?;
+        return Ok((mb != 0).then_some(mb.saturating_mul(MIB)));
+    }
+
+    Ok(physical_memory_bytes().map(|bytes| {
+        const GIB: u64 = 1024 * 1024 * 1024;
+        (bytes / 3).clamp(GIB, 32 * GIB)
+    }))
+}
+
+#[cfg(unix)]
+fn physical_memory_bytes() -> Option<u64> {
+    let pages = unsafe { libc::sysconf(libc::_SC_PHYS_PAGES) };
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if pages <= 0 || page_size <= 0 {
+        return None;
+    }
+    Some((pages as u64).saturating_mul(page_size as u64))
+}
+
+#[cfg(not(unix))]
+fn physical_memory_bytes() -> Option<u64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn apply_child_address_space_limit(command: &mut Command, bytes: Option<u64>) {
+    use std::os::unix::process::CommandExt;
+    if let Some(bytes) = bytes {
+        unsafe {
+            command.pre_exec(move || {
+                let limit = libc::rlimit {
+                    rlim_cur: bytes as libc::rlim_t,
+                    rlim_max: bytes as libc::rlim_t,
+                };
+                if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_child_address_space_limit(_command: &mut Command, _bytes: Option<u64>) {}
 
 /// Sound parent path for parent-bearing programs: emit the founded
 /// annotation SyGuS and solve it with dryadsynth-bv, whose const-hole mode
@@ -207,7 +308,7 @@ fn parent_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> {
 }
 
 enum BackendResult {
-    Closure(Result<Option<String>, io::Error>),
+    Closure(Result<String, io::Error>),
     Sygus(Result<String, io::Error>),
 }
 
@@ -516,5 +617,5 @@ fn main() -> Result<(), io::Error> {
     let mut delis_file = DelisProg {
         cmds: delis_cmd_vec,
     };
-    solve(&mut delis_file, &args)
+    solve(&mut delis_file, &args, &input)
 }
