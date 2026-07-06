@@ -871,6 +871,7 @@ fn strip_ann(s: &Sx) -> Sx {
 fn sx_to_string(s: &Sx) -> String {
     match s {
         Sx::Atom(a) => a.clone(),
+        Sx::List(v) if v.len() == 1 => sx_to_string(&v[0]),
         Sx::List(v) => format!(
             "({})",
             v.iter().map(sx_to_string).collect::<Vec<_>>().join(" ")
