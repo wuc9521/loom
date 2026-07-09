@@ -83,6 +83,7 @@ struct Compiler<'a> {
     aspect_eval_cache: RefCell<HashMap<AspectMemoKey, AspectKey>>,
     value_for_sort_cache: RefCell<HashMap<ValueForSortMemoKey, AspectValue>>,
     expr_symbol_cache: RefCell<HashMap<usize, Vec<String>>>,
+    num_table_cache: RefCell<HashMap<(String, String), Option<NumTable>>>,
     optimize: bool,
 }
 
@@ -251,6 +252,7 @@ impl<'a> Compiler<'a> {
             aspect_eval_cache: RefCell::new(HashMap::default()),
             value_for_sort_cache: RefCell::new(HashMap::default()),
             expr_symbol_cache: RefCell::new(HashMap::default()),
+            num_table_cache: RefCell::new(HashMap::default()),
             optimize,
         })
     }
@@ -1391,6 +1393,9 @@ impl<'a> Compiler<'a> {
             let value = self.ctx.eval_model_symbols(model_ref, func, &arg_names);
             return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
         }
+        if let Some(native) = self.try_native_compare(func, args, env)? {
+            return Ok(native);
+        }
         let mut disjuncts = Vec::new();
         for tuple in self
             .ctx
@@ -1452,6 +1457,9 @@ impl<'a> Compiler<'a> {
             && self.cached_eval_int_expr(rhs, env).is_ok()
         {
             return self.eval_int_compare(lhs, rhs, env, |l, r| l == r);
+        }
+        if let Some(native) = self.try_native_equality(lhs, rhs, env)? {
+            return Ok(native);
         }
         self.eval_finite_terms_equal(lhs, rhs, env)
     }
@@ -1893,7 +1901,7 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
         let cases = crate::compile::semantics::parse_cases(&spec.body, &spec.aspect_var)?;
         let entry = locals.entry(spec.relation.clone()).or_default();
         for case in cases.values() {
-            entry.self_recursive |= contains_self_call(&spec.relation, &case.self_var, &case.body);
+            entry.self_recursive |= contains_self_call(&relation_set, &case.self_var, &case.body);
             collect_relation_calls(&case.body, &relation_set, &mut entry.calls);
         }
     }
@@ -1928,18 +1936,30 @@ fn analyze_recurrence(ctx: &CompileContext<'_>) -> Result<RecurrenceAnalysis, St
     })
 }
 
-fn contains_self_call(relation: &str, self_var: &str, expr: &sygus_parser::SExpr) -> bool {
+/// True if the body calls ANY semantic relation on the matched term itself
+/// (not a child). Same-relation self calls (Reg's `re.*`) and cross-relation
+/// same-node calls (e.g. `Str.Eq` consulting `Str.OccAt e`) both require the
+/// SelfClosure encoding: their bits depend on sibling bits of the same node,
+/// which `resolve_closure` unrolls via topo-sorted let-bindings.
+fn contains_self_call(
+    relations: &HashSet<String>,
+    self_var: &str,
+    expr: &sygus_parser::SExpr,
+) -> bool {
     let Some(items) = expr.to_ref_vec() else {
         return false;
     };
-    if items.first().and_then(|item| item.as_symbol()) == Some(relation)
+    if items
+        .first()
+        .and_then(|item| item.as_symbol())
+        .is_some_and(|symbol| relations.contains(symbol))
         && items.get(1).and_then(|item| item.as_symbol()) == Some(self_var)
     {
         return true;
     }
     items
         .iter()
-        .any(|item| contains_self_call(relation, self_var, item))
+        .any(|item| contains_self_call(relations, self_var, item))
 }
 
 fn collect_relation_calls(
@@ -2028,4 +2048,597 @@ fn strongly_connected_components(
         }
     }
     tarjan.components
+}
+
+// ===========================================================================
+// Native-BV templates for numeric finite-universe tables.
+//
+// See docs/native-bv-design.md. A 2-ary model table that is exactly `<=`,
+// `<`, "`<` with the trailing invalid element acting as +infinity on the
+// right", saturating `+`, or saturating `-` over the *listed* universe order
+// is recognized here, and call sites over one-hot value fields emit
+// O(|U|)-size native BV formulas instead of O(|U|^2..3) element expansions.
+// Recognition validates the entire table per model, so emission is exact;
+// anything unrecognized falls back to the existing expansion. Disable with
+// DELIS_NO_NATIVE_TABLES=1 for differential testing.
+// ===========================================================================
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NumTableKind {
+    Ule,
+    Ult,
+    /// `a < b`, except a valid `a` compared with the invalid element is true
+    /// (the generator's `ltl.pos`: invalid length means "longer than B").
+    UltInvBig,
+    AddSat,
+    SubSat,
+}
+
+#[derive(Clone, Debug)]
+struct NumTable {
+    kind: NumTableKind,
+    arg_sort: String,
+    /// Index (in listed universe order) of the invalid/saturation element.
+    inv_idx: Option<usize>,
+}
+
+#[derive(Clone)]
+enum FieldBits {
+    /// Statically-known value (universe index), or no value.
+    Const(Option<usize>),
+    /// One 1-bit Bool atom per universe value, in listed order.
+    Dyn(Vec<SyGuSTerm>),
+}
+
+#[derive(Clone)]
+struct OneHotField {
+    bits: FieldBits,
+    width: usize,
+    inv_idx: Option<usize>,
+}
+
+impl OneHotField {
+    /// Bool atom: the field's value is universe index `i` (false if out of range).
+    fn bit(&self, i: usize) -> SyGuSTerm {
+        if i >= self.width {
+            return bool_lit(false);
+        }
+        match &self.bits {
+            FieldBits::Const(v) => bool_lit(*v == Some(i)),
+            FieldBits::Dyn(bits) => bits[i].clone(),
+        }
+    }
+    fn valid_indices(&self) -> Vec<usize> {
+        (0..self.width).filter(|i| Some(*i) != self.inv_idx).collect()
+    }
+    /// Bool term: the field holds a valid (non-invalid) value.
+    fn valid_term(&self) -> SyGuSTerm {
+        or_terms(self.valid_indices().iter().map(|i| self.bit(*i)).collect())
+    }
+    /// Bool term: the field holds exactly the invalid element.
+    fn invalid_term(&self) -> SyGuSTerm {
+        match self.inv_idx {
+            None => bool_lit(false),
+            Some(i) => self.bit(i),
+        }
+    }
+    /// Bool term: the field holds some value (valid or invalid).
+    fn any_term(&self) -> SyGuSTerm {
+        or_terms((0..self.width).map(|i| self.bit(i)).collect())
+    }
+    /// Bool term: value >= i (valid values only), i.e. OR of bits i.. —
+    /// emitted as a suffix-OR chain so the circuit planner shares the tail.
+    fn suffix_or(&self, i: isize) -> SyGuSTerm {
+        let lo = i.max(0) as usize;
+        let idxs: Vec<usize> = self.valid_indices().into_iter().filter(|v| *v >= lo).collect();
+        // Nested (or b_k (or b_{k+1} ...)) — structurally shared suffixes.
+        let mut acc = bool_lit(false);
+        for v in idxs.into_iter().rev() {
+            let b = self.bit(v);
+            acc = if acc == bool_lit(false) { b } else { or_terms(vec![b, acc]) };
+        }
+        acc
+    }
+}
+
+/// A numeric side restricted to the shapes the generated rules produce:
+/// one dynamic one-hot field plus a constant offset (constants and
+/// saturating +/- against constants fold into the offset).
+struct NumSide {
+    field: Option<OneHotField>,
+    offset: isize,
+    leaves: Vec<OneHotField>,
+    /// Bool terms required for the side to evaluate to a valid element
+    /// (per-node saturation guards; leaf validity tracked via `leaves`).
+    guards: Vec<SyGuSTerm>,
+}
+
+impl NumSide {
+    /// Bool atom: side value == universe index v (assumes all-valid context).
+    fn value_is(&self, v: isize) -> SyGuSTerm {
+        match &self.field {
+            None => bool_lit(v == self.offset),
+            Some(f) => {
+                let idx = v - self.offset;
+                if idx < 0 {
+                    bool_lit(false)
+                } else {
+                    f.bit(idx as usize)
+                }
+            }
+        }
+    }
+    /// Bool term: side value >= v (assumes all-valid context).
+    fn value_ge(&self, v: isize) -> SyGuSTerm {
+        match &self.field {
+            None => bool_lit(self.offset >= v),
+            Some(f) => f.suffix_or(v - self.offset),
+        }
+    }
+    /// Enumerate (index, atom) pairs for possible side values (valid context).
+    fn value_atoms(&self, max_valid: isize) -> Vec<(isize, SyGuSTerm)> {
+        match &self.field {
+            None => {
+                if self.offset >= 0 && self.offset <= max_valid {
+                    vec![(self.offset, bool_lit(true))]
+                } else {
+                    vec![]
+                }
+            }
+            Some(f) => f
+                .valid_indices()
+                .into_iter()
+                .map(|i| (i as isize + self.offset, f.bit(i)))
+                .filter(|(v, _)| *v >= 0 && *v <= max_valid)
+                .collect(),
+        }
+    }
+}
+
+fn bool_lit(value: bool) -> SyGuSTerm {
+    SyGuSTerm::Literal(Literal::Bool(value))
+}
+
+fn and_terms(mut terms: Vec<SyGuSTerm>) -> SyGuSTerm {
+    terms.retain(|t| *t != bool_lit(true));
+    if terms.iter().any(|t| *t == bool_lit(false)) {
+        return bool_lit(false);
+    }
+    match terms.len() {
+        0 => bool_lit(true),
+        1 => terms.pop().unwrap(),
+        _ => Bool::and(terms),
+    }
+}
+
+fn or_terms(mut terms: Vec<SyGuSTerm>) -> SyGuSTerm {
+    terms.retain(|t| *t != bool_lit(false));
+    if terms.iter().any(|t| *t == bool_lit(true)) {
+        return bool_lit(true);
+    }
+    match terms.len() {
+        0 => bool_lit(false),
+        1 => terms.pop().unwrap(),
+        _ => Bool::or(terms),
+    }
+}
+
+impl<'a> Compiler<'a> {
+    fn numeric_table(&self, model_name: &str, func: &str) -> Option<NumTable> {
+        let key = (model_name.to_string(), func.to_string());
+        if let Some(hit) = self.num_table_cache.borrow().get(&key) {
+            return hit.clone();
+        }
+        let result = self.numeric_table_uncached(model_name, func);
+        self.num_table_cache.borrow_mut().insert(key, result.clone());
+        result
+    }
+
+    fn numeric_table_uncached(&self, model_name: &str, func: &str) -> Option<NumTable> {
+        // Rides the -O/--optimize flag (default on). The emitted gadgets are
+        // pure 1-bit and/or/not circuits with shared suffix-OR chains, so
+        // define-funs stay on dryadsynth-bv's bitsliced BitCircuit plan.
+        // DELIS_NO_TABLE_CIRCUITS=1 disables the pass for differential runs.
+        if !self.optimize || std::env::var_os("DELIS_NO_TABLE_CIRCUITS").is_some() {
+            return None;
+        }
+        let sig = self.ctx.func_sigs.get(func)?;
+        if sig.arg_sorts.len() != 2 {
+            return None;
+        }
+        let arg_sort = sig.arg_sorts[0].to_string();
+        if sig.arg_sorts[1].to_string() != arg_sort {
+            return None;
+        }
+        let ret_sort = sig.ret_sort.to_string();
+        let is_bool = ret_sort == "Bool";
+        if !is_bool && ret_sort != arg_sort {
+            return None;
+        }
+        let model = self.ctx.model(model_name).ok()?;
+        let univ = model.univ_for_sort(&arg_sort)?;
+        let n = univ.len();
+        if n < 2 || n > 60 {
+            return None;
+        }
+        let lookup = |a: usize, b: usize| -> Option<String> {
+            model
+                .eval_symbols(func, &[univ[a].clone(), univ[b].clone()])
+                .map(|v| v.to_string())
+        };
+        // Hypotheses: the trailing element is the invalid/saturation target,
+        // or (Bool tables only) there is no invalid element.
+        for inv_idx in [Some(n - 1), None] {
+            let valid = |i: usize| inv_idx != Some(i);
+            let max_valid = match inv_idx {
+                Some(i) => i.checked_sub(1)?,
+                None => n - 1,
+            };
+            let mut kinds: Vec<NumTableKind> = if is_bool {
+                let mut ks = vec![NumTableKind::Ule, NumTableKind::Ult];
+                if inv_idx.is_some() {
+                    ks.push(NumTableKind::UltInvBig);
+                }
+                ks
+            } else if inv_idx.is_some() {
+                vec![NumTableKind::AddSat, NumTableKind::SubSat]
+            } else {
+                vec![]
+            };
+            kinds.retain(|kind| {
+                (0..n).all(|a| {
+                    (0..n).all(|b| {
+                        let out = lookup(a, b);
+                        match kind {
+                            NumTableKind::Ule => {
+                                (out.as_deref() == Some("true"))
+                                    == (valid(a) && valid(b) && a <= b)
+                            }
+                            NumTableKind::Ult => {
+                                (out.as_deref() == Some("true"))
+                                    == (valid(a) && valid(b) && a < b)
+                            }
+                            NumTableKind::UltInvBig => {
+                                (out.as_deref() == Some("true"))
+                                    == (valid(a) && (!valid(b) || a < b))
+                            }
+                            NumTableKind::AddSat => {
+                                let expect = if valid(a) && valid(b) && a + b <= max_valid {
+                                    &univ[a + b]
+                                } else {
+                                    &univ[inv_idx.unwrap()]
+                                };
+                                out.as_deref() == Some(expect.as_str())
+                            }
+                            NumTableKind::SubSat => {
+                                let expect = if valid(a) && valid(b) && a >= b {
+                                    &univ[a - b]
+                                } else {
+                                    &univ[inv_idx.unwrap()]
+                                };
+                                out.as_deref() == Some(expect.as_str())
+                            }
+                        }
+                    })
+                })
+            });
+            if let Some(kind) = kinds.first() {
+                return Some(NumTable {
+                    kind: *kind,
+                    arg_sort,
+                    inv_idx,
+                });
+            }
+        }
+        None
+    }
+
+    /// One-hot value field for `expr` over `univ` (listed order, LSB first).
+    fn onehot_field(
+        &self,
+        expr: &Value,
+        sort: &str,
+        univ: &[String],
+        inv_idx: Option<usize>,
+        env: &Env,
+    ) -> Option<OneHotField> {
+        let width = univ.len();
+        if let Ok(value) = self.cached_eval_value(expr, env) {
+            if let AspectValue::Univ { sort: s, name } = &value {
+                if s.as_ref() == sort {
+                    let idx = univ.iter().position(|u| u == name.as_ref())?;
+                    return Some(OneHotField {
+                        bits: FieldBits::Const(Some(idx)),
+                        width,
+                        inv_idx,
+                    });
+                }
+            }
+            return None;
+        }
+        let items = expr.to_ref_vec()?;
+        if items.len() != 3 {
+            return None;
+        }
+        let relation = items[0].as_symbol()?;
+        if !self.ctx.has_relation(relation) {
+            return None;
+        }
+        let domain = self.ctx.domain_for_relation(relation).ok()?;
+        let SemanticKind::FiniteValue { sort: ret_sort } = &domain.kind else {
+            return None;
+        };
+        if ret_sort != sort {
+            return None;
+        }
+        let child = items[1].as_symbol()?;
+        let binding = env.children.get(child)?;
+        let aspect = self.cached_eval_aspect(items[2], relation, env).ok()?;
+        let mut atoms = Vec::with_capacity(width);
+        for name in univ {
+            let value = AspectValue::Univ {
+                sort: Arc::from(sort),
+                name: Arc::from(name.as_str()),
+            };
+            let bit = self.bit_for(relation, &aspect, Some(&value)).ok()?;
+            atoms.push(bit_is_one(extract_arg_bit(binding.arg_idx, bit)));
+        }
+        Some(OneHotField {
+            bits: FieldBits::Dyn(atoms),
+            width,
+            inv_idx,
+        })
+    }
+
+    /// Parse `expr` as a numeric side: a leaf field, or nested saturating
+    /// +/- applications where all but one operand folds to a constant.
+    fn parse_num_side(
+        &self,
+        expr: &Value,
+        model_name: &str,
+        sort: &str,
+        univ: &[String],
+        inv_idx: Option<usize>,
+        env: &Env,
+        depth: usize,
+    ) -> Option<NumSide> {
+        if depth > 4 {
+            return None;
+        }
+        let max_valid = match inv_idx {
+            Some(i) => i.checked_sub(1)? as isize,
+            None => univ.len() as isize - 1,
+        };
+        if let Some(field) = self.onehot_field(expr, sort, univ, inv_idx, env) {
+            return Some(match &field.bits {
+                FieldBits::Const(Some(idx)) if Some(*idx) != inv_idx => NumSide {
+                    field: None,
+                    offset: *idx as isize,
+                    leaves: vec![],
+                    guards: vec![],
+                },
+                FieldBits::Const(_) => NumSide {
+                    // constant invalid/no value: no valid evaluation
+                    field: None,
+                    offset: -1,
+                    leaves: vec![field],
+                    guards: vec![bool_lit(false)],
+                },
+                FieldBits::Dyn(_) => NumSide {
+                    field: Some(field.clone()),
+                    offset: 0,
+                    leaves: vec![field],
+                    guards: vec![],
+                },
+            });
+        }
+        let items = expr.to_ref_vec()?;
+        if items.len() != 3 {
+            return None;
+        }
+        let func = items[0].as_symbol()?;
+        let table = self.numeric_table(model_name, func)?;
+        if table.arg_sort != sort || table.inv_idx != inv_idx {
+            return None;
+        }
+        let lhs = self.parse_num_side(items[1], model_name, sort, univ, inv_idx, env, depth + 1)?;
+        let rhs = self.parse_num_side(items[2], model_name, sort, univ, inv_idx, env, depth + 1)?;
+        // only one dynamic field per side is supported
+        let (mut side, other_offset, negate_other) = match (
+            &lhs.field,
+            &rhs.field,
+            table.kind,
+        ) {
+            (_, None, NumTableKind::AddSat) => (lhs, rhs.offset, false),
+            (None, _, NumTableKind::AddSat) => (rhs, lhs.offset, false),
+            (_, None, NumTableKind::SubSat) => (lhs, rhs.offset, true),
+            _ => return None,
+        };
+        if negate_other {
+            // value = side - other_offset; valid iff side >= other_offset
+            let guard = side_ge_const(&side, other_offset);
+            side.guards.push(guard);
+            side.offset -= other_offset;
+        } else {
+            side.offset += other_offset;
+            // stepwise saturation: this node's sum must stay <= max_valid
+            let guard = side_le_const(&side, max_valid);
+            side.guards.push(guard);
+        }
+        Some(side)
+    }
+
+    fn side_all_valid(&self, side: &NumSide) -> SyGuSTerm {
+        let mut conjuncts: Vec<SyGuSTerm> =
+            side.leaves.iter().map(|f| f.valid_term()).collect();
+        conjuncts.extend(side.guards.iter().cloned());
+        and_terms(conjuncts)
+    }
+
+    /// Bool term: the side evaluates to the invalid element (table
+    /// propagation: some leaf invalid while all leaves hold a value, or all
+    /// valid but a saturation guard fails).
+    fn side_invalid(&self, side: &NumSide) -> SyGuSTerm {
+        let any_all = and_terms(side.leaves.iter().map(|f| f.any_term()).collect());
+        let leaf_inv = or_terms(side.leaves.iter().map(|f| f.invalid_term()).collect());
+        let leaf_valid = and_terms(side.leaves.iter().map(|f| f.valid_term()).collect());
+        let guard_broken = or_terms(
+            side.guards
+                .iter()
+                .map(|g| match g {
+                    t if *t == bool_lit(true) => bool_lit(false),
+                    t if *t == bool_lit(false) => bool_lit(true),
+                    t => Bool::not(t.clone()),
+                })
+                .collect(),
+        );
+        and_terms(vec![
+            any_all,
+            or_terms(vec![leaf_inv, and_terms(vec![leaf_valid, guard_broken])]),
+        ])
+    }
+
+    /// Native template for a recognized comparison table applied to
+    /// parseable sides. Returns None to fall back to element expansion.
+    fn try_native_compare(
+        &self,
+        func: &str,
+        args: &[&Value],
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        if args.len() != 2 {
+            return Ok(None);
+        }
+        let model_name = self.ctx.current_model(env)?.to_string();
+        let Some(table) = self.numeric_table(&model_name, func) else {
+            return Ok(None);
+        };
+        if !matches!(
+            table.kind,
+            NumTableKind::Ule | NumTableKind::Ult | NumTableKind::UltInvBig
+        ) {
+            return Ok(None);
+        }
+        let model = self.ctx.model(&model_name)?;
+        let Some(univ) = model.univ_for_sort(&table.arg_sort) else {
+            return Ok(None);
+        };
+        let parse = |expr: &Value| {
+            self.parse_num_side(expr, &model_name, &table.arg_sort, &univ, table.inv_idx, env, 0)
+        };
+        let (Some(l), Some(r)) = (parse(args[0]), parse(args[1])) else {
+            return Ok(None);
+        };
+        let max_valid = match table.inv_idx {
+            Some(i) => i as isize - 1,
+            None => univ.len() as isize - 1,
+        };
+        let term = match table.kind {
+            NumTableKind::Ule | NumTableKind::Ult => {
+                let strict = table.kind == NumTableKind::Ult;
+                let cmp = compare_sides(&l, &r, strict, max_valid);
+                and_terms(vec![self.side_all_valid(&l), self.side_all_valid(&r), cmp])
+            }
+            NumTableKind::UltInvBig => {
+                let cmp = compare_sides(&l, &r, true, max_valid);
+                and_terms(vec![
+                    self.side_all_valid(&l),
+                    or_terms(vec![
+                        self.side_invalid(&r),
+                        and_terms(vec![self.side_all_valid(&r), cmp]),
+                    ]),
+                ])
+            }
+            _ => unreachable!(),
+        };
+        Ok(Some(match term {
+            t if t == bool_lit(true) => BoolExpr::Const(true),
+            t if t == bool_lit(false) => BoolExpr::Const(false),
+            t => BoolExpr::Dynamic(t),
+        }))
+    }
+
+    /// Native template for `(= lhs rhs)` where at least one side applies a
+    /// recognized AddSat/SubSat function.
+    fn try_native_equality(
+        &self,
+        lhs: &Value,
+        rhs: &Value,
+        env: &Env,
+    ) -> Result<Option<BoolExpr>, String> {
+        let head_table = |expr: &Value| -> Option<NumTable> {
+            let items = expr.to_ref_vec()?;
+            let func = items.first()?.as_symbol()?;
+            let model_name = self.ctx.current_model(env).ok()?.to_string();
+            let table = self.numeric_table(&model_name, func)?;
+            matches!(table.kind, NumTableKind::AddSat | NumTableKind::SubSat)
+                .then_some(table)
+        };
+        let Some(table) = head_table(lhs).or_else(|| head_table(rhs)) else {
+            return Ok(None);
+        };
+        let model_name = self.ctx.current_model(env)?.to_string();
+        let model = self.ctx.model(&model_name)?;
+        let Some(univ) = model.univ_for_sort(&table.arg_sort) else {
+            return Ok(None);
+        };
+        let parse = |expr: &Value| {
+            self.parse_num_side(expr, &model_name, &table.arg_sort, &univ, table.inv_idx, env, 0)
+        };
+        let (Some(l), Some(r)) = (parse(lhs), parse(rhs)) else {
+            return Ok(None);
+        };
+        let max_valid = match table.inv_idx {
+            Some(i) => i as isize - 1,
+            None => univ.len() as isize - 1,
+        };
+        // valid & equal: distribute over the smaller side's atoms
+        let eq = or_terms(
+            l.value_atoms(max_valid)
+                .into_iter()
+                .map(|(v, a)| and_terms(vec![a, r.value_is(v)]))
+                .collect(),
+        );
+        let both_valid = and_terms(vec![
+            self.side_all_valid(&l),
+            self.side_all_valid(&r),
+            eq,
+        ]);
+        let both_invalid = and_terms(vec![self.side_invalid(&l), self.side_invalid(&r)]);
+        let term = or_terms(vec![both_valid, both_invalid]);
+        Ok(Some(match term {
+            t if t == bool_lit(true) => BoolExpr::Const(true),
+            t if t == bool_lit(false) => BoolExpr::Const(false),
+            t => BoolExpr::Dynamic(t),
+        }))
+    }
+}
+
+/// side >= c (valid context), gate-level.
+fn side_ge_const(side: &NumSide, c: isize) -> SyGuSTerm {
+    side.value_ge(c)
+}
+
+/// side <= c (valid context), gate-level: NOT (side >= c+1).
+fn side_le_const(side: &NumSide, c: isize) -> SyGuSTerm {
+    match side.value_ge(c + 1) {
+        t if t == bool_lit(false) => bool_lit(true),
+        t if t == bool_lit(true) => bool_lit(false),
+        t => Bool::not(t),
+    }
+}
+
+/// l < r or l <= r (valid context): OR over l's atoms of r's suffix-OR,
+/// index-shifted; the shared suffix chains keep the circuit O(n).
+fn compare_sides(l: &NumSide, r: &NumSide, strict: bool, max_valid: isize) -> SyGuSTerm {
+    let bump = if strict { 1 } else { 0 };
+    match (&l.field, &r.field) {
+        (None, _) => r.value_ge(l.offset + bump),
+        (Some(_), _) => or_terms(
+            l.value_atoms(max_valid)
+                .into_iter()
+                .map(|(v, a)| and_terms(vec![a, r.value_ge(v + bump)]))
+                .collect(),
+        ),
+    }
 }
