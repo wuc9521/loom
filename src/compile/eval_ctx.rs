@@ -1,6 +1,6 @@
 use crate::{
     compile::{
-        semantics::Case,
+        semantics::{interped_bool, Case},
         types::{
             AspectKey, AspectSpace, AspectValue, SemanticDomain, SemanticKind, SemanticProgram,
             SemanticSpec,
@@ -613,7 +613,27 @@ impl<'a> SemanticContext<'a> {
             "<=" if items.len() == 3 => {
                 Ok(self.eval_int_expr(items[1], env)? <= self.eval_int_expr(items[2], env)?)
             }
-            _ => Err(String::new()),
+            _ => {
+                // A concrete test on the model: a declared model function
+                // returning Bool applied to ground arguments (e.g. `leq`,
+                // `succ`). The paper's δ evaluates such tests immediately, so
+                // they must be recognized as constants here too — otherwise a
+                // model predicate over aspect fields is treated as dynamic and
+                // its truth pattern leaks absolute positions into the bisim
+                // signature. Non-model ops and non-ground args stay dynamic
+                // (Err), exactly as before.
+                let sig = self.func_sigs.get(op).ok_or_else(String::new)?;
+                if sig.ret_sort.to_string() != "Bool" || sig.arg_sorts.len() != items.len() - 1 {
+                    return Err(String::new());
+                }
+                let model_name = self.current_model(env)?.to_string();
+                let model = self.model(&model_name)?;
+                let mut arg_names = Vec::with_capacity(items.len() - 1);
+                for arg in &items[1..] {
+                    arg_names.push(self.eval_value(arg, env)?.display());
+                }
+                Ok(model.eval_symbols(op, &arg_names).is_some_and(interped_bool))
+            }
         }
     }
 

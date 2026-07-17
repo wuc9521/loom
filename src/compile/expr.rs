@@ -1,4 +1,7 @@
-use crate::{compile::types::AspectValue, lang::model::Model};
+use crate::{
+    compile::{semantics::interped_bool, types::AspectValue},
+    lang::model::Model,
+};
 use rustc_hash::FxHashMap as HashMap;
 use sygus_parser::SExpr as Value;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
@@ -108,7 +111,30 @@ pub fn eval_bool(
                 _ => unreachable!(),
             }
         }
-        _ => Err(format!("unsupported boolean operator {op} in {expr}")),
+        _ => {
+            // A declared model Bool predicate (e.g. `leq`, `succ`) applied to
+            // aspect-field values in a :where guard. Resolve the arguments to
+            // their universe-element names and consult the current model's
+            // interpretation. This lets the self-contained `Pos` encoding prune
+            // its aspect space (`:where (leq i j)`) without the integer layer.
+            // The built-in operators above are unaffected.
+            let model_name = env.iter().find_map(|(_, value)| match value {
+                AspectValue::Model(name) => Some(name.as_str()),
+                _ => None,
+            });
+            if let Some(model_name) = model_name {
+                if let Some(model) = models.get(model_name) {
+                    let arg_names = list[1..]
+                        .iter()
+                        .map(|arg| raw_value_expr(arg, env).map(|value| value.display()))
+                        .collect::<Result<Vec<_>, String>>()?;
+                    return Ok(model
+                        .eval_symbols(op, &arg_names)
+                        .is_some_and(interped_bool));
+                }
+            }
+            Err(format!("unsupported boolean operator {op} in {expr}"))
+        }
     }
 }
 

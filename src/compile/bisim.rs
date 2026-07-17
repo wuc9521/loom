@@ -614,14 +614,51 @@ impl<'a> Refiner<'a> {
         // `or`/`not`/`=` arms) and ~67% of `eval_bool_value` probes (no
         // `+`/`-`/`size`/model-fn-call arms) on test_col.
         match op {
-            "and" | "or" => {
-                if self.try_emit_bool(out, expr, env) {
-                    return;
-                }
-                out.write_u8(if op == "and" { b'A' } else { b'O' });
-                out.write_u8(b'(');
+            "and" => {
+                // Paper δ: concrete (constant) conjuncts evaluate immediately.
+                // A `true` conjunct is ∧-identity and drops; a `false` conjunct
+                // annihilates; only the dynamic conjuncts (state references)
+                // remain. Sort+dedup so the signature is the *set* of operands
+                // (∧ is commutative and idempotent).
+                let mut dyn_hashes = Vec::new();
                 for arg in &items[1..] {
-                    let sub = self.walk_hash(arg, env, classes, cache);
+                    match self.ctx.eval_bool_value(arg, env) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            out.write_u8(b'F');
+                            return;
+                        }
+                        Err(_) => dyn_hashes.push(self.walk_hash(arg, env, classes, cache)),
+                    }
+                }
+                dyn_hashes.sort_unstable();
+                dyn_hashes.dedup();
+                out.write_u8(b'A');
+                out.write_u8(b'(');
+                for sub in dyn_hashes {
+                    out.write_u64(sub);
+                    out.write_u8(b',');
+                }
+                out.write_u8(b')');
+            }
+            "or" => {
+                // Dual of `and`: `false` drops (∨-identity), `true` annihilates.
+                let mut dyn_hashes = Vec::new();
+                for arg in &items[1..] {
+                    match self.ctx.eval_bool_value(arg, env) {
+                        Ok(false) => {}
+                        Ok(true) => {
+                            out.write_u8(b'T');
+                            return;
+                        }
+                        Err(_) => dyn_hashes.push(self.walk_hash(arg, env, classes, cache)),
+                    }
+                }
+                dyn_hashes.sort_unstable();
+                dyn_hashes.dedup();
+                out.write_u8(b'O');
+                out.write_u8(b'(');
+                for sub in dyn_hashes {
                     out.write_u64(sub);
                     out.write_u8(b',');
                 }
@@ -783,19 +820,22 @@ impl<'a> Refiner<'a> {
             .filter(|parts| parts.len() == 2)
             .and_then(|parts| parts[0].as_symbol().map(|n| (n.to_string(), parts[1])));
         if let Some((name, range_expr)) = parsed {
-            // Push the binding before walking the body, then restore. Avoids
-            // cloning the whole WalkEnv per iteration (hot for nested quants).
-            // The body is hashed via walk_hash so that repeated bindings of
-            // the bound var with the same free-var snapshot reuse cached
-            // results.
+            // Paper δ: `∃v:σ.E` / `∀v:σ.E` expand to `⋁_{d∈D_σ} E[v↦d]` /
+            // `⋀_{d} E[v↦d]`, so the bound witness `d` disappears. A body that
+            // evaluates to a constant folds: for ∃, `false` witnesses drop
+            // (∨-identity) and any `true` witness annihilates to ⊤; dually ∀.
+            // The surviving dynamic bodies form a set (sort+dedup), never keyed
+            // by the witness value — so states differing only in absolute
+            // witness positions merge.
+            let mut dyn_hashes = Vec::new();
+            let mut annihilated = false;
             for val in self.expand_range(range_expr, env) {
                 let prev = env.values.insert(name.clone(), val.clone());
-                out.write_u8(b'[');
-                self.emit_value(out, &val);
-                out.write_u8(b':');
-                let sub = self.walk_hash(body, env, classes, cache);
-                out.write_u64(sub);
-                out.write_u8(b']');
+                match (quant, self.ctx.eval_bool_value(body, env)) {
+                    ("exists", Ok(true)) | ("forall", Ok(false)) => annihilated = true,
+                    ("exists", Ok(false)) | ("forall", Ok(true)) => {}
+                    _ => dyn_hashes.push(self.walk_hash(body, env, classes, cache)),
+                }
                 match prev {
                     Some(p) => {
                         env.values.insert(name.clone(), p);
@@ -803,6 +843,19 @@ impl<'a> Refiner<'a> {
                     None => {
                         env.values.remove(&name);
                     }
+                }
+                if annihilated {
+                    break;
+                }
+            }
+            if annihilated {
+                out.write_u8(if quant == "exists" { b'T' } else { b'F' });
+            } else {
+                dyn_hashes.sort_unstable();
+                dyn_hashes.dedup();
+                for sub in dyn_hashes {
+                    out.write_u64(sub);
+                    out.write_u8(b',');
                 }
             }
         } else {
