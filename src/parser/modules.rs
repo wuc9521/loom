@@ -82,8 +82,44 @@ impl ModuleLoader {
 }
 
 pub fn load_module_file(path: impl AsRef<Path>) -> Result<String, io::Error> {
-    ModuleLoader::default().load(path.as_ref())
+    let expanded = ModuleLoader::default().load(path.as_ref())?;
+    prune_unused_models(&expanded)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
 }
+
+/// Drop `(define-model NAME …)` forms whose NAME is referenced nowhere else.
+/// Models are leaves (referenced only by name in constraints), and the compiler
+/// already builds only referenced models (`collect_loaded_models`), so parsing
+/// the rest is pure waste. General across suites; keeps a model on any doubt.
+fn prune_unused_models(text: &str) -> Result<String, String> {
+    let forms = top_level_forms(text)?;
+    let model_name = |t: &str| {
+        let toks = shallow_tokens(t).ok()?;
+        (toks.first().map(String::as_str) == Some("define-model"))
+            .then(|| toks.get(1).cloned())
+            .flatten()
+    };
+    // Identifiers used by every non-model form (constraints, theory, …).
+    let mut referenced: HashSet<String> = HashSet::default();
+    for form in &forms {
+        if model_name(&form.text).is_some() {
+            continue;
+        }
+        for tok in form.text.replace(['(', ')'], " ").split_whitespace() {
+            referenced.insert(tok.to_string());
+        }
+    }
+    let kept: Vec<&str> = forms
+        .iter()
+        .filter(|form| match model_name(&form.text) {
+            Some(name) => referenced.contains(&name),
+            None => true,
+        })
+        .map(|form| form.text.as_str())
+        .collect();
+    Ok(kept.join("\n"))
+}
+
 
 fn canonicalize_existing(path: &Path) -> Result<PathBuf, io::Error> {
     path.canonicalize().map_err(|e| {
@@ -119,6 +155,17 @@ fn validate_provides(path: &Path, source: &ModuleSource) -> Result<(), io::Error
     if source.provides.is_empty() {
         return Ok(());
     }
+    // Fast path: names readable from a shallow form scan (no full parse). This
+    // covers the expensive case — model pools, whose provides are all
+    // `define-model` names — so a multi-MB pool is never fully parsed just to
+    // lint its provides. If every provided name is accounted for, we're done.
+    let shallow = shallow_defined_names(&source.body);
+    if source.provides.iter().all(|name| shallow.contains(name)) {
+        return Ok(());
+    }
+    // Fallback (small theory/signature files only): a provided name comes from
+    // a form the shallow scan doesn't decode (term-type constructors,
+    // semantics relations), so authoritatively re-parse to avoid false errors.
     let prog = DelisProg::parse(&source.body, None).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -147,6 +194,37 @@ fn validate_provides(path: &Path, source: &ModuleSource) -> Result<(), io::Error
             ),
         ))
     }
+}
+
+/// Names defined by the forms whose defined symbol is the second token
+/// (`declare-sort`/`declare-fun`/`define-fun`/`synth-fun`/`define-aspects`/
+/// `define-model`). Cheap (no full parse); forms it doesn't decode
+/// (term-types, semantics) just don't contribute, and `validate_provides`
+/// falls back to a full parse when a provided name isn't found here.
+fn shallow_defined_names(body: &str) -> HashSet<String> {
+    let mut names = HashSet::default();
+    let Ok(forms) = top_level_forms(body) else {
+        return names;
+    };
+    for form in &forms {
+        let Ok(tokens) = shallow_tokens(&form.text) else {
+            continue;
+        };
+        if let (Some(head), Some(name)) = (tokens.first(), tokens.get(1)) {
+            if matches!(
+                head.as_str(),
+                "declare-sort"
+                    | "declare-fun"
+                    | "define-fun"
+                    | "synth-fun"
+                    | "define-aspects"
+                    | "define-model"
+            ) {
+                names.insert(name.clone());
+            }
+        }
+    }
+    names
 }
 
 fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
@@ -388,5 +466,28 @@ mod tests {
         assert!(err
             .to_string()
             .contains("provides undefined name(s): missing"));
+    }
+
+    #[test]
+    fn prunes_unreferenced_models_keeps_used_ones() {
+        let dir = temp_dir();
+        fs::create_dir_all(&dir).expect("should create temporary test directory");
+        fs::write(
+            dir.join("pool.sl"),
+            "(provide wA wB)\n\
+             (define-model wA (interp-sort Pos ($0)))\n\
+             (define-model wB (interp-sort Pos ($0)))\n",
+        )
+        .expect("write pool");
+        fs::write(
+            dir.join("top.sl"),
+            "(require \"pool.sl\")\n(constraint (P wA))\n",
+        )
+        .expect("write top");
+
+        let out = load_module_file(dir.join("top.sl")).expect("load");
+        assert!(out.contains("define-model wA"), "referenced model kept");
+        assert!(!out.contains("define-model wB"), "unused model pruned");
+        assert!(out.contains("(constraint (P wA))"));
     }
 }

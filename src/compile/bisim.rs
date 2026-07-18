@@ -1,16 +1,13 @@
 use crate::compile::eval_ctx::{EnvView, SemanticContext};
 use crate::compile::semantics::{parse_cases, Case};
 use crate::compile::types::{AspectKey, AspectValue, DomainBit, SemanticKind, SemanticProgram};
-use crate::lang::model::{InterpedValue, Model};
 use crate::parser::DelisProg;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet, FxHasher};
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
-use sygus_parser::Literal;
 use sygus_parser::SExpr as Value;
 
-type Fingerprint = Vec<u8>;
 type ClassId = usize;
 type ClassKey = (String, AspectKey, Option<AspectValue>);
 type SigHash = u64;
@@ -25,69 +22,6 @@ type WalkKey = (usize, u64);
 thread_local! {
     static WALK_CACHE_HITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static WALK_CACHE_MISSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-impl AspectKey {
-    /// Per-position leaf-function readout. Used only to seed the initial
-    /// partition; refinement is what guarantees soundness.
-    pub fn fingerprint(&self, model: &Model, func_names: &[String]) -> Fingerprint {
-        let mut fp = Vec::new();
-
-        for (name, value) in &self.fields {
-            match value {
-                AspectValue::Int(_) | AspectValue::Model(_) => {}
-                AspectValue::Symbol(s) => {
-                    fp.extend_from_slice(name.as_bytes());
-                    fp.push(b'=');
-                    fp.extend_from_slice(s.as_bytes());
-                    fp.push(b';');
-                }
-                AspectValue::Univ { sort, name: n } => {
-                    fp.extend_from_slice(name.as_bytes());
-                    fp.push(b'=');
-                    fp.extend_from_slice(sort.as_bytes());
-                    fp.push(b':');
-                    fp.extend_from_slice(n.as_bytes());
-                    fp.push(b';');
-                }
-            }
-        }
-
-        let int_fields: Vec<usize> = self
-            .fields
-            .iter()
-            .filter_map(|(_, v)| match v {
-                AspectValue::Int(i) => Some(*i),
-                _ => None,
-            })
-            .collect();
-
-        let (start, end) = match int_fields.as_slice() {
-            [i, j] => (*i, *j),
-            [i] => (*i, *i + 1),
-            _ => return fp,
-        };
-
-        fp.push(b'[');
-        for pos in start..end {
-            let pos_name = format!("${pos}");
-            for func in func_names {
-                match model.eval_symbols(func, &[pos_name.clone()]) {
-                    Some(InterpedValue::Literal(Literal::Bool(true))) => fp.push(b'1'),
-                    Some(InterpedValue::Literal(Literal::Bool(false))) => fp.push(b'0'),
-                    Some(InterpedValue::UnivElem(e)) => {
-                        fp.extend_from_slice(e.name.as_bytes());
-                        fp.push(b',');
-                    }
-                    Some(_) => fp.push(b'?'),
-                    None => fp.push(b'_'),
-                }
-            }
-            fp.push(b'|');
-        }
-        fp.push(b']');
-        fp
-    }
 }
 
 impl SemanticProgram {
@@ -121,22 +55,30 @@ impl SemanticProgram {
             }
         };
 
-        let func_names: Vec<String> = ctx.func_sigs.keys().cloned().collect();
+        let domain_kinds: HashMap<String, SemanticKind> = self
+            .domains
+            .iter()
+            .map(|d| (d.relation.clone(), d.kind.clone()))
+            .collect();
+        let refiner = Refiner::new(&ctx, &cases_by_relation, &domain_kinds);
 
-        // Initial partition: leaf fingerprint per (relation, value).
+        // Initial partition ("footprint" seed): group states by their own
+        // transition signature with all sub-state references blanked (an empty
+        // class map makes every reference resolve to one placeholder). This is
+        // the essence of a content fingerprint — states that observe the same
+        // concrete model tests seed together — but computed uniformly for any
+        // boundary sort via the same `signature`/`walk` refinement uses, so
+        // there is no per-encoding (Int vs Univ) special-casing. Bisimilar
+        // states always share a footprint, so this is a sound over-approxi-
+        // mation and refinement only needs to split from here.
+        let empty: HashMap<ClassKey, ClassId> = HashMap::default();
         let mut classes: HashMap<ClassKey, ClassId> = HashMap::default();
-        let mut leaf_to_class: HashMap<(String, Fingerprint, Option<AspectValue>), ClassId> =
-            HashMap::default();
+        let mut seed_to_class: HashMap<SigHash, ClassId> = HashMap::default();
         for domain in &self.domains {
             for bit in &domain.bits {
-                let fp = ctx
-                    .models
-                    .get(&bit.aspect.model)
-                    .map(|m| bit.aspect.fingerprint(m, &func_names))
-                    .unwrap_or_default();
-                let key = (domain.relation.clone(), fp, bit.value.clone());
-                let next_id = leaf_to_class.len();
-                let class = *leaf_to_class.entry(key).or_insert(next_id);
+                let seed = refiner.signature(&domain.relation, &bit.aspect, &bit.value, &empty);
+                let next_id = seed_to_class.len();
+                let class = *seed_to_class.entry(seed).or_insert(next_id);
                 classes.insert(
                     (
                         domain.relation.clone(),
@@ -147,13 +89,6 @@ impl SemanticProgram {
                 );
             }
         }
-
-        let domain_kinds: HashMap<String, SemanticKind> = self
-            .domains
-            .iter()
-            .map(|d| (d.relation.clone(), d.kind.clone()))
-            .collect();
-        let refiner = Refiner::new(&ctx, &cases_by_relation, &domain_kinds);
 
         // Refinement only ever *splits* classes — it cannot merge two
         // already-distinct classes. So the only aspects whose class can
