@@ -30,7 +30,7 @@
 //! via the dryadsynth-bv `constant-via-smt` branch.
 
 use crate::backends::smt2::ast::{HornDecl, HornProg, HornRule, HornTerm as HT, PredicatePolarity};
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::fxmap::{HashMap, HashSet};
 #[cfg(test)]
 use std::collections::BTreeSet;
 

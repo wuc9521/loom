@@ -1,5 +1,5 @@
 use crate::parser::ast::{DelisCmd, DelisProg};
-use rustc_hash::FxHashSet as HashSet;
+use crate::fxmap::HashSet;
 use std::{
     fs, io,
     path::{Path, PathBuf},

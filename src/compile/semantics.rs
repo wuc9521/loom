@@ -1,5 +1,5 @@
 use crate::{compile::types::AspectValue, lang::model::InterpedValue};
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use sygus_parser::Literal;
 use sygus_parser::SExpr as Value;
 

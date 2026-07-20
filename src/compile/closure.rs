@@ -1,5 +1,5 @@
 use crate::{parser::DelisProg, sorts::SortEnv};
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::fxmap::{HashMap, HashSet};
 use std::time::Instant;
 use sygus_parser::{GrammarDef, Identifier, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSTerm};
 

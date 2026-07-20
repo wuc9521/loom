@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 
 use sygus_parser::{Sort, SyGuSCmd};
 

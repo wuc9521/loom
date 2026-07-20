@@ -1,5 +1,5 @@
 use derive_more::Display;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::fxmap::{HashMap, HashSet};
 use sygus_parser::{DTConsDecl, Identifier, Sort, SortDecl, SyGuSTerm};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Display)]

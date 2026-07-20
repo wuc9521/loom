@@ -11,7 +11,7 @@ use crate::{
     },
     parser::{ast::TermTypes, DelisCmd, DelisProg},
 };
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::fxmap::{HashMap, HashSet};
 use std::{
     cell::RefCell,
     sync::Arc,

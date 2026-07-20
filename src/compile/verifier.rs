@@ -1,5 +1,5 @@
 use crate::sorts::SortEnv;
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use sygus_parser::{Literal, SortedVar, SyGuSCmd, SyGuSFile, SyGuSTerm};
 
 use super::eval::{

@@ -1,5 +1,5 @@
 use crate::backends::smt2::ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm};
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use std::collections::BTreeMap;
 use sygus_parser::{Bool, Literal, SExpr, Sort, SortedVar, SyGuSTerm, Term};
 

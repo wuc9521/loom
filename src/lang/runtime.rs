@@ -1,7 +1,7 @@
 use crate::lang::model::{InterpSort, Model};
 use crate::lang::signature::FuncSig;
 use crate::parser::ast::DelisCmd;
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use sygus_parser::SyGuSCmd;
 
 #[derive(Debug, Clone)]

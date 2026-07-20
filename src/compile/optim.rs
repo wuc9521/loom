@@ -1,5 +1,5 @@
 use super::bexpr::BoolExpr;
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use sygus_parser::{BitVec, BuiltinOp, Literal, SyGuSTerm, Term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

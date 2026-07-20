@@ -8,7 +8,7 @@
 //! the reasoning behind them.
 
 use delis::{compile, parser::DelisProg};
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use delis::fxmap::{HashMap, HashSet};
 use std::{io, time::Instant};
 use sygus_parser::SyGuSCmd;
 

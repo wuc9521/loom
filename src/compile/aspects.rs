@@ -10,7 +10,7 @@ use crate::{
     parser::{DelisCmd, DelisProg},
 };
 use itertools::Itertools;
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use crate::fxmap::{HashMap, HashSet};
 use std::sync::Arc;
 use sygus_parser::SExpr as Value;
 use sygus_parser::{Identifier, SyGuSTerm};

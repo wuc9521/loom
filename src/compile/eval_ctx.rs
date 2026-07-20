@@ -13,7 +13,7 @@ use crate::{
     parser::{DelisCmd, DelisProg},
 };
 use itertools::Itertools;
-use rustc_hash::{FxHashMap as HashMap, FxHasher};
+use crate::fxmap::{HashMap, FxHasher};
 use std::cell::{Cell, RefCell};
 use std::hash::Hasher;
 use std::sync::Arc;
@@ -29,13 +29,6 @@ struct EvalKey {
     cache_id: u64,
     func: String,
     args: Vec<String>,
-}
-
-#[derive(Hash, Eq, PartialEq, Clone)]
-struct BoolEvalKey {
-    cache_id: u64,
-    func: String,
-    args: Vec<AspectValue>,
 }
 
 struct ConstraintModelEnv {
@@ -82,7 +75,12 @@ pub struct SemanticContext<'a> {
     domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
     cases: HashMap<String, HashMap<String, Case>>,
     eval_cache: RefCell<HashMap<EvalKey, Option<InterpedValue>>>,
-    eval_bool_cache: RefCell<HashMap<BoolEvalKey, bool>>,
+    /// Hash-keyed cache for `eval_model_bool_call`. Mirrors `eval_cache_hashed`
+    /// but stores the boolean result: keyed by a u64 hash of `(model.cache_id,
+    /// func bytes, arg values)` so a probe never has to materialise a
+    /// `BoolEvalKey { func: String, args: Vec<AspectValue> }`, which dominated
+    /// this call on model-predicate-heavy bisim signatures.
+    eval_bool_cache: RefCell<HashMap<u64, bool>>,
     /// Hash-keyed cache used by `eval_model_value_call`. Mirrors `eval_cache`
     /// but is keyed by a u64 hash of `(model.cache_id, func_bytes, arg
     /// values)` so cache hits don't have to materialise `EvalKey { func:
@@ -663,12 +661,15 @@ impl<'a> SemanticContext<'a> {
             };
             arg_values.push(self.eval_value_for_sort(arg, sort_str, env)?);
         }
-        let key = BoolEvalKey {
-            cache_id: model_ref.cache_id,
-            func: func.to_string(),
-            args: arg_values.clone(),
-        };
-        if let Some(&cached) = self.eval_bool_cache.borrow().get(&key) {
+        let mut h = FxHasher::default();
+        h.write_u64(model_ref.cache_id);
+        h.write(func.as_bytes());
+        h.write_u8(0); // separator between func name and args
+        for v in &arg_values {
+            Self::hash_aspect_value(&mut h, v);
+        }
+        let key_hash = h.finish();
+        if let Some(&cached) = self.eval_bool_cache.borrow().get(&key_hash) {
             self.eval_hits.set(self.eval_hits.get() + 1);
             return Ok(cached);
         }
@@ -677,7 +678,7 @@ impl<'a> SemanticContext<'a> {
         let value = model_ref
             .eval_symbols(func, &arg_names)
             .is_some_and(interped_bool);
-        self.eval_bool_cache.borrow_mut().insert(key, value);
+        self.eval_bool_cache.borrow_mut().insert(key_hash, value);
         Ok(value)
     }
 

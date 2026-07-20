@@ -2,7 +2,7 @@ use crate::{
     compile::{semantics::interped_bool, types::AspectValue},
     lang::model::Model,
 };
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use sygus_parser::SExpr as Value;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
 

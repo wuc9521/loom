@@ -16,7 +16,7 @@
 //! already-resolved `BoolExpr`, folding `and`/`or`/`not` so constants
 //! propagate.
 
-use rustc_hash::FxHashSet as HashSet;
+use crate::fxmap::HashSet;
 use sygus_parser::{BitVec, Bool, Identifier, Literal, SyGuSTerm, Term};
 
 /// Identifier prefix for self-bit placeholders. The chc/compiler lowerings

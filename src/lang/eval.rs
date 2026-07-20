@@ -1,6 +1,7 @@
 use crate::lang::model::{FuncInterp, InterpedValue, Model, Pattern, PatternElem};
-use rustc_hash::FxHashMap as HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use crate::fxmap::HashMap;
+use std::cell::RefCell;
+use std::sync::Arc;
 
 #[derive(Clone)]
 enum FuncInterpIndex {
@@ -19,26 +20,19 @@ struct FuncInterpCache {
     by_name: HashMap<String, FuncInterpIndex>,
 }
 
-#[derive(Clone)]
-struct CachedFuncInterp {
-    cache: Arc<FuncInterpCache>,
-}
-
-fn interp_cache() -> &'static Mutex<HashMap<u64, CachedFuncInterp>> {
-    static CACHE: OnceLock<Mutex<HashMap<u64, CachedFuncInterp>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::default()))
-}
-
-/// Each model's universes are stored as `Arc<Vec<String>>` per sort so that
-/// downstream lookups can hand callers a cheap reference-counted clone
-/// instead of duplicating the element list. Cloning a `Vec<String>` of N
-/// elements allocates N+1 times; cloning an Arc is one atomic increment.
-/// On test_col this is hot — bisim's eval path calls `univ_for_sort` 15M+
-/// times.
-fn model_univ_cache() -> &'static Mutex<HashMap<u64, Arc<HashMap<String, Arc<Vec<String>>>>>> {
-    static CACHE: OnceLock<Mutex<HashMap<u64, Arc<HashMap<String, Arc<Vec<String>>>>>>> =
-        OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::default()))
+thread_local! {
+    /// Per-thread memo of each model's parsed function-interpretation index,
+    /// keyed by `Model::cache_id`. Thread-local (rather than a global
+    /// `Mutex<HashMap>`) so the hot single-threaded bisim/compile path pays
+    /// no atomic lock per `eval_symbols` call; other threads rebuild their
+    /// own copy lazily, which is sound because the index is a pure function
+    /// of the model's immutable `func_interps`.
+    static INTERP_CACHE: RefCell<HashMap<u64, Arc<FuncInterpCache>>> =
+        RefCell::new(HashMap::default());
+    /// Per-thread memo of each model's per-sort universe lists (same keying
+    /// and rationale as `INTERP_CACHE`).
+    static UNIV_CACHE: RefCell<HashMap<u64, Arc<HashMap<String, Arc<Vec<String>>>>>> =
+        RefCell::new(HashMap::default());
 }
 
 fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
@@ -82,11 +76,13 @@ fn build_interp_cache(func_interps: &[FuncInterp]) -> FuncInterpCache {
 
 fn interp_cache_for(model: &Model) -> Arc<FuncInterpCache> {
     let key = model.cache_id;
-    let mut cache = interp_cache().lock().expect("interp cache poisoned");
-    let entry = cache.entry(key).or_insert_with(|| CachedFuncInterp {
-        cache: Arc::new(build_interp_cache(&model.func_interps)),
-    });
-    entry.cache.clone()
+    INTERP_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(key)
+            .or_insert_with(|| Arc::new(build_interp_cache(&model.func_interps)))
+            .clone()
+    })
 }
 
 fn pattern_as_exact_tuple(pat: &Pattern) -> Option<Vec<String>> {
@@ -115,16 +111,22 @@ fn build_model_univs(model: &Model) -> HashMap<String, Arc<Vec<String>>> {
 
 /// Returns the cached universe list for `sort` as a cheap `Arc<Vec<String>>`
 /// clone. Used directly on the hot path; callers that want an owned
-/// `Vec<String>` go through `Model::univ_for_sort`.
+/// `Vec<String>` go through `Model::univ_for_sort`. Each model's universes
+/// are stored as `Arc<Vec<String>>` per sort so lookups hand back a cheap
+/// reference-counted clone instead of duplicating the element list (cloning
+/// a `Vec<String>` of N elements allocates N+1 times; cloning an Arc is one
+/// atomic increment). On test_col this is hot — bisim's eval path calls
+/// `univ_for_sort` 15M+ times.
 fn cached_univ_arc(model: &Model, sort: &str) -> Option<Arc<Vec<String>>> {
     let key = model.cache_id;
-    let mut cache = model_univ_cache()
-        .lock()
-        .expect("model univ cache poisoned");
-    let entry = cache
-        .entry(key)
-        .or_insert_with(|| Arc::new(build_model_univs(model)));
-    entry.get(sort).cloned()
+    UNIV_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(key)
+            .or_insert_with(|| Arc::new(build_model_univs(model)))
+            .get(sort)
+            .cloned()
+    })
 }
 
 pub fn pattern_match_symbols(tuple: &[String], pat: &Pattern) -> bool {

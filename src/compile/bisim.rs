@@ -3,7 +3,7 @@ use crate::compile::semantics::{parse_cases, Case};
 use crate::compile::types::{AspectKey, AspectValue, DomainBit, SemanticKind, SemanticProgram};
 use crate::lang::model::{InterpedValue, Model};
 use crate::parser::{DelisCmd, DelisProg};
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet, FxHasher};
+use crate::fxmap::{HashMap, HashSet, FxHasher};
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;

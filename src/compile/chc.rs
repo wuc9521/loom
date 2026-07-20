@@ -18,7 +18,7 @@ use crate::{
     },
     parser::DelisProg,
 };
-use rustc_hash::FxHashMap as HashMap;
+use crate::fxmap::HashMap;
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -232,7 +232,7 @@ impl<'a> ChcCompiler<'a> {
         let (sorts, decls) = self.sig.datatype_decls();
         out.decls.push(HornDecl::DeclareDatatypes(sorts, decls));
 
-        let mut seen_decl: rustc_hash::FxHashSet<String> = rustc_hash::FxHashSet::default();
+        let mut seen_decl: crate::fxmap::HashSet<String> = crate::fxmap::HashSet::default();
         for domain in &self.program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, bit);
