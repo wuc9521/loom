@@ -4,11 +4,13 @@ name = "delis"
 version = "0.1.0"
 
 [profile.release]
-incremental = true
 # Keep line tables in release so samply / perf can resolve function names.
 # Line-tables-only adds minimal size and no runtime overhead. Remove if
 # binary size becomes an issue.
 debug = "line-tables-only"
+lto = "thin"
+codegen-units = 1
+panic = "abort"
 
 [dependencies]
 clap = {version = "4.4", features = ["derive"]}# command line argument parser       
