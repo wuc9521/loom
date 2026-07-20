@@ -7,8 +7,10 @@ use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet, FxHasher};
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
+use sygus_parser::Literal;
 use sygus_parser::SExpr as Value;
 
+type Fingerprint = Vec<u8>;
 type ClassId = usize;
 type ClassKey = (SemKey, AspectKey, Option<AspectValue>);
 type DenseClassKey = (usize, usize, Option<usize>);
@@ -52,6 +54,69 @@ type WalkKey = (usize, u64);
 thread_local! {
     static WALK_CACHE_HITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static WALK_CACHE_MISSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl AspectKey {
+    /// Per-position leaf-function readout. Used only to seed the initial
+    /// partition; refinement is what guarantees soundness.
+    pub fn fingerprint(&self, model: &Model, func_names: &[String]) -> Fingerprint {
+        let mut fp = Vec::new();
+
+        for (name, value) in &self.fields {
+            match value {
+                AspectValue::Int(_) | AspectValue::Model(_) => {}
+                AspectValue::Symbol(s) => {
+                    fp.extend_from_slice(name.as_bytes());
+                    fp.push(b'=');
+                    fp.extend_from_slice(s.as_bytes());
+                    fp.push(b';');
+                }
+                AspectValue::Univ { sort, name: n } => {
+                    fp.extend_from_slice(name.as_bytes());
+                    fp.push(b'=');
+                    fp.extend_from_slice(sort.as_bytes());
+                    fp.push(b':');
+                    fp.extend_from_slice(n.as_bytes());
+                    fp.push(b';');
+                }
+            }
+        }
+
+        let int_fields: Vec<usize> = self
+            .fields
+            .iter()
+            .filter_map(|(_, v)| match v {
+                AspectValue::Int(i) => Some(*i),
+                _ => None,
+            })
+            .collect();
+
+        let (start, end) = match int_fields.as_slice() {
+            [i, j] => (*i, *j),
+            [i] => (*i, *i + 1),
+            _ => return fp,
+        };
+
+        fp.push(b'[');
+        for pos in start..end {
+            let pos_name = format!("${pos}");
+            for func in func_names {
+                match model.eval_symbols(func, &[pos_name.clone()]) {
+                    Some(InterpedValue::Literal(Literal::Bool(true))) => fp.push(b'1'),
+                    Some(InterpedValue::Literal(Literal::Bool(false))) => fp.push(b'0'),
+                    Some(InterpedValue::UnivElem(e)) => {
+                        fp.extend_from_slice(e.name.as_bytes());
+                        fp.push(b',');
+                    }
+                    Some(_) => fp.push(b'?'),
+                    None => fp.push(b'_'),
+                }
+            }
+            fp.push(b'|');
+        }
+        fp.push(b']');
+        fp
+    }
 }
 
 impl SemanticProgram {
