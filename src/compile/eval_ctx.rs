@@ -31,6 +31,13 @@ struct EvalKey {
     args: Vec<String>,
 }
 
+#[derive(Hash, Eq, PartialEq, Clone)]
+struct BoolEvalKey {
+    cache_id: u64,
+    func: String,
+    args: Vec<AspectValue>,
+}
+
 struct ConstraintModelEnv {
     aspect: HashMap<String, AspectKey>,
 }
@@ -75,6 +82,7 @@ pub struct SemanticContext<'a> {
     domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
     cases: HashMap<String, HashMap<String, Case>>,
     eval_cache: RefCell<HashMap<EvalKey, Option<InterpedValue>>>,
+    eval_bool_cache: RefCell<HashMap<BoolEvalKey, bool>>,
     /// Hash-keyed cache used by `eval_model_value_call`. Mirrors `eval_cache`
     /// but is keyed by a u64 hash of `(model.cache_id, func_bytes, arg
     /// values)` so cache hits don't have to materialise `EvalKey { func:
@@ -209,6 +217,7 @@ impl<'a> SemanticContext<'a> {
             domains_by_sort,
             cases: cases.clone(),
             eval_cache: RefCell::new(HashMap::default()),
+            eval_bool_cache: RefCell::new(HashMap::default()),
             eval_cache_hashed: RefCell::new(HashMap::default()),
             eval_hits: Cell::new(0),
             eval_misses: Cell::new(0),
@@ -626,15 +635,50 @@ impl<'a> SemanticContext<'a> {
                 if sig.ret_sort.to_string() != "Bool" || sig.arg_sorts.len() != items.len() - 1 {
                     return Err(String::new());
                 }
-                let model_name = self.current_model(env)?.to_string();
-                let model = self.model(&model_name)?;
-                let mut arg_names = Vec::with_capacity(items.len() - 1);
-                for arg in &items[1..] {
-                    arg_names.push(self.eval_value(arg, env)?.display());
-                }
-                Ok(model.eval_symbols(op, &arg_names).is_some_and(interped_bool))
+                self.eval_model_bool_call(op, &items[1..], env)
             }
         }
+    }
+
+    fn eval_model_bool_call(
+        &self,
+        func: &str,
+        args: &[&Value],
+        env: &impl EnvView,
+    ) -> Result<bool, String> {
+        let sig = self.func_sigs.get(func).ok_or_else(String::new)?;
+        if sig.ret_sort.to_string() != "Bool" || sig.arg_sorts.len() != args.len() {
+            return Err(String::new());
+        }
+        let model = self.current_model(env)?;
+        let model_ref = self.model(model)?;
+        let mut arg_values = Vec::with_capacity(args.len());
+        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
+            let owned_sort;
+            let sort_str = if let Some(name) = sort.as_simple_name() {
+                name
+            } else {
+                owned_sort = sort.to_string();
+                &owned_sort
+            };
+            arg_values.push(self.eval_value_for_sort(arg, sort_str, env)?);
+        }
+        let key = BoolEvalKey {
+            cache_id: model_ref.cache_id,
+            func: func.to_string(),
+            args: arg_values.clone(),
+        };
+        if let Some(&cached) = self.eval_bool_cache.borrow().get(&key) {
+            self.eval_hits.set(self.eval_hits.get() + 1);
+            return Ok(cached);
+        }
+        self.eval_misses.set(self.eval_misses.get() + 1);
+        let arg_names = arg_values.iter().map(|v| v.display()).collect::<Vec<_>>();
+        let value = model_ref
+            .eval_symbols(func, &arg_names)
+            .is_some_and(interped_bool);
+        self.eval_bool_cache.borrow_mut().insert(key, value);
+        Ok(value)
     }
 
     pub fn eval_int_expr(&self, expr: &Value, env: &impl EnvView) -> Result<isize, String> {

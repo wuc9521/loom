@@ -9,7 +9,7 @@ use crate::{
     compile::{
         context::CompileContext,
         eval_ctx::{EnvView, SemanticContext},
-        semantics::{interped_bool, interped_value_matches},
+        semantics::{interped_bool, interped_value_matches, parse_cases, Case},
         syntax::{state_name, TermConstructor, TermSignature},
         types::{
             AspectKey, AspectValue, FieldDecl, FieldDomain, SemanticDomain, SemanticKind,
@@ -160,6 +160,7 @@ struct ChcCompiler<'a> {
     sig: TermSignature,
     ctx: SemanticContext<'a>,
     relation_sorts: HashMap<String, Vec<String>>,
+    cases_by_domain: HashMap<(String, String), HashMap<String, Case>>,
     predicates: HashMap<(String, String, AspectKey, Option<AspectValue>), Pred>,
     next_helper_id: usize,
     domain_values_cache: RefCell<HashMap<(String, String), Vec<AspectValue>>>,
@@ -175,40 +176,26 @@ impl<'a> ChcCompiler<'a> {
         semantic_cases: HashMap<String, HashMap<String, crate::compile::semantics::Case>>,
     ) -> Result<Self, String> {
         let ctx = SemanticContext::with_cases(problem, &program, &semantic_cases)?;
-        let constructor_sorts = sig
-            .constructors
-            .iter()
-            .map(|cons| (cons.name.clone(), cons.result_sort.clone()))
-            .collect::<HashMap<_, _>>();
         let mut relation_sorts = HashMap::default();
+        let mut cases_by_domain = HashMap::default();
         for spec in &program.semantics {
-            let cases = ctx
-                .cases()
-                .get(&spec.relation)
-                .ok_or_else(|| format!("missing parsed cases for relation {}", spec.relation))?;
             let sorts = relation_sorts
                 .entry(spec.relation.clone())
                 .or_insert_with(Vec::new);
             if !sorts.contains(&spec.term_sort) {
                 sorts.push(spec.term_sort.clone());
             }
-            for cons in cases.keys() {
-                if cons == "_" {
-                    continue;
-                }
-                let sort = constructor_sorts
-                    .get(cons)
-                    .ok_or_else(|| format!("unknown constructor {} in {}", cons, spec.relation))?;
-                if !sorts.contains(sort) {
-                    sorts.push(sort.clone());
-                }
-            }
+            cases_by_domain.insert(
+                (spec.relation.clone(), spec.term_sort.clone()),
+                parse_cases(&spec.body, &spec.aspect_var)?,
+            );
         }
         Ok(Self {
             program,
             sig,
             ctx,
             relation_sorts,
+            cases_by_domain,
             predicates: HashMap::default(),
             next_helper_id: 0,
             domain_values_cache: RefCell::new(HashMap::default()),
@@ -222,25 +209,18 @@ impl<'a> ChcCompiler<'a> {
         for domain in &self.program.domains {
             for bit in &domain.bits {
                 let state = domain_state_name(domain, bit);
-                for sort in self
-                    .relation_sorts
-                    .get(&domain.relation)
-                    .into_iter()
-                    .flatten()
-                {
-                    self.predicates.insert(
-                        (
-                            domain.relation.clone(),
-                            sort.clone(),
-                            bit.aspect.clone(),
-                            bit.value.clone(),
-                        ),
-                        Pred::new(
-                            format!("q{}.{}", state, sort),
-                            format!("nq{}.{}", state, sort),
-                        ),
-                    );
-                }
+                self.predicates.insert(
+                    (
+                        domain.relation.clone(),
+                        domain.term_sort.clone(),
+                        bit.aspect.clone(),
+                        bit.value.clone(),
+                    ),
+                    Pred::new(
+                        format!("q{}.{}", state, domain.term_sort),
+                        format!("nq{}.{}", state, domain.term_sort),
+                    ),
+                );
             }
         }
         self
@@ -262,20 +242,22 @@ impl<'a> ChcCompiler<'a> {
                     aspect_value_state_name(&bit.aspect, bit.value.as_ref()),
                     state.clone(),
                 );
-                for sort in self.relation_term_sorts(&domain.relation)? {
-                    let pred =
-                        self.pred_for(&domain.relation, sort, &bit.aspect, bit.value.as_ref())?;
-                    for (name, polarity) in [
-                        (pred_name(&pred, false), PredicatePolarity::Positive),
-                        (pred_name(&pred, true), PredicatePolarity::Negative),
-                    ] {
-                        if seen_decl.insert(name.clone()) {
-                            let declared_sort = Sort::from_name(sort);
-                            out.decls
-                                .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
-                        }
-                        out.register_predicate(name, state.clone(), polarity, sort.clone());
+                let pred = self.pred_for(
+                    &domain.relation,
+                    &domain.term_sort,
+                    &bit.aspect,
+                    bit.value.as_ref(),
+                )?;
+                for (name, polarity) in [
+                    (pred_name(&pred, false), PredicatePolarity::Positive),
+                    (pred_name(&pred, true), PredicatePolarity::Negative),
+                ] {
+                    if seen_decl.insert(name.clone()) {
+                        let declared_sort = Sort::from_name(&domain.term_sort);
+                        out.decls
+                            .push(HornDecl::DeclareRel(name.clone(), vec![declared_sort]));
                     }
+                    out.register_predicate(name, state.clone(), polarity, domain.term_sort.clone());
                 }
             }
         }
@@ -303,9 +285,13 @@ impl<'a> ChcCompiler<'a> {
         let mut matched = false;
         let domains = self.program.domains.clone();
         for domain in &domains {
+            if domain.term_sort != cons.result_sort {
+                continue;
+            }
             let relation = domain.relation.clone();
-            let spec = self.ctx.spec_for_relation(&relation)?.clone();
-            let cases = self.ctx.cases().get(&spec.relation);
+            let cases = self
+                .cases_by_domain
+                .get(&(relation.clone(), domain.term_sort.clone()));
             let (case, is_wildcard) = match cases.and_then(|c| c.get(&cons.name)).cloned() {
                 Some(c) => (c, false),
                 None => match cases.and_then(|c| c.get("_")).cloned() {
@@ -318,7 +304,7 @@ impl<'a> ChcCompiler<'a> {
                 if !case.vars.is_empty() {
                     return Err(format!(
                         "wildcard case for {} must bind no variables, has {}",
-                        spec.relation,
+                        relation,
                         case.vars.len()
                     ));
                 }
@@ -1477,7 +1463,7 @@ impl<'a> ChcCompiler<'a> {
 }
 
 fn domain_state_name(domain: &SemanticDomain, bit: &crate::compile::types::DomainBit) -> String {
-    format!("{}.c{}", domain.relation, bit.bit)
+    format!("{}.{}.c{}", domain.relation, domain.term_sort, bit.bit)
 }
 
 fn aspect_value_state_name(aspect: &AspectKey, value: Option<&AspectValue>) -> String {

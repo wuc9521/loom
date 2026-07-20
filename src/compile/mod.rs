@@ -1,6 +1,6 @@
 use crate::backends::smt2::ast::HornProg;
 use crate::parser::DelisProg;
-use std::sync::OnceLock;
+use std::cell::RefCell;
 use std::time::Instant;
 use sygus_parser::SyGuSCmd;
 
@@ -41,17 +41,16 @@ impl Default for CompileOptions {
     }
 }
 
-static COMPILE_OPTS: OnceLock<CompileOptions> = OnceLock::new();
+thread_local! {
+    static COMPILE_OPTS: RefCell<CompileOptions> = RefCell::new(CompileOptions::default());
+}
 
 pub fn init_options(opts: CompileOptions) {
-    COMPILE_OPTS.set(opts).ok();
+    COMPILE_OPTS.with(|cell| *cell.borrow_mut() = opts);
 }
 
 pub fn opts() -> CompileOptions {
-    COMPILE_OPTS
-        .get()
-        .cloned()
-        .unwrap_or_else(CompileOptions::default)
+    COMPILE_OPTS.with(|cell| cell.borrow().clone())
 }
 
 pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<Vec<usize>, String> {
