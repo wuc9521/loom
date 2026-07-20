@@ -2,7 +2,7 @@ use crate::compile::eval_ctx::{EnvView, SemanticContext};
 use crate::compile::semantics::{parse_cases, Case};
 use crate::compile::types::{AspectKey, AspectValue, DomainBit, SemanticKind, SemanticProgram};
 use crate::lang::model::{InterpedValue, Model};
-use crate::parser::DelisProg;
+use crate::parser::{DelisCmd, DelisProg};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet, FxHasher};
 use std::hash::Hasher;
 use std::sync::Arc;
@@ -12,8 +12,37 @@ use sygus_parser::SExpr as Value;
 
 type Fingerprint = Vec<u8>;
 type ClassId = usize;
-type ClassKey = (String, AspectKey, Option<AspectValue>);
+type ClassKey = (SemKey, AspectKey, Option<AspectValue>);
+type DenseClassKey = (usize, usize, Option<usize>);
 type SigHash = u64;
+type WalkCache = HashMap<WalkKey, (u64, Vec<ClassId>)>;
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct SemKey {
+    relation: String,
+    term_sort: String,
+}
+
+impl SemKey {
+    fn new(relation: impl Into<String>, term_sort: impl Into<String>) -> Self {
+        Self {
+            relation: relation.into(),
+            term_sort: term_sort.into(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum QuotientMode {
+    FingerprintSeed,
+    Coarsest,
+}
+
+fn dedup_deps(mut deps: Vec<ClassId>) -> Vec<ClassId> {
+    deps.sort_unstable();
+    deps.dedup();
+    deps
+}
 
 /// `walk` memoization key: `(expr_ptr, env_restricted_to_free_vars_hash)`.
 /// The expr_ptr uniquely identifies a sub-expression of a parsed case body
@@ -96,7 +125,7 @@ impl SemanticProgram {
     /// Recursive relation references resolve to class IDs from the previous
     /// iteration; aspects whose symbolic case-body signatures all match stay
     /// merged.
-    pub fn quotient_by_bisim(&mut self, problem: &DelisProg) {
+    pub fn quotient_by_bisim(&mut self, problem: &DelisProg, mode: QuotientMode) {
         let start = Instant::now();
         let total_before: usize = self.domains.iter().map(|d| d.bits.len()).sum();
         if total_before == 0 {
@@ -104,11 +133,16 @@ impl SemanticProgram {
         }
 
         let mut cases_by_relation: HashMap<String, HashMap<String, Case>> = HashMap::default();
+        let mut cases_by_domain: HashMap<SemKey, HashMap<String, Case>> = HashMap::default();
         for spec in &self.semantics {
             if let Ok(cases) = parse_cases(&spec.body, &spec.aspect_var) {
                 let entry = cases_by_relation.entry(spec.relation.clone()).or_default();
+                let domain_entry = cases_by_domain
+                    .entry(SemKey::new(&spec.relation, &spec.term_sort))
+                    .or_default();
                 for (cons, case) in cases {
-                    entry.insert(cons, case);
+                    entry.insert(cons.clone(), case.clone());
+                    domain_entry.insert(cons, case);
                 }
             }
         }
@@ -121,39 +155,93 @@ impl SemanticProgram {
             }
         };
 
-        let func_names: Vec<String> = ctx.func_sigs.keys().cloned().collect();
-
-        // Initial partition: leaf fingerprint per (relation, value).
-        let mut classes: HashMap<ClassKey, ClassId> = HashMap::default();
-        let mut leaf_to_class: HashMap<(String, Fingerprint, Option<AspectValue>), ClassId> =
-            HashMap::default();
+        let mut sem_ids: HashMap<SemKey, usize> = HashMap::default();
+        let mut aspect_ids: HashMap<AspectKey, usize> = HashMap::default();
+        let mut value_ids: HashMap<AspectValue, usize> = HashMap::default();
         for domain in &self.domains {
+            let sem = SemKey::new(&domain.relation, &domain.term_sort);
+            let next_sem = sem_ids.len();
+            sem_ids.entry(sem).or_insert(next_sem);
             for bit in &domain.bits {
-                let fp = ctx
-                    .models
-                    .get(&bit.aspect.model)
-                    .map(|m| bit.aspect.fingerprint(m, &func_names))
-                    .unwrap_or_default();
-                let key = (domain.relation.clone(), fp, bit.value.clone());
-                let next_id = leaf_to_class.len();
-                let class = *leaf_to_class.entry(key).or_insert(next_id);
-                classes.insert(
-                    (
-                        domain.relation.clone(),
-                        bit.aspect.clone(),
-                        bit.value.clone(),
-                    ),
-                    class,
-                );
+                let next_aspect = aspect_ids.len();
+                aspect_ids
+                    .entry(bit.aspect.clone())
+                    .or_insert(next_aspect);
+                if let Some(value) = &bit.value {
+                    let next_value = value_ids.len();
+                    value_ids.entry(value.clone()).or_insert(next_value);
+                }
             }
         }
 
-        let domain_kinds: HashMap<String, SemanticKind> = self
+        let mut classes: HashMap<ClassKey, ClassId> = HashMap::default();
+        match mode {
+            QuotientMode::FingerprintSeed => {
+                let func_names: Vec<String> = ctx.func_sigs.keys().cloned().collect();
+                let mut leaf_to_class: HashMap<
+                    (SemKey, Fingerprint, Option<AspectValue>),
+                    ClassId,
+                > = HashMap::default();
+                for domain in &self.domains {
+                    let sem = SemKey::new(&domain.relation, &domain.term_sort);
+                    for bit in &domain.bits {
+                        let fp = ctx
+                            .models
+                            .get(&bit.aspect.model)
+                            .map(|m| bit.aspect.fingerprint(m, &func_names))
+                            .unwrap_or_default();
+                        let key = (sem.clone(), fp, bit.value.clone());
+                        let next_id = leaf_to_class.len();
+                        let class = *leaf_to_class.entry(key).or_insert(next_id);
+                        classes.insert((sem.clone(), bit.aspect.clone(), bit.value.clone()), class);
+                    }
+                }
+            }
+            QuotientMode::Coarsest => {
+                let mut seed_to_class: HashMap<(SemKey, Option<AspectValue>), ClassId> =
+                    HashMap::default();
+                for domain in &self.domains {
+                    let sem = SemKey::new(&domain.relation, &domain.term_sort);
+                    for bit in &domain.bits {
+                        let key = (sem.clone(), bit.value.clone());
+                        let next_id = seed_to_class.len();
+                        let class = *seed_to_class.entry(key).or_insert(next_id);
+                        classes.insert((sem.clone(), bit.aspect.clone(), bit.value.clone()), class);
+                    }
+                }
+            }
+        }
+
+        let member_keys = classes.keys().cloned().collect::<Vec<_>>();
+        let member_dense_keys = member_keys
+            .iter()
+            .map(|(sem, aspect, value)| {
+                (
+                    sem_ids[sem],
+                    aspect_ids[aspect],
+                    value.as_ref().map(|v| value_ids[v]),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut dense_classes: HashMap<DenseClassKey, ClassId> = HashMap::default();
+        for (idx, key) in member_keys.iter().enumerate() {
+            dense_classes.insert(member_dense_keys[idx], classes[key]);
+        }
+        drop(classes);
+
+        let domain_kinds: HashMap<SemKey, SemanticKind> = self
             .domains
             .iter()
-            .map(|d| (d.relation.clone(), d.kind.clone()))
+            .map(|d| (SemKey::new(&d.relation, &d.term_sort), d.kind.clone()))
             .collect();
-        let refiner = Refiner::new(&ctx, &cases_by_relation, &domain_kinds);
+        let refiner = Refiner::new(
+            problem,
+            &ctx,
+            &cases_by_domain,
+            &domain_kinds,
+            &sem_ids,
+            &aspect_ids,
+        );
 
         // Refinement only ever *splits* classes — it cannot merge two
         // already-distinct classes. So the only aspects whose class can
@@ -165,58 +253,64 @@ impl SemanticProgram {
         // classes. When a class splits, the resulting sub-classes inherit
         // multi-aspect status only if they still have >1 member; singleton
         // sub-classes drop out of the worklist.
-        let mut class_members: HashMap<ClassId, Vec<ClassKey>> = HashMap::default();
-        for (key, &cid) in &classes {
-            class_members.entry(cid).or_default().push(key.clone());
+        let mut class_members: HashMap<ClassId, Vec<usize>> = HashMap::default();
+        for (idx, key) in member_dense_keys.iter().enumerate() {
+            let cid = dense_classes[key];
+            class_members.entry(cid).or_default().push(idx);
         }
         let mut multi_aspect: Vec<ClassId> = class_members
             .iter()
             .filter(|(_, members)| members.len() > 1)
             .map(|(&id, _)| id)
             .collect();
-        let mut next_class_id = classes.values().max().copied().map(|m| m + 1).unwrap_or(0);
+        let mut class_deps: HashMap<ClassId, Vec<ClassId>> = HashMap::default();
+        let mut next_class_id = dense_classes
+            .values()
+            .max()
+            .copied()
+            .map(|m| m + 1)
+            .unwrap_or(0);
 
         let mut iters = 0usize;
         while !multi_aspect.is_empty() {
             iters += 1;
             let mut any_split = false;
-            let mut next_multi: Vec<ClassId> = Vec::new();
+            let mut changed: HashSet<ClassId> = HashSet::default();
             for cid in std::mem::take(&mut multi_aspect) {
                 let members = match class_members.get(&cid) {
                     Some(m) if m.len() > 1 => m.clone(),
                     _ => continue,
                 };
                 // Group members of this class by their refined signature.
-                let mut by_sig: HashMap<SigHash, Vec<ClassKey>> = HashMap::default();
-                for member in &members {
-                    let sig = refiner.signature(&member.0, &member.1, &member.2, &classes);
-                    by_sig.entry(sig).or_default().push(member.clone());
+                let mut by_sig: HashMap<SigHash, (Vec<usize>, Vec<ClassId>)> = HashMap::default();
+                for &member_id in &members {
+                    let member = &member_keys[member_id];
+                    let (sig, deps) =
+                        refiner.signature(&member.0, &member.1, &member.2, &dense_classes);
+                    let entry = by_sig.entry(sig).or_default();
+                    entry.0.push(member_id);
+                    entry.1.extend(deps);
                 }
                 if by_sig.len() == 1 {
                     // No split: the class is stable under current partition.
-                    // It might still split in a later iter if a referenced
-                    // class splits, so keep it in the worklist.
-                    next_multi.push(cid);
+                    class_deps.insert(cid, dedup_deps(by_sig.into_values().next().unwrap().1));
                     continue;
                 }
                 any_split = true;
+                changed.insert(cid);
                 // First group keeps `cid`; remaining groups get fresh IDs.
-                let mut groups: Vec<Vec<ClassKey>> = by_sig.into_values().collect();
-                groups.sort_by(|a, b| a.first().cmp(&b.first()));
+                let mut groups: Vec<(Vec<usize>, Vec<ClassId>)> = by_sig.into_values().collect();
+                groups.sort_by(|a, b| a.0.first().cmp(&b.0.first()));
                 let first = groups.remove(0);
-                if first.len() > 1 {
-                    next_multi.push(cid);
-                }
-                class_members.insert(cid, first);
-                for group in groups {
+                class_deps.insert(cid, dedup_deps(first.1));
+                class_members.insert(cid, first.0);
+                for (group, deps) in groups {
                     let new_id = next_class_id;
                     next_class_id += 1;
-                    for key in &group {
-                        classes.insert(key.clone(), new_id);
+                    for &member_id in &group {
+                        dense_classes.insert(member_dense_keys[member_id], new_id);
                     }
-                    if group.len() > 1 {
-                        next_multi.push(new_id);
-                    }
+                    class_deps.insert(new_id, dedup_deps(deps));
                     class_members.insert(new_id, group);
                 }
             }
@@ -225,7 +319,16 @@ impl SemanticProgram {
                 // class can change either. Done.
                 break;
             }
-            multi_aspect = next_multi;
+            multi_aspect = class_members
+                .iter()
+                .filter(|(_, members)| members.len() > 1)
+                .filter_map(|(&id, _)| {
+                    class_deps
+                        .get(&id)
+                        .is_some_and(|deps| deps.iter().any(|dep| changed.contains(dep)))
+                        .then_some(id)
+                })
+                .collect();
             // No iteration cap: refinement only ever splits (≤ #aspects times)
             // and the `any_split` check above detects the fixpoint, so this
             // always converges to the true bisimulation. A cap here would stop
@@ -247,12 +350,14 @@ impl SemanticProgram {
             let mut local_remap: HashMap<ClassId, usize> = HashMap::default();
             let mut new_bits: Vec<DomainBit> = Vec::with_capacity(domain.bits.len());
             for bit in &domain.bits {
-                let class = classes
-                    .get(&(
-                        domain.relation.clone(),
-                        bit.aspect.clone(),
-                        bit.value.clone(),
-                    ))
+                let sem = SemKey::new(&domain.relation, &domain.term_sort);
+                let dense_key = (
+                    sem_ids[&sem],
+                    aspect_ids[&bit.aspect],
+                    bit.value.as_ref().map(|v| value_ids[v]),
+                );
+                let class = dense_classes
+                    .get(&dense_key)
                     .copied()
                     .unwrap_or(usize::MAX);
                 let next_local = local_remap.len();
@@ -267,14 +372,8 @@ impl SemanticProgram {
             domain.bits = new_bits;
         }
 
-        let hits = WALK_CACHE_HITS.with(|c| c.replace(0));
-        let misses = WALK_CACHE_MISSES.with(|c| c.replace(0));
-        let total_calls = hits + misses;
-        let hit_pct = if total_calls > 0 {
-            100.0 * hits as f64 / total_calls as f64
-        } else {
-            0.0
-        };
+        WALK_CACHE_HITS.with(|c| c.set(0));
+        WALK_CACHE_MISSES.with(|c| c.set(0));
         let eval_total = eval_hits + eval_misses;
         let eval_pct = if eval_total > 0 {
             100.0 * eval_hits as f64 / eval_total as f64
@@ -282,7 +381,11 @@ impl SemanticProgram {
             0.0
         };
         log::info!(
-            "bisim quotient: {} -> {} bits ({:.1}% reduction) in {:?} ({} iters, walk {}/{} = {:.1}% hits, eval {}/{} = {:.1}% hits)",
+            "{} quotient: {} -> {} bits ({:.1}% reduction) in {:?} ({} iters, eval {}/{} = {:.1}% hits)",
+            match mode {
+                QuotientMode::FingerprintSeed => "fingerprint",
+                QuotientMode::Coarsest => "bisim",
+            },
             total_before,
             total_after,
             if total_before > 0 {
@@ -292,9 +395,6 @@ impl SemanticProgram {
             },
             start.elapsed(),
             iters,
-            hits,
-            total_calls,
-            hit_pct,
             eval_hits,
             eval_total,
             eval_pct,
@@ -318,8 +418,12 @@ impl SemanticProgram {
 /// (free-var-restricted) bindings actually seen.
 struct Refiner<'a> {
     ctx: &'a SemanticContext<'a>,
-    cases_by_relation: &'a HashMap<String, HashMap<String, Case>>,
-    domain_kinds: &'a HashMap<String, SemanticKind>,
+    cases_by_domain: &'a HashMap<SemKey, HashMap<String, Case>>,
+    domain_kinds: &'a HashMap<SemKey, SemanticKind>,
+    sem_ids: &'a HashMap<SemKey, usize>,
+    aspect_ids: &'a HashMap<AspectKey, usize>,
+    cons_arg_sorts: HashMap<String, Vec<String>>,
+    parent_sorts: HashMap<String, Vec<String>>,
     /// `expr_ptr → sorted list of free symbols`. Populated once at
     /// construction by walking every case body. A symbol is "free" in a
     /// sub-expression if it appears textually but is not bound by a
@@ -331,20 +435,59 @@ struct Refiner<'a> {
 
 impl<'a> Refiner<'a> {
     fn new(
+        problem: &DelisProg,
         ctx: &'a SemanticContext<'a>,
-        cases_by_relation: &'a HashMap<String, HashMap<String, Case>>,
-        domain_kinds: &'a HashMap<String, SemanticKind>,
+        cases_by_domain: &'a HashMap<SemKey, HashMap<String, Case>>,
+        domain_kinds: &'a HashMap<SemKey, SemanticKind>,
+        sem_ids: &'a HashMap<SemKey, usize>,
+        aspect_ids: &'a HashMap<AspectKey, usize>,
     ) -> Self {
         let mut free_vars: HashMap<usize, Vec<String>> = HashMap::default();
-        for cases in cases_by_relation.values() {
+        for cases in cases_by_domain.values() {
             for case in cases.values() {
                 Self::compute_free_vars(&case.body, &mut free_vars);
             }
         }
+        let mut cons_arg_sorts = HashMap::default();
+        let mut parent_sorts: HashMap<String, Vec<String>> = HashMap::default();
+        for cmd in &problem.cmds {
+            let DelisCmd::TermTypes(term_types) = cmd else {
+                continue;
+            };
+            for (sort_decl, type_decl) in term_types
+                .sort_decls
+                .iter()
+                .zip(term_types.term_type_decls.iter())
+            {
+                let result_sort = sort_decl.symbol.clone();
+                for cons in &type_decl.constructors {
+                    let arg_sorts = cons
+                        .sorts
+                        .iter()
+                        .map(|sort| sort.to_string())
+                        .collect::<Vec<_>>();
+                    for arg_sort in &arg_sorts {
+                        let entry = parent_sorts.entry(arg_sort.clone()).or_default();
+                        if !entry.contains(&result_sort) {
+                            entry.push(result_sort.clone());
+                        }
+                    }
+                    cons_arg_sorts.insert(cons.symbol.to_string(), arg_sorts);
+                }
+            }
+        }
+        for sorts in parent_sorts.values_mut() {
+            sorts.sort();
+            sorts.dedup();
+        }
         Self {
             ctx,
-            cases_by_relation,
+            cases_by_domain,
             domain_kinds,
+            sem_ids,
+            aspect_ids,
+            cons_arg_sorts,
+            parent_sorts,
             free_vars,
         }
     }
@@ -429,6 +572,8 @@ struct WalkEnv {
     aspects: HashMap<String, AspectKey>,  // "asp" → current aspect
     values: HashMap<String, AspectValue>, // quantifier bindings
     subterms: HashMap<String, usize>,     // constructor pattern vars
+    subterm_sorts: HashMap<String, String>,
+    current_sort: String,
 }
 
 impl EnvView for WalkEnv {
@@ -445,20 +590,23 @@ const SELF_SUBTERM: usize = usize::MAX;
 impl<'a> Refiner<'a> {
     fn signature(
         &self,
-        relation: &str,
+        sem: &SemKey,
         aspect: &AspectKey,
         value: &Option<AspectValue>,
-        classes: &HashMap<ClassKey, ClassId>,
-    ) -> SigHash {
+        classes: &HashMap<DenseClassKey, ClassId>,
+    ) -> (SigHash, Vec<ClassId>) {
         let mut out = FxHasher::default();
-        out.write(relation.as_bytes());
+        let mut deps = Vec::new();
+        out.write(sem.relation.as_bytes());
+        out.write_u8(b'/');
+        out.write(sem.term_sort.as_bytes());
         out.write_u8(b'#');
         if let Some(v) = value {
             self.emit_value(&mut out, v);
         }
         out.write_u8(b'@');
-        let Some(cases) = self.cases_by_relation.get(relation) else {
-            return out.finish();
+        let Some(cases) = self.cases_by_domain.get(sem) else {
+            return (out.finish(), deps);
         };
         let mut names: Vec<&str> = cases.keys().map(|s| s.as_str()).collect();
         names.sort_unstable();
@@ -469,6 +617,8 @@ impl<'a> Refiner<'a> {
             aspects: HashMap::default(),
             values: HashMap::default(),
             subterms: HashMap::default(),
+            subterm_sorts: HashMap::default(),
+            current_sort: sem.term_sort.clone(),
         };
         let aspect_var = cases
             .values()
@@ -481,21 +631,30 @@ impl<'a> Refiner<'a> {
         // (expr_ptr, env_values_restricted_to_free_vars) is sound. Lives
         // on the stack so it's dropped at end-of-call — across calls,
         // `aspect` and `classes` change and we'd need to re-walk anyway.
-        let mut cache: HashMap<WalkKey, u64> = HashMap::default();
+        let mut cache: WalkCache = HashMap::default();
         for cons in names {
             let case = &cases[cons];
             out.write(cons.as_bytes());
             out.write_u8(b'{');
             env.subterms.clear();
+            env.subterm_sorts.clear();
             env.subterms.insert(case.self_var.clone(), SELF_SUBTERM);
+            env.subterm_sorts
+                .insert(case.self_var.clone(), sem.term_sort.clone());
+            let arg_sorts = self.cons_arg_sorts.get(cons);
             for (i, v) in case.vars.iter().enumerate() {
                 env.subterms.insert(v.clone(), i);
+                if let Some(sort) = arg_sorts.and_then(|sorts| sorts.get(i)) {
+                    env.subterm_sorts.insert(v.clone(), sort.clone());
+                }
             }
-            let case_hash = self.walk_hash(&case.body, &mut env, classes, &mut cache);
+            let case_hash = self.walk_hash(&case.body, &mut env, classes, &mut cache, &mut deps);
             out.write_u64(case_hash);
             out.write_u8(b'}');
         }
-        out.finish()
+        deps.sort_unstable();
+        deps.dedup();
+        (out.finish(), deps)
     }
 
     /// Returns true iff the expression is worth caching. We cache every
@@ -523,26 +682,30 @@ impl<'a> Refiner<'a> {
         &self,
         expr: &Value,
         env: &mut WalkEnv,
-        classes: &HashMap<ClassKey, ClassId>,
-        cache: &mut HashMap<WalkKey, u64>,
+        classes: &HashMap<DenseClassKey, ClassId>,
+        cache: &mut WalkCache,
+        deps: &mut Vec<ClassId>,
     ) -> u64 {
         if !Self::worth_caching(expr) {
             let mut h = FxHasher::default();
-            self.walk(&mut h, expr, env, classes, cache);
+            self.walk(&mut h, expr, env, classes, cache, deps);
             return h.finish();
         }
         let expr_ptr = expr as *const Value as usize;
         let env_h = self.env_key(expr_ptr, env);
         let key = (expr_ptr, env_h);
-        if let Some(&hash) = cache.get(&key) {
+        if let Some((hash, cached_deps)) = cache.get(&key) {
             WALK_CACHE_HITS.with(|c| c.set(c.get() + 1));
-            return hash;
+            deps.extend(cached_deps.iter().copied());
+            return *hash;
         }
         WALK_CACHE_MISSES.with(|c| c.set(c.get() + 1));
         let mut h = FxHasher::default();
-        self.walk(&mut h, expr, env, classes, cache);
+        let mut local_deps = Vec::new();
+        self.walk(&mut h, expr, env, classes, cache, &mut local_deps);
         let hash = h.finish();
-        cache.insert(key, hash);
+        deps.extend(local_deps.iter().copied());
+        cache.insert(key, (hash, local_deps));
         hash
     }
 
@@ -571,8 +734,9 @@ impl<'a> Refiner<'a> {
         out: &mut H,
         expr: &Value,
         env: &mut WalkEnv,
-        classes: &HashMap<ClassKey, ClassId>,
-        cache: &mut HashMap<WalkKey, u64>,
+        classes: &HashMap<DenseClassKey, ClassId>,
+        cache: &mut WalkCache,
+        deps: &mut Vec<ClassId>,
     ) {
         // Use `as_slice` instead of `to_ref_vec` — the latter allocates a
         // `Vec<&SExpr>` per call. `walk` is called 20M+ times on test_col
@@ -598,11 +762,11 @@ impl<'a> Refiner<'a> {
 
         // Relation calls and quantifiers always need bespoke handling.
         if self.ctx.has_relation(op) && items.len() >= 3 {
-            self.emit_relation(out, op, &items[1], &items[2], env, classes);
+            self.emit_relation(out, op, &items[1], &items[2], env, classes, deps);
             return;
         }
         if matches!(op, "exists" | "forall") && items.len() == 3 {
-            self.emit_quantifier(out, op, &items[1], &items[2], env, classes, cache);
+            self.emit_quantifier(out, op, &items[1], &items[2], env, classes, cache, deps);
             return;
         }
 
@@ -628,7 +792,7 @@ impl<'a> Refiner<'a> {
                             out.write_u8(b'F');
                             return;
                         }
-                        Err(_) => dyn_hashes.push(self.walk_hash(arg, env, classes, cache)),
+                        Err(_) => dyn_hashes.push(self.walk_hash(arg, env, classes, cache, deps)),
                     }
                 }
                 dyn_hashes.sort_unstable();
@@ -651,7 +815,7 @@ impl<'a> Refiner<'a> {
                             out.write_u8(b'T');
                             return;
                         }
-                        Err(_) => dyn_hashes.push(self.walk_hash(arg, env, classes, cache)),
+                        Err(_) => dyn_hashes.push(self.walk_hash(arg, env, classes, cache, deps)),
                     }
                 }
                 dyn_hashes.sort_unstable();
@@ -670,7 +834,7 @@ impl<'a> Refiner<'a> {
                 }
                 out.write_u8(b'N');
                 out.write_u8(b'(');
-                let sub = self.walk_hash(&items[1], env, classes, cache);
+                let sub = self.walk_hash(&items[1], env, classes, cache, deps);
                 out.write_u64(sub);
                 out.write_u8(b')');
             }
@@ -685,9 +849,9 @@ impl<'a> Refiner<'a> {
                 }
                 out.write_u8(b'I');
                 out.write_u8(b'(');
-                let a = self.walk_hash(&items[1], env, classes, cache);
-                let b = self.walk_hash(&items[2], env, classes, cache);
-                let c = self.walk_hash(&items[3], env, classes, cache);
+                let a = self.walk_hash(&items[1], env, classes, cache, deps);
+                let b = self.walk_hash(&items[2], env, classes, cache, deps);
+                let c = self.walk_hash(&items[3], env, classes, cache, deps);
                 out.write_u64(a);
                 out.write_u8(b',');
                 out.write_u64(b);
@@ -702,8 +866,8 @@ impl<'a> Refiner<'a> {
                 out.write_u8(b'=');
                 out.write(op.as_bytes());
                 out.write_u8(b'(');
-                let a = self.walk_hash(&items[1], env, classes, cache);
-                let b = self.walk_hash(&items[2], env, classes, cache);
+                let a = self.walk_hash(&items[1], env, classes, cache, deps);
+                let b = self.walk_hash(&items[2], env, classes, cache, deps);
                 out.write_u64(a);
                 out.write_u8(b',');
                 out.write_u64(b);
@@ -719,7 +883,7 @@ impl<'a> Refiner<'a> {
                 out.write(op.as_bytes());
                 for arg in &items[1..] {
                     out.write_u8(b' ');
-                    let sub = self.walk_hash(arg, env, classes, cache);
+                    let sub = self.walk_hash(arg, env, classes, cache, deps);
                     out.write_u64(sub);
                 }
                 out.write_u8(b')');
@@ -753,12 +917,69 @@ impl<'a> Refiner<'a> {
         subterm_expr: &Value,
         aspect_expr: &Value,
         env: &mut WalkEnv,
-        classes: &HashMap<ClassKey, ClassId>,
+        classes: &HashMap<DenseClassKey, ClassId>,
+        deps: &mut Vec<ClassId>,
     ) {
         out.write_u8(b'R');
         out.write(relation.as_bytes());
         out.write_u8(b'@');
-        if let Some(subterm) = subterm_expr.as_symbol() {
+        self.emit_term_nav(out, subterm_expr, env);
+        out.write_u8(b':');
+        match self.ctx.eval_aspect(aspect_expr, relation, env) {
+            Ok(asp) => {
+                let mut targets = self.target_sorts(relation, subterm_expr, env);
+                targets.sort();
+                targets.dedup();
+                out.write_u8(b'[');
+                for target_sort in targets {
+                    let sem = SemKey::new(relation, &target_sort);
+                    out.write(target_sort.as_bytes());
+                    out.write_u8(b'=');
+                    match self.domain_kinds.get(&sem) {
+                        Some(SemanticKind::Bool) => {
+                            let class = self
+                                .sem_ids
+                                .get(&sem)
+                                .and_then(|&sem_id| {
+                                    self.aspect_ids
+                                        .get(&asp)
+                                        .and_then(|&aspect_id| classes.get(&(sem_id, aspect_id, None)))
+                                })
+                                .copied()
+                                .unwrap_or(usize::MAX);
+                            if class != usize::MAX {
+                                deps.push(class);
+                            }
+                            out.write_u8(b'C');
+                            out.write_u64(class as u64);
+                        }
+                        Some(_) => {
+                            // FiniteValue relations: the call returns a value,
+                            // not a boolean, so the surrounding context picks the
+                            // (asp, value) tuple. Emit the target sort and aspect
+                            // bytes directly rather than a class id.
+                            out.write_u8(b'*');
+                            out.write(asp.model.as_bytes());
+                            out.write_u8(b'|');
+                            for (k, v) in &asp.fields {
+                                out.write(k.as_bytes());
+                                out.write_u8(b'=');
+                                self.emit_value(out, v);
+                                out.write_u8(b';');
+                            }
+                        }
+                        None => out.write_u8(b'?'),
+                    }
+                    out.write_u8(b';');
+                }
+                out.write_u8(b']');
+            }
+            Err(_) => out.write_u8(b'?'),
+        }
+    }
+
+    fn emit_term_nav<H: Hasher>(&self, out: &mut H, expr: &Value, env: &WalkEnv) {
+        if let Some(subterm) = expr.as_symbol() {
             match env.subterms.get(subterm).copied() {
                 Some(SELF_SUBTERM) => out.write_u8(b'r'),
                 Some(i) => {
@@ -767,39 +988,45 @@ impl<'a> Refiner<'a> {
                 }
                 None => out.write_u8(b'?'),
             }
-        } else {
+            return;
+        }
+        let Some(items) = expr.as_slice() else {
             out.write_u8(b'?');
+            return;
+        };
+        match items {
+            [op, inner] if op.as_symbol() == Some("parent") && inner.as_symbol().is_some() => {
+                out.write_u8(b'^');
+            }
+            _ => out.write_u8(b'?'),
         }
-        out.write_u8(b':');
-        match self.ctx.eval_aspect(aspect_expr, relation, env) {
-            Ok(asp) => match self.domain_kinds.get(relation) {
-                Some(SemanticKind::Bool) => {
-                    let class = classes
-                        .get(&(relation.to_string(), asp, None))
-                        .copied()
-                        .unwrap_or(usize::MAX);
-                    out.write_u8(b'C');
-                    out.write_u64(class as u64);
+    }
+
+    fn target_sorts(&self, relation: &str, expr: &Value, env: &WalkEnv) -> Vec<String> {
+        let mut sorts = if let Some(subterm) = expr.as_symbol() {
+            env.subterm_sorts
+                .get(subterm)
+                .cloned()
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            match expr.as_slice() {
+                Some([op, inner])
+                    if op.as_symbol() == Some("parent") && inner.as_symbol().is_some() =>
+                {
+                    self.parent_sorts
+                        .get(&env.current_sort)
+                        .cloned()
+                        .unwrap_or_default()
                 }
-                _ => {
-                    // FiniteValue relations: the call returns a value, not a
-                    // boolean, so the surrounding context picks the (asp,
-                    // value) tuple. Emit the aspect bytes directly rather
-                    // than a class id — never aliases distinct aspects (sound
-                    // but coarser than the Bool case).
-                    out.write_u8(b'*');
-                    out.write(asp.model.as_bytes());
-                    out.write_u8(b'|');
-                    for (k, v) in &asp.fields {
-                        out.write(k.as_bytes());
-                        out.write_u8(b'=');
-                        self.emit_value(out, v);
-                        out.write_u8(b';');
-                    }
-                }
-            },
-            Err(_) => out.write_u8(b'?'),
-        }
+                _ => Vec::new(),
+            }
+        };
+        sorts.retain(|sort| {
+            self.domain_kinds
+                .contains_key(&SemKey::new(relation, sort.as_str()))
+        });
+        sorts
     }
 
     fn emit_quantifier<H: Hasher>(
@@ -809,8 +1036,9 @@ impl<'a> Refiner<'a> {
         binding: &Value,
         body: &Value,
         env: &mut WalkEnv,
-        classes: &HashMap<ClassKey, ClassId>,
-        cache: &mut HashMap<WalkKey, u64>,
+        classes: &HashMap<DenseClassKey, ClassId>,
+        cache: &mut WalkCache,
+        deps: &mut Vec<ClassId>,
     ) {
         out.write_u8(if quant == "exists" { b'E' } else { b'F' });
         out.write_u8(b'{');
@@ -834,7 +1062,7 @@ impl<'a> Refiner<'a> {
                 match (quant, self.ctx.eval_bool_value(body, env)) {
                     ("exists", Ok(true)) | ("forall", Ok(false)) => annihilated = true,
                     ("exists", Ok(false)) | ("forall", Ok(true)) => {}
-                    _ => dyn_hashes.push(self.walk_hash(body, env, classes, cache)),
+                    _ => dyn_hashes.push(self.walk_hash(body, env, classes, cache, deps)),
                 }
                 match prev {
                     Some(p) => {

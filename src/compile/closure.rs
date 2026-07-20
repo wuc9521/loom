@@ -27,12 +27,15 @@ struct Nonterminal {
     seen: HashSet<Bits>,
     productions: Vec<Production>,
     bool_ops: BoolOps,
+    bool_closure_generators: usize,
 }
 
 #[derive(Clone)]
 struct Production {
     ctor: String,
     args: Vec<String>,
+    arg_indices: Vec<usize>,
+    requires_self_fixpoint: bool,
 }
 
 #[derive(Default, Clone)]
@@ -94,19 +97,11 @@ struct ClosureSolver<'a> {
     problem: &'a DelisProg,
     synth_name: String,
     synth_sort: Sort,
-    start: String,
     funcs: HashMap<String, DefineFun>,
     nonterminals: Vec<Nonterminal>,
-    nt_by_symbol: HashMap<String, usize>,
     constraints: Vec<SyGuSTerm>,
     processed: HashMap<(usize, usize), Vec<usize>>,
-    /// True if any constructor's body references the synth-fun by name (e.g.
-    /// `re.*`'s body extracts bits of `r`). Such constructors encode a
-    /// finite-aspect least fixed point: their meaning at a given argument
-    /// tuple is the LFP of `body(args, r)` iterated from `r = 0` (Krogmeier
-    /// & Madhusudan 2023). The solver computes that LFP inline per
-    /// evaluation instead of treating `r` as an extra free input.
-    synth_self_ref: bool,
+    next_start_check: usize,
     /// Index of the start NT (the synth-fun's nonterminal).
     start_nt_idx: usize,
 }
@@ -162,25 +157,27 @@ impl<'a> ClosureSolver<'a> {
         let Some((synth_name, synth_sort, grammar)) = synth else {
             return Ok(None);
         };
-        let (nonterminals, nt_by_symbol, start) = build_nonterminals(grammar, &sort_env)?;
+        let (mut nonterminals, nt_by_symbol, start) = build_nonterminals(grammar, &sort_env)?;
         let start_nt_idx = nt_by_symbol
             .get(&start)
             .copied()
             .ok_or_else(|| format!("start nonterminal {start} not in grammar"))?;
-        let synth_self_ref = funcs
-            .values()
-            .any(|f| term_mentions_symbol(&f.body, &synth_name));
+        for nt in &mut nonterminals {
+            for prod in &mut nt.productions {
+                prod.requires_self_fixpoint = funcs
+                    .get(&prod.ctor)
+                    .is_some_and(|f| term_mentions_symbol(&f.body, &synth_name));
+            }
+        }
         Ok(Some(Self {
             problem,
             synth_name,
             synth_sort,
-            start,
             funcs,
             nonterminals,
-            nt_by_symbol,
             constraints,
             processed: HashMap::default(),
-            synth_self_ref,
+            next_start_check: 0,
             start_nt_idx,
         }))
     }
@@ -238,12 +235,11 @@ impl<'a> ClosureSolver<'a> {
         format!("(\n{}\n)", cmd)
     }
 
-    fn satisfying_start_term(&self) -> Result<Option<SyGuSTerm>, String> {
-        let start_idx = *self
-            .nt_by_symbol
-            .get(&self.start)
-            .ok_or_else(|| format!("unknown start nonterminal {}", self.start))?;
-        for value in &self.nonterminals[start_idx].values {
+    fn satisfying_start_term(&mut self) -> Result<Option<SyGuSTerm>, String> {
+        while self.next_start_check < self.nonterminals[self.start_nt_idx].values.len() {
+            let idx = self.next_start_check;
+            self.next_start_check += 1;
+            let value = &self.nonterminals[self.start_nt_idx].values[idx];
             if self.satisfies(&value.bits)? {
                 return Ok(Some(value.term.clone()));
             }
@@ -255,10 +251,7 @@ impl<'a> ClosureSolver<'a> {
         let mut base = HashMap::default();
         base.insert(
             self.synth_name.clone(),
-            EvalValue::Bv(
-                bits.clone(),
-                self.nonterminals[self.nt_by_symbol[&self.start]].width,
-            ),
+            EvalValue::Bv(bits.clone(), self.nonterminals[self.start_nt_idx].width),
         );
         let mut env = EvalEnv::with_base(base);
         for constraint in &self.constraints {
@@ -284,17 +277,8 @@ impl<'a> ClosureSolver<'a> {
             let term = self.constructor_term(&prod, &[]);
             return Ok(self.insert_value(nt_idx, bits, term));
         }
-        let arg_indices = prod
-            .args
-            .iter()
-            .map(|arg| {
-                self.nt_by_symbol
-                    .get(arg)
-                    .copied()
-                    .ok_or_else(|| format!("unknown grammar nonterminal {arg}"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let current_lengths = arg_indices
+        let current_lengths = prod
+            .arg_indices
             .iter()
             .map(|nt| self.nonterminals[*nt].values.len())
             .collect::<Vec<_>>();
@@ -302,7 +286,7 @@ impl<'a> ClosureSolver<'a> {
             .processed
             .get(&key)
             .cloned()
-            .unwrap_or_else(|| vec![0; arg_indices.len()]);
+            .unwrap_or_else(|| vec![0; prod.arg_indices.len()]);
         if current_lengths.iter().any(|len| *len == 0) {
             self.processed.insert(key, current_lengths);
             return Ok(false);
@@ -312,7 +296,7 @@ impl<'a> ClosureSolver<'a> {
             if tuple_is_inside_lengths(tuple, &previous_lengths) {
                 return Ok(());
             }
-            changed |= self.apply_tuple(nt_idx, &prod, &arg_indices, tuple)?;
+            changed |= self.apply_tuple(nt_idx, &prod, &prod.arg_indices, tuple)?;
             Ok(())
         })?;
         self.processed.insert(key, current_lengths);
@@ -368,8 +352,7 @@ impl<'a> ClosureSolver<'a> {
                 args.len()
             ));
         }
-        let needs_lfp = self.synth_self_ref && term_mentions_symbol(&func.body, &self.synth_name);
-        let bits = if needs_lfp {
+        let bits = if prod.requires_self_fixpoint {
             self.eval_constructor_lfp(func, args)?
         } else {
             self.eval_constructor_once(func, args, None)?
@@ -456,10 +439,13 @@ impl<'a> ClosureSolver<'a> {
             return Ok(false);
         };
         let width = self.nonterminals[nt_idx].width;
-        if width > 24 || self.nonterminals[nt_idx].values.is_empty() {
+        let generator_count = self.nonterminals[nt_idx].values.len();
+        if width > 24
+            || generator_count == 0
+            || generator_count == self.nonterminals[nt_idx].bool_closure_generators
+        {
             return Ok(false);
         }
-        let generator_count = self.nonterminals[nt_idx].values.len();
         let mut signatures: HashMap<Vec<bool>, Vec<usize>> = HashMap::default();
         for bit in 0..width {
             let sig = (0..generator_count)
@@ -469,6 +455,7 @@ impl<'a> ClosureSolver<'a> {
         }
         let blocks = signatures.into_values().collect::<Vec<_>>();
         if blocks.len() > 16 {
+            self.nonterminals[nt_idx].bool_closure_generators = generator_count;
             return Ok(false);
         }
         let false_term = SyGuSTerm::Identifier(Identifier::Symbol(false_ctor.clone()));
@@ -534,6 +521,7 @@ impl<'a> ClosureSolver<'a> {
             };
             changed |= self.insert_value(nt_idx, bits, term);
         }
+        self.nonterminals[nt_idx].bool_closure_generators = generator_count;
         Ok(changed)
     }
 
@@ -570,7 +558,22 @@ fn build_nonterminals(
             seen: HashSet::default(),
             productions,
             bool_ops,
+            bool_closure_generators: 0,
         });
+    }
+    for nt in &mut nonterminals {
+        for prod in &mut nt.productions {
+            prod.arg_indices = prod
+                .args
+                .iter()
+                .map(|arg| {
+                    nt_by_symbol
+                        .get(arg)
+                        .copied()
+                        .ok_or_else(|| format!("unknown grammar nonterminal {arg}"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+        }
     }
     Ok((nonterminals, nt_by_symbol, start))
 }
@@ -584,6 +587,8 @@ impl Production {
             SyGuSTerm::Identifier(Identifier::Symbol(name)) => Ok(Production {
                 ctor: name,
                 args: Vec::new(),
+                arg_indices: Vec::new(),
+                requires_self_fixpoint: false,
             }),
             SyGuSTerm::Application(Identifier::Symbol(name), args) => Ok(Production {
                 ctor: name,
@@ -596,6 +601,8 @@ impl Production {
                         )),
                     })
                     .collect::<Result<Vec<_>, _>>()?,
+                arg_indices: Vec::new(),
+                requires_self_fixpoint: false,
             }),
             other => Err(format!("unsupported grammar term {other}")),
         }
@@ -670,6 +677,7 @@ mod tests {
             seen,
             productions,
             bool_ops: BoolOps::default(),
+            bool_closure_generators: 0,
         }
     }
 
@@ -706,16 +714,10 @@ mod tests {
             },
         );
 
-        let mut nt_by_symbol = HashMap::default();
-        nt_by_symbol.insert("A".to_string(), 0);
-        nt_by_symbol.insert("B".to_string(), 1);
-        nt_by_symbol.insert("Out".to_string(), 2);
-
         let mut solver = ClosureSolver {
             problem: &problem,
             synth_name: "g".to_string(),
             synth_sort: Sort::Simple(Identifier::Symbol("Out".to_string())),
-            start: "Out".to_string(),
             funcs,
             nonterminals: vec![
                 nonterminal(1, vec![value("0", 1, "a0"), value("1", 1, "a1")], vec![]),
@@ -726,13 +728,14 @@ mod tests {
                     vec![Production {
                         ctor: "pair".to_string(),
                         args: vec!["A".to_string(), "B".to_string()],
+                        arg_indices: vec![0, 1],
+                        requires_self_fixpoint: false,
                     }],
                 ),
             ],
-            nt_by_symbol,
             constraints: Vec::new(),
             processed: HashMap::default(),
-            synth_self_ref: false,
+            next_start_check: 0,
             start_nt_idx: 2,
         };
 
@@ -751,5 +754,65 @@ mod tests {
         assert!(!solver.apply_production(2, 0).unwrap());
         assert_eq!(solver.nonterminals[2].values.len(), 4);
         assert_eq!(solver.processed[&(2, 0)], vec![2, 2]);
+    }
+
+    #[test]
+    fn satisfying_start_term_checks_only_new_values() {
+        let problem = DelisProg { cmds: Vec::new() };
+        let constraint = SyGuSTerm::Application(
+            Identifier::Symbol("=".to_string()),
+            vec![
+                symbol("g"),
+                SyGuSTerm::Literal(Literal::BinConst("1".to_string())),
+            ],
+        );
+        let mut solver = ClosureSolver {
+            problem: &problem,
+            synth_name: "g".to_string(),
+            synth_sort: Sort::Simple(Identifier::Symbol("Start".to_string())),
+            funcs: HashMap::default(),
+            nonterminals: vec![nonterminal(1, vec![value("0", 1, "zero")], vec![])],
+            constraints: vec![constraint],
+            processed: HashMap::default(),
+            next_start_check: 0,
+            start_nt_idx: 0,
+        };
+
+        assert!(solver.satisfying_start_term().unwrap().is_none());
+        assert_eq!(solver.next_start_check, 1);
+
+        solver.insert_value(0, Bits::from_bin("1"), symbol("one"));
+
+        assert!(solver.satisfying_start_term().unwrap().is_some());
+        assert_eq!(solver.next_start_check, 2);
+    }
+
+    #[test]
+    fn boolean_partition_close_skips_unchanged_generators() {
+        let problem = DelisProg { cmds: Vec::new() };
+        let mut nt = nonterminal(1, vec![value("0", 1, "zero"), value("1", 1, "one")], vec![]);
+        nt.bool_ops = BoolOps {
+            true_ctor: Some("Bool.true".to_string()),
+            false_ctor: Some("Bool.false".to_string()),
+            not_ctor: Some("Bool.not".to_string()),
+            and_ctor: Some("Bool.and".to_string()),
+            or_ctor: Some("Bool.or".to_string()),
+        };
+        let mut solver = ClosureSolver {
+            problem: &problem,
+            synth_name: "g".to_string(),
+            synth_sort: Sort::Simple(Identifier::Symbol("Start".to_string())),
+            funcs: HashMap::default(),
+            nonterminals: vec![nt],
+            constraints: Vec::new(),
+            processed: HashMap::default(),
+            next_start_check: 0,
+            start_nt_idx: 0,
+        };
+
+        assert!(!solver.boolean_partition_close(0).unwrap());
+        assert_eq!(solver.nonterminals[0].bool_closure_generators, 2);
+        assert!(!solver.boolean_partition_close(0).unwrap());
+        assert_eq!(solver.nonterminals[0].values.len(), 2);
     }
 }

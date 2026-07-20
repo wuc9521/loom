@@ -313,10 +313,13 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         constraints: semantic_constraints,
     };
 
-    if super::opts().bisim {
-        let _ = &loaded_models; // models are reachable via the SemanticContext built inside bisim
-        program.quotient_by_bisim(problem);
-    }
+    let mode = if super::opts().bisim {
+        super::bisim::QuotientMode::Coarsest
+    } else {
+        super::bisim::QuotientMode::FingerprintSeed
+    };
+    let _ = &loaded_models; // models are reachable via the SemanticContext built inside bisim
+    program.quotient_by_bisim(problem, mode);
 
     Ok(program)
 }
