@@ -149,22 +149,19 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         return Err("compilation requires at least one define-semantics".to_string());
     }
 
-    let mut semantic_specs = semantics
+    let semantic_specs = semantics
         .iter()
         .map(|cmd| SemanticSpec::from_cmd(cmd))
         .collect::<Result<Vec<_>, _>>()?;
-    // Parent-bearing programs use the crossing/certificate path, where a
-    // negative example needs its own existential rejection witness. Parent-free
-    // direct BV compilation computes the semantics exactly, so a negative
-    // example is just the primal bit constrained to false; adding dual domains
-    // there only bloats the search space.
-    let dualize_negatives = semantic_specs
+    let parent_bearing = semantic_specs
         .iter()
-        .any(|spec| contains_parent_navigation(&spec.body))
-        && has_negative_semantic_constraint(problem, &semantic_specs);
-    if dualize_negatives {
-        let duals = crate::compile::dual::dual_specs(&semantic_specs);
-        semantic_specs.extend(duals);
+        .any(|spec| contains_parent_navigation(&spec.body));
+    if parent_bearing && has_negative_semantic_constraint(problem, &semantic_specs) {
+        return Err(format!(
+            "parent-bearing program with negative semantic constraints requires a manual dual \
+             relation: declare a dual semantics (e.g. Cfg.Sem.dual) and use it as a positive \
+             constraint instead of (not (Cfg.Sem …))"
+        ));
     }
     let spaces_by_name = aspect_spaces
         .iter()
@@ -191,7 +188,6 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         &semantic_specs,
         &spaces_by_name,
         &models_by_name,
-        dualize_negatives,
     )?;
     let mut model_names = Vec::new();
     let mut seen_model_names = HashSet::default();
@@ -400,7 +396,6 @@ fn collect_semantic_constraints(
     semantic_specs: &[SemanticSpec],
     spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &Model>,
-    dualize_negatives: bool,
 ) -> Result<Vec<SemanticConstraint>, String> {
     let semantics_by_relation = semantic_specs
         .iter()
@@ -418,7 +413,6 @@ fn collect_semantic_constraints(
             &semantics_by_relation,
             spaces_by_name,
             models_by_name,
-            dualize_negatives,
         )? {
             constraints.push(constraint);
         }
@@ -489,7 +483,6 @@ fn parse_semantic_constraint(
     semantics_by_relation: &HashMap<String, &SemanticSpec>,
     spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
-    dualize_negatives: bool,
 ) -> Result<Option<SemanticConstraint>, String> {
     let (negated, outer_model, term) = peel_constraint_layers(term)?;
     let SyGuSTerm::Application(rel, args) = term else {
@@ -508,20 +501,11 @@ fn parse_semantic_constraint(
         .get(&spec.aspect_space)
         .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
     let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name, outer_model.as_deref())?;
-    // In the crossing/certificate path, a negative `(not (P …))` compiles to
-    // the dual relation's acceptance (`P.dual ≡ ¬P`). In the parent-free direct
-    // BV path, relation bits are exact truth values, so keep the primal relation
-    // and constrain the bit to false.
-    let (relation, expected) = if negated && dualize_negatives {
-        (crate::compile::dual::dual_name(&relation), true)
-    } else {
-        (relation, !negated)
-    };
     Ok(Some(SemanticConstraint {
         relation,
         model,
         fields,
-        expected,
+        expected: !negated,
     }))
 }
 

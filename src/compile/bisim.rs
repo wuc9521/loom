@@ -1139,24 +1139,6 @@ impl<'a> Refiner<'a> {
                     (lo..=hi).map(AspectValue::Int).collect()
                 }
             }
-            "univ" => {
-                let Ok((model_name, sort)) = self.ctx.parse_univ_expr(expr, env) else {
-                    return Vec::new();
-                };
-                let Ok(model) = self.ctx.model(&model_name) else {
-                    return Vec::new();
-                };
-                let sort_arc: Arc<str> = Arc::from(sort.as_str());
-                model
-                    .univ_for_sort(&sort)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|name| AspectValue::Univ {
-                        sort: sort_arc.clone(),
-                        name: Arc::from(name),
-                    })
-                    .collect()
-            }
             _ => Vec::new(),
         }
     }

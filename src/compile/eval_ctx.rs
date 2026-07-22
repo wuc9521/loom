@@ -351,34 +351,11 @@ impl<'a> SemanticContext<'a> {
         expr: &Value,
         env: &impl EnvView,
     ) -> Result<(String, String), String> {
-        // Bare sort symbol: resolve the model through the current semantic
-        // context, as in `(forall ((k Pos)) …)`.
         if let Some(sort) = expr.as_symbol() {
             let model = self.current_model(env)?;
             return Ok((model.to_string(), sort.to_string()));
         }
-        let items = expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("domain expression must be a list: {expr}"))?;
-        match items.as_slice() {
-            [domain, sort_app] if domain.as_symbol() == Some("univ") => {
-                let sort_items = sort_app.to_ref_vec().ok_or_else(|| {
-                    format!("domain argument must be a sort application: {sort_app}")
-                })?;
-                let [sort, model_expr] = sort_items.as_slice() else {
-                    return Err(format!(
-                        "domain argument must have shape (Sort model): {sort_app}"
-                    ));
-                };
-                let sort = sort
-                    .as_symbol()
-                    .ok_or_else(|| format!("domain sort must be a symbol: {sort}"))?
-                    .to_string();
-                let model = self.eval_model_name(model_expr, env)?;
-                Ok((model, sort))
-            }
-            _ => Err(format!("unsupported domain expression: {expr}")),
-        }
+        Err(format!("unsupported domain expression: {expr}"))
     }
 
     pub fn eval_aspect(

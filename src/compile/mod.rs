@@ -11,7 +11,6 @@ mod chc;
 mod closure;
 mod compiler;
 mod context;
-mod dual;
 mod parent;
 mod eval;
 mod eval_ctx;

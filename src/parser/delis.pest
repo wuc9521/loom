@@ -64,7 +64,7 @@ UnivElem = @{ Symbol }
 InterpedValue = {
   Literal
 | UnivElem
-| "(" ~ Identifier ~ SyGuSTerm+ ~ ")"
+| "(" ~ Identifier ~ SyGuSTerm* ~ ")"
 }
 
 // Pattern definition (simplified to match SMT-LIB2 style)

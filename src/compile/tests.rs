@@ -428,7 +428,7 @@ fn detects_two_way_navigation() {
 }
 
 #[test]
-fn parent_bearing_negatives_use_dual_relation() {
+fn parent_bearing_negatives_require_manual_dual() {
     let problem = parse(
         r#"
 
@@ -452,17 +452,11 @@ fn parent_bearing_negatives_use_dual_relation() {
 "#,
     );
 
-    let semantic_program = problem
+    let err = problem
         .semantic_program()
-        .expect("parent-bearing semantic program should compile");
+        .expect_err("parent-bearing negative without manual dual should error");
 
-    assert!(semantic_program
-        .semantics
-        .iter()
-        .any(|spec| spec.relation == "Cfg.Sem.dual"));
-    assert_eq!(semantic_program.constraints.len(), 1);
-    assert_eq!(semantic_program.constraints[0].relation, "Cfg.Sem.dual");
-    assert!(semantic_program.constraints[0].expected);
+    assert!(err.contains("manual dual"));
 }
 
 #[test]
@@ -568,10 +562,10 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
   ((FO.Sem (phi Formula) (asp FO.Asp)))
   ((match phi
      ((fol.exists.a x)
-      (exists ((v (univ (A (model asp)))))
+      (exists ((v A))
         (FO.Sem x (FO.Asp (model asp) (y asp)))))
      ((P.x.y)
-      (exists ((v (univ (A (model asp)))))
+      (exists ((v A))
         (P v (y asp)))))))
 (synth-fun phi () Formula)
 (constraint (FO.Sem phi (FO.Asp m $b0)))
@@ -996,7 +990,7 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
         .to_sygus()
         .expect_err("wrong aspect arity should be rejected");
 
-    assert!(err.contains("provides 1 scalar fields, expected 2"));
+    assert!(err.contains("provides 2 fields, expected 3"));
 }
 
 #[test]

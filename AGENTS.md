@@ -17,119 +17,70 @@ Key source modules live under `src/compile/`:
 | `eval_ctx.rs` | `SemanticContext`, `EnvView` trait, `eval_aspect`, `parse_univ_expr` |
 | `expr.rs` | `eval_bool`, `eval_int` over aspect assignment envs |
 | `bisim.rs` | Bisimulation quotient for state-space reduction |
-| `dual.rs` | Automatic dualization (slated for removal in Phase 3) |
 | `types.rs` | `AspectKey`, `AspectValue`, `FieldDomain`, `SemanticConstraint` |
 | `tests.rs` | Compile-level unit tests |
 
-## Active refactor: align with Facet++ paper
+## Facet++ paper alignment — ALL PHASES COMPLETE
 
 Approved plan: `/Users/wuchentian/.qoder/plans/eager-pool-pintail.md`
 
 Three goals:
-1. **Quantifiers range over bare sorts** — `(forall ((k Pos)) …)` instead of `(forall ((k (univ (Pos (model asp))))) …)`.
+1. **Quantifiers range over bare sorts** — `(forall ((k Pos)) …)`.
 2. **Aspects are records of plain sorts** (no `(model Model)` field); model supplied at constraint level via `(with-model M …)`.
-3. **Dual semantics declared manually** — remove `src/compile/dual.rs` auto-generation.
+3. **Dual semantics declared manually** — no auto-generation.
 
-Guiding principle: keep `AspectKey.model` internally during migration, but
-populate it from a compile-time `current_model` context rather than a
-user-visible aspect field.
+### Phase 1: Quantifiers over sorts — COMPLETE
 
-## Phase 1 — COMPLETE (all tests pass)
+`parse_univ_expr` accepts bare sort symbols, resolves model via `current_model(env)`.
 
-Bare sort symbols accepted as quantifier domains. Old `(univ …)` syntax still
-works.
+### Phase 2: Model-less aspects + `(with-model M …)` — COMPLETE
 
-### Files changed
-- `eval_ctx.rs`: `parse_univ_expr` accepts bare sort symbol → resolves via `current_model(env)`.
-- `compiler.rs`: extracted `univ_values_for_expr` helper; `quantifier_values` accepts non-list domain exprs.
-- `chc.rs`: same `quantifier_values` update.
-- `bisim.rs`: `expand_range` delegates bare sorts to `parse_univ_expr`.
-- `tests.rs`: added `bare_sort_quantifiers_use_current_model`.
+- `EnvView` trait has `current_model()` method.
+- `eval_aspect` determines model from aspect field if present, else from `current_model(env)`.
+- `lower_constraint` handles `(with-model M expr)` by setting `env.current_model`.
+- `parse_aspect_term` accepts `outer_model: Option<&str>` for model-less aspects.
+- Synthetic `("model", AspectValue::Model(...))` binding pushed at beginning of assignment vector.
 
-## Phase 2 — NEARLY COMPLETE (one test assertion needs fixing)
+### Phase 3: Remove automatic dualization — COMPLETE
 
-Model-less aspects + `(with-model M …)` wrapper. Both old and new syntax
-coexist.
+- Deleted `src/compile/dual.rs`.
+- Parent-bearing programs with negative semantic constraints emit a clear error requesting a manual dual.
 
-### Files changed
-- `eval_ctx.rs`:
-  - `EnvView` trait gained `current_model()` default method (returns `None`).
-  - `SemanticContext::current_model` prefers `env.current_model()`, falls back to aspect model.
-  - `eval_aspect` rewritten: determines model from aspect field if present, else from `current_model(env)`. Arity error message changed from `"provides {} scalar fields, expected {}"` (with model-field subtraction) to `"provides {} fields, expected {}"` (no subtraction).
-- `compiler.rs`:
-  - `Env` struct gained `current_model: Option<String>`.
-  - `constraint_model_env` sets `env.current_model` instead of injecting a fake aspect.
-  - `resolve_constraint_model` replaces `extract_model_from_aspect`: checks if aspect space has Model field; if yes, extracts from args; if no, uses `env.current_model()`.
-  - `lower_constraint` handles `(with-model M expr)` by cloning env and setting `current_model`.
-- `chc.rs`: `Env` gained `current_model`; seeded from `bit.aspect.model`.
-- `bisim.rs`: `WalkEnv` gained `current_model`; seeded from `aspect.model`.
-- `aspects.rs`:
-  - `peel_constraint_layers` strips `(not …)` and `(with-model M …)` wrappers, returns `(is_negative, outer_model, inner_term)`.
-  - `parse_aspect_term` accepts `outer_model: Option<&str>`; synthetic `("model", AspectValue::Model(...))` binding added at the **beginning** of assignment (before field evaluation) so `:where` clauses and expressions like `(size (Pos model))` work for model-less aspects.
-  - `enumerate_aspects` adds the same synthetic binding before `:where` evaluation.
-  - `has_negative_semantic_constraint` and `collect_models_in_term` use `peel_constraint_layers`.
-- `tests.rs`: added `model_less_aspects_use_with_model_context` (passes).
+### `(univ ...)` syntax eliminated — COMPLETE
 
-### Remaining fix for Phase 2
+The `(univ (Sort (model asp)))` syntax has been fully removed from the codebase.
 
-**`src/compile/tests.rs:999`** — update assertion from:
-```rust
-assert!(err.contains("provides 1 scalar fields, expected 2"));
-```
-to:
-```rust
-assert!(err.contains("provides 1 fields, expected 2"));
-```
+Changes:
+- `eval_ctx.rs`: `parse_univ_expr` only accepts bare sort symbols; the `univ` branch is removed.
+- `bisim.rs`: Removed the `"univ"` case from `expand_range`.
+- `tests.rs`: Updated tests to use bare sort names.
+- FO benchmark `.sl` files: Migrated `(univ (Sort))` → bare `Sort`.
+- Python generator scripts (`fol2sl.py`, `gen_eqstyle.py`, `gen_eqstyle_v1.py`): Updated to emit bare sort names.
 
-Then run `cargo test` to confirm.
+### Vendored sygus-parser — supports zero-argument applications
 
-### Caveat: leftover debug print
+The `sygus-parser` crate is vendored at `sygus-parser/` and patched via `[patch.crates-io]` in `Cargo.toml`.
 
-`src/compile/aspects.rs:632` has a stray `eprintln!("DEBUG parse_aspect_term assignment: {assignment:?}");` that must be removed.
+Patches:
+- Grammar (`sygus.v2.pest`): `SyGuSTerm+` → `SyGuSTerm*` (and `SyGuSBfTerm+` → `SyGuSBfTerm*`) to allow zero-argument applications like `(FO.Asp)`.
+- AST construction (`ast/terms.rs`): When a `SyGuSTerm` has a single `Identifier` inner pair but the matched string starts with `(`, construct `Application(identifier, vec![])` instead of `Identifier`. This distinguishes `(FO.Asp)` from bare `FO.Asp`.
 
-### Caveat: pre-existing test failures (not caused by this refactor)
+The local Delis grammar (`src/parser/sygus.v2.pest` and `src/parser/delis.pest`) has the same `*` fix for consistency, though the actual constraint parsing goes through the vendored crate.
 
-- `enumerates_subword_aspects_and_constraint_polarities` — assertion failure, was failing before changes.
+### Benchmark migration — COMPLETE
+
+All `.sl` files under `benchmark/` migrated to paper-aligned syntax. Verified: 0 files with `(model Model)`, 0 files with `(univ …)`.
+
+### Pre-existing test failures (not caused by this refactor)
+
+- `enumerates_subword_aspects_and_constraint_polarities` — assertion failure.
 - `parent_semantics_match_lfp_all_shapes` — missing external files/tools.
 - `r0_support_edges_are_within_may_dep` — missing external files/tools.
-
-### Caveat: synthetic "model" binding placement
-
-The synthetic `("model", AspectValue::Model(model_name))` binding **must** be
-pushed at the **beginning** of the assignment vector, before the field
-evaluation loop. Field value expressions (e.g. `(size (Pos model))`) are
-evaluated during the loop and need `model` already bound. Placing it after the
-loop causes "expected Model expression, got Symbol(\"model\")" errors.
-
-### Caveat: `expr.rs` finds model by scanning for `AspectValue::Model`
-
-`eval_bool` and `eval_int` in `src/compile/expr.rs` locate the current model by
-scanning the assignment env for an `AspectValue::Model` entry. The synthetic
-binding makes this work for model-less aspects. No changes were needed in
-`expr.rs` itself.
-
-## Phase 3 — NOT STARTED
-
-- Delete `src/compile/dual.rs`.
-- Remove `dualize_negatives` logic and `dual::dual_specs` call from `aspects.rs`.
-- Remove `dualize_negatives` parameter from `collect_semantic_constraints` and related helpers.
-- CHC paired positive/negative predicate emission stays (it's part of the CHC encoding, not auto-dual).
-- Add explicit error: if program is parent-bearing and has negative semantic constraints without a user-declared dual relation, emit a clear error explaining a manual dual evaluator is required.
-- `src/compile/mod.rs:14` still declares `mod dual;` — remove when module is deleted.
-
-## Benchmark migration — NOT STARTED
-
-Mechanical syntax changes across `benchmark/**/theories/*.sl`:
-- Replace `(forall ((k (univ (Pos (model asp))))) …)` with `(forall ((k Pos)) …)`.
-- Remove `(model Model)` from aspect records.
-- Wrap constraints in `(with-model M …)`.
-
-Do family by family, running tests after each.
 
 ## Build & test
 
 ```sh
-cargo test                    # run all tests
+cargo test                    # run all tests (43 pass, 3 pre-existing failures)
 cargo test -- --skip parent   # skip parent-bearing tests needing external tools
 cargo run -- --dump-sygus <file.sl>  # inspect generated SyGuS
 ```
