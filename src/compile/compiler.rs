@@ -35,6 +35,8 @@ struct Env {
     children: HashMap<String, ChildBinding>,
     relation: Option<String>,
     self_var: Option<String>,
+    /// Explicit model context established by a surrounding `(with-model M …)`.
+    current_model: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +64,10 @@ impl EnvView for Env {
 
     fn values(&self) -> &HashMap<String, AspectValue> {
         &self.values
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        self.current_model.as_deref()
     }
 }
 
@@ -440,6 +446,15 @@ impl<'a> Compiler<'a> {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(Bool::or(disjuncts))
             }
+            "with-model" if items.len() == 3 => {
+                let model = items[1]
+                    .as_symbol()
+                    .ok_or_else(|| format!("with-model expects a model symbol: {term}"))?
+                    .to_string();
+                let mut inner_env = env.clone();
+                inner_env.current_model = Some(model);
+                self.lower_constraint(items[2], &inner_env)
+            }
             "=" if items.len() == 3 => self.lower_equality(items[1], items[2], env),
             relation if self.is_synth_relation_call(relation, &items[1..]) => {
                 self.lower_synth_relation(relation, &items[1..], env)
@@ -465,7 +480,7 @@ impl<'a> Compiler<'a> {
         &self,
         relation: &str,
         args: &[&Value],
-        _env: &Env,
+        env: &Env,
     ) -> Result<SyGuSTerm, String> {
         if args.len() != 2 {
             return Err(format!(
@@ -473,7 +488,7 @@ impl<'a> Compiler<'a> {
             ));
         }
         let aspect_expr = args[1];
-        let model = self.extract_model_from_aspect(relation, aspect_expr)?;
+        let model = self.resolve_constraint_model(relation, aspect_expr, env)?;
         let seed_env = self.constraint_model_env(&model);
         let aspect =
             self.strip_param_fields(&self.cached_eval_aspect(aspect_expr, relation, &seed_env)?);
@@ -487,7 +502,7 @@ impl<'a> Compiler<'a> {
 
     /// Lower `(= lhs rhs)` in a constraint. One side is a semantic relation
     /// call on the synth target; the other is a ground value expression.
-    fn lower_equality(&self, lhs: &Value, rhs: &Value, _env: &Env) -> Result<SyGuSTerm, String> {
+    fn lower_equality(&self, lhs: &Value, rhs: &Value, env: &Env) -> Result<SyGuSTerm, String> {
         let (call, out_expr) = if self.is_value_synth_call(lhs) {
             (lhs, rhs)
         } else if self.is_value_synth_call(rhs) {
@@ -505,7 +520,7 @@ impl<'a> Compiler<'a> {
             .as_symbol()
             .ok_or_else(|| format!("relation must be a symbol: {}", call_items[0]))?;
         let aspect_expr = call_items[2];
-        let model = self.extract_model_from_aspect(relation, aspect_expr)?;
+        let model = self.resolve_constraint_model(relation, aspect_expr, env)?;
         let seed_env = self.constraint_model_env(&model);
         let out_value = self.cached_eval_value(out_expr, &seed_env)?;
         let aspect =
@@ -574,45 +589,49 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// Extract the model name from an aspect expression by inspecting its
-    /// space's fields for the `Model`-sorted one.
-    fn extract_model_from_aspect(
+    /// Resolve the model name for a constraint's aspect expression.  If the
+    /// aspect space declares a `(model Model)` field, the model is taken from
+    /// the aspect arguments (old style).  Otherwise it must come from the
+    /// surrounding `(with-model M …)` context (new style).
+    fn resolve_constraint_model(
         &self,
         relation: &str,
         aspect_expr: &Value,
+        env: &Env,
     ) -> Result<String, String> {
         let space = {
             let domain = self.ctx.domain_for_relation(relation)?;
             self.ctx.aspect_space(&domain.aspect_space)?
         };
-        let aspect_args = aspect_expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("aspect expression must be a list: {aspect_expr}"))?;
-        for (field, arg) in space.fields.iter().zip(aspect_args.iter().skip(1)) {
-            if matches!(&field.domain, crate::compile::types::FieldDomain::Sort(s) if s == "Model")
-            {
-                if let Some(name) = arg.as_symbol() {
-                    return Ok(name.to_string());
+        let has_model_field = space
+            .fields
+            .iter()
+            .any(|field| field.domain.as_sort() == Some("Model"));
+        if has_model_field {
+            let aspect_args = aspect_expr
+                .to_ref_vec()
+                .ok_or_else(|| format!("aspect expression must be a list: {aspect_expr}"))?;
+            for (field, arg) in space.fields.iter().zip(aspect_args.iter().skip(1)) {
+                if field.domain.as_sort() == Some("Model") {
+                    if let Some(name) = arg.as_symbol() {
+                        return Ok(name.to_string());
+                    }
                 }
             }
+            return Err(format!(
+                "aspect expression has no Model argument: {aspect_expr}"
+            ));
         }
-        Err(format!(
-            "aspect expression has no Model field: {aspect_expr}"
-        ))
+        env.current_model()
+            .map(str::to_string)
+            .ok_or_else(|| format!("aspect {aspect_expr} requires a (with-model M …) context"))
     }
 
     /// An `Env` seeded with a model, so `current_model()` resolves during
     /// evaluation of ground sub-expressions in constraints.
     fn constraint_model_env(&self, model: &str) -> Env {
         let mut env = Env::default();
-        env.aspect.insert(
-            "__delis.constraint.model".to_string(),
-            AspectKey {
-                relation: String::new(),
-                model: model.to_string(),
-                fields: Vec::new(),
-            },
-        );
+        env.current_model = Some(model.to_string());
         env
     }
 
@@ -1311,39 +1330,46 @@ impl<'a> Compiler<'a> {
         if let Some(cached) = self.quantifier_values_cache.borrow().get(&memo_key) {
             return Ok(cached.clone());
         }
-        let items = domain_expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("unsupported domain expression: {domain_expr}"))?;
-        let result = match items.first().and_then(|item| item.as_symbol()) {
-            Some("int-range") if items.len() == 3 => {
-                let lo = self.ctx.eval_int_expr(items[1], env)?;
-                let hi = self.cached_eval_int_expr(items[2], env)?;
-                if lo < 0 || hi < lo {
-                    Vec::new()
-                } else {
-                    (lo as usize..=hi as usize).map(AspectValue::Int).collect()
+        let result = if let Some(items) = domain_expr.to_ref_vec() {
+            match items.as_slice() {
+                [domain, lo, hi] if domain.as_symbol() == Some("int-range") => {
+                    let lo = self.ctx.eval_int_expr(lo, env)?;
+                    let hi = self.cached_eval_int_expr(hi, env)?;
+                    if lo < 0 || hi < lo {
+                        Vec::new()
+                    } else {
+                        (lo as usize..=hi as usize).map(AspectValue::Int).collect()
+                    }
                 }
+                _ => self.univ_values_for_expr(domain_expr, env)?,
             }
-            _ => {
-                let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
-                let model_ref = self.ctx.model(&model)?;
-                let values = model_ref
-                    .univ_for_sort(&sort)
-                    .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
-                let sort_arc: Arc<str> = Arc::from(sort.as_str());
-                values
-                    .into_iter()
-                    .map(|name| AspectValue::Univ {
-                        sort: sort_arc.clone(),
-                        name: Arc::from(name),
-                    })
-                    .collect()
-            }
+        } else {
+            self.univ_values_for_expr(domain_expr, env)?
         };
         self.quantifier_values_cache
             .borrow_mut()
             .insert(memo_key, result.clone());
         Ok(result)
+    }
+
+    fn univ_values_for_expr(
+        &self,
+        domain_expr: &Value,
+        env: &Env,
+    ) -> Result<Vec<AspectValue>, String> {
+        let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
+        let model_ref = self.ctx.model(&model)?;
+        let values = model_ref
+            .univ_for_sort(&sort)
+            .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
+        let sort_arc: Arc<str> = Arc::from(sort.as_str());
+        Ok(values
+            .into_iter()
+            .map(|name| AspectValue::Univ {
+                sort: sort_arc.clone(),
+                name: Arc::from(name),
+            })
+            .collect())
     }
 
     fn eval_semantic_bool_call(

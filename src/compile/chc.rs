@@ -131,6 +131,7 @@ struct Env {
     current_sort: Option<Rc<String>>,
     current_var: Option<Rc<String>>,
     current_term: Option<Rc<HornTerm>>,
+    current_model: Option<String>,
 }
 
 impl EnvView for Env {
@@ -140,6 +141,10 @@ impl EnvView for Env {
 
     fn values(&self) -> &HashMap<String, AspectValue> {
         &self.values
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        self.current_model.as_deref()
     }
 }
 
@@ -341,6 +346,7 @@ impl<'a> ChcCompiler<'a> {
             }
             for bit in &domain.bits {
                 Rc::make_mut(&mut env.aspect).insert(case.aspect_var.clone(), bit.aspect.clone());
+                env.current_model = Some(bit.aspect.model.clone());
                 let (formula, neg_formula) = match (&domain.kind, &bit.value) {
                     (SemanticKind::Bool, None) => {
                         let pair = self.eval_bool_pair(&case.body, &env)?;
@@ -734,22 +740,24 @@ impl<'a> ChcCompiler<'a> {
         domain_expr: &Value,
         env: &Env,
     ) -> Result<Vec<AspectValue>, String> {
-        let items = domain_expr
-            .to_ref_vec()
-            .ok_or_else(|| format!("unsupported domain expression: {domain_expr}"))?;
-        match items.first().and_then(|item| item.as_symbol()) {
-            Some("int-range") if items.len() == 3 => {
-                let lo = self.eval_int(items[1], env)?;
-                let hi = self.eval_int(items[2], env)?;
-                if lo < 0 || hi < lo {
-                    return Ok(Vec::new());
+        if let Some(items) = domain_expr.to_ref_vec() {
+            match items.as_slice() {
+                [domain, lo, hi] if domain.as_symbol() == Some("int-range") => {
+                    let lo = self.eval_int(lo, env)?;
+                    let hi = self.eval_int(hi, env)?;
+                    if lo < 0 || hi < lo {
+                        return Ok(Vec::new());
+                    }
+                    Ok((lo as usize..=hi as usize).map(AspectValue::Int).collect())
                 }
-                Ok((lo as usize..=hi as usize).map(AspectValue::Int).collect())
+                _ => {
+                    let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
+                    self.cached_domain_values(&model, &sort)
+                }
             }
-            _ => {
-                let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
-                self.cached_domain_values(&model, &sort)
-            }
+        } else {
+            let (model, sort) = self.ctx.parse_univ_expr(domain_expr, env)?;
+            self.cached_domain_values(&model, &sort)
         }
     }
 

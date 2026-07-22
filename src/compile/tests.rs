@@ -196,6 +196,48 @@ fn aspect_fields_are_not_named_primitives() {
 }
 
 #[test]
+fn model_less_aspects_use_with_model_context() {
+    let problem = parse(
+        r#"
+
+(declare-sort Pos 0)
+(declare-fun a (Pos) Bool)
+(define-model w1
+  (interp-sort Pos ($0 $1))
+  (interp-fun a (match (((_) true)))))
+(define-model w5
+  (interp-sort Pos ($0 $1 $2))
+  (interp-fun a (match (((_) true)))))
+(declare-term-types ((Regex 0)) (((a))))
+(define-aspects RegLan.Asp
+  (record (i Int) (j Int))
+  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+(define-semantics
+  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
+  ((match r ((a) true))))
+(synth-fun r () Regex)
+(constraint (with-model w1 (Regex.Sem r (RegLan.Asp 0 (size (Pos model))))))
+(constraint (not (with-model w5 (Regex.Sem r (RegLan.Asp 0 (size (Pos model)))))))
+(check-synth)
+"#,
+    );
+
+    let summary = problem.encode().expect("compilation should summarize");
+
+    assert_eq!(summary.bit_mappings.len(), 16);
+    assert_eq!(summary.semantic_relations, vec!["Regex.Sem"]);
+    assert_eq!(summary.constraint_bits.len(), 2);
+    assert_eq!(summary.constraint_bits[0].relation, "Regex.Sem");
+    assert_eq!(summary.constraint_bits[0].model, "w1");
+    assert!(summary.constraint_bits[0].expected);
+    assert_eq!(summary.constraint_bits[0].bit, 2);
+    assert_eq!(summary.constraint_bits[1].relation, "Regex.Sem");
+    assert_eq!(summary.constraint_bits[1].model, "w5");
+    assert!(!summary.constraint_bits[1].expected);
+    assert_eq!(summary.constraint_bits[1].bit, 9);
+}
+
+#[test]
 fn enum_aspect_symbols_compare_as_finite_values() {
     let problem = parse(
         r#"
@@ -540,6 +582,49 @@ fn quantified_domains_can_select_a_non_primary_universe_sort() {
     let sygus = problem
         .to_sygus()
         .expect("typed quantified domains should lower to SyGuS");
+    assert!(!sygus.is_empty());
+}
+
+#[test]
+fn bare_sort_quantifiers_use_current_model() {
+    let problem = parse(
+        r#"
+
+(declare-sort A 0)
+(declare-sort B 0)
+(declare-fun P (A B) Bool)
+(define-model m
+  (interp-sort B ($b0))
+  (interp-sort A ($a0 $a1))
+  (interp-fun P (match ((($a1 $b0) true) ((_ _) false)))))
+(declare-term-types
+ ((Formula 0))
+ (((fol.forall.a Formula)
+   (fol.exists.a Formula)
+   (P.x.y))))
+(define-aspects FO.Asp
+  (record (model Model) (y B)))
+(define-semantics
+  ((FO.Sem (phi Formula) (asp FO.Asp)))
+  ((match phi
+     ((fol.forall.a x)
+      (forall ((v A))
+        (FO.Sem x (FO.Asp (model asp) (y asp)))))
+     ((fol.exists.a x)
+      (exists ((v A))
+        (FO.Sem x (FO.Asp (model asp) (y asp)))))
+     ((P.x.y)
+      (exists ((v A))
+        (P v (y asp)))))))
+(synth-fun phi () Formula)
+(constraint (FO.Sem phi (FO.Asp m $b0)))
+(check-synth)
+"#,
+    );
+
+    let sygus = problem
+        .to_sygus()
+        .expect("bare-sort quantifier domains should lower to SyGuS");
     assert!(!sygus.is_empty());
 }
 

@@ -22,6 +22,13 @@ use sygus_parser::SExpr as Value;
 pub trait EnvView {
     fn aspects(&self) -> &HashMap<String, AspectKey>;
     fn values(&self) -> &HashMap<String, AspectValue>;
+    /// Explicit current model context, if one has been established (e.g. by a
+    /// surrounding `(with-model M …)`).  Implementations without such a context
+    /// should return `None`; callers fall back to the model stored in the first
+    /// aspect binding for backward compatibility with old-style aspects.
+    fn current_model(&self) -> Option<&str> {
+        None
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Clone)]
@@ -32,33 +39,32 @@ struct EvalKey {
 }
 
 struct ConstraintModelEnv {
-    aspect: HashMap<String, AspectKey>,
+    current_model: String,
 }
 
 impl ConstraintModelEnv {
     fn new(model: &str) -> Self {
-        let mut aspect = HashMap::default();
-        aspect.insert(
-            "__delis.constraint.model".to_string(),
-            AspectKey {
-                relation: String::new(),
-                model: model.to_string(),
-                fields: Vec::new(),
-            },
-        );
-        Self { aspect }
+        Self {
+            current_model: model.to_string(),
+        }
     }
 }
 
 impl EnvView for ConstraintModelEnv {
     fn aspects(&self) -> &HashMap<String, AspectKey> {
-        &self.aspect
+        static EMPTY: std::sync::LazyLock<HashMap<String, AspectKey>> =
+            std::sync::LazyLock::new(HashMap::default);
+        &EMPTY
     }
 
     fn values(&self) -> &HashMap<String, AspectValue> {
         static EMPTY: std::sync::LazyLock<HashMap<String, AspectValue>> =
             std::sync::LazyLock::new(HashMap::default);
         &EMPTY
+    }
+
+    fn current_model(&self) -> Option<&str> {
+        Some(&self.current_model)
     }
 }
 
@@ -294,17 +300,17 @@ impl<'a> SemanticContext<'a> {
             .ok_or_else(|| format!("no semantic spec for relation {relation}"))
     }
 
-    /// Returns the current aspect's model name without cloning.
+    /// Returns the current model name without cloning.
     ///
-    /// The borrowed `&str` is tied to `env`'s lifetime, so callers must not
-    /// outlive `env`. Saves one allocation per call — hot enough on the bisim
-    /// path to show up at 0.7% self time on test_col before this change.
+    /// Prefer an explicit model context on `env` (set by `(with-model M …)`),
+    /// falling back to the model stored in the first aspect binding for
+    /// backward compatibility with old-style aspects that carry a `(model
+    /// Model)` field.  The borrowed `&str` is tied to `env`'s lifetime, so
+    /// callers must not outlive `env`.
     pub fn current_model<'e>(&self, env: &'e impl EnvView) -> Result<&'e str, String> {
-        env.aspects()
-            .values()
-            .next()
-            .map(|aspect| aspect.model.as_str())
-            .ok_or_else(|| "no current aspect in semantic environment".to_string())
+        env.current_model()
+            .or_else(|| env.aspects().values().next().map(|aspect| aspect.model.as_str()))
+            .ok_or_else(|| "no current model in semantic environment".to_string())
     }
 
     pub fn model(&self, name: &str) -> Result<&'a Model, String> {
@@ -345,6 +351,12 @@ impl<'a> SemanticContext<'a> {
         expr: &Value,
         env: &impl EnvView,
     ) -> Result<(String, String), String> {
+        // Bare sort symbol: resolve the model through the current semantic
+        // context, as in `(forall ((k Pos)) …)`.
+        if let Some(sort) = expr.as_symbol() {
+            let model = self.current_model(env)?;
+            return Ok((model.to_string(), sort.to_string()));
+        }
         let items = expr
             .to_ref_vec()
             .ok_or_else(|| format!("domain expression must be a list: {expr}"))?;
@@ -398,27 +410,35 @@ impl<'a> SemanticContext<'a> {
         }
         if items.len() - 1 != space.fields.len() {
             return Err(format!(
-                "aspect constructor {} provides {} scalar fields, expected {}",
+                "aspect constructor {} provides {} fields, expected {}",
                 cons,
-                items.len().saturating_sub(2),
-                space.fields.len().saturating_sub(1)
+                items.len().saturating_sub(1),
+                space.fields.len()
             ));
         }
-        let mut model = None;
+        let has_model_field = space
+            .fields
+            .iter()
+            .any(|field| field.domain.as_sort() == Some("Model"));
+        let model_name = if has_model_field {
+            let mut model = None;
+            for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
+                if field.domain.as_sort() == Some("Model") {
+                    model = Some(self.eval_model_name(arg, env)?);
+                }
+            }
+            model.ok_or_else(|| format!("aspect {cons} has no model argument"))?
+        } else {
+            self.current_model(env)?.to_string()
+        };
         let mut fields = Vec::new();
         for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
             match &field.domain {
-                crate::compile::types::FieldDomain::Sort(sort) if sort == "Model" => {
-                    model = Some(self.eval_model_name(arg, env)?);
-                }
+                crate::compile::types::FieldDomain::Sort(sort) if sort == "Model" => {}
                 crate::compile::types::FieldDomain::Sort(sort) => {
-                    let value = if let Some(model_name) = model.as_deref() {
-                        self.eval_explicit_aspect_field(arg, sort, model_name, env)
-                            .unwrap_or_else(|_| AspectValue::Symbol(arg.to_string()))
-                    } else {
-                        self.eval_value_for_sort(arg, sort, env)
-                            .unwrap_or_else(|_| AspectValue::Symbol(arg.to_string()))
-                    };
+                    let value = self
+                        .eval_explicit_aspect_field(arg, sort, &model_name, env)
+                        .unwrap_or_else(|_| AspectValue::Symbol(arg.to_string()));
                     fields.push((field.name.clone(), value));
                 }
                 crate::compile::types::FieldDomain::Enum(values) => {
@@ -436,7 +456,7 @@ impl<'a> SemanticContext<'a> {
         }
         Ok(AspectKey {
             relation: relation.to_string(),
-            model: model.ok_or_else(|| format!("aspect {cons} has no model field"))?,
+            model: model_name,
             fields,
         })
     }

@@ -352,6 +352,15 @@ fn collect_models_in_term(
     match term {
         SyGuSTerm::Application(id, args) => {
             let name = id.get_name();
+            if name == "with-model" && args.len() == 2 {
+                if let SyGuSTerm::Identifier(Identifier::Symbol(model_name)) = &args[0] {
+                    if seen.insert(model_name.clone()) {
+                        out.push(model_name.clone());
+                    }
+                }
+                collect_models_in_term(&args[1], spaces_by_name, seen, out);
+                return;
+            }
             if let Some(space) = spaces_by_name.get(name) {
                 for (field, arg) in space.fields.iter().zip(args.iter()) {
                     if matches!(&field.domain, FieldDomain::Sort(sort) if sort == "Model") {
@@ -417,18 +426,62 @@ fn collect_semantic_constraints(
     Ok(constraints)
 }
 
-/// True if any `(constraint (not (P …)))` mentions a semantic relation `P`.
+/// True if any `(constraint (not (P …)))` mentions a semantic relation `P`,
+/// possibly wrapped in `(with-model M …)`.
 fn has_negative_semantic_constraint(problem: &DelisProg, specs: &[SemanticSpec]) -> bool {
     let rels: HashSet<&str> = specs.iter().map(|s| s.relation.as_str()).collect();
     problem.cmds.iter().any(|cmd| {
-        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(SyGuSTerm::Application(sym, args))) = cmd
-        else {
+        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
             return false;
         };
-        sym.to_string() == "not"
-            && args.len() == 1
-            && matches!(&args[0], SyGuSTerm::Application(rel, _) if rels.contains(rel.to_string().as_str()))
+        let Ok((negated, _, inner)) = peel_constraint_layers(term) else {
+            return false;
+        };
+        negated
+            && matches!(
+                inner,
+                SyGuSTerm::Application(rel, _) if rels.contains(rel.to_string().as_str())
+            )
     })
+}
+
+/// Strip `(not …)` and `(with-model M …)` wrappers from a semantic constraint
+/// and return the negation flag, the outer model (if any), and the inner
+/// relation application.
+fn peel_constraint_layers(
+    term: &SyGuSTerm,
+) -> Result<(bool, Option<String>, &SyGuSTerm), String> {
+    let mut negated = false;
+    let mut outer_model: Option<String> = None;
+    let mut term = term;
+    loop {
+        match term {
+            SyGuSTerm::Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
+                negated = !negated;
+                term = &args[0];
+            }
+            SyGuSTerm::Application(sym, args)
+                if sym.to_string() == "with-model" && args.len() == 2 =>
+            {
+                let model = match &args[0] {
+                    SyGuSTerm::Identifier(Identifier::Symbol(name)) => name.clone(),
+                    other => {
+                        return Err(format!(
+                            "with-model expects a model symbol, got {other}"
+                        ))
+                    }
+                };
+                if outer_model.is_some() {
+                    return Err(format!(
+                        "nested with-model wrappers are not allowed: {term}"
+                    ));
+                }
+                outer_model = Some(model);
+                term = &args[1];
+            }
+            _ => return Ok((negated, outer_model, term)),
+        }
+    }
 }
 
 fn parse_semantic_constraint(
@@ -438,12 +491,7 @@ fn parse_semantic_constraint(
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
     dualize_negatives: bool,
 ) -> Result<Option<SemanticConstraint>, String> {
-    let (negated, term) = match term {
-        SyGuSTerm::Application(sym, args) if sym.to_string() == "not" && args.len() == 1 => {
-            (true, &args[0])
-        }
-        _ => (false, term),
-    };
+    let (negated, outer_model, term) = peel_constraint_layers(term)?;
     let SyGuSTerm::Application(rel, args) = term else {
         return Ok(None);
     };
@@ -459,7 +507,7 @@ fn parse_semantic_constraint(
     let aspect_space = spaces_by_name
         .get(&spec.aspect_space)
         .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
-    let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name)?;
+    let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name, outer_model.as_deref())?;
     // In the crossing/certificate path, a negative `(not (P …))` compiles to
     // the dual relation's acceptance (`P.dual ≡ ¬P`). In the parent-free direct
     // BV path, relation bits are exact truth values, so keep the primal relation
@@ -481,6 +529,7 @@ fn parse_aspect_term(
     term: &SyGuSTerm,
     aspect_space: &AspectSpace,
     models_by_name: &HashMap<String, &crate::lang::model::Model>,
+    outer_model: Option<&str>,
 ) -> Result<(String, Vec<(String, AspectValue)>), String> {
     let SyGuSTerm::Application(cons, args) = term else {
         return Err(format!(
@@ -502,21 +551,39 @@ fn parse_aspect_term(
         ));
     }
 
-    let mut model_name = None;
-    for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
-        if field.domain.as_sort() == Some("Model") {
-            model_name = Some(arg.to_string());
-            break;
+    let has_model_field = aspect_space
+        .fields
+        .iter()
+        .any(|field| field.domain.as_sort() == Some("Model"));
+    let model_name = if has_model_field {
+        let mut name = None;
+        for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
+            if field.domain.as_sort() == Some("Model") {
+                name = Some(arg.to_string());
+                break;
+            }
         }
-    }
-    let model_name =
-        model_name.ok_or_else(|| format!("aspect {} has no Model field", aspect_space.name))?;
+        name.ok_or_else(|| format!("aspect {} has no Model argument", aspect_space.name))?
+    } else {
+        outer_model
+            .ok_or_else(|| {
+                format!(
+                    "aspect {} has no Model field; constraint must be wrapped in (with-model M …)",
+                    aspect_space.name
+                )
+            })?
+            .to_string()
+    };
     let model = models_by_name
         .get(&model_name)
         .ok_or_else(|| format!("constraint references unknown model {model_name}"))?;
     let univs = univs_by_sort(model);
 
     let mut assignment = Vec::new();
+    // Make the current model available under the generic name `model` before
+    // evaluating field values, so expressions like `(size (Pos model))` work
+    // for aspect records without a `(model Model)` field.
+    assignment.push(("model".to_string(), AspectValue::Model(model_name.clone())));
     for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
         let value = match &field.domain {
             FieldDomain::Sort(sort) if sort == "Model" => AspectValue::Model(arg.to_string()),
@@ -766,11 +833,15 @@ fn enumerate_aspects(
         .map(|(_, values)| values)
         .multi_cartesian_product()
     {
-        let assignment = domains
+        let mut assignment = domains
             .iter()
             .zip(values)
             .map(|((name, _), value)| (name.clone(), value.clone()))
             .collect::<Vec<_>>();
+        // Make the current model available under the generic name `model` so
+        // `:where` clauses can refer to it without requiring a `(model Model)`
+        // field in the aspect record.
+        assignment.push(("model".to_string(), AspectValue::Model(model_name.to_string())));
         let keep = match &space.where_expr {
             Some(expr) => eval_bool(expr, &assignment, models_by_name)?,
             None => true,

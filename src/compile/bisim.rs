@@ -574,6 +574,7 @@ struct WalkEnv {
     subterms: HashMap<String, usize>,     // constructor pattern vars
     subterm_sorts: HashMap<String, String>,
     current_sort: String,
+    current_model: Option<String>,
 }
 
 impl EnvView for WalkEnv {
@@ -582,6 +583,9 @@ impl EnvView for WalkEnv {
     }
     fn values(&self) -> &HashMap<String, AspectValue> {
         &self.values
+    }
+    fn current_model(&self) -> Option<&str> {
+        self.current_model.as_deref()
     }
 }
 
@@ -619,6 +623,7 @@ impl<'a> Refiner<'a> {
             subterms: HashMap::default(),
             subterm_sorts: HashMap::default(),
             current_sort: sem.term_sort.clone(),
+            current_model: Some(aspect.model.clone()),
         };
         let aspect_var = cases
             .values()
@@ -1093,6 +1098,26 @@ impl<'a> Refiner<'a> {
     }
 
     fn expand_range(&self, expr: &Value, env: &WalkEnv) -> Vec<AspectValue> {
+        // Bare sort symbol: resolve through the current model, matching the
+        // compiler's and CHC backends' handling of `(forall ((k Pos)) …)`.
+        if expr.as_symbol().is_some() {
+            let Ok((model_name, sort)) = self.ctx.parse_univ_expr(expr, env) else {
+                return Vec::new();
+            };
+            let Ok(model) = self.ctx.model(&model_name) else {
+                return Vec::new();
+            };
+            let sort_arc: Arc<str> = Arc::from(sort.as_str());
+            return model
+                .univ_for_sort(&sort)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|name| AspectValue::Univ {
+                    sort: sort_arc.clone(),
+                    name: Arc::from(name),
+                })
+                .collect();
+        }
         let Some(items) = expr.to_ref_vec() else {
             return Vec::new();
         };
