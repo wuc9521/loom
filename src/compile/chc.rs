@@ -1254,7 +1254,16 @@ impl<'a> ChcCompiler<'a> {
                 ));
             }
 
-            let mut partials = vec![(formula_true(), None, Vec::new())];
+            let has_model_field = space
+                .fields
+                .iter()
+                .any(|field| matches!(&field.domain, FieldDomain::Sort(sort) if sort == "Model"));
+            let initial_model = if has_model_field {
+                None
+            } else {
+                Some(self.ctx.current_model(env)?.to_string())
+            };
+            let mut partials = vec![(formula_true(), initial_model, Vec::new())];
             for (field, arg) in space.fields.iter().zip(items.iter().skip(1)) {
                 let variants = self.aspect_field_variants(field, arg, env)?;
                 let mut next = Vec::new();
@@ -1293,7 +1302,7 @@ impl<'a> ChcCompiler<'a> {
                         AspectKey {
                             relation: relation.to_string(),
                             model: model
-                                .ok_or_else(|| format!("aspect {cons} has no model field"))?,
+                                .ok_or_else(|| format!("aspect {cons} has no resolved model"))?,
                             fields,
                         },
                     ))

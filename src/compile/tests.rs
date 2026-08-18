@@ -439,15 +439,15 @@ fn parent_bearing_negatives_require_manual_dual() {
   (interp-fun a (match (((_) true)))))
 (declare-term-types ((Root 0)) (((leaf) (cfg.top.S Root Root))))
 (define-aspects CfgAsp
-  (record (model Model) (i Int))
+  (record (i Int))
   :where (and (<= 0 i) (<= i (size (Pos model)))))
 (define-semantics
   ((Cfg.Sem (r Root) (asp CfgAsp)))
   ((match r
      ((leaf) false)
-     ((cfg.top.S x y) (Cfg.Sem (parent x) asp)))))
+     ((cfg.top.S x y) (Cfg.Sem (parent x) (CfgAsp 0))))))
 (synth-fun r () Root)
-(constraint (not (Cfg.Sem r (CfgAsp w1 0))))
+(constraint (not (with-model w1 (Cfg.Sem r (CfgAsp 0)))))
 (check-synth)
 "#,
     );

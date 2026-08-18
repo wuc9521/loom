@@ -701,7 +701,7 @@ fn slice(term: &str, lo: usize, hi: usize) -> String {
     format!("((_ extract {hi} {lo}) {term})")
 }
 fn bv0(w: usize) -> String {
-    format!("(_ bv0 {w})")
+    format!("#b{}", "0".repeat(w))
 }
 /// The `w`-bit set `{q}` (bit `q` set), as an exact binary literal — no decimal
 /// `bvN` (which overflows for `q ≥ 128`) and no width bound.
@@ -716,11 +716,10 @@ fn bvor_all(xs: &[String], w: usize) -> String {
     } else {
         unique_terms(xs, |_| false)
     };
-    match kept.as_slice() {
-        [] => zero,
-        [one] => one.to_string(),
-        _ => format!("(bvor {})", kept.join(" ")),
-    }
+    kept.into_iter()
+        .map(str::to_owned)
+        .reduce(|lhs, rhs| format!("(bvor {lhs} {rhs})"))
+        .unwrap_or(zero)
 }
 /// Concatenate `terms` (high→low) into one bit-vector; `[x]`⇒`x`, `[]`⇒`""`.
 fn concat_terms(terms: &[String]) -> String {
