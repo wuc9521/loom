@@ -1,8 +1,8 @@
-IMAGE_TAG ?= delis:latest
-IMAGE_ARCHIVE ?= dist/delis.tar.gz
+IMAGE_TAG ?= loom:latest
+IMAGE_ARCHIVE ?= dist/loom.tar.gz
 IMAGE_PLATFORM ?= linux/amd64
 PARENT_DIR := $(abspath ..)
-DELIS_SOURCES := $(shell find . \
+LOOM_SOURCES := $(shell find . \
 	-path ./target -prune -o \
 	-path ./dist -prune -o \
 	-path ./.git -prune -o \
@@ -15,7 +15,7 @@ DRYAD_SOURCES := $(shell cd $(PARENT_DIR)/dryadsynth-bv && find . \
 	-path ./target -prune -o \
 	-path ./.git -prune -o \
 	-type f -print | sed 's|^\./|$(PARENT_DIR)/dryadsynth-bv/|')
-DOCKER_INPUTS := Dockerfile $(DELIS_SOURCES) $(SYGUS_SOURCES) $(DRYAD_SOURCES)
+DOCKER_INPUTS := Dockerfile $(LOOM_SOURCES) $(SYGUS_SOURCES) $(DRYAD_SOURCES)
 
 .PHONY: docker docker-archive
 

@@ -1,7 +1,7 @@
 #[derive(pest_derive::Parser)]
 #[grammar = "parser/sygus.v2.pest"] // relative to src
-#[grammar = "parser/delis.pest"] // relative to src
-pub struct DelisParser;
+#[grammar = "parser/loom.pest"] // relative to src
+pub struct LoomParser;
 
 pub mod ast;
 pub mod error;

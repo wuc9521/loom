@@ -7,8 +7,8 @@
 //! the three signals (√-batch, plateau backstop, fail-history priority) and
 //! the reasoning behind them.
 
-use delis::{compile, parser::DelisProg};
-use delis::fxmap::{HashMap, HashSet};
+use loom::fxmap::{HashMap, HashSet};
+use loom::{compile, parser::LoomProg};
 use std::{io, time::Instant};
 use sygus_parser::SyGuSCmd;
 
@@ -20,7 +20,7 @@ use sygus_parser::SyGuSCmd;
 /// closure; this function just orchestrates the round structure and the
 /// subset-extension policy.
 pub fn cegis_solve<F>(
-    delis_file: &DelisProg,
+    loom_file: &LoomProg,
     seed_size: usize,
     full_cmds: &[SyGuSCmd],
     mut solve_subset: F,
@@ -29,7 +29,7 @@ where
     F: FnMut(&[SyGuSCmd]) -> Result<String, io::Error>,
 {
     let seed_size = seed_size.max(1);
-    let constraints = delis_file.constraints();
+    let constraints = loom_file.constraints();
     let constraint_count = constraints.len();
     if constraint_count <= seed_size {
         return solve_subset(full_cmds);

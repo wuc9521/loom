@@ -1,5 +1,5 @@
 use crate::backends::smt2::ast::HornProg;
-use crate::parser::DelisProg;
+use crate::parser::LoomProg;
 use std::cell::RefCell;
 use std::time::Instant;
 use sygus_parser::SyGuSCmd;
@@ -11,11 +11,11 @@ mod chc;
 mod closure;
 mod compiler;
 mod context;
-mod parent;
 mod eval;
 mod eval_ctx;
 mod expr;
 pub mod optim;
+mod parent;
 mod semantics;
 mod syntax;
 pub mod types;
@@ -57,7 +57,7 @@ pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<V
     verifier.failing_constraint_indices(solution)
 }
 
-impl DelisProg {
+impl LoomProg {
     pub fn bv_sz(&self) -> Result<usize, String> {
         let ctx = CompileContext::new(self)?;
         let width = ctx
@@ -104,9 +104,9 @@ impl DelisProg {
         let synth_name = ctx.synth_name.clone();
         let mut horn = ctx.compile_chc()?;
         // Sound bisimulation quotient: merge predicate states with identical
-        // least-model behaviour before encoding (set DELIS_MIN_STATES=0 to skip,
+        // least-model behaviour before encoding (set LOOM_MIN_STATES=0 to skip,
         // for A/B verdict checks).
-        if std::env::var("DELIS_MIN_STATES").map_or(true, |v| v != "0") {
+        if std::env::var("LOOM_MIN_STATES").map_or(true, |v| v != "0") {
             let before = horn.live_predicates().len();
             let after = horn.quotient_bisim();
             log::debug!("state quotient: {before} -> {after} states");
@@ -150,7 +150,7 @@ impl DelisProg {
     }
 }
 
-/// Decode a SyGuS solver's solution for the parent encoding into a plain delis
+/// Decode a SyGuS solver's solution for the parent encoding into a plain loom
 /// term (the synth-fun named `synth_name`, with annotation args stripped).
 pub fn decode_parent_term(stdout: &str, synth_name: &str) -> Option<String> {
     parent::decode_term(stdout, synth_name)

@@ -1,7 +1,7 @@
+use crate::fxmap::HashMap;
 use crate::lang::model::{InterpSort, Model};
 use crate::lang::signature::FuncSig;
-use crate::parser::ast::DelisCmd;
-use crate::fxmap::HashMap;
+use crate::parser::ast::LoomCmd;
 use sygus_parser::SyGuSCmd;
 
 #[derive(Debug, Clone)]
@@ -81,13 +81,13 @@ impl Session {
             runtime: Runtime::new(),
         }
     }
-    pub fn handle_command(&mut self, cmd: &DelisCmd) -> Option<DelisCmd> {
+    pub fn handle_command(&mut self, cmd: &LoomCmd) -> Option<LoomCmd> {
         match cmd {
-            DelisCmd::DeclareFunc(sig) => {
+            LoomCmd::DeclareFunc(sig) => {
                 self.runtime
                     .insert(sig.name.clone(), Symbol::Func(sig.clone()));
             }
-            DelisCmd::DefineModel(model) => {
+            LoomCmd::DefineModel(model) => {
                 self.runtime
                     .insert(model.name.clone(), Symbol::Model(model.clone()));
                 for sort_interp in &model.sort_interps {
@@ -97,12 +97,12 @@ impl Session {
                     );
                 }
             }
-            DelisCmd::As(SyGuSCmd::SetLogic(_))
-            | DelisCmd::TermTypes(_)
-            | DelisCmd::DefineAspects(_)
-            | DelisCmd::Semantics(_)
-            | DelisCmd::DeclareAxiom(_)
-            | DelisCmd::As(_) => {}
+            LoomCmd::As(SyGuSCmd::SetLogic(_))
+            | LoomCmd::TermTypes(_)
+            | LoomCmd::DefineAspects(_)
+            | LoomCmd::Semantics(_)
+            | LoomCmd::DeclareAxiom(_)
+            | LoomCmd::As(_) => {}
         }
         Some(cmd.clone())
     }

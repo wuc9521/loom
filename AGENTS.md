@@ -1,9 +1,9 @@
-# Delis — Agent Guide
+# Loom — Agent Guide
 
 ## Project overview
 
-Delis is a Rust program-synthesis tool that learns logic formulas from finite
-models. It compiles a Delis specification (SyGuS-IF extended with aspects and
+Loom is a Rust program-synthesis tool that learns logic formulas from finite
+models. It compiles a Loom specification (SyGuS-IF extended with aspects and
 semantic relations) into either a SyGuS bit-vector encoding (`to_sygus`) or a
 CHC encoding (`to_chc_ast` for parent-bearing programs).
 
@@ -65,7 +65,7 @@ Patches:
 - Grammar (`sygus.v2.pest`): `SyGuSTerm+` → `SyGuSTerm*` (and `SyGuSBfTerm+` → `SyGuSBfTerm*`) to allow zero-argument applications like `(FO.Asp)`.
 - AST construction (`ast/terms.rs`): When a `SyGuSTerm` has a single `Identifier` inner pair but the matched string starts with `(`, construct `Application(identifier, vec![])` instead of `Identifier`. This distinguishes `(FO.Asp)` from bare `FO.Asp`.
 
-The local Delis grammar (`src/parser/sygus.v2.pest` and `src/parser/delis.pest`) has the same `*` fix for consistency, though the actual constraint parsing goes through the vendored crate.
+The local Loom grammar (`src/parser/sygus.v2.pest` and `src/parser/loom.pest`) has the same `*` fix for consistency, though the actual constraint parsing goes through the vendored crate.
 
 ### Benchmark migration — COMPLETE
 

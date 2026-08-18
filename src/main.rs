@@ -1,8 +1,8 @@
 use clap::Parser as ClapParser;
-use delis::{
+use loom::{
     compile,
     lang::runtime::Session,
-    parser::{load_module_file, DelisCmd, DelisProg},
+    parser::{load_module_file, LoomCmd, LoomProg},
     process::{cleanup_children, register_pid, unregister_pid},
 };
 
@@ -29,10 +29,10 @@ use std::{
 mod cegis;
 use sygus_parser::SyGuSCmd;
 
-fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
+fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
-            let program = delis_file.to_chc_ast().map_err(io::Error::other)?;
+            let program = loom_file.to_chc_ast().map_err(io::Error::other)?;
             println!(
                 "{}",
                 program
@@ -48,14 +48,12 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
             // Dump the same encoding the solver uses: parent-bearing programs
             // get the crossing refuter encoding (with `Constant` annotation holes);
             // parent-free programs get the direct `to_sygus`.
-            let use_parent = delis_file.is_parent_bearing().map_err(io::Error::other)?;
+            let use_parent = loom_file.is_parent_bearing().map_err(io::Error::other)?;
             let sygus_bytes = if use_parent {
-                let (sygus, _, _) = delis_file
-                    .parent_refuter_sygus()
-                    .map_err(io::Error::other)?;
+                let (sygus, _, _) = loom_file.parent_refuter_sygus().map_err(io::Error::other)?;
                 sygus.into_bytes()
             } else {
-                delis_file.to_sygus_bytes().map_err(io::Error::other)?
+                loom_file.to_sygus_bytes().map_err(io::Error::other)?
             };
             if args.dump_sygus {
                 let stdout = io::stdout();
@@ -74,7 +72,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
     }
 
     if args.r#enum {
-        let result = delis_file.solve_by_closure().map_err(io::Error::other)?;
+        let result = loom_file.solve_by_closure().map_err(io::Error::other)?;
         if let Some(output) = result {
             println!("{output}");
             return Ok(());
@@ -86,21 +84,21 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
     // Parent-bearing programs (with `(parent n)` up-moves) use the sound crossing
     // certificate encoding. Parent-free programs use the fast direct path below.
-    let parent_bearing = delis_file.is_parent_bearing().map_err(io::Error::other)?;
+    let parent_bearing = loom_file.is_parent_bearing().map_err(io::Error::other)?;
     if parent_bearing {
-        return parent_solve(delis_file, args.verbose);
+        return parent_solve(loom_file, args.verbose);
     }
 
     // Both backends solve the same SyGuS BV problem; first-to-finish wins.
-    // Build that problem once and share it. Re-spawning `delis --enum` here
+    // Build that problem once and share it. Re-spawning `loom --enum` here
     // would parse and compile again, including the bisim quotient.
-    let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(delis_file.to_sygus().map_err(io::Error::other)?);
+    let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(loom_file.to_sygus().map_err(io::Error::other)?);
 
     let (tx, rx) = mpsc::channel();
     let done = Arc::new(AtomicBool::new(false));
 
     let term_tx = tx.clone();
-    let term_file = delis_file.clone();
+    let term_file = loom_file.clone();
     let term_cmds = sygus_cmds.clone();
     let term_done = done.clone();
     thread::Builder::new()
@@ -122,7 +120,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
         })?;
 
     let bv_tx = tx.clone();
-    let bv_file = delis_file.clone();
+    let bv_file = loom_file.clone();
     let bv_cmds = sygus_cmds.clone();
     let bv_cegis = if args.cegis > 0 {
         Some(args.cegis)
@@ -168,7 +166,7 @@ fn solve(delis_file: &mut DelisProg, args: &CLI) -> Result<(), io::Error> {
 
 fn closure_delay() -> Duration {
     const DEFAULT_MS: u64 = 3000;
-    let ms = std::env::var("DELIS_CLOSURE_DELAY_MS")
+    let ms = std::env::var("LOOM_CLOSURE_DELAY_MS")
         .ok()
         .and_then(|raw| raw.parse::<u64>().ok())
         .unwrap_or(DEFAULT_MS);
@@ -181,17 +179,15 @@ fn closure_delay() -> Duration {
 /// per skeleton (the sound, terminating route — cvc5's monolithic SyGuS search
 /// hangs on this encoding). dryadsynth-bv is a path dependency, so we solve
 /// in-process via its library — no external binary on PATH, no env var.
-fn parent_solve(delis_file: &DelisProg, verbose: u8) -> Result<(), io::Error> {
-    if let Ok(max_size) = std::env::var("DELIS_PARENT_EVAL_BENCH") {
+fn parent_solve(loom_file: &LoomProg, verbose: u8) -> Result<(), io::Error> {
+    if let Ok(max_size) = std::env::var("LOOM_PARENT_EVAL_BENCH") {
         let max_size = max_size.parse::<usize>().unwrap_or(5);
-        return delis_file
+        return loom_file
             .parent_eval_bench(max_size)
             .map_err(io::Error::other);
     }
     let encode_start = Instant::now();
-    let (sygus, sort, synth_name) = delis_file
-        .parent_refuter_sygus()
-        .map_err(io::Error::other)?;
+    let (sygus, sort, synth_name) = loom_file.parent_refuter_sygus().map_err(io::Error::other)?;
     log::info!(
         "parent: encoded refuter SyGuS in {:?} ({} bytes)",
         encode_start.elapsed(),
@@ -314,7 +310,7 @@ fn solve_cmds_with_backend(
 }
 
 fn solve_with_sygus(
-    delis_file: &DelisProg,
+    loom_file: &LoomProg,
     backend: &SygusBackend,
     cegis_size: Option<usize>,
     verbose: u8,
@@ -323,16 +319,16 @@ fn solve_with_sygus(
 ) -> Result<String, io::Error> {
     let solve_start = Instant::now();
     let decoded = if let Some(cegis_size) = cegis_size {
-        let solved = cegis::cegis_solve(delis_file, cegis_size, &sygus_cmds, |cmds| {
+        let solved = cegis::cegis_solve(loom_file, cegis_size, &sygus_cmds, |cmds| {
             let output = solve_cmds_with_backend(backend, cmds, verbose, min)?;
             if output.trim() == "infeasible" {
                 return Ok("infeasible".to_string());
             }
             match backend {
                 SygusBackend::InProcessDryadSynth => Ok(output),
-                SygusBackend::External(_) => delis_file
-                    .decode_response(&output)
-                    .map_err(io::Error::other),
+                SygusBackend::External(_) => {
+                    loom_file.decode_response(&output).map_err(io::Error::other)
+                }
             }
         })?;
         log::info!("cegis: solved in {:?}", solve_start.elapsed());
@@ -342,12 +338,12 @@ fn solve_with_sygus(
         log::info!("sygus backend: solved in {:?}", solve_start.elapsed());
         match backend {
             SygusBackend::InProcessDryadSynth => output,
-            SygusBackend::External(_) => delis_file
+            SygusBackend::External(_) => loom_file
                 .decode_response(&output)
                 .map_err(io::Error::other)?,
         }
     };
-    Ok(delis_file.filter_synth_output(&decoded))
+    Ok(loom_file.filter_synth_output(&decoded))
 }
 
 fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
@@ -368,12 +364,12 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Command-line interface for Delis.
+/// Command-line interface for Loom.
 #[derive(clap::Parser, Clone, Debug)]
 #[command(
     author,
     version,
-    about = "Delis: Learning logic formulas from finite models"
+    about = "Loom: Learning logic formulas from finite models"
 )]
 pub struct CLI {
     /// Path to the input file (if not using --in)
@@ -423,7 +419,7 @@ pub struct CLI {
     )]
     bisim: bool,
 
-    /// Use only Delis's internal enumerative backend (no SyGuS solver backend).
+    /// Use only Loom's internal enumerative backend (no SyGuS solver backend).
     #[arg(long = "enum", default_value_t = false)]
     r#enum: bool,
 
@@ -457,7 +453,7 @@ pub struct CLI {
     solver: Option<String>,
 }
 
-/// Run the Delis CLI.
+/// Run the Loom CLI.
 fn main() -> Result<(), io::Error> {
     let args = CLI::parse();
     env_logger::Builder::from_default_env()
@@ -518,13 +514,13 @@ fn main() -> Result<(), io::Error> {
         load_module_file(file_path)?
     };
     let mut session = Session::new();
-    let results = DelisProg::parse_cmds(&input, Some(&mut session.runtime));
-    let mut delis_cmd_vec: Vec<DelisCmd> = vec![];
+    let results = LoomProg::parse_cmds(&input, Some(&mut session.runtime));
+    let mut loom_cmd_vec: Vec<LoomCmd> = vec![];
     for res in results {
         match res {
             Ok(cmd) => {
                 let _ = session.handle_command(&cmd);
-                delis_cmd_vec.push(cmd);
+                loom_cmd_vec.push(cmd);
             }
             Err(e) => {
                 eprintln!("parse error: {}", e);
@@ -532,8 +528,6 @@ fn main() -> Result<(), io::Error> {
             }
         }
     }
-    let mut delis_file = DelisProg {
-        cmds: delis_cmd_vec,
-    };
-    solve(&mut delis_file, &args)
+    let mut loom_file = LoomProg { cmds: loom_cmd_vec };
+    solve(&mut loom_file, &args)
 }

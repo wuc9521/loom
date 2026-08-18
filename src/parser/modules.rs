@@ -1,5 +1,5 @@
-use crate::parser::ast::{DelisCmd, DelisProg};
 use crate::fxmap::HashSet;
+use crate::parser::ast::{LoomCmd, LoomProg};
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -83,8 +83,7 @@ impl ModuleLoader {
 
 pub fn load_module_file(path: impl AsRef<Path>) -> Result<String, io::Error> {
     let expanded = ModuleLoader::default().load(path.as_ref())?;
-    prune_unused_models(&expanded)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
+    prune_unused_models(&expanded).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))
 }
 
 /// Drop `(define-model NAME …)` forms whose NAME is referenced nowhere else.
@@ -119,7 +118,6 @@ fn prune_unused_models(text: &str) -> Result<String, String> {
         .collect();
     Ok(kept.join("\n"))
 }
-
 
 fn canonicalize_existing(path: &Path) -> Result<PathBuf, io::Error> {
     path.canonicalize().map_err(|e| {
@@ -166,7 +164,7 @@ fn validate_provides(path: &Path, source: &ModuleSource) -> Result<(), io::Error
     // Fallback (small theory/signature files only): a provided name comes from
     // a form the shallow scan doesn't decode (term-type constructors,
     // semantics relations), so authoritatively re-parse to avoid false errors.
-    let prog = DelisProg::parse(&source.body, None).map_err(|e| {
+    let prog = LoomProg::parse(&source.body, None).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
@@ -227,20 +225,20 @@ fn shallow_defined_names(body: &str) -> HashSet<String> {
     names
 }
 
-fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
+fn defined_names(cmds: &[LoomCmd]) -> HashSet<String> {
     let mut names = HashSet::default();
     for cmd in cmds {
         match cmd {
-            DelisCmd::As(SyGuSCmd::DeclareSort(name, _)) => {
+            LoomCmd::As(SyGuSCmd::DeclareSort(name, _)) => {
                 names.insert(name.clone());
             }
-            DelisCmd::As(SyGuSCmd::SynthFun(name, ..)) => {
+            LoomCmd::As(SyGuSCmd::SynthFun(name, ..)) => {
                 names.insert(name.clone());
             }
-            DelisCmd::As(SyGuSCmd::DefineFun(name, ..)) => {
+            LoomCmd::As(SyGuSCmd::DefineFun(name, ..)) => {
                 names.insert(name.clone());
             }
-            DelisCmd::TermTypes(types) => {
+            LoomCmd::TermTypes(types) => {
                 for sort in &types.sort_decls {
                     names.insert(sort.symbol.clone());
                 }
@@ -250,21 +248,21 @@ fn defined_names(cmds: &[DelisCmd]) -> HashSet<String> {
                     }
                 }
             }
-            DelisCmd::DefineAspects(aspect) => {
+            LoomCmd::DefineAspects(aspect) => {
                 names.insert(aspect.name.clone());
             }
-            DelisCmd::Semantics(semantics) => {
+            LoomCmd::Semantics(semantics) => {
                 if let Some(name) = semantics_name(Some(&semantics.header)) {
                     names.insert(name);
                 }
             }
-            DelisCmd::DeclareFunc(sig) => {
+            LoomCmd::DeclareFunc(sig) => {
                 names.insert(sig.name.clone());
             }
-            DelisCmd::DefineModel(model) => {
+            LoomCmd::DefineModel(model) => {
                 names.insert(model.name.clone());
             }
-            DelisCmd::DeclareAxiom(_) => {}
+            LoomCmd::DeclareAxiom(_) => {}
             _ => {}
         }
     }
@@ -425,7 +423,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("system clock should be after Unix epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("delis-module-test-{stamp}"))
+        std::env::temp_dir().join(format!("loom-module-test-{stamp}"))
     }
 
     #[test]

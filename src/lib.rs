@@ -6,7 +6,7 @@ pub mod process;
 pub mod sorts;
 
 /// Crate-wide hash-map/set/hasher aliases — the single point of control for
-/// the hash algorithm used throughout delis. Every module imports
+/// the hash algorithm used throughout loom. Every module imports
 /// `HashMap`/`HashSet`/`FxHasher` from here instead of reaching for
 /// `rustc_hash` directly, so swapping the hasher is a one-place edit.
 ///

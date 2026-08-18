@@ -2,7 +2,7 @@
 
 ## Problem
 
-delis compiles finite-model semantics to SyGuS-BV generically: universe
+loom compiles finite-model semantics to SyGuS-BV generically: universe
 elements become one-hot bits, and every operation over them expands over
 universe elements at emission time. For domains whose universes are secretly
 numbers (String: positions, lengths, char codes), this is the dominant cost:
@@ -21,7 +21,7 @@ By contrast, an interpreter-style solver (ks2 on the semgus value-vector
 encoding) evaluates the same semantics over native ints in microseconds.
 dryadsynth-bv *executes* define-funs on concrete bitvectors during
 enumeration, so if define-funs were compact native-BV programs, execution
-would be interpretation — while keeping delis's single generic pipeline and
+would be interpretation — while keeping loom's single generic pipeline and
 its abstraction lever (demand-style states) that interpreters cannot have.
 
 ## Key observations
@@ -95,7 +95,7 @@ many-model files (0161, 0309, 0334, 0337, 0332, …) into range.
   1-bit carriers, so no dryadsynth-bv change is required (a width-safety
   hardening of `eval_op_on_values` was prototyped and then reverted; worth
   upstreaming separately if multi-bit booleans ever reach that path).
-  Kill switch for differential runs: `DELIS_NO_TABLE_CIRCUITS=1`.
+  Kill switch for differential runs: `LOOM_NO_TABLE_CIRCUITS=1`.
 - **Verification**: template-on/off solutions identical on all probes and
   0031/0205; z3 equivalence check of the emitted `str.at` (one-hot-constrained)
   is unsat (`equiv2.smt2` method — extract both define-funs, assert disequal).

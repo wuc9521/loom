@@ -1,8 +1,8 @@
+use crate::fxmap::HashMap;
 use crate::{
     compile::{semantics::interped_bool, types::AspectValue},
     lang::model::Model,
 };
-use crate::fxmap::HashMap;
 use sygus_parser::SExpr as Value;
 use sygus_parser::{Identifier, Literal, SyGuSTerm};
 
@@ -15,7 +15,7 @@ pub fn sygus_term_to_value(term: &SyGuSTerm) -> Result<Value, String> {
         }
         SyGuSTerm::Literal(Literal::Numeral(value)) => Ok(Value::from(*value as i64)),
         SyGuSTerm::Literal(Literal::Decimal(value)) => Err(format!(
-            "decimal literals are unsupported in Delis constraints: {value}"
+            "decimal literals are unsupported in Loom constraints: {value}"
         )),
         SyGuSTerm::Literal(Literal::BinConst(value))
         | SyGuSTerm::Literal(Literal::HexConst(value)) => Ok(Value::symbol(value.as_str())),
@@ -43,7 +43,7 @@ pub fn sygus_term_to_value(term: &SyGuSTerm) -> Result<Value, String> {
         }
         SyGuSTerm::Annotated(inner, _) => sygus_term_to_value(inner),
         other => Err(format!(
-            "unsupported SyGuS term in Delis constraint lowering: {other}"
+            "unsupported SyGuS term in Loom constraint lowering: {other}"
         )),
     }
 }

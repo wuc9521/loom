@@ -1,4 +1,4 @@
-use crate::parser::{DelisParseError, Rule};
+use crate::parser::{LoomParseError, Rule};
 use derive_more::Display;
 use pest::iterators::Pair;
 use sygus_parser::Sort;
@@ -18,12 +18,12 @@ pub struct FuncSig {
 }
 
 impl FuncSig {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let mut inner = pair.into_inner();
         let func_name = inner
             .next()
             .ok_or_else(|| {
-                DelisParseError::InvalidSyntax("declare-fun expects a function name".to_string())
+                LoomParseError::InvalidSyntax("declare-fun expects a function name".to_string())
             })?
             .as_str()
             .to_string();
@@ -31,12 +31,12 @@ impl FuncSig {
         for sort in inner {
             if sort.as_rule() == Rule::Sort {
                 let sort = Sort::from_str(sort.as_str())
-                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
+                    .map_err(|e| LoomParseError::InvalidSyntax(e.to_string()))?;
                 sort_list.push(sort);
             }
         }
         let ret_sort = sort_list.pop().ok_or_else(|| {
-            DelisParseError::InvalidSyntax("declare-fun expects a return sort".to_string())
+            LoomParseError::InvalidSyntax("declare-fun expects a return sort".to_string())
         })?;
         Ok(FuncSig {
             name: func_name,

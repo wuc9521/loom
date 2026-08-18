@@ -1,9 +1,9 @@
 use crate::compile::eval_ctx::{EnvView, SemanticContext};
 use crate::compile::semantics::{parse_cases, Case};
 use crate::compile::types::{AspectKey, AspectValue, DomainBit, SemanticKind, SemanticProgram};
+use crate::fxmap::{FxHasher, HashMap, HashSet};
 use crate::lang::model::{InterpedValue, Model};
-use crate::parser::{DelisCmd, DelisProg};
-use crate::fxmap::{HashMap, HashSet, FxHasher};
+use crate::parser::{LoomCmd, LoomProg};
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::time::Instant;
@@ -125,7 +125,7 @@ impl SemanticProgram {
     /// Recursive relation references resolve to class IDs from the previous
     /// iteration; aspects whose symbolic case-body signatures all match stay
     /// merged.
-    pub fn quotient_by_bisim(&mut self, problem: &DelisProg, mode: QuotientMode) {
+    pub fn quotient_by_bisim(&mut self, problem: &LoomProg, mode: QuotientMode) {
         let start = Instant::now();
         let total_before: usize = self.domains.iter().map(|d| d.bits.len()).sum();
         if total_before == 0 {
@@ -164,9 +164,7 @@ impl SemanticProgram {
             sem_ids.entry(sem).or_insert(next_sem);
             for bit in &domain.bits {
                 let next_aspect = aspect_ids.len();
-                aspect_ids
-                    .entry(bit.aspect.clone())
-                    .or_insert(next_aspect);
+                aspect_ids.entry(bit.aspect.clone()).or_insert(next_aspect);
                 if let Some(value) = &bit.value {
                     let next_value = value_ids.len();
                     value_ids.entry(value.clone()).or_insert(next_value);
@@ -356,10 +354,7 @@ impl SemanticProgram {
                     aspect_ids[&bit.aspect],
                     bit.value.as_ref().map(|v| value_ids[v]),
                 );
-                let class = dense_classes
-                    .get(&dense_key)
-                    .copied()
-                    .unwrap_or(usize::MAX);
+                let class = dense_classes.get(&dense_key).copied().unwrap_or(usize::MAX);
                 let next_local = local_remap.len();
                 let local = *local_remap.entry(class).or_insert(next_local);
                 new_bits.push(DomainBit {
@@ -435,7 +430,7 @@ struct Refiner<'a> {
 
 impl<'a> Refiner<'a> {
     fn new(
-        problem: &DelisProg,
+        problem: &LoomProg,
         ctx: &'a SemanticContext<'a>,
         cases_by_domain: &'a HashMap<SemKey, HashMap<String, Case>>,
         domain_kinds: &'a HashMap<SemKey, SemanticKind>,
@@ -451,7 +446,7 @@ impl<'a> Refiner<'a> {
         let mut cons_arg_sorts = HashMap::default();
         let mut parent_sorts: HashMap<String, Vec<String>> = HashMap::default();
         for cmd in &problem.cmds {
-            let DelisCmd::TermTypes(term_types) = cmd else {
+            let LoomCmd::TermTypes(term_types) = cmd else {
                 continue;
             };
             for (sort_decl, type_decl) in term_types
@@ -946,9 +941,9 @@ impl<'a> Refiner<'a> {
                                 .sem_ids
                                 .get(&sem)
                                 .and_then(|&sem_id| {
-                                    self.aspect_ids
-                                        .get(&asp)
-                                        .and_then(|&aspect_id| classes.get(&(sem_id, aspect_id, None)))
+                                    self.aspect_ids.get(&asp).and_then(|&aspect_id| {
+                                        classes.get(&(sem_id, aspect_id, None))
+                                    })
                                 })
                                 .copied()
                                 .unwrap_or(usize::MAX);

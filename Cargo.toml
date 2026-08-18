@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "delis"
+name = "loom"
 version = "0.1.0"
 
 [profile.release]

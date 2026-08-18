@@ -1,5 +1,5 @@
-use crate::{parser::DelisProg, sorts::SortEnv};
 use crate::fxmap::{HashMap, HashSet};
+use crate::{parser::LoomProg, sorts::SortEnv};
 use std::time::Instant;
 use sygus_parser::{GrammarDef, Identifier, Literal, Sort, SyGuSCmd, SyGuSGTerm, SyGuSTerm};
 
@@ -47,7 +47,7 @@ struct BoolOps {
     or_ctor: Option<String>,
 }
 
-impl DelisProg {
+impl LoomProg {
     pub fn solve_by_closure(&self) -> Result<Option<String>, String> {
         let cmds = self.to_sygus()?;
         self.solve_by_closure_with_cmds(cmds)
@@ -94,7 +94,7 @@ fn is_constant_grammar(grammar: &GrammarDef) -> bool {
 }
 
 struct ClosureSolver<'a> {
-    problem: &'a DelisProg,
+    problem: &'a LoomProg,
     synth_name: String,
     synth_sort: Sort,
     funcs: HashMap<String, DefineFun>,
@@ -107,7 +107,7 @@ struct ClosureSolver<'a> {
 }
 
 impl<'a> ClosureSolver<'a> {
-    fn new(problem: &'a DelisProg, cmds: Vec<SyGuSCmd>) -> Result<Option<Self>, String> {
+    fn new(problem: &'a LoomProg, cmds: Vec<SyGuSCmd>) -> Result<Option<Self>, String> {
         let sort_env = SortEnv::from_cmds(&cmds);
         let mut funcs = HashMap::default();
         let mut synth = None;
@@ -699,7 +699,7 @@ mod tests {
 
     #[test]
     fn apply_production_tracks_compact_frontier_as_child_pools_grow() {
-        let problem = DelisProg { cmds: Vec::new() };
+        let problem = LoomProg { cmds: Vec::new() };
         let pair_body = SyGuSTerm::Application(
             Identifier::Symbol("concat".to_string()),
             vec![symbol("x"), symbol("y")],
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn satisfying_start_term_checks_only_new_values() {
-        let problem = DelisProg { cmds: Vec::new() };
+        let problem = LoomProg { cmds: Vec::new() };
         let constraint = SyGuSTerm::Application(
             Identifier::Symbol("=".to_string()),
             vec![
@@ -789,7 +789,7 @@ mod tests {
 
     #[test]
     fn boolean_partition_close_skips_unchanged_generators() {
-        let problem = DelisProg { cmds: Vec::new() };
+        let problem = LoomProg { cmds: Vec::new() };
         let mut nt = nonterminal(1, vec![value("0", 1, "zero"), value("1", 1, "one")], vec![]);
         nt.bool_ops = BoolOps {
             true_ctor: Some("Bool.true".to_string()),

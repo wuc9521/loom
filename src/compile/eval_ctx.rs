@@ -1,3 +1,4 @@
+use crate::fxmap::{FxHasher, HashMap};
 use crate::{
     compile::{
         semantics::{interped_bool, Case},
@@ -10,10 +11,9 @@ use crate::{
         model::{InterpedValue, Model},
         signature::FuncSig,
     },
-    parser::{DelisCmd, DelisProg},
+    parser::{LoomCmd, LoomProg},
 };
 use itertools::Itertools;
-use crate::fxmap::{HashMap, FxHasher};
 use std::cell::{Cell, RefCell};
 use std::hash::Hasher;
 use std::sync::Arc;
@@ -161,7 +161,7 @@ impl<'a> SemanticContext<'a> {
     }
 
     pub fn with_cases(
-        problem: &'a DelisProg,
+        problem: &'a LoomProg,
         program: &SemanticProgram,
         cases: &HashMap<String, HashMap<String, Case>>,
     ) -> Result<Self, String> {
@@ -169,7 +169,7 @@ impl<'a> SemanticContext<'a> {
             .cmds
             .iter()
             .filter_map(|cmd| match cmd {
-                DelisCmd::DefineModel(model) => Some((model.name.clone(), model)),
+                LoomCmd::DefineModel(model) => Some((model.name.clone(), model)),
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
@@ -177,7 +177,7 @@ impl<'a> SemanticContext<'a> {
             .cmds
             .iter()
             .filter_map(|cmd| match cmd {
-                DelisCmd::DeclareFunc(sig) => Some((sig.name.clone(), sig.clone())),
+                LoomCmd::DeclareFunc(sig) => Some((sig.name.clone(), sig.clone())),
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
@@ -309,7 +309,12 @@ impl<'a> SemanticContext<'a> {
     /// callers must not outlive `env`.
     pub fn current_model<'e>(&self, env: &'e impl EnvView) -> Result<&'e str, String> {
         env.current_model()
-            .or_else(|| env.aspects().values().next().map(|aspect| aspect.model.as_str()))
+            .or_else(|| {
+                env.aspects()
+                    .values()
+                    .next()
+                    .map(|aspect| aspect.model.as_str())
+            })
             .ok_or_else(|| "no current model in semantic environment".to_string())
     }
 

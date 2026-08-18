@@ -7,9 +7,9 @@ fn ensure_opts() {
     });
 }
 
-fn parse(input: &str) -> DelisProg {
+fn parse(input: &str) -> LoomProg {
     ensure_opts();
-    crate::parser::DelisProg::parse(input, None).expect("compilation smoke program should parse")
+    crate::parser::LoomProg::parse(input, None).expect("compilation smoke program should parse")
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn eval_symbols_matches_unary_model_interpretations() {
         .cmds
         .iter()
         .find_map(|cmd| match cmd {
-            crate::parser::ast::DelisCmd::DefineModel(model) => Some(model),
+            crate::parser::ast::LoomCmd::DefineModel(model) => Some(model),
             _ => None,
         })
         .expect("test model should exist");
@@ -73,7 +73,7 @@ fn cloned_models_preserve_stable_cache_identity() {
         .cmds
         .iter()
         .find_map(|cmd| match cmd {
-            crate::parser::ast::DelisCmd::DefineModel(model) => Some(model),
+            crate::parser::ast::LoomCmd::DefineModel(model) => Some(model),
             _ => None,
         })
         .expect("test model should exist");
@@ -95,7 +95,7 @@ fn cloned_models_preserve_stable_cache_identity() {
         .cmds
         .iter()
         .find_map(|cmd| match cmd {
-            crate::parser::ast::DelisCmd::DefineModel(model) => Some(model),
+            crate::parser::ast::LoomCmd::DefineModel(model) => Some(model),
             _ => None,
         })
         .expect("reparsed model should exist");

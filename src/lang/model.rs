@@ -2,7 +2,7 @@
 
 use crate::{
     lang::runtime::{ModelSymbolTable, SymbolInterp},
-    parser::{DelisParseError, Rule},
+    parser::{LoomParseError, Rule},
 };
 use core::str;
 use derive_more::Display;
@@ -40,12 +40,12 @@ impl Model {
         }
     }
 
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let mut inner_pairs = pair.into_inner();
         let name = inner_pairs
             .next()
             .ok_or_else(|| {
-                DelisParseError::InvalidSyntax("define-model expects a model name".to_string())
+                LoomParseError::InvalidSyntax("define-model expects a model name".to_string())
             })?
             .as_str();
         let mut model = Self::new(name);
@@ -60,7 +60,7 @@ impl Model {
                     model.func_interps.push(func_interp);
                 }
                 _ => {
-                    return Err(DelisParseError::UnsupportedFeature(format!(
+                    return Err(LoomParseError::UnsupportedFeature(format!(
                         "Unsupported feature in model definition: {}",
                         item_pair.as_str()
                     )));
@@ -115,14 +115,13 @@ impl InterpSort {
     pub fn new(sort: Sort, elems: Vec<UnivElem>) -> Self {
         Self { sort, elems }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let mut inner_pairs = pair.into_inner();
         let sort = inner_pairs
             .next()
-            .ok_or_else(|| DelisParseError::InvalidSyntax("interp-sort expects a sort".to_string()))
+            .ok_or_else(|| LoomParseError::InvalidSyntax("interp-sort expects a sort".to_string()))
             .and_then(|p| {
-                Sort::from_str(p.as_str())
-                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))
+                Sort::from_str(p.as_str()).map_err(|e| LoomParseError::InvalidSyntax(e.to_string()))
             })?;
         let mut elems = Vec::new();
         for elem_pair in inner_pairs {
@@ -130,7 +129,7 @@ impl InterpSort {
                 let elem = UnivElem::parse(elem_pair)?;
                 elems.push(elem);
             } else {
-                return Err(DelisParseError::InvalidSyntax(format!(
+                return Err(LoomParseError::InvalidSyntax(format!(
                     "Invalid element in sort interpretation: {}",
                     elem_pair.as_str()
                 )));
@@ -158,10 +157,10 @@ impl UnivElem {
             name: name.to_string(),
         }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         Ok(Self::new(pair.as_str()))
     }
-    pub fn from_str(s: &str) -> Result<Self, DelisParseError> {
+    pub fn from_str(s: &str) -> Result<Self, LoomParseError> {
         Ok(Self::new(s))
     }
 }
@@ -198,18 +197,18 @@ impl FuncInterp {
             FuncInterp::SimpleInterp(_, _) => 0,
         }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let mut inner_pairs = pair.into_inner();
         let name = inner_pairs
             .next()
             .ok_or_else(|| {
-                DelisParseError::InvalidSyntax("interp-fun expects a function name".to_string())
+                LoomParseError::InvalidSyntax("interp-fun expects a function name".to_string())
             })?
             .as_str()
             .to_string();
         let mut cases = Vec::new();
         let interp_pair = inner_pairs.next().ok_or_else(|| {
-            DelisParseError::InvalidSyntax(
+            LoomParseError::InvalidSyntax(
                 "interp-fun expects a simple value or a match block".to_string(),
             )
         })?;
@@ -226,7 +225,7 @@ impl FuncInterp {
                         let match_case = MatchCase::parse(case_pair)?;
                         cases.push(match_case);
                     } else {
-                        return Err(DelisParseError::InvalidSyntax(format!(
+                        return Err(LoomParseError::InvalidSyntax(format!(
                             "Invalid element in function interpretation: {}",
                             case_pair.as_str()
                         )));
@@ -234,7 +233,7 @@ impl FuncInterp {
                 }
                 Ok(Self::MatchInterp(name, cases))
             }
-            _ => Err(DelisParseError::UnsupportedFeature(format!(
+            _ => Err(LoomParseError::UnsupportedFeature(format!(
                 "Unsupported feature in function interpretation: {}",
                 interp_pair.as_str()
             ))),
@@ -271,13 +270,13 @@ pub enum InterpedValue {
 }
 
 impl InterpedValue {
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let mut pair = pair.into_inner().next().ok_or_else(|| {
-            DelisParseError::InvalidSyntax("missing interpreted value".to_string())
+            LoomParseError::InvalidSyntax("missing interpreted value".to_string())
         })?;
         if pair.as_rule() == Rule::InterpedValue {
             pair = pair.into_inner().next().ok_or_else(|| {
-                DelisParseError::InvalidSyntax("missing interpreted inner value".to_string())
+                LoomParseError::InvalidSyntax("missing interpreted inner value".to_string())
             })?;
         }
         match pair.as_rule() {
@@ -288,7 +287,7 @@ impl InterpedValue {
                 let func_name = children
                     .next()
                     .ok_or_else(|| {
-                        DelisParseError::InvalidSyntax(
+                        LoomParseError::InvalidSyntax(
                             "function application expects a function symbol".to_string(),
                         )
                     })?
@@ -297,7 +296,7 @@ impl InterpedValue {
                 let args = children
                     .map(|p| SyGuSTerm::from_str(p.as_str()))
                     .collect::<Result<_, _>>()
-                    .map_err(|e| DelisParseError::InvalidSyntax(e.to_string()))?;
+                    .map_err(|e| LoomParseError::InvalidSyntax(e.to_string()))?;
                 Ok(Self::FuncApp(func_name, args))
             }
         }
@@ -319,10 +318,10 @@ impl MatchCase {
     }
 
     // InterpedCase =    "(" ~ Pattern? ~ InterpedValue ~ ")"
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let mut inner_pairs = pair.into_inner();
         let interped_pair = inner_pairs.next_back().ok_or_else(|| {
-            DelisParseError::InvalidSyntax("match case expects an interpreted value".to_string())
+            LoomParseError::InvalidSyntax("match case expects an interpreted value".to_string())
         })?;
         let pattern = inner_pairs.next().map(Pattern::parse).transpose()?;
         let interped_value = InterpedValue::parse(interped_pair)?;
@@ -356,7 +355,7 @@ impl Pattern {
     pub fn new(elements: Vec<PatternElem>) -> Self {
         Self { elements }
     }
-    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, DelisParseError> {
+    pub fn parse(pair: Pair<'_, Rule>) -> Result<Self, LoomParseError> {
         let elements = pair
             .into_inner()
             .map(|elem| match elem.as_rule() {

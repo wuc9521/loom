@@ -7,11 +7,11 @@
 //!   (concat-of-ite, with constant runs folded into `BinConst` literals).
 //!   Used when the constructor's bits are closed in its arg-bits alone.
 //! - `BoolExpr::resolve_closure` first eliminates intra-constructor
-//!   `delis.self.<bit>` self-references via a topo-sorted let chain, then
+//!   `loom.self.<bit>` self-references via a topo-sorted let chain, then
 //!   compacts. Used when the relation is in `RecurrenceMode::SelfClosure`.
 //!
 //! Self-references inside a `BoolExpr::Dynamic(term)` are encoded as the
-//! identifier `delis.self.<bit>`; `resolve_self_refs` walks a term and
+//! identifier `loom.self.<bit>`; `resolve_self_refs` walks a term and
 //! substitutes each such occurrence by the corresponding sibling bit's
 //! already-resolved `BoolExpr`, folding `and`/`or`/`not` so constants
 //! propagate.
@@ -20,9 +20,9 @@ use crate::fxmap::HashSet;
 use sygus_parser::{BitVec, Bool, Identifier, Literal, SyGuSTerm, Term};
 
 /// Identifier prefix for self-bit placeholders. The chc/compiler lowerings
-/// emit `delis.self.<i>` as a `SyGuSTerm::Identifier` standing for bit `i`
+/// emit `loom.self.<i>` as a `SyGuSTerm::Identifier` standing for bit `i`
 /// of the constructor's own output; `resolve_closure` eliminates these.
-pub const SELF_BIT_PREFIX: &str = "delis.self.";
+pub const SELF_BIT_PREFIX: &str = "loom.self.";
 
 #[derive(Clone)]
 pub enum BoolExpr {
@@ -107,7 +107,7 @@ impl BoolExpr {
     /// Build a constructor body that statically unrolls the LFP introduced
     /// by `RecurrenceMode::SelfClosure`. If no bit has a self-dependency
     /// this falls back to `compact`; otherwise it emits nested let-bindings
-    /// in topological order so each `delis.self.<i>` placeholder is defined
+    /// in topological order so each `loom.self.<i>` placeholder is defined
     /// before any other binding (or the final body) references it.
     pub fn resolve_closure(bits: &[Self]) -> SyGuSTerm {
         let n = bits.len();
@@ -159,7 +159,7 @@ impl BoolExpr {
             match computed {
                 BoolExpr::Const(_) => resolved[i] = computed,
                 BoolExpr::Dynamic(term) if ref_count[i] >= 2 => {
-                    let name = format!("delis.share.b{i}");
+                    let name = format!("loom.share.b{i}");
                     bindings.push((name.clone(), term));
                     resolved[i] = BoolExpr::Dynamic(Term::var(&name));
                 }
@@ -198,7 +198,7 @@ fn bitvec_literal_from_lsb(bits: &[bool]) -> SyGuSTerm {
     Term::lit(Literal::BinConst(bitstring))
 }
 
-/// Resolve `delis.self.<j>` references in a SyGuSTerm by substituting
+/// Resolve `loom.self.<j>` references in a SyGuSTerm by substituting
 /// `resolved[j]`. Combines `and`/`or`/`not` via `BoolExpr` so constants
 /// propagate; everything else becomes `BoolExpr::Dynamic`.
 fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
@@ -233,7 +233,7 @@ fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
     }
 }
 
-/// Walk a SyGuSTerm and collect bit indices `j` for any `delis.self.<j>`
+/// Walk a SyGuSTerm and collect bit indices `j` for any `loom.self.<j>`
 /// identifier appearing in it.
 fn collect_self_bit_deps(term: &SyGuSTerm, out: &mut HashSet<usize>) {
     match term {

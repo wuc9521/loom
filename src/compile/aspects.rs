@@ -1,3 +1,4 @@
+use crate::fxmap::{HashMap, HashSet};
 use crate::{
     compile::{
         expr::{eval_bool, eval_sygus_int},
@@ -7,10 +8,9 @@ use crate::{
         },
     },
     lang::{eval::collect_loaded_models, model::Model},
-    parser::{DelisCmd, DelisProg},
+    parser::{LoomCmd, LoomProg},
 };
 use itertools::Itertools;
-use crate::fxmap::{HashMap, HashSet};
 use std::sync::Arc;
 use sygus_parser::SExpr as Value;
 use sygus_parser::{Identifier, SyGuSTerm};
@@ -20,7 +20,7 @@ type AspectAssignment = Vec<(String, AspectValue)>;
 #[cfg(test)]
 use super::types::{BitMapping, ConstraintBit, Encoding};
 
-impl DelisProg {
+impl LoomProg {
     /// Summarize the compiled aspect/bit layout. Used only by tests to assert on
     /// the encoding shape; the solver paths go through `to_sygus` / `to_chc_ast`.
     #[cfg(test)]
@@ -110,7 +110,7 @@ impl DelisProg {
     /// pick the encoder, one in `faithful_sygus`. Now the bisim runs once.)
     pub fn is_parent_bearing(&self) -> Result<bool, String> {
         for cmd in &self.cmds {
-            if let DelisCmd::Semantics(c) = cmd {
+            if let LoomCmd::Semantics(c) = cmd {
                 if contains_parent_navigation(&SemanticSpec::from_cmd(c)?.body) {
                     return Ok(true);
                 }
@@ -120,12 +120,12 @@ impl DelisProg {
     }
 }
 
-fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, String> {
+fn compile_semantic_program(problem: &LoomProg) -> Result<SemanticProgram, String> {
     let aspect_cmds = problem
         .cmds
         .iter()
         .filter_map(|cmd| match cmd {
-            DelisCmd::DefineAspects(cmd) => Some(cmd),
+            LoomCmd::DefineAspects(cmd) => Some(cmd),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -137,7 +137,7 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         .cmds
         .iter()
         .filter_map(|cmd| match cmd {
-            DelisCmd::Semantics(cmd) => Some(cmd),
+            LoomCmd::Semantics(cmd) => Some(cmd),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -179,16 +179,12 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
         .cmds
         .iter()
         .filter_map(|cmd| match cmd {
-            DelisCmd::DefineModel(model) => Some((model.name.clone(), model)),
+            LoomCmd::DefineModel(model) => Some((model.name.clone(), model)),
             _ => None,
         })
         .collect::<HashMap<_, _>>();
-    let semantic_constraints = collect_semantic_constraints(
-        problem,
-        &semantic_specs,
-        &spaces_by_name,
-        &models_by_name,
-    )?;
+    let semantic_constraints =
+        collect_semantic_constraints(problem, &semantic_specs, &spaces_by_name, &models_by_name)?;
     let mut model_names = Vec::new();
     let mut seen_model_names = HashSet::default();
     for constraint in &semantic_constraints {
@@ -321,15 +317,15 @@ fn compile_semantic_program(problem: &DelisProg) -> Result<SemanticProgram, Stri
 }
 
 fn referenced_models_in_constraints(
-    problem: &DelisProg,
+    problem: &LoomProg,
     spaces_by_name: &HashMap<String, &AspectSpace>,
 ) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::default();
     for cmd in &problem.cmds {
         let term = match cmd {
-            DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,
-            DelisCmd::DeclareAxiom(term) => term,
+            LoomCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,
+            LoomCmd::DeclareAxiom(term) => term,
             _ => {
                 continue;
             }
@@ -392,7 +388,7 @@ pub fn contains_parent_navigation(expr: &Value) -> bool {
 }
 
 fn collect_semantic_constraints(
-    problem: &DelisProg,
+    problem: &LoomProg,
     semantic_specs: &[SemanticSpec],
     spaces_by_name: &HashMap<String, &AspectSpace>,
     models_by_name: &HashMap<String, &Model>,
@@ -404,16 +400,13 @@ fn collect_semantic_constraints(
     let mut constraints = Vec::new();
     for cmd in &problem.cmds {
         let term = match cmd {
-            DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,
-            DelisCmd::DeclareAxiom(_) => continue,
+            LoomCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) => term,
+            LoomCmd::DeclareAxiom(_) => continue,
             _ => continue,
         };
-        if let Some(constraint) = parse_semantic_constraint(
-            term,
-            &semantics_by_relation,
-            spaces_by_name,
-            models_by_name,
-        )? {
+        if let Some(constraint) =
+            parse_semantic_constraint(term, &semantics_by_relation, spaces_by_name, models_by_name)?
+        {
             constraints.push(constraint);
         }
     }
@@ -422,10 +415,10 @@ fn collect_semantic_constraints(
 
 /// True if any `(constraint (not (P …)))` mentions a semantic relation `P`,
 /// possibly wrapped in `(with-model M …)`.
-fn has_negative_semantic_constraint(problem: &DelisProg, specs: &[SemanticSpec]) -> bool {
+fn has_negative_semantic_constraint(problem: &LoomProg, specs: &[SemanticSpec]) -> bool {
     let rels: HashSet<&str> = specs.iter().map(|s| s.relation.as_str()).collect();
     problem.cmds.iter().any(|cmd| {
-        let DelisCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
+        let LoomCmd::As(sygus_parser::SyGuSCmd::Constraint(term)) = cmd else {
             return false;
         };
         let Ok((negated, _, inner)) = peel_constraint_layers(term) else {
@@ -442,9 +435,7 @@ fn has_negative_semantic_constraint(problem: &DelisProg, specs: &[SemanticSpec])
 /// Strip `(not …)` and `(with-model M …)` wrappers from a semantic constraint
 /// and return the negation flag, the outer model (if any), and the inner
 /// relation application.
-fn peel_constraint_layers(
-    term: &SyGuSTerm,
-) -> Result<(bool, Option<String>, &SyGuSTerm), String> {
+fn peel_constraint_layers(term: &SyGuSTerm) -> Result<(bool, Option<String>, &SyGuSTerm), String> {
     let mut negated = false;
     let mut outer_model: Option<String> = None;
     let mut term = term;
@@ -459,11 +450,7 @@ fn peel_constraint_layers(
             {
                 let model = match &args[0] {
                     SyGuSTerm::Identifier(Identifier::Symbol(name)) => name.clone(),
-                    other => {
-                        return Err(format!(
-                            "with-model expects a model symbol, got {other}"
-                        ))
-                    }
+                    other => return Err(format!("with-model expects a model symbol, got {other}")),
                 };
                 if outer_model.is_some() {
                     return Err(format!(
@@ -500,7 +487,12 @@ fn parse_semantic_constraint(
     let aspect_space = spaces_by_name
         .get(&spec.aspect_space)
         .ok_or_else(|| format!("unknown aspect space {}", spec.aspect_space))?;
-    let (model, fields) = parse_aspect_term(aspect_term, aspect_space, models_by_name, outer_model.as_deref())?;
+    let (model, fields) = parse_aspect_term(
+        aspect_term,
+        aspect_space,
+        models_by_name,
+        outer_model.as_deref(),
+    )?;
     Ok(Some(SemanticConstraint {
         relation,
         model,
@@ -825,7 +817,10 @@ fn enumerate_aspects(
         // Make the current model available under the generic name `model` so
         // `:where` clauses can refer to it without requiring a `(model Model)`
         // field in the aspect record.
-        assignment.push(("model".to_string(), AspectValue::Model(model_name.to_string())));
+        assignment.push((
+            "model".to_string(),
+            AspectValue::Model(model_name.to_string()),
+        ));
         let keep = match &space.where_expr {
             Some(expr) => eval_bool(expr, &assignment, models_by_name)?,
             None => true,

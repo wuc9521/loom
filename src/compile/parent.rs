@@ -1,4 +1,4 @@
-//! Sound & complete compilation of delis programs **with `parent` (up-moves)**
+//! Sound & complete compilation of loom programs **with `parent` (up-moves)**
 //! into SyGuS-BV, via the two-way → one-way crossing-relation construction
 //! (Shepherdson 1959; Vardi/Cachat, as cited by Krogmeier–Madhusudan 2023).
 //!
@@ -17,15 +17,15 @@
 //! justified and that `R` is the chosen support — irreflexive and transitively
 //! closed, i.e. acyclic, hence the least fixpoint. `R` summarizes the up/down
 //! crossings (Shepherdson 1959;
-//! Vardi 1998, specialized to no-parity since delis is monotone LFP), so its
+//! Vardi 1998, specialized to no-parity since loom is monotone LFP), so its
 //! width depends only on `|Q|`, **never on tree size** — the encoding is sound and
 //! complete for unbounded trees and handles intersection, mixed up+down clauses,
-//! and multiple parent atoms (arbitrary delis programs, not just CFG).
+//! and multiple parent atoms (arbitrary loom programs, not just CFG).
 //!
 //! `crossing_eval` (the exact ground LFP) and `respond_gen` (the exact per-node
 //! semantics) are the reference oracles the encoder is validated against.
 //!
-//! This is the default (and only) delis path for parent-bearing programs. The
+//! This is the default (and only) loom path for parent-bearing programs. The
 //! `Constant` holes need an SMT backend; the in-process enumerator solves them
 //! via the dryadsynth-bv `constant-via-smt` branch.
 
@@ -753,11 +753,7 @@ impl crate::compile::context::CompileContext<'_> {
 /// the self-contained counterexample query for the same crossing semantics (for an
 /// inverted per-skeleton check: SAT ⇒ the skeleton violates some root demand, UNSAT
 /// ⇒ no violation certificate exists).
-pub(crate) fn parent_sygus(
-    prog: &HornProg,
-    synth_name: &str,
-    kind: QueryKind,
-) -> (String, String) {
+pub(crate) fn parent_sygus(prog: &HornProg, synth_name: &str, kind: QueryKind) -> (String, String) {
     ParentInput::from_horn(prog).into_sygus(synth_name, kind)
 }
 
@@ -792,7 +788,14 @@ impl ParentInput {
     }
 
     fn into_sygus(self, synth_name: &str, kind: QueryKind) -> (String, String) {
-        log_crossing_summary(kind, &self.start, &self.constraints, &self.states, &self.ctors, &self.gcs);
+        log_crossing_summary(
+            kind,
+            &self.start,
+            &self.constraints,
+            &self.states,
+            &self.ctors,
+            &self.gcs,
+        );
         let ir = parent_sygus_ir(
             &self.states,
             &self.ctors,
@@ -878,7 +881,7 @@ fn sx_to_string(s: &Sx) -> String {
     }
 }
 /// Decode a cvc5 SyGuS solution: find `(define-fun <synth_name> () _ body)`
-/// anywhere in the output and return its body as a plain delis term (Ann args
+/// anywhere in the output and return its body as a plain loom term (Ann args
 /// stripped). Parses the s-expression rather than string-scanning, so it is
 /// robust to the synth-fun's name and to formatting.
 pub(crate) fn decode_term(stdout: &str, synth_name: &str) -> Option<String> {
@@ -931,7 +934,7 @@ pub(crate) fn decode_term(stdout: &str, synth_name: &str) -> Option<String> {
 ///
 /// `R[p][q]` (same-node support relation: `up[p]` transitively depends on `up[q]`,
 /// required irreflexive ⇒ acyclic support ⇒ least fixpoint; the Shepherdson/Vardi
-/// crossing relation, no parity since delis is monotone LFP) is **never stored in
+/// crossing relation, no parity since loom is monotone LFP) is **never stored in
 /// the value** — it is `let`-bound internally per node, computed by
 /// SCC-condensation of the `may_dep` graph (see `node_checks`). Its width depends
 /// only on `|Q|`, never on tree size.
@@ -1894,7 +1897,11 @@ impl<'a> Enc<'a> {
                     .filter(|&&k| self.sel_rep[k] == k)
                     .map(|&k| self.strategy_sel(pfx, k))
                     .collect();
-                groups[G_UP].push((up_name(q), 1, format!("(ite {} #b1 #b0)", or_bool(&strategies))));
+                groups[G_UP].push((
+                    up_name(q),
+                    1,
+                    format!("(ite {} #b1 #b0)", or_bool(&strategies)),
+                ));
             }
             concat_terms(&(0..q_n).rev().map(up_name).collect::<Vec<_>>())
         } else {
@@ -1927,7 +1934,11 @@ impl<'a> Enc<'a> {
             // (Cstrategy) a chosen clause must be active (its deps enter R automatically).
             for &k in &ctor_clauses {
                 if self.strategy_hole[k] && self.sel_rep[k] == k && !self.strategy_guard_active[k] {
-                    checks.push(format!("(=> {} {})", self.strategy_sel(pfx, k), prem_active(k)));
+                    checks.push(format!(
+                        "(=> {} {})",
+                        self.strategy_sel(pfx, k),
+                        prem_active(k)
+                    ));
                 }
             }
 
@@ -2328,7 +2339,7 @@ mod tests {
     use super::*;
     use crate::backends::smt2::ast::{HornAtom, HornRule};
     use crate::lang::runtime::Session;
-    use crate::parser::DelisProg;
+    use crate::parser::LoomProg;
 
     /// Per-state direct-selector layout: each real choice region must (a) hold
     /// every `pos_in_group` value of its real-choice clauses, (b) be contiguous and
@@ -2423,7 +2434,10 @@ mod tests {
         }
         for (k, gc) in gcs.iter().enumerate().filter(|(_, gc)| gc.head == "q0") {
             match gc.body.as_slice() {
-                [GA::Parent(..)] => assert!(e.strategy_hole[k], "parent-demand q0 clauses need strategies"),
+                [GA::Parent(..)] => assert!(
+                    e.strategy_hole[k],
+                    "parent-demand q0 clauses need strategies"
+                ),
                 [GA::Child(..)] => {
                     assert!(
                         !e.strategy_hole[k],
@@ -2513,12 +2527,12 @@ mod tests {
         let input = std::fs::read_to_string(path).unwrap();
         let mut session = Session::new();
         let mut cmds = Vec::new();
-        for res in DelisProg::parse_cmds(&input, Some(&mut session.runtime)) {
+        for res in LoomProg::parse_cmds(&input, Some(&mut session.runtime)) {
             let cmd = res.expect("parse");
             let _ = session.handle_command(&cmd);
             cmds.push(cmd);
         }
-        DelisProg { cmds }.to_chc_ast().expect("to_chc_ast")
+        LoomProg { cmds }.to_chc_ast().expect("to_chc_ast")
     }
 
     // ---- decode a cvc5 solution `g` (strip the trailing Ann arg) + CKY oracle ----
@@ -2652,7 +2666,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("delis_{tag}_{}_{n}.{ext}", std::process::id()))
+        std::env::temp_dir().join(format!("loom_{tag}_{}_{n}.{ext}", std::process::id()))
     }
     fn cvc5_solve(sygus: &str, tag: &str, tlimit_ms: u64) -> String {
         let path = unique_tmp(tag, "sygus");
@@ -3246,7 +3260,11 @@ mod tests {
             return;
         }
         let prog = load_chc_prog("benchmark/CFG/0001_tiny.sl");
-        let so = cvc5_solve(&parent_sygus(&prog, "g", QueryKind::Solution).0, "parent_cfg", 600_000);
+        let so = cvc5_solve(
+            &parent_sygus(&prog, "g", QueryKind::Solution).0,
+            "parent_cfg",
+            600_000,
+        );
         assert!(so.contains("define-fun g"), "no solution: {so}");
         let prods = productions(&decode_g(&so));
         assert!(cky(&prods, "ab"), "must accept ab");

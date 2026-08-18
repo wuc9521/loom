@@ -1,0 +1,82 @@
+LoomProg = { SOI ~ LoomCmd* ~ EOI }
+
+LoomCmd = {
+  SyGuSCmd
+| DeclareTermTypes
+| DefineAspects
+| DefineSemantics
+| DeclareAxiom
+| FuncDecl
+| ModelDef
+}
+DeclareTermTypes = {
+  "("
+  ~ #LoomTkDeclareTermTypes="declare-term-types"
+  ~ "(" ~ LoomTermSortDecl+ ~ ")"
+  ~ "(" ~ LoomTermTypeDecl+ ~ ")"
+  ~ ")"
+}
+LoomTermSortDecl = { "(" ~ Symbol ~ Numeral ~ ")" }
+LoomTermTypeDecl = { "(" ~ LoomTermCtorDecl* ~ ")" }
+LoomTermCtorDecl = { "(" ~ Identifier ~ Sort* ~ ")" }
+DefineAspects = {
+  "("
+  ~ #LoomTkDefineAspects="define-aspects"
+  ~ Symbol
+  ~ AspectRecord
+  ~ WhereClause?
+  ~ ")"
+}
+AspectRecord = { "(" ~ #LoomTkRecord="record" ~ AspectField* ~ ")" }
+AspectField = { "(" ~ Symbol ~ AspectDomain ~ ")" }
+AspectDomain = { "(" ~ #LoomTkEnum="enum" ~ Symbol+ ~ ")" | Sort }
+WhereClause = { ":where" ~ LoomSExprBody }
+DefineSemantics = {
+  "("
+  ~ #LoomTkDefineSemantics="define-semantics"
+  ~ SemanticsHeader
+  ~ ReturnsClause?
+  ~ SemanticsBody
+  ~ ")"
+}
+DeclareAxiom = {
+  "("
+  ~ #LoomTkDeclareAxiom="declare-axiom"
+  ~ LoomSExprBody
+  ~ ")"
+}
+ReturnsClause = { ":returns" ~ Sort }
+SemanticsHeader = { "(" ~ "(" ~ Symbol ~ SortedVar+ ~ ")" ~ ")" }
+SemanticsBody = { "(" ~ SemanticsMatch ~ ")" }
+SemanticsMatch = { "(" ~ #LoomTkMatchSemantics="match" ~ Symbol ~ SemanticsMatchCase+ ~ ")" }
+SemanticsMatchCase = { "(" ~ SemanticsPattern ~ LoomSExprBody ~ ")" }
+SemanticsPattern = { "(" ~ Symbol* ~ ")" }
+FuncDecl = { "(" ~ #LoomTkDeclFun="declare-fun" ~ Symbol ~ "(" ~ Sort* ~ ")" ~ Sort ~ ")" }
+ModelDef = { "(" ~ #LoomTkDefModel="define-model" ~ Symbol ~ (SortInterp | FuncInterp)* ~ ")" }
+FuncInterp = { "(" ~ #LoomTkInterpFun="interp-fun" ~ Symbol ~ (SimpleInterp | MatchInterp) ~ ")" }
+SimpleInterp = { "(" ~ InterpedValue ~ ")" }  // For simple 0-ary functions
+MatchInterp = { "(" ~ #LoomTkMatch="match" ~ "(" ~ MatchCase+ ~ ")" ~ ")" }
+MatchCase = { "(" ~ Pattern ~ InterpedValue ~ ")" }
+SortInterp = { "(" ~ #LoomTkInterpSort="interp-sort" ~ Sort ~ "(" ~ UnivElem* ~ ")" ~ ")" }
+UnivElem = @{ Symbol }
+
+// Define values that can be interpreted
+InterpedValue = {
+  Literal
+| UnivElem
+| "(" ~ Identifier ~ SyGuSTerm* ~ ")"
+}
+
+// Pattern definition (simplified to match SMT-LIB2 style)
+Pattern = {
+  "_" | UnivElem | Symbol |           // Simple pattern elements
+  "(" ~ ("_" | UnivElem | Symbol)+ ~ ")"  // Compound pattern in parentheses
+}
+
+LoomReservedCmd = {
+  "interp-sort" | "interp-fun" | "define-model" | "declare-fun" | "declare-term-types" | "define-aspects" | "define-semantics"
+}
+
+LoomSExprBody = { LoomSExprAtom | LoomSExprList }
+LoomSExprAtom = { (!("(" | ")") ~ ANY)+ }
+LoomSExprList = { "(" ~ LoomSExprBody* ~ ")" }

@@ -1,3 +1,4 @@
+use crate::fxmap::{HashMap, HashSet};
 use crate::{
     compile::optim,
     compile::{
@@ -9,9 +10,8 @@ use crate::{
         syntax::{TermConstructor, TermSignature},
         types::{AspectKey, AspectValue, DomainBit, SemanticDomain, SemanticKind},
     },
-    parser::{ast::TermTypes, DelisCmd, DelisProg},
+    parser::{ast::TermTypes, LoomCmd, LoomProg},
 };
-use crate::fxmap::{HashMap, HashSet};
 use std::{
     cell::RefCell,
     sync::Arc,
@@ -72,7 +72,7 @@ impl EnvView for Env {
 }
 
 struct Compiler<'a> {
-    problem: &'a DelisProg,
+    problem: &'a LoomProg,
     term_types: &'a TermTypes,
     sig: TermSignature,
     ctx: SemanticContext<'a>,
@@ -324,7 +324,7 @@ impl<'a> Compiler<'a> {
             let body = if let Some(body) = lifted {
                 body
             } else if self.is_self_closure_sort(&cr.result_sort) {
-                // Constructor body may reference __delis_self_b{j} placeholders
+                // Constructor body may reference __loom_self_b{j} placeholders
                 // (emitted by semantic_term_bit in SelfClosure mode). Wrap in
                 // a topo-sorted let-binding chain so the LFP is fully unrolled
                 // at compile time — no runtime synth-fun reference required.
@@ -372,8 +372,8 @@ impl<'a> Compiler<'a> {
             .cmds
             .iter()
             .filter_map(|cmd| match cmd {
-                DelisCmd::As(SyGuSCmd::Constraint(term)) => Some(term),
-                DelisCmd::DeclareAxiom(_) => None,
+                LoomCmd::As(SyGuSCmd::Constraint(term)) => Some(term),
+                LoomCmd::DeclareAxiom(_) => None,
                 _ => None,
             })
             .map(sygus_term_to_value)
@@ -398,7 +398,7 @@ impl<'a> Compiler<'a> {
 
     /// True iff any semantic relation operating on `sort` is in
     /// `RecurrenceMode::SelfClosure` mode. Constructors of such sorts produce
-    /// bool_bits that contain `__delis_self_b{j}` placeholders, which need
+    /// bool_bits that contain `__loom_self_b{j}` placeholders, which need
     /// the `build_self_closure_body` post-pass to be wrapped in let-bindings.
     fn is_self_closure_sort(&self, sort: &str) -> bool {
         self.recurrence.self_closure_sorts.contains(sort)
@@ -2086,7 +2086,7 @@ fn strongly_connected_components(
 // O(|U|)-size native BV formulas instead of O(|U|^2..3) element expansions.
 // Recognition validates the entire table per model, so emission is exact;
 // anything unrecognized falls back to the existing expansion. Disable with
-// DELIS_NO_NATIVE_TABLES=1 for differential testing.
+// LOOM_NO_NATIVE_TABLES=1 for differential testing.
 // ===========================================================================
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2135,7 +2135,9 @@ impl OneHotField {
         }
     }
     fn valid_indices(&self) -> Vec<usize> {
-        (0..self.width).filter(|i| Some(*i) != self.inv_idx).collect()
+        (0..self.width)
+            .filter(|i| Some(*i) != self.inv_idx)
+            .collect()
     }
     /// Bool term: the field holds a valid (non-invalid) value.
     fn valid_term(&self) -> SyGuSTerm {
@@ -2156,12 +2158,20 @@ impl OneHotField {
     /// emitted as a suffix-OR chain so the circuit planner shares the tail.
     fn suffix_or(&self, i: isize) -> SyGuSTerm {
         let lo = i.max(0) as usize;
-        let idxs: Vec<usize> = self.valid_indices().into_iter().filter(|v| *v >= lo).collect();
+        let idxs: Vec<usize> = self
+            .valid_indices()
+            .into_iter()
+            .filter(|v| *v >= lo)
+            .collect();
         // Nested (or b_k (or b_{k+1} ...)) — structurally shared suffixes.
         let mut acc = bool_lit(false);
         for v in idxs.into_iter().rev() {
             let b = self.bit(v);
-            acc = if acc == bool_lit(false) { b } else { or_terms(vec![b, acc]) };
+            acc = if acc == bool_lit(false) {
+                b
+            } else {
+                or_terms(vec![b, acc])
+            };
         }
         acc
     }
@@ -2256,7 +2266,9 @@ impl<'a> Compiler<'a> {
             return hit.clone();
         }
         let result = self.numeric_table_uncached(model_name, func);
-        self.num_table_cache.borrow_mut().insert(key, result.clone());
+        self.num_table_cache
+            .borrow_mut()
+            .insert(key, result.clone());
         result
     }
 
@@ -2264,8 +2276,8 @@ impl<'a> Compiler<'a> {
         // Rides the -O/--optimize flag (default on). The emitted gadgets are
         // pure 1-bit and/or/not circuits with shared suffix-OR chains, so
         // define-funs stay on dryadsynth-bv's bitsliced BitCircuit plan.
-        // DELIS_NO_TABLE_CIRCUITS=1 disables the pass for differential runs.
-        if !self.optimize || std::env::var_os("DELIS_NO_TABLE_CIRCUITS").is_some() {
+        // LOOM_NO_TABLE_CIRCUITS=1 disables the pass for differential runs.
+        if !self.optimize || std::env::var_os("LOOM_NO_TABLE_CIRCUITS").is_some() {
             return None;
         }
         let sig = self.ctx.func_sigs.get(func)?;
@@ -2317,12 +2329,10 @@ impl<'a> Compiler<'a> {
                         let out = lookup(a, b);
                         match kind {
                             NumTableKind::Ule => {
-                                (out.as_deref() == Some("true"))
-                                    == (valid(a) && valid(b) && a <= b)
+                                (out.as_deref() == Some("true")) == (valid(a) && valid(b) && a <= b)
                             }
                             NumTableKind::Ult => {
-                                (out.as_deref() == Some("true"))
-                                    == (valid(a) && valid(b) && a < b)
+                                (out.as_deref() == Some("true")) == (valid(a) && valid(b) && a < b)
                             }
                             NumTableKind::UltInvBig => {
                                 (out.as_deref() == Some("true"))
@@ -2470,11 +2480,7 @@ impl<'a> Compiler<'a> {
         let lhs = self.parse_num_side(items[1], model_name, sort, univ, inv_idx, env, depth + 1)?;
         let rhs = self.parse_num_side(items[2], model_name, sort, univ, inv_idx, env, depth + 1)?;
         // only one dynamic field per side is supported
-        let (mut side, other_offset, negate_other) = match (
-            &lhs.field,
-            &rhs.field,
-            table.kind,
-        ) {
+        let (mut side, other_offset, negate_other) = match (&lhs.field, &rhs.field, table.kind) {
             (_, None, NumTableKind::AddSat) => (lhs, rhs.offset, false),
             (None, _, NumTableKind::AddSat) => (rhs, lhs.offset, false),
             (_, None, NumTableKind::SubSat) => (lhs, rhs.offset, true),
@@ -2495,8 +2501,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn side_all_valid(&self, side: &NumSide) -> SyGuSTerm {
-        let mut conjuncts: Vec<SyGuSTerm> =
-            side.leaves.iter().map(|f| f.valid_term()).collect();
+        let mut conjuncts: Vec<SyGuSTerm> = side.leaves.iter().map(|f| f.valid_term()).collect();
         conjuncts.extend(side.guards.iter().cloned());
         and_terms(conjuncts)
     }
@@ -2550,7 +2555,15 @@ impl<'a> Compiler<'a> {
             return Ok(None);
         };
         let parse = |expr: &Value| {
-            self.parse_num_side(expr, &model_name, &table.arg_sort, &univ, table.inv_idx, env, 0)
+            self.parse_num_side(
+                expr,
+                &model_name,
+                &table.arg_sort,
+                &univ,
+                table.inv_idx,
+                env,
+                0,
+            )
         };
         let (Some(l), Some(r)) = (parse(args[0]), parse(args[1])) else {
             return Ok(None);
@@ -2597,8 +2610,7 @@ impl<'a> Compiler<'a> {
             let func = items.first()?.as_symbol()?;
             let model_name = self.ctx.current_model(env).ok()?.to_string();
             let table = self.numeric_table(&model_name, func)?;
-            matches!(table.kind, NumTableKind::AddSat | NumTableKind::SubSat)
-                .then_some(table)
+            matches!(table.kind, NumTableKind::AddSat | NumTableKind::SubSat).then_some(table)
         };
         let Some(table) = head_table(lhs).or_else(|| head_table(rhs)) else {
             return Ok(None);
@@ -2609,7 +2621,15 @@ impl<'a> Compiler<'a> {
             return Ok(None);
         };
         let parse = |expr: &Value| {
-            self.parse_num_side(expr, &model_name, &table.arg_sort, &univ, table.inv_idx, env, 0)
+            self.parse_num_side(
+                expr,
+                &model_name,
+                &table.arg_sort,
+                &univ,
+                table.inv_idx,
+                env,
+                0,
+            )
         };
         let (Some(l), Some(r)) = (parse(lhs), parse(rhs)) else {
             return Ok(None);
@@ -2625,11 +2645,7 @@ impl<'a> Compiler<'a> {
                 .map(|(v, a)| and_terms(vec![a, r.value_is(v)]))
                 .collect(),
         );
-        let both_valid = and_terms(vec![
-            self.side_all_valid(&l),
-            self.side_all_valid(&r),
-            eq,
-        ]);
+        let both_valid = and_terms(vec![self.side_all_valid(&l), self.side_all_valid(&r), eq]);
         let both_invalid = and_terms(vec![self.side_invalid(&l), self.side_invalid(&r)]);
         let term = or_terms(vec![both_valid, both_invalid]);
         Ok(Some(match term {

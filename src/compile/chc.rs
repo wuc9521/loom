@@ -1,3 +1,4 @@
+use crate::fxmap::HashMap;
 use crate::{
     backends::smt2::{
         ast::{HornAtom, HornDecl, HornProg, HornQuery, HornRule, HornTerm, PredicatePolarity},
@@ -16,9 +17,8 @@ use crate::{
             SemanticProgram,
         },
     },
-    parser::DelisProg,
+    parser::LoomProg,
 };
-use crate::fxmap::HashMap;
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -175,7 +175,7 @@ struct ChcCompiler<'a> {
 
 impl<'a> ChcCompiler<'a> {
     fn new(
-        problem: &'a DelisProg,
+        problem: &'a LoomProg,
         program: SemanticProgram,
         sig: TermSignature,
         semantic_cases: HashMap<String, HashMap<String, crate::compile::semantics::Case>>,
