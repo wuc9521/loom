@@ -57,8 +57,8 @@ Options:
   -i, --in                     Read input from stdin instead of file
   -v, --verbose...             Increase log verbosity (use `-v` for INFO, `-vv` for DEBUG)
   -O, --optimize[=<OPTIMIZE>]  Enable SyGuS optimization passes (use -O=false or --optimize=false to disable) [default: true] [possible values: true, false]
-      --min[=<MIN>]            Enable exact-nullary relevance (bit minimization) for dryadsynth-bv; use --min=false to disable [default: true] [possible values: true, false]
-  -B, --bisim[=<BISIM>]        Enable bisimulation-based aspect quotient to reduce BV width (use --bisim=false to disable) [default: true] [possible values: true, false]
+      --coi[=<COI>]            Enable semantic candidate deduplication and relevance/circuit pruning in dryadsynth-bv; --coi=false disables both [default: true] [possible values: true, false]
+  -B, --bisim[=<BISIM>]        Enable semantic bisimulation quotienting; use --bisim=false to skip it entirely [default: true] [possible values: true, false]
       --enum                   Use only Loom's internal enumerative backend (no SyGuS solver backend)
   -d, --dump-sygus             Translate to SyGuS BV and print to stdout
       --sygus-stats            Translate to SyGuS BV, but print only machine-readable stats: `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines`

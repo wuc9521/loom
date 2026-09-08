@@ -13,6 +13,27 @@ fn parse(input: &str) -> LoomProg {
 }
 
 #[test]
+fn bisim_false_preserves_equivalent_states() {
+    let problem = parse(
+        r#"
+(declare-sort Pos 0)
+(define-model w (interp-sort Pos ($0 $1)))
+(declare-term-types ((Term 0)) (((a))))
+(define-aspects Asp (record (i Pos)))
+(define-semantics ((Sem (t Term) (asp Asp))) ((match t ((a) true))))
+(synth-fun t () Term)
+(constraint (with-model w (forall ((i Pos)) (Sem t (Asp i)))))
+(check-synth)
+"#,
+    );
+    assert_eq!(problem.bv_sz().unwrap(), 2);
+    init_options(CompileOptions { optimize: false, bisim: true });
+    let reduced = problem.bv_sz();
+    ensure_opts();
+    assert_eq!(reduced.unwrap(), 1);
+}
+
+#[test]
 fn eval_symbols_matches_unary_model_interpretations() {
     let problem = parse(
         r#"

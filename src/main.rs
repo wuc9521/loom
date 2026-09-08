@@ -129,7 +129,7 @@ fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
     };
     let bv_backend = SygusBackend::from_cli(args);
     let bv_verbose = args.verbose;
-    let bv_min = args.min;
+    let bv_min = args.coi;
     const BV_STACK_BYTES: usize = 128 * 1024 * 1024;
     thread::Builder::new()
         .name("bv-searcher".to_string())
@@ -396,18 +396,18 @@ pub struct CLI {
     )]
     optimize: bool,
 
-    /// Enable exact-nullary relevance (bit minimization) for dryadsynth-bv; use --min=false to disable.
+    /// Enable semantic candidate deduplication and relevance/circuit pruning in dryadsynth-bv; --coi=false disables both.
     #[arg(
-        long = "min",
+        long = "coi",
         default_value_t = true,
         default_missing_value = "true",
         num_args = 0..=1,
         require_equals = true,
         value_parser = clap::builder::BoolishValueParser::new()
     )]
-    min: bool,
+    coi: bool,
 
-    /// Use coarsest partition-refinement bisimulation (use --bisim=false for fingerprint seed).
+    /// Enable semantic bisimulation quotienting; use --bisim=false to skip it entirely.
     #[arg(
         short = 'B',
         long = "bisim",

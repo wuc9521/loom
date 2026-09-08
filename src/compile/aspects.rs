@@ -305,13 +305,12 @@ fn compile_semantic_program(problem: &LoomProg) -> Result<SemanticProgram, Strin
         constraints: semantic_constraints,
     };
 
-    let mode = if super::opts().bisim {
-        super::bisim::QuotientMode::Coarsest
-    } else {
-        super::bisim::QuotientMode::FingerprintSeed
-    };
     let _ = &loaded_models; // models are reachable via the SemanticContext built inside bisim
-    program.quotient_by_bisim(problem, mode);
+    if super::opts().bisim {
+        program.quotient_by_bisim(problem, super::bisim::QuotientMode::Coarsest);
+    } else {
+        log::info!("bisim disabled: retaining all semantic states");
+    }
 
     Ok(program)
 }
