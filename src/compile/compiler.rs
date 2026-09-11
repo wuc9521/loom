@@ -12,8 +12,10 @@ use crate::{
     },
     parser::{ast::TermTypes, LoomCmd, LoomProg},
 };
+use rustc_hash::FxHasher;
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell},
+    hash::{Hash, Hasher as _},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -99,17 +101,12 @@ struct ConstructorStats {
     eval_time: Duration,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct EnvMemoKey {
-    /// The current model. Captured unconditionally because model-function and
-    /// relation calls depend on it even when the expression syntactically
-    /// references no aspect binder (e.g. `(out.chr $0)` with literal args).
-    /// Without this, a value computed under one model could be reused under
-    /// another, silently miscompiling multi-model value-semantics.
-    model: Option<String>,
-    aspects: Vec<(String, AspectKey)>,
-    values: Vec<(String, AspectValue)>,
-}
+/// Fingerprint of the env bindings an expression references; see
+/// `memo_env_key`. A hash, not structure: these keys are built 10M+ times per
+/// CTL instance, and the old structural key cloned a Vec<String> + AspectKey
+/// per probe. Collisions silently reuse a memo entry — the same u64-FxHash
+/// contract the eval_ctx caches already use.
+type EnvMemoKey = u64;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct BoolMemoKey {
@@ -136,8 +133,16 @@ struct GuardedProjectionMemoKey {
     domain_expr_ptr: usize,
     guard_expr_ptr: usize,
     aspect_expr_ptr: usize,
+    /// Env views of ALL THREE expressions: the cached bits depend on the
+    /// domain enumeration, the guard decision, and the per-value aspect
+    /// evaluation, each of which may read different aspect fields (notably
+    /// `aspect_expr` reads `depth` while CTL guards do not). Keying by the
+    /// guard's view alone over-shares across depth levels.
     env: EnvMemoKey,
+    domain_env: EnvMemoKey,
+    aspect_env: EnvMemoKey,
 }
+
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct ExprEnvMemoKey {
@@ -1143,6 +1148,8 @@ impl<'a> Compiler<'a> {
             guard_expr_ptr: guard_expr as *const Value as usize,
             aspect_expr_ptr: aspect_expr as *const Value as usize,
             env: self.memo_env_key(guard_expr, env),
+            domain_env: self.memo_env_key(domain_expr, env),
+            aspect_env: self.memo_env_key(aspect_expr, env),
         };
         if let Some(cached) = self.guarded_projection_cache.borrow().get(&key) {
             return Ok(Some(cached.clone()));
@@ -1599,50 +1606,44 @@ impl<'a> Compiler<'a> {
 
     fn memo_env_key(&self, expr: &Value, env: &Env) -> EnvMemoKey {
         let referenced = self.expr_symbols(expr);
-        let mut aspects = Vec::new();
-        let mut values = Vec::new();
-        for name in &referenced {
+        let mut h = FxHasher::default();
+        let mut captured_aspect = false;
+        for name in referenced.iter() {
             if let Some(aspect) = env.aspect.get(name) {
-                aspects.push((name.clone(), aspect.clone()));
+                captured_aspect = true;
+                // Whole aspect, every field: bodies pass the binder wholesale
+                // to Sem/Asp constructors (`(CTL.Sem phi asp)`), which resolve
+                // it to a bit via fields no projection ever names syntactically.
+                name.hash(&mut h);
+                aspect.hash(&mut h);
             }
             if let Some(value) = env.values.get(name) {
-                values.push((name.clone(), value.clone()));
+                name.hash(&mut h);
+                value.hash(&mut h);
             }
         }
-        // The current model must be part of the key whenever it isn't already
-        // implied: model-function and relation calls depend on it even when
-        // `expr` references no aspect binder. If `aspects` is non-empty it
-        // already carries the model (every AspectKey has `.model`, and the env
-        // holds a single aspect during constructor eval), so we only pay the
-        // String clone in the otherwise-uncaptured case.
-        let model = if aspects.is_empty() {
-            env.aspect
-                .values()
-                .next()
-                .map(|aspect| aspect.model.clone())
-        } else {
-            None
-        };
-        EnvMemoKey {
-            model,
-            aspects,
-            values,
+        // The model must be part of the key whenever it isn't already implied:
+        // model-function and relation calls depend on it even when `expr`
+        // references no aspect binder (e.g. `(out.chr $0)` with literal args).
+        // If an aspect was captured its `.model` is already hashed above (the
+        // env holds a single aspect during constructor eval).
+        if !captured_aspect {
+            env.aspect.values().next().map(|a| a.model.hash(&mut h));
         }
+        env.current_model.hash(&mut h);
+        h.finish()
     }
 
-    fn expr_symbols(&self, expr: &Value) -> Vec<String> {
+    fn expr_symbols(&self, expr: &Value) -> Ref<'_, Vec<String>> {
         let expr_ptr = expr as *const Value as usize;
-        if let Some(cached) = self.expr_symbol_cache.borrow().get(&expr_ptr) {
-            return cached.clone();
+        if !self.expr_symbol_cache.borrow().contains_key(&expr_ptr) {
+            let mut symbols = HashSet::default();
+            collect_expr_symbols(expr, &mut symbols);
+            let mut symbols = symbols.into_iter().collect::<Vec<_>>();
+            symbols.sort();
+            self.expr_symbol_cache.borrow_mut().insert(expr_ptr, symbols);
         }
-        let mut symbols = HashSet::default();
-        collect_expr_symbols(expr, &mut symbols);
-        let mut symbols = symbols.into_iter().collect::<Vec<_>>();
-        symbols.sort();
-        self.expr_symbol_cache
-            .borrow_mut()
-            .insert(expr_ptr, symbols.clone());
-        symbols
+        Ref::map(self.expr_symbol_cache.borrow(), |cache| &cache[&expr_ptr])
     }
 
     fn eval_semantic_finite_call_eq(

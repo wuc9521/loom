@@ -90,9 +90,19 @@ bisim phase was 98.5% of worst-case runtime). Rules:
 - `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
   constant-guard probe — a memo hit must NOT re-enumerate the domain
   (`const_guard_values` was ~69% of the encode phase).
+- `compiler.rs`: `EnvMemoKey` is a u64 FxHash fingerprint (built by
+  `memo_env_key`), not structure. Two soundness rules, both violations of
+  which were caught only by byte-diffing output:
+  1. Hash the FULL `AspectKey` of a referenced binder — never restrict to
+     syntactically-referenced field names. Bodies pass `asp` wholesale to
+     Sem/Asp constructors (`(CTL.Sem phi asp)`), which read fields no
+     projection ever names.
+  2. `GuardedProjectionMemoKey` carries env views of all three exprs
+     (domain, guard, aspect): the cached bits depend on each.
 
 Any change here must keep `--dump-sygus` output byte-identical on
-`benchmark/CTL/0002.sl` (default) and `0542.sl --bisim=false`.
+`benchmark/CTL/0002.sl` (default) and `0542.sl --bisim=false`, plus a sweep
+over `benchmark/CTL/*.sl` against the previous binary.
 
 ## Build & test
 
