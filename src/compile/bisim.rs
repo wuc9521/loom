@@ -271,6 +271,18 @@ impl SemanticProgram {
             .map(|m| m + 1)
             .unwrap_or(0);
 
+        // Scratch reused across every signature call (~95k per quotient):
+        // signature() clear()s both per call, which keeps bucket capacity
+        // instead of re-allocating five HashMaps each time.
+        let mut env = WalkEnv {
+            aspects: HashMap::default(),
+            values: HashMap::default(),
+            subterms: HashMap::default(),
+            subterm_sorts: HashMap::default(),
+            current_sort: String::new(),
+            current_model: None,
+        };
+        let mut cache: WalkCache = HashMap::default();
         let mut iters = 0usize;
         while !multi_aspect.is_empty() {
             iters += 1;
@@ -285,8 +297,14 @@ impl SemanticProgram {
                 let mut by_sig: HashMap<SigHash, (Vec<usize>, Vec<ClassId>)> = HashMap::default();
                 for &member_id in &members {
                     let member = &member_keys[member_id];
-                    let (sig, deps) =
-                        refiner.signature(&member.0, &member.1, &member.2, &dense_classes);
+                    let (sig, deps) = refiner.signature(
+                        &member.0,
+                        &member.1,
+                        &member.2,
+                        &dense_classes,
+                        &mut env,
+                        &mut cache,
+                    );
                     let entry = by_sig.entry(sig).or_default();
                     entry.0.push(member_id);
                     entry.1.extend(deps);
@@ -601,6 +619,8 @@ impl<'a> Refiner<'a> {
         aspect: &AspectKey,
         value: &Option<AspectValue>,
         classes: &HashMap<DenseClassKey, ClassId>,
+        mut env: &mut WalkEnv,
+        mut cache: &mut WalkCache,
     ) -> (SigHash, Vec<ClassId>) {
         let mut out = FxHasher::default();
         let mut deps = Vec::new();
@@ -617,29 +637,27 @@ impl<'a> Refiner<'a> {
         };
         let mut names: Vec<&str> = cases.keys().map(|s| s.as_str()).collect();
         names.sort_unstable();
-        // The env is reused across cases. `values` starts empty; emit_quantifier
-        // restores bindings on the way out so it stays empty between cases.
-        // `aspects` doesn't change inside walk. `subterms` is rebuilt per case.
-        let mut env = WalkEnv {
-            aspects: HashMap::default(),
-            values: HashMap::default(),
-            subterms: HashMap::default(),
-            subterm_sorts: HashMap::default(),
-            current_sort: sem.term_sort.clone(),
-            current_model: Some(aspect.model.clone()),
-        };
+        // Env is reused across cases and calls. `values` starts empty;
+        // emit_quantifier restores bindings on the way out so it stays
+        // empty between cases. `aspects` doesn't change inside walk.
+        // `subterms` is rebuilt per case.
+        env.aspects.clear();
+        env.values.clear();
+        env.subterms.clear();
+        env.subterm_sorts.clear();
+        env.current_sort = sem.term_sort.clone();
+        env.current_model = Some(aspect.model.clone());
         let aspect_var = cases
             .values()
             .next()
             .map(|case| case.aspect_var.clone())
             .unwrap_or_else(|| "asp".to_string());
         env.aspects.insert(aspect_var, aspect.clone());
-        // Walk cache: local to this signature() call. The current aspect
-        // is fixed for the duration, so a cached hash for a given
-        // (expr_ptr, env_values_restricted_to_free_vars) is sound. Lives
-        // on the stack so it's dropped at end-of-call — across calls,
-        // `aspect` and `classes` change and we'd need to re-walk anyway.
-        let mut cache: WalkCache = HashMap::default();
+        // Walk cache: contents scoped to this call — cleared here, because
+        // across calls `aspect` and `classes` change and stale hashes would
+        // be unsound. Within a call the current aspect is fixed, so a cached
+        // hash for (expr_ptr, env_values_restricted_to_free_vars) is sound.
+        cache.clear();
         for cons in names {
             let case = &cases[cons];
             out.write(cons.as_bytes());
