@@ -31,11 +31,13 @@ pub trait EnvView {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone)]
-struct EvalKey {
-    cache_id: u64,
-    func: String,
-    args: Vec<String>,
+/// Borrowed-name view of a `Sort`: avoids a Display allocation for the common
+/// `Sort::Simple` case on hot eval paths.
+fn simple_sort_name(sort: &sygus_parser::Sort) -> std::borrow::Cow<'_, str> {
+    match sort.as_simple_name() {
+        Some(name) => std::borrow::Cow::Borrowed(name),
+        None => std::borrow::Cow::Owned(sort.to_string()),
+    }
 }
 
 struct ConstraintModelEnv {
@@ -80,7 +82,7 @@ pub struct SemanticContext<'a> {
     domains_by_relation: HashMap<String, SemanticDomain>,
     domains_by_sort: HashMap<String, Vec<SemanticDomain>>,
     cases: HashMap<String, HashMap<String, Case>>,
-    eval_cache: RefCell<HashMap<EvalKey, Option<InterpedValue>>>,
+    eval_cache: RefCell<HashMap<u64, Option<InterpedValue>>>,
     /// Hash-keyed cache for `eval_model_bool_call`. Mirrors `eval_cache_hashed`
     /// but stores the boolean result: keyed by a u64 hash of `(model.cache_id,
     /// func bytes, arg values)` so a probe never has to materialise a
@@ -128,7 +130,7 @@ impl<'a> SemanticContext<'a> {
                     let value = self
                         .eval_model_symbols(model_ref, symbol, &[])
                         .ok_or_else(|| format!("model {model} has no value for {symbol}"))?;
-                    return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+                    return interped_aspect_value(&simple_sort_name(&sig.ret_sort), &value);
                 }
             }
         }
@@ -153,7 +155,7 @@ impl<'a> SemanticContext<'a> {
                                 arg_values.join(" ")
                             )
                         })?;
-                    return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+                    return interped_aspect_value(&simple_sort_name(&sig.ret_sort), &value);
                 }
             }
         }
@@ -240,11 +242,19 @@ impl<'a> SemanticContext<'a> {
         func: &str,
         args: &[String],
     ) -> Option<InterpedValue> {
-        let key = EvalKey {
-            cache_id: model.cache_id,
-            func: func.to_string(),
-            args: args.to_vec(),
-        };
+        // Hash-keyed probe (same pattern as `eval_bool_cache` below): the
+        // owned `EvalKey { func: String, args: Vec<String> }` put 2+ heap
+        // allocations on every probe of a >99%-hit cache — the single hottest
+        // primitive of CTL compile (10M+ probes per instance).
+        let mut h = FxHasher::default();
+        h.write_u64(model.cache_id);
+        h.write(func.as_bytes());
+        h.write_u8(0);
+        for arg in args {
+            h.write(arg.as_bytes());
+            h.write_u8(0);
+        }
+        let key = h.finish();
         if let Some(cached) = self.eval_cache.borrow().get(&key) {
             self.eval_hits.set(self.eval_hits.get() + 1);
             return cached.clone();
@@ -466,7 +476,7 @@ impl<'a> SemanticContext<'a> {
                     let value = self
                         .eval_model_symbols(model_ref, symbol, &[])
                         .ok_or_else(|| format!("model {model} has no value for {symbol}"))?;
-                    return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+                    return interped_aspect_value(&simple_sort_name(&sig.ret_sort), &value);
                 }
             }
             // Enum members and model names are signature-level tokens that
@@ -541,7 +551,7 @@ impl<'a> SemanticContext<'a> {
                         arg_strs.join(", ")
                     )
                 })?;
-            return interped_aspect_value(&sig.ret_sort.to_string(), &value);
+            return interped_aspect_value(&simple_sort_name(&sig.ret_sort), &value);
         }
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
@@ -632,7 +642,9 @@ impl<'a> SemanticContext<'a> {
                 // signature. Non-model ops and non-ground args stay dynamic
                 // (Err), exactly as before.
                 let sig = self.func_sigs.get(op).ok_or_else(String::new)?;
-                if sig.ret_sort.to_string() != "Bool" || sig.arg_sorts.len() != items.len() - 1 {
+                if sig.ret_sort.as_simple_name() != Some("Bool")
+                    || sig.arg_sorts.len() != items.len() - 1
+                {
                     return Err(String::new());
                 }
                 self.eval_model_bool_call(op, &items[1..], env)
@@ -647,7 +659,7 @@ impl<'a> SemanticContext<'a> {
         env: &impl EnvView,
     ) -> Result<bool, String> {
         let sig = self.func_sigs.get(func).ok_or_else(String::new)?;
-        if sig.ret_sort.to_string() != "Bool" || sig.arg_sorts.len() != args.len() {
+        if sig.ret_sort.as_simple_name() != Some("Bool") || sig.arg_sorts.len() != args.len() {
             return Err(String::new());
         }
         let model = self.current_model(env)?;

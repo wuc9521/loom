@@ -869,7 +869,7 @@ impl<'a> ChcCompiler<'a> {
             .func_sigs
             .get(func)
             .ok_or_else(|| format!("unknown function {func}"))?;
-        if sig.ret_sort.to_string() != "Bool" {
+        if sig.ret_sort.as_simple_name() != Some("Bool") {
             return Err(format!("function {func} does not return Bool"));
         }
         let model = self.ctx.current_model(env)?;

@@ -1100,16 +1100,15 @@ impl<'a> Compiler<'a> {
         // caller then falls through to the general quantifier lowering
         // (eval_quantifier), which handles dynamic guards by enumerating
         // values and combining the body's BoolExpr per value.
-        if self
-            .const_guard_values(var, domain_expr, guard_expr, true, env)?
-            .is_none()
-        {
-            return Ok(None);
-        }
         let term_expr = items[1];
         let aspect_expr = items[2];
-        let bits =
-            self.guarded_projection_bits(var, domain_expr, guard_expr, relation, aspect_expr, env)?;
+        // ponytail: bits lookup doubles as the constant-guard probe so a memo
+        // hit never re-enumerates the domain; miss path enumerates once.
+        let Some(bits) =
+            self.guarded_projection_bits(var, domain_expr, guard_expr, relation, aspect_expr, env)?
+        else {
+            return Ok(None);
+        };
         let mut terms = Vec::with_capacity(bits.len());
         for bit in bits {
             terms.push(self.semantic_term_bit(term_expr, bit, env)?);
@@ -1137,7 +1136,7 @@ impl<'a> Compiler<'a> {
         relation: &str,
         aspect_expr: &Value,
         env: &Env,
-    ) -> Result<Vec<usize>, String> {
+    ) -> Result<Option<Vec<usize>>, String> {
         let key = GuardedProjectionMemoKey {
             relation: relation.to_string(),
             domain_expr_ptr: domain_expr as *const Value as usize,
@@ -1146,13 +1145,10 @@ impl<'a> Compiler<'a> {
             env: self.memo_env_key(guard_expr, env),
         };
         if let Some(cached) = self.guarded_projection_cache.borrow().get(&key) {
-            return Ok(cached.clone());
+            return Ok(Some(cached.clone()));
         }
         let Some(values) = self.const_guard_values(var, domain_expr, guard_expr, true, env)? else {
-            return Err(format!(
-                "guarded projection expected constant guard: {}",
-                guard_expr
-            ));
+            return Ok(None);
         };
         let mut next = env.clone();
         let mut bits = Vec::with_capacity(values.len());
@@ -1164,7 +1160,7 @@ impl<'a> Compiler<'a> {
         self.guarded_projection_cache
             .borrow_mut()
             .insert(key, bits.clone());
-        Ok(bits)
+        Ok(Some(bits))
     }
 
     fn const_guard_values(
@@ -1403,7 +1399,7 @@ impl<'a> Compiler<'a> {
             .func_sigs
             .get(func)
             .ok_or_else(|| format!("unknown function {func}"))?;
-        if sig.ret_sort.to_string() != "Bool" {
+        if sig.ret_sort.as_simple_name() != Some("Bool") {
             return Err(format!("function {func} does not return Bool"));
         }
         if sig.arg_sorts.len() != args.len() {

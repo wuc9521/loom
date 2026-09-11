@@ -77,6 +77,23 @@ All `.sl` files under `benchmark/` migrated to paper-aligned syntax. Verified: 0
 - `parent_semantics_match_lfp_all_shapes` — missing external files/tools.
 - `r0_support_edges_are_within_may_dep` — missing external files/tools.
 
+## Performance invariants — profile-driven, do NOT revert
+
+CTL compile hot paths run 10M+ times per instance (measured with macOS `sample`;
+bisim phase was 98.5% of worst-case runtime). Rules:
+
+- `eval_ctx.rs`: `eval_cache` is keyed by a `u64` FxHash of (model cache_id,
+  func, args) — allocation-free probe. Do not restore the old String-based
+  `EvalKey` (allocated ~3 Strings per probe).
+- Hot paths use `simple_sort_name()` (Cow) / `Sort::as_simple_name()`; Bool
+  checks compare `as_simple_name() != Some("Bool")`, never `to_string()`.
+- `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
+  constant-guard probe — a memo hit must NOT re-enumerate the domain
+  (`const_guard_values` was ~69% of the encode phase).
+
+Any change here must keep `--dump-sygus` output byte-identical on
+`benchmark/CTL/0002.sl` (default) and `0542.sl --bisim=false`.
+
 ## Build & test
 
 ```sh
