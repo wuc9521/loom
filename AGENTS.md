@@ -71,12 +71,6 @@ The local Loom grammar (`src/parser/sygus.v2.pest` and `src/parser/loom.pest`) h
 
 All `.sl` files under `benchmark/` migrated to paper-aligned syntax. Verified: 0 files with `(model Model)`, 0 files with `(univ …)`.
 
-### Pre-existing test failures (not caused by this refactor)
-
-- `enumerates_subword_aspects_and_constraint_polarities` — assertion failure.
-- `parent_semantics_match_lfp_all_shapes` — missing external files/tools.
-- `r0_support_edges_are_within_may_dep` — missing external files/tools.
-
 ## Performance invariants — profile-driven, do NOT revert
 
 CTL compile hot paths run 10M+ times per instance (measured with macOS `sample`;
@@ -107,7 +101,7 @@ over `benchmark/CTL/*.sl` against the previous binary.
 ## Build & test
 
 ```sh
-cargo test                    # run all tests (43 pass, 3 pre-existing failures)
+cargo test                    # run all tests (45 pass, 1 ignored)
 cargo test -- --skip parent   # skip parent-bearing tests needing external tools
 cargo run -- --dump-sygus <file.sl>  # inspect generated SyGuS
 ```
