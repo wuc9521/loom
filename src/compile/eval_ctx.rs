@@ -597,13 +597,19 @@ impl<'a> SemanticContext<'a> {
                 _ => Err(String::new()),
             };
         }
-        let items = expr.to_ref_vec().ok_or_else(String::new)?;
+        // `as_slice` not `to_ref_vec`: this is the bisim hot path (called
+        // ~12M+ times per quotient, once per quantifier body per range value,
+        // plus recursion), and `to_ref_vec` allocates a `Vec<&Value>` each
+        // time. Only the private `eval_model_bool_call` helper shares the
+        // `&[Value]` shape; `eval_value`/`eval_int_expr` keep their own
+        // signatures and are handed `&items[k]`.
+        let items = expr.as_slice().ok_or_else(String::new)?;
         let op = items
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(String::new)?;
         match op {
-            "not" if items.len() == 2 => Ok(!self.eval_bool_value(items[1], env)?),
+            "not" if items.len() == 2 => Ok(!self.eval_bool_value(&items[1], env)?),
             "and" => items[1..].iter().try_fold(true, |acc, item| {
                 Ok(acc && self.eval_bool_value(item, env)?)
             }),
@@ -611,26 +617,26 @@ impl<'a> SemanticContext<'a> {
                 Ok(acc || self.eval_bool_value(item, env)?)
             }),
             "ite" if items.len() == 4 => {
-                if self.eval_bool_value(items[1], env)? {
-                    self.eval_bool_value(items[2], env)
+                if self.eval_bool_value(&items[1], env)? {
+                    self.eval_bool_value(&items[2], env)
                 } else {
-                    self.eval_bool_value(items[3], env)
+                    self.eval_bool_value(&items[3], env)
                 }
             }
             "=" if items.len() == 3 => {
                 if let (Ok(lhs), Ok(rhs)) = (
-                    self.eval_value(items[1], env),
-                    self.eval_value(items[2], env),
+                    self.eval_value(&items[1], env),
+                    self.eval_value(&items[2], env),
                 ) {
                     return self.values_equal(&lhs, &rhs, env);
                 }
-                Ok(self.eval_int_expr(items[1], env)? == self.eval_int_expr(items[2], env)?)
+                Ok(self.eval_int_expr(&items[1], env)? == self.eval_int_expr(&items[2], env)?)
             }
             "<" if items.len() == 3 => {
-                Ok(self.eval_int_expr(items[1], env)? < self.eval_int_expr(items[2], env)?)
+                Ok(self.eval_int_expr(&items[1], env)? < self.eval_int_expr(&items[2], env)?)
             }
             "<=" if items.len() == 3 => {
-                Ok(self.eval_int_expr(items[1], env)? <= self.eval_int_expr(items[2], env)?)
+                Ok(self.eval_int_expr(&items[1], env)? <= self.eval_int_expr(&items[2], env)?)
             }
             _ => {
                 // A concrete test on the model: a declared model function
@@ -655,7 +661,7 @@ impl<'a> SemanticContext<'a> {
     fn eval_model_bool_call(
         &self,
         func: &str,
-        args: &[&Value],
+        args: &[Value],
         env: &impl EnvView,
     ) -> Result<bool, String> {
         let sig = self.func_sigs.get(func).ok_or_else(String::new)?;
