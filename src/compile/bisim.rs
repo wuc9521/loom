@@ -4,7 +4,9 @@ use crate::compile::types::{AspectKey, AspectValue, DomainBit, SemanticKind, Sem
 use crate::fxmap::{FxHasher, HashMap, HashSet};
 use crate::lang::model::{InterpedValue, Model};
 use crate::parser::{LoomCmd, LoomProg};
+use std::cell::RefCell;
 use std::hash::Hasher;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use sygus_parser::Literal;
@@ -426,6 +428,11 @@ struct Refiner<'a> {
     /// enclosing scopes are kept — they appear in `env.values` at walk time
     /// and need to be part of the cache key).
     free_vars: HashMap<usize, Vec<String>>,
+    /// Model universes for bare-sort quantifier ranges, keyed by
+    /// (range-expr ptr, model). The universe is static, but the refinement
+    /// loop rebuilt it per expansion — a fresh `Arc::from(name)` per element,
+    /// millions of allocations per quotient.
+    range_cache: RefCell<HashMap<(usize, String), Rc<Vec<AspectValue>>>>,
 }
 
 impl<'a> Refiner<'a> {
@@ -484,6 +491,7 @@ impl<'a> Refiner<'a> {
             cons_arg_sorts,
             parent_sorts,
             free_vars,
+            range_cache: RefCell::new(HashMap::default()),
         }
     }
 
@@ -1057,23 +1065,33 @@ impl<'a> Refiner<'a> {
             // witness positions merge.
             let mut dyn_hashes = Vec::new();
             let mut annihilated = false;
-            for val in self.expand_range(range_expr, env) {
-                let prev = env.values.insert(name.clone(), val.clone());
+            let range = self.expand_range(range_expr, env);
+            // Bind the key once and overwrite its slot per value: inserting
+            // per iteration re-allocates the key String every time, and the
+            // save/restore dance folds into one pair around the loop.
+            let prev = env.values.get(&name).cloned();
+            for val in range.iter() {
+                match env.values.get_mut(&name) {
+                    Some(slot) => *slot = val.clone(),
+                    None => {
+                        env.values.insert(name.clone(), val.clone());
+                    }
+                }
                 match (quant, self.ctx.eval_bool_value(body, env)) {
                     ("exists", Ok(true)) | ("forall", Ok(false)) => annihilated = true,
                     ("exists", Ok(false)) | ("forall", Ok(true)) => {}
                     _ => dyn_hashes.push(self.walk_hash(body, env, classes, cache, deps)),
                 }
-                match prev {
-                    Some(p) => {
-                        env.values.insert(name.clone(), p);
-                    }
-                    None => {
-                        env.values.remove(&name);
-                    }
-                }
                 if annihilated {
                     break;
+                }
+            }
+            match prev {
+                Some(p) => {
+                    env.values.insert(name, p);
+                }
+                None => {
+                    env.values.remove(&name);
                 }
             }
             if annihilated {
@@ -1092,32 +1110,40 @@ impl<'a> Refiner<'a> {
         out.write_u8(b'}');
     }
 
-    fn expand_range(&self, expr: &Value, env: &WalkEnv) -> Vec<AspectValue> {
+    fn expand_range(&self, expr: &Value, env: &WalkEnv) -> Rc<Vec<AspectValue>> {
         // Bare sort symbol: resolve through the current model, matching the
         // compiler's and CHC backends' handling of `(forall ((k Pos)) …)`.
         if expr.as_symbol().is_some() {
             let Ok((model_name, sort)) = self.ctx.parse_univ_expr(expr, env) else {
-                return Vec::new();
+                return Rc::new(Vec::new());
             };
-            let Ok(model) = self.ctx.model(&model_name) else {
-                return Vec::new();
+            let key = (expr as *const Value as usize, model_name);
+            if let Some(cached) = self.range_cache.borrow().get(&key) {
+                return cached.clone();
+            }
+            let Ok(model) = self.ctx.model(&key.1) else {
+                return Rc::new(Vec::new());
             };
             let sort_arc: Arc<str> = Arc::from(sort.as_str());
-            return model
-                .univ_for_sort(&sort)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|name| AspectValue::Univ {
-                    sort: sort_arc.clone(),
-                    name: Arc::from(name),
-                })
-                .collect();
+            let values: Rc<Vec<AspectValue>> = Rc::new(
+                model
+                    .univ_for_sort(&sort)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|name| AspectValue::Univ {
+                        sort: sort_arc.clone(),
+                        name: Arc::from(name),
+                    })
+                    .collect(),
+            );
+            self.range_cache.borrow_mut().insert(key, values.clone());
+            return values;
         }
         let Some(items) = expr.to_ref_vec() else {
-            return Vec::new();
+            return Rc::new(Vec::new());
         };
         let Some(op) = items.first().and_then(|v| v.as_symbol()) else {
-            return Vec::new();
+            return Rc::new(Vec::new());
         };
         match op {
             "int-range" if items.len() == 3 => {
@@ -1129,12 +1155,12 @@ impl<'a> Refiner<'a> {
                 let lo = self.ctx.eval_int_expr(items[1], env).unwrap_or(0).max(0) as usize;
                 let hi = self.ctx.eval_int_expr(items[2], env).unwrap_or(0).max(0) as usize;
                 if hi < lo {
-                    Vec::new()
+                    Rc::new(Vec::new())
                 } else {
-                    (lo..=hi).map(AspectValue::Int).collect()
+                    Rc::new((lo..=hi).map(AspectValue::Int).collect())
                 }
             }
-            _ => Vec::new(),
+            _ => Rc::new(Vec::new()),
         }
     }
 
