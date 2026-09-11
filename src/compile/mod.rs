@@ -58,6 +58,35 @@ pub fn failing_constraint_indices(cmds: &[SyGuSCmd], solution: &str) -> Result<V
 }
 
 impl LoomProg {
+    pub fn max_bv_width(&self) -> Result<usize, String> {
+        let ctx = CompileContext::new(self)?;
+        if ctx.is_parent_free() {
+            return Ok(ctx
+                .sig
+                .sort_order()
+                .iter()
+                .map(|sort| {
+                    ctx.semantic_program
+                        .domains
+                        .iter()
+                        .filter(|domain| domain.term_sort == *sort)
+                        .map(|domain| domain.width())
+                        .sum::<usize>()
+                        .max(1)
+                })
+                .max()
+                .unwrap_or(1));
+        }
+        let mut horn = ctx.compile_chc()?;
+        if std::env::var("LOOM_MIN_STATES").map_or(true, |v| v != "0") {
+            horn.quotient_bisim();
+        }
+        Ok(parent::parent_max_bv_width(
+            &horn,
+            parent::QueryKind::Refuter,
+        ))
+    }
+
     pub fn bv_sz(&self) -> Result<usize, String> {
         let ctx = CompileContext::new(self)?;
         let width = ctx

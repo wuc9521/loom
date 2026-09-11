@@ -61,7 +61,8 @@ Options:
   -B, --bisim[=<BISIM>]        Enable semantic bisimulation quotienting; use --bisim=false to skip it entirely [default: true] [possible values: true, false]
       --enum                   Use only Loom's internal enumerative backend (no SyGuS solver backend)
   -d, --dump-sygus             Translate to SyGuS BV and print to stdout
-      --sygus-stats            Translate to SyGuS BV, but print only machine-readable stats: `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines`
+      --sygus-stats            Translate to SyGuS BV, but print only machine-readable stats: `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines<TAB>max-bv-width`
+      --bv-width               Print only the maximum compiled bit-vector width without materializing SyGuS
       --dump-chc               Translate to CHC (HORN) and print to stdout
       --cegis[=<N>]            Use counterexample-guided subset solving for the external SyGuS backend, seeding with up to N constraints. Off by default; pass `--cegis` to enable with the default seed size, or `--cegis=N` to set the seed [default: 0]
       --solver <PATH>          Use an explicit external SyGuS solver executable instead of the in-process dryadsynth-bv backend
@@ -84,7 +85,7 @@ Emit only SyGuS encoding stats:
 
 ```bash
 $ cargo run -- --sygus-stats benchmark/CFG/anbn-1.sl
-SYGUS_STATS	33	9952	17
+SYGUS_STATS	33	9952	17	147
 ```
 
 Dump the generated SyGuS problem:

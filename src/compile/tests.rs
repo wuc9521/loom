@@ -27,6 +27,7 @@ fn bisim_false_preserves_equivalent_states() {
 "#,
     );
     assert_eq!(problem.bv_sz().unwrap(), 2);
+    assert_eq!(problem.max_bv_width().unwrap(), 2);
     init_options(CompileOptions { optimize: false, bisim: true });
     let reduced = problem.bv_sz();
     ensure_opts();
@@ -516,6 +517,7 @@ fn parent_navigation_to_sygus_uses_parent_encoding() {
         sygus.contains("(Constant"),
         "parent-bearing to_sygus must use the parent certificate encoding (Constant holes)"
     );
+    assert_eq!(problem.max_bv_width().unwrap(), 6);
 }
 
 #[test]

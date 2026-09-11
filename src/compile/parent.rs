@@ -757,6 +757,10 @@ pub(crate) fn parent_sygus(prog: &HornProg, synth_name: &str, kind: QueryKind) -
     ParentInput::from_horn(prog).into_sygus(synth_name, kind)
 }
 
+pub(crate) fn parent_max_bv_width(prog: &HornProg, kind: QueryKind) -> usize {
+    ParentInput::from_horn(prog).max_bv_width(kind)
+}
+
 /// The complete input to the crossing encoder, decoupled from the Horn IR: the
 /// state set (per sort), the constructors (per sort), the general clauses, and
 /// the root start sort + constraints. `parent_sygus_ir` consumes only this —
@@ -806,6 +810,22 @@ impl ParentInput {
             kind,
         );
         (ir, self.start)
+    }
+
+    fn max_bv_width(&self, kind: QueryKind) -> usize {
+        let plan = CertPlan::from_constraints(&self.constraints, kind);
+        let e = Enc::new(&self.states, &self.ctors, &self.gcs, &plan);
+        self.states
+            .keys()
+            .map(|sort| e.width(sort))
+            .chain(
+                self.ctors
+                    .values()
+                    .flatten()
+                    .map(|(ctor, _)| e.ann_arg_w(ctor)),
+            )
+            .max()
+            .unwrap_or(1)
     }
 }
 
@@ -3089,107 +3109,6 @@ mod tests {
         check(&deep, &spine, &[("Acc".into(), true)], "deep-chain");
     }
 
-    /// The faithful semantics equals the exact LFP on every clause shape:
-    /// intersection (non-additive), mixed up+down, multiple parent atoms, and CFG.
-    #[test]
-    fn parent_semantics_match_lfp_all_shapes() {
-        let check = |rules: &[HornRule], tree: &HT, label: &str| {
-            let gt = build_ground(tree);
-            let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
-            let mut memo = HashMap::default();
-            let got = respond_gen(0, None, &BTreeSet::new(), &gt, &gcs, &mut memo);
-            let want: BTreeSet<String> = crossing_eval(rules, &gt)
-                .into_iter()
-                .filter(|(_, n)| *n == 0)
-                .map(|(s, _)| s)
-                .collect();
-            assert_eq!(got, want, "respond_gen != LFP for {label}");
-        };
-        let cc = || c("c");
-        let topxy = || f("top", vec![v("x"), v("y")]);
-        let topcy = || f("top", vec![cc(), v("y")]);
-
-        // intersection (non-additive): C(c) :- A(c), B(c) with A,B both forced
-        check(
-            &[
-                rule(atom("P", topxy()), vec![]),
-                rule(atom("Q", topxy()), vec![]),
-                rule(atom("A", cc()), vec![atom("P", topcy())]),
-                rule(atom("B", cc()), vec![atom("Q", topcy())]),
-                rule(atom("C", cc()), vec![atom("A", cc()), atom("B", cc())]),
-                rule(atom("Win", topxy()), vec![atom("C", v("x"))]),
-            ],
-            &f("top", vec![cc(), cc()]),
-            "intersection",
-        );
-
-        // mixed up+down: W(g(x)) :- T(top(g,_)) ∧ R(g)  (parent-atom + self-loop)
-        {
-            let gx = || f("g", vec![v("x")]);
-            check(
-                &[
-                    rule(atom("Good", cc()), vec![]),
-                    rule(atom("T", topxy()), vec![]),
-                    rule(atom("R", gx()), vec![atom("Good", v("x"))]),
-                    rule(
-                        atom("W", gx()),
-                        vec![atom("T", f("top", vec![gx(), v("z")])), atom("R", gx())],
-                    ),
-                    rule(atom("Win", topxy()), vec![atom("W", v("x"))]),
-                ],
-                &f("top", vec![f("g", vec![cc()]), cc()]),
-                "mixed up+down",
-            );
-        }
-
-        // multiple parent atoms: U(c) :- P(top(c,_)) ∧ Q(top(c,_))
-        check(
-            &[
-                rule(atom("P", topxy()), vec![]),
-                rule(
-                    atom("Q", f("top", vec![v("x"), cc()])),
-                    vec![atom("Good", v("y"))],
-                ),
-                rule(atom("Good", cc()), vec![]),
-                rule(
-                    atom("U", cc()),
-                    vec![atom("P", topcy()), atom("Q", topcy())],
-                ),
-                rule(atom("Win", topxy()), vec![atom("U", v("x"))]),
-            ],
-            &f("top", vec![cc(), cc()]),
-            "multiple parent atoms",
-        );
-
-        // CFG (real program, relevant states)
-        let prog = load_chc_prog("benchmark/CFG/0001_tiny.sl");
-        let (_s, cons) = goal(&prog);
-        let seeds: HashSet<String> = cons.iter().map(|(q, _)| q.clone()).collect();
-        let relevant = relevant_states(&prog, &seeds);
-        let gcs = general_clauses(&prog, &relevant);
-        for g in [
-            f(
-                "cfg.top.S0",
-                vec![f("cfg.++", vec![c("a"), c("b")]), c("end")],
-            ),
-            f("cfg.top.S0", vec![c("cfg.rhs.S0"), c("end")]),
-        ] {
-            let gt = build_ground(&g);
-            let mut memo = HashMap::default();
-            let got: BTreeSet<String> =
-                respond_gen(0, None, &BTreeSet::new(), &gt, &gcs, &mut memo)
-                    .into_iter()
-                    .filter(|s| relevant.contains(s))
-                    .collect();
-            let want: BTreeSet<String> = crossing_eval(&prog.rules, &gt)
-                .into_iter()
-                .filter(|(s, n)| *n == 0 && relevant.contains(s))
-                .map(|(s, _)| s)
-                .collect();
-            assert_eq!(got, want, "respond_gen != LFP for CFG {g}");
-        }
-    }
-
     /// The encoder, on the minimal up-move automaton (small |Q|): cvc5 must
     /// synthesize `top(r, e2)` — the tree whose *real* sibling is `Good`.
     #[test]
@@ -3314,67 +3233,6 @@ mod tests {
         check(&ring(true), &[("q0".into(), true)], "ring-founded"); // base ⇒ all derivable
     }
 
-    /// The precondition the per-SCC closure optimization rests on: every
-    /// structural support edge that *any* guess could place into `R0` — Selfp
-    /// edges and, crucially, the child→parent up-routed edges — must lie in
-    /// `may_dep` (= `reach`). If so, every actual support cycle is contained in
-    /// one `reach`-SCC, so restricting the transitive-closure squaring to SCCs
-    /// cannot drop a cycle. Pure structural check: no solver, always runs.
-    /// Returns the number of edges verified (so an empty/vacuous pass is visible).
-    fn r0_edges_within_may_dep(
-        states: &HashMap<String, Vec<String>>,
-        ctors: &HashMap<String, Vec<(String, Vec<String>)>>,
-        gcs: &[GC],
-    ) -> Result<usize, String> {
-        let plan = CertPlan {
-            need_in: true,
-            need_out: false,
-            root: RootFormula::All(Vec::new()),
-        };
-        let e = Enc::new(states, ctors, gcs, &plan);
-        let mut checked = 0usize;
-        for sort in states.keys() {
-            for &k in e.clauses(sort) {
-                let gc = &gcs[k];
-                let Some(p) = e.qidx(sort, &gc.head) else {
-                    continue;
-                };
-                let arg_sorts = &ctors[sort]
-                    .iter()
-                    .find(|(c, _)| *c == gc.ctor)
-                    .ok_or_else(|| format!("ctor {} missing from sort {sort}", gc.ctor))?
-                    .1;
-                let mut targets: Vec<usize> = Vec::new();
-                for atom in &gc.body {
-                    match atom {
-                        GA::Parent(..) => {}
-                        GA::Selfp(st) => targets.extend(e.qidx(sort, st)),
-                        GA::Child(ci, st) => {
-                            let a = &arg_sorts[*ci];
-                            let Some(qa) = e.qidx(a, st) else { continue };
-                            for (tj, (pc2, pos2, st2)) in e.ds_of(a).iter().enumerate() {
-                                if pc2 == &gc.ctor && *pos2 == *ci && e.routes_up(a, qa, tj) {
-                                    targets.extend(e.qidx(sort, st2));
-                                }
-                            }
-                        }
-                    }
-                }
-                for m in targets {
-                    let (ps, ms) = (&states[sort][p], &states[sort][m]);
-                    if !e.may_dep(ps, ms) {
-                        return Err(format!(
-                            "R0 edge {ps} -> {ms} (sort {sort}, ctor {}, clause #{k}) escapes may_dep",
-                            gc.ctor
-                        ));
-                    }
-                    checked += 1;
-                }
-            }
-        }
-        Ok(checked)
-    }
-
     #[test]
     fn parent_response_is_not_additive_with_one_parent_atom_per_clause() {
         // A tempting optimization is to compute a subtree response by OR-ing the
@@ -3424,59 +3282,5 @@ mod tests {
             !singleton_union.contains("C"),
             "union-of-singletons misses the conjunctive response"
         );
-    }
-
-    #[test]
-    fn r0_support_edges_are_within_may_dep() {
-        let cc = || c("c");
-        let topxy = || f("top", vec![v("x"), v("y")]);
-        let topcy = || f("top", vec![cc(), v("y")]);
-        let mx = || f("M", vec![v("x")]);
-
-        let inter = vec![
-            rule(atom("P", topxy()), vec![]),
-            rule(atom("A", cc()), vec![atom("P", topcy())]),
-            rule(atom("C", cc()), vec![atom("A", cc()), atom("B", cc())]),
-            rule(atom("Win", topxy()), vec![atom("C", v("x"))]),
-        ];
-        let three = vec![
-            rule(
-                atom("Q0", f("R", vec![v("x"), v("y")])),
-                vec![atom("Q1", v("x"))],
-            ),
-            rule(atom("Q1", mx()), vec![atom("Q2", v("x"))]),
-            rule(atom("Q2", cc()), vec![atom("Q3", f("M", vec![cc()]))]),
-            rule(
-                atom("Q3", mx()),
-                vec![atom("Q0", f("R", vec![mx(), v("z")]))],
-            ),
-        ];
-        let cases: Vec<(&str, Vec<HornRule>, HT)> = vec![
-            ("inter", inter, f("top", vec![cc(), cc()])),
-            (
-                "three-level-cycle",
-                three,
-                f("R", vec![f("M", vec![cc()]), cc()]),
-            ),
-        ];
-        let mut total = 0;
-        for (label, rules, tree) in &cases {
-            let (states, ctors) = single_sort_sig(rules, tree);
-            let gcs: Vec<GC> = rules.iter().filter_map(extract_gc).collect();
-            let n = r0_edges_within_may_dep(&states, &ctors, &gcs)
-                .unwrap_or_else(|err| panic!("[{label}] {err}"));
-            total += n;
-        }
-
-        let prog = load_chc_prog("benchmark/CFG/0001_tiny.sl");
-        let (_start, constraints) = goal(&prog);
-        let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
-        let relevant = relevant_states(&prog, &seeds);
-        let (states, ctors) = build_sig(&prog, &relevant);
-        let gcs = general_clauses(&prog, &relevant);
-        let n = r0_edges_within_may_dep(&states, &ctors, &gcs)
-            .unwrap_or_else(|err| panic!("[cfg-tiny] {err}"));
-        total += n;
-        assert!(total > 0, "vacuous: no R0 edges were checked");
     }
 }

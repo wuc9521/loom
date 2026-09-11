@@ -29,7 +29,14 @@ use std::{
 mod cegis;
 use sygus_parser::SyGuSCmd;
 
-fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
+fn solve(loom_file: &mut LoomProg, args: &CLI, input: &str) -> Result<(), io::Error> {
+    if args.dump_bv_width {
+        println!(
+            "SYGUS_BV_WIDTH\t{}",
+            loom_file.max_bv_width().map_err(io::Error::other)?
+        );
+        return Ok(());
+    }
     if args.dump_chc || args.dump_sygus || args.dump_sygus_stats {
         if args.dump_chc {
             let program = loom_file.to_chc_ast().map_err(io::Error::other)?;
@@ -65,7 +72,11 @@ fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
                 let total_ms = compile_start.elapsed().as_millis();
                 let bytes = sygus_bytes.len();
                 let lines = sygus_bytes.iter().filter(|byte| **byte == b'\n').count();
-                println!("SYGUS_STATS\t{}\t{}\t{}", total_ms, bytes, lines);
+                let max_bv_width = max_bv_width_in_sygus(&sygus_bytes);
+                println!(
+                    "SYGUS_STATS\t{}\t{}\t{}\t{}",
+                    total_ms, bytes, lines, max_bv_width
+                );
             }
         }
         return Ok(());
@@ -90,16 +101,19 @@ fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
     }
 
     // Both backends solve the same SyGuS BV problem; first-to-finish wins.
-    // Build that problem once and share it. Re-spawning `loom --enum` here
-    // would parse and compile again, including the bisim quotient.
     let sygus_cmds: Arc<Vec<SyGuSCmd>> = Arc::new(loom_file.to_sygus().map_err(io::Error::other)?);
 
     let (tx, rx) = mpsc::channel();
     let done = Arc::new(AtomicBool::new(false));
 
+    // The closure backend runs as a `loom --enum` child: a stack overflow or
+    // heap blowup there is a fatal abort that cannot be caught in-process, so
+    // isolating it keeps the BV backend alive no matter how the child dies.
+    // The child re-parses and re-compiles (including the bisim quotient);
+    // that cost is only paid once the closure delay expires without a BV win.
     let term_tx = tx.clone();
-    let term_file = loom_file.clone();
-    let term_cmds = sygus_cmds.clone();
+    let term_args = args.clone();
+    let term_input = input.to_string();
     let term_done = done.clone();
     thread::Builder::new()
         .name("term-enumerator".to_string())
@@ -111,11 +125,18 @@ fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
             if term_done.load(Ordering::Relaxed) {
                 return;
             }
-            let result = match term_file.solve_by_closure_with_cmds((*term_cmds).clone()) {
-                Ok(Some(output)) => Ok(output),
-                Ok(None) => Err(io::Error::other("closure backend did not produce a result")),
-                Err(err) => Err(io::Error::other(err)),
-            };
+            let result = spawn_enum_child(&term_args, &term_input)
+                .and_then(|child| solver_stdout(child, "closure backend"));
+            if let Err(err) = &result {
+                if term_done.load(Ordering::Relaxed) {
+                    // The BV backend already produced the printed solution, so
+                    // the parent SIGKILLed this child via cleanup_children().
+                    // Expected portfolio behavior, not a failure.
+                    log::info!("closure backend stopped: BV backend solved first");
+                } else {
+                    log::info!("closure backend failed; continuing with BV backend: {err}");
+                }
+            }
             let _ = term_tx.send(BackendResult::Closure(result));
         })?;
 
@@ -164,6 +185,38 @@ fn solve(loom_file: &mut LoomProg, args: &CLI) -> Result<(), io::Error> {
         .unwrap_or_else(|| io::Error::other("neither closure nor SyGuS backend produced a result")))
 }
 
+fn max_bv_width_in_sygus(sygus: &[u8]) -> usize {
+    const PREFIX: &[u8] = b"(_ BitVec ";
+    sygus
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(i, window)| {
+            (window == PREFIX).then(|| {
+                let tail = &sygus[i + PREFIX.len()..];
+                let len = tail.iter().take_while(|byte| byte.is_ascii_digit()).count();
+                std::str::from_utf8(&tail[..len])
+                    .ok()?
+                    .parse::<usize>()
+                    .ok()
+            })?
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::max_bv_width_in_sygus;
+
+    #[test]
+    fn finds_largest_bitvector_sort() {
+        assert_eq!(
+            max_bv_width_in_sygus(b"Bool (_ BitVec 7) (_ BitVec 15328) (_ BitVec x)"),
+            15328
+        );
+    }
+}
+
 fn closure_delay() -> Duration {
     const DEFAULT_MS: u64 = 3000;
     let ms = std::env::var("LOOM_CLOSURE_DELAY_MS")
@@ -171,6 +224,48 @@ fn closure_delay() -> Duration {
         .and_then(|raw| raw.parse::<u64>().ok())
         .unwrap_or(DEFAULT_MS);
     Duration::from_millis(ms)
+}
+
+fn spawn_enum_child(args: &CLI, input: &str) -> Result<Child, io::Error> {
+    let mut command = Command::new(std::env::current_exe()?);
+    command.arg("--enum");
+    for _ in 0..args.verbose {
+        command.arg("-v");
+    }
+    if !args.optimize {
+        command.arg("--optimize=false");
+    }
+    if !args.bisim {
+        command.arg("--bisim=false");
+    }
+    if args.r#in {
+        command.arg("--in").stdin(Stdio::piped());
+    } else {
+        let file = args.file.as_ref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Either provide a file path or use --in to read from stdin",
+            )
+        })?;
+        command.arg(file).stdin(Stdio::null());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    register_pid(child.id());
+    if args.r#in {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("closure child stdin was not piped"))?;
+        let input = input.as_bytes().to_vec();
+        thread::Builder::new()
+            .name("closure-stdin-writer".to_string())
+            .spawn(move || {
+                let _ = stdin.write_all(&input);
+                let _ = stdin.flush();
+            })?;
+    }
+    Ok(child)
 }
 
 /// Sound parent path for parent-bearing programs: emit the founded
@@ -428,9 +523,13 @@ pub struct CLI {
     dump_sygus: bool,
 
     /// Translate to SyGuS BV, but print only machine-readable stats:
-    /// `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines`
+    /// `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines<TAB>max-bv-width`
     #[arg(long = "sygus-stats", default_value_t = false)]
     dump_sygus_stats: bool,
+
+    /// Compute only the largest emitted bit-vector sort, without materializing SyGuS.
+    #[arg(long = "bv-width", default_value_t = false)]
+    dump_bv_width: bool,
 
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
@@ -529,5 +628,5 @@ fn main() -> Result<(), io::Error> {
         }
     }
     let mut loom_file = LoomProg { cmds: loom_cmd_vec };
-    solve(&mut loom_file, &args)
+    solve(&mut loom_file, &args, &input)
 }
