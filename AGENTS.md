@@ -81,6 +81,10 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   `EvalKey` (allocated ~3 Strings per probe).
 - Hot paths use `simple_sort_name()` (Cow) / `Sort::as_simple_name()`; Bool
   checks compare `as_simple_name() != Some("Bool")`, never `to_string()`.
+- Hot paths read list operands with `as_slice()`, never `to_ref_vec()`
+  (allocates a `Vec<&Value>` per call): `eval_bool_value`, `bisim::walk`.
+- `bisim.rs`: `signature()` takes caller-owned `WalkEnv`/`WalkCache` scratch
+  and `clear()`s them per call — do not restore per-call construction.
 - `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
   constant-guard probe — a memo hit must NOT re-enumerate the domain
   (`const_guard_values` was ~69% of the encode phase).
