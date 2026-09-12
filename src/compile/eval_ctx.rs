@@ -492,7 +492,7 @@ impl<'a> SemanticContext<'a> {
             ));
         }
         let items = expr
-            .to_ref_vec()
+            .as_slice()
             .ok_or_else(|| format!("value expression must be a symbol or list: {expr}"))?;
         let op = items
             .first()
@@ -570,10 +570,10 @@ impl<'a> SemanticContext<'a> {
         }
         match op {
             "ite" if items.len() == 4 => {
-                return if self.eval_bool_value(items[1], env)? {
-                    self.eval_value(items[2], env)
+                return if self.eval_bool_value(&items[1], env)? {
+                    self.eval_value(&items[2], env)
                 } else {
-                    self.eval_value(items[3], env)
+                    self.eval_value(&items[3], env)
                 };
             }
             "+" | "-" | "size" => {
@@ -608,22 +608,27 @@ impl<'a> SemanticContext<'a> {
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(String::new)?;
-        match op {
-            "not" if items.len() == 2 => Ok(!self.eval_bool_value(&items[1], env)?),
-            "and" => items[1..].iter().try_fold(true, |acc, item| {
+        // First-byte dispatch: the literal match ran up to 7 string compares
+        // per call on bisim's hottest probe (~25M calls per quotient). Guard
+        // failure falls through to the default arm exactly as before.
+        match op.as_bytes().first().copied() {
+            Some(b'n') if op == "not" && items.len() == 2 => {
+                Ok(!self.eval_bool_value(&items[1], env)?)
+            }
+            Some(b'a') if op == "and" => items[1..].iter().try_fold(true, |acc, item| {
                 Ok(acc && self.eval_bool_value(item, env)?)
             }),
-            "or" => items[1..].iter().try_fold(false, |acc, item| {
+            Some(b'o') if op == "or" => items[1..].iter().try_fold(false, |acc, item| {
                 Ok(acc || self.eval_bool_value(item, env)?)
             }),
-            "ite" if items.len() == 4 => {
+            Some(b'i') if op == "ite" && items.len() == 4 => {
                 if self.eval_bool_value(&items[1], env)? {
                     self.eval_bool_value(&items[2], env)
                 } else {
                     self.eval_bool_value(&items[3], env)
                 }
             }
-            "=" if items.len() == 3 => {
+            Some(b'=') if op == "=" && items.len() == 3 => {
                 if let (Ok(lhs), Ok(rhs)) = (
                     self.eval_value(&items[1], env),
                     self.eval_value(&items[2], env),
@@ -632,10 +637,10 @@ impl<'a> SemanticContext<'a> {
                 }
                 Ok(self.eval_int_expr(&items[1], env)? == self.eval_int_expr(&items[2], env)?)
             }
-            "<" if items.len() == 3 => {
+            Some(b'<') if op == "<" && items.len() == 3 => {
                 Ok(self.eval_int_expr(&items[1], env)? < self.eval_int_expr(&items[2], env)?)
             }
-            "<=" if items.len() == 3 => {
+            Some(b'<') if op == "<=" && items.len() == 3 => {
                 Ok(self.eval_int_expr(&items[1], env)? <= self.eval_int_expr(&items[2], env)?)
             }
             _ => {
@@ -706,7 +711,7 @@ impl<'a> SemanticContext<'a> {
         if let Some(value) = expr.as_i64() {
             return Ok(value as isize);
         }
-        let Some(items) = expr.to_ref_vec() else {
+        let Some(items) = expr.as_slice() else {
             return match self.eval_value(expr, env)? {
                 AspectValue::Int(value) => Ok(value as isize),
                 other => Err(format!("expected Int value, got {}", other.display())),
@@ -736,10 +741,7 @@ impl<'a> SemanticContext<'a> {
                 Ok(total)
             }
             "size" if items.len() == 2 => {
-                let domain = items[1]
-                    .to_ref_vec()
-                    .ok_or_else(|| format!("size expects (Sort model), got {}", items[1]))?;
-                let [sort_expr, model_expr] = domain.as_slice() else {
+                let Some([sort_expr, model_expr]) = items[1].as_slice() else {
                     return Err(format!("size expects (Sort model), got {}", items[1]));
                 };
                 let sort = sort_expr
@@ -771,7 +773,7 @@ impl<'a> SemanticContext<'a> {
     pub fn eval_model_value_call(
         &self,
         func: &str,
-        args: &[&Value],
+        args: &[Value],
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
         let sig = self
