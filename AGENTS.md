@@ -82,7 +82,12 @@ bisim phase was 98.5% of worst-case runtime). Rules:
 - Hot paths use `simple_sort_name()` (Cow) / `Sort::as_simple_name()`; Bool
   checks compare `as_simple_name() != Some("Bool")`, never `to_string()`.
 - Hot paths read list operands with `as_slice()`, never `to_ref_vec()`
-  (allocates a `Vec<&Value>` per call): `eval_bool_value`, `bisim::walk`.
+  (allocates a `Vec<&Value>` per call): `eval_bool_value`, `eval_value`,
+  `eval_int_expr`, `bisim::walk`.
+- `eval_ctx.rs`: `eval_bool_value` dispatches builtin ops on the first byte
+  of `op` before string-compares (~25M calls per quotient; the literal match
+  ran up to 7 full string compares per call). Guard failure falls through to
+  the default arm exactly as the plain match did — keep that equivalence.
 - `bisim.rs`: `signature()` takes caller-owned `WalkEnv`/`WalkCache` scratch
   and `clear()`s them per call — do not restore per-call construction.
 - `bisim.rs`: keep the `WalkCache` scoped per `signature()` call. A persistent
@@ -99,6 +104,15 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   per expansion cost ~25M allocations per quotient. `emit_quantifier` binds
   its env key once and overwrites the slot per value (no per-value String
   clone, no per-value save/restore).
+- `eval_ctx.rs`: `univ_cache` memoizes each (model, sort) universe as
+  `Arc<Vec<AspectValue>>`. `eval_value_for_sort` and `argument_univs` must
+  hit it, not rebuild via `univ_for_sort` (owned `Vec<String>` clone = N+1
+  allocs per call; the cache cut 0002 bisim 2.18s -> 1.77s). Universes are
+  static for the run — same invariant as `lang/eval.rs`'s `UNIV_CACHE`.
+- `eval_ctx.rs`: `eval_model_bool_call` / `eval_model_value_call` take the
+  caller-resolved `&FuncSig` — do not re-fetch `func_sigs` inside (two
+  string hash+memcmp per eval call). `sig.name` bytes == the map key, so
+  key hashes are unchanged.
 - `compiler.rs`: `EnvMemoKey` is a u64 FxHash fingerprint (built by
   `memo_env_key`), not structure. Two soundness rules, both violations of
   which were caught only by byte-diffing output:
