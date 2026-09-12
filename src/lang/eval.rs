@@ -178,9 +178,8 @@ impl Model {
     }
 
     /// Returns the universe element list for `sort`. Clones the cached
-    /// `Vec<String>` — callers in hot loops should prefer `univ_contains` /
-    /// `univ_element_at` to avoid this clone, or `univ_for_sort_arc` to
-    /// share via reference counting.
+    /// `Vec<String>` — callers in hot loops should prefer `univ_for_sort_arc`
+    /// to share via reference counting.
     pub fn univ_for_sort(&self, sort: &str) -> Option<Vec<String>> {
         cached_univ_arc(self, sort).map(|arc| (*arc).clone())
     }
@@ -189,24 +188,6 @@ impl Model {
     /// refcount bump per call).
     pub fn univ_for_sort_arc(&self, sort: &str) -> Option<Arc<Vec<String>>> {
         cached_univ_arc(self, sort)
-    }
-
-    /// Membership check without cloning the whole list.
-    pub fn univ_contains(&self, sort: &str, elem: &str) -> bool {
-        cached_univ_arc(self, sort)
-            .map(|arc| arc.iter().any(|c| c == elem))
-            .unwrap_or(false)
-    }
-
-    /// Returns the element at `idx` in the universe (cloned String, since
-    /// the borrow can't outlive the cache lookup). One String alloc instead
-    /// of N+1.
-    pub fn univ_element_at(&self, sort: &str, idx: usize) -> Option<String> {
-        cached_univ_arc(self, sort).and_then(|arc| arc.get(idx).cloned())
-    }
-
-    pub fn contains_element(&self, sort: &str, elem: &str) -> bool {
-        self.univ_contains(sort, elem)
     }
 
     pub fn max_univ_len(&self) -> usize {

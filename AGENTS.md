@@ -99,9 +99,10 @@ bisim phase was 98.5% of worst-case runtime). Rules:
 - `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
   constant-guard probe — a memo hit must NOT re-enumerate the domain
   (`const_guard_values` was ~69% of the encode phase).
-- `bisim.rs`: `expand_range` returns `Rc<Vec<AspectValue>>` memoized per
-  (expr ptr, model) in `range_cache` — the universe is static; rebuilding it
-  per expansion cost ~25M allocations per quotient. `emit_quantifier` binds
+- `bisim.rs`: `expand_range` returns the `Arc<Vec<AspectValue>>` from
+  `SemanticContext::univ_cache`, memoized per (expr ptr, model) in
+  `range_cache` — the universe is static; rebuilding it per expansion cost
+  ~25M allocations per quotient. `emit_quantifier` binds
   its env key once and overwrites the slot per value (no per-value String
   clone, no per-value save/restore).
 - `eval_ctx.rs`: `univ_cache` memoizes each (model, sort) universe as

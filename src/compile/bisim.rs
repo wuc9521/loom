@@ -6,7 +6,6 @@ use crate::lang::model::{InterpedValue, Model};
 use crate::parser::{LoomCmd, LoomProg};
 use std::cell::RefCell;
 use std::hash::Hasher;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use sygus_parser::Literal;
@@ -449,11 +448,12 @@ struct Refiner<'a> {
     /// Model universes for bare-sort quantifier ranges, keyed by
     /// (range-expr ptr, model). The universe is static, but the refinement
     /// loop rebuilt it per expansion — a fresh `Arc::from(name)` per element,
-    /// millions of allocations per quotient.
+    /// millions of allocations per quotient. Values are the ctx `univ_cache`
+    /// Arcs themselves — this memo only skips re-resolving the range expr.
     /// Nested so the hot probe needs no owned key: the outer usize (expr ptr)
     /// and inner &str (model name) both borrow from live data, while the old
     /// flat `(usize, String)` key materialized a String per expansion.
-    range_cache: RefCell<HashMap<usize, HashMap<String, Rc<Vec<AspectValue>>>>>,
+    range_cache: RefCell<HashMap<usize, HashMap<String, Arc<Vec<AspectValue>>>>>,
 }
 
 impl<'a> Refiner<'a> {
@@ -1134,14 +1134,14 @@ impl<'a> Refiner<'a> {
         out.write_u8(b'}');
     }
 
-    fn expand_range(&self, expr: &Value, env: &WalkEnv) -> Rc<Vec<AspectValue>> {
+    fn expand_range(&self, expr: &Value, env: &WalkEnv) -> Arc<Vec<AspectValue>> {
         // Bare sort symbol: resolve through the current model, matching the
         // compiler's and CHC backends' handling of `(forall ((k Pos)) …)`.
         if expr.as_symbol().is_some() {
             // Probe with both key halves borrowed: for a bare sort the model
             // is exactly the ambient current_model (what parse_univ_expr
             // resolves), so hits allocate nothing. parse_univ_expr runs only
-            // on a miss, to own the model/sort Strings for build + insert.
+            // on a miss, to own the model/sort Strings for the insert key.
             let ptr = expr as *const Value as usize;
             if let Ok(model_name) = self.ctx.current_model(env) {
                 if let Some(cached) = self
@@ -1154,23 +1154,16 @@ impl<'a> Refiner<'a> {
                 }
             }
             let Ok((model_name, sort)) = self.ctx.parse_univ_expr(expr, env) else {
-                return Rc::new(Vec::new());
+                return Arc::new(Vec::new());
             };
             let Ok(model) = self.ctx.model(&model_name) else {
-                return Rc::new(Vec::new());
+                return Arc::new(Vec::new());
             };
-            let sort_arc: Arc<str> = Arc::from(sort.as_str());
-            let values: Rc<Vec<AspectValue>> = Rc::new(
-                model
-                    .univ_for_sort(&sort)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|name| AspectValue::Univ {
-                        sort: sort_arc.clone(),
-                        name: Arc::from(name),
-                    })
-                    .collect(),
-            );
+            // Share the ctx universe — same Arc the eval path converts
+            // through; no second build, no per-element Arc::from.
+            let Some(values) = self.ctx.univ_values(model, &sort) else {
+                return Arc::new(Vec::new());
+            };
             self.range_cache
                 .borrow_mut()
                 .entry(ptr)
@@ -1178,11 +1171,11 @@ impl<'a> Refiner<'a> {
                 .insert(model_name, values.clone());
             return values;
         }
-        let Some(items) = expr.to_ref_vec() else {
-            return Rc::new(Vec::new());
+        let Some(items) = expr.as_slice() else {
+            return Arc::new(Vec::new());
         };
         let Some(op) = items.first().and_then(|v| v.as_symbol()) else {
-            return Rc::new(Vec::new());
+            return Arc::new(Vec::new());
         };
         match op {
             "int-range" if items.len() == 3 => {
@@ -1191,15 +1184,15 @@ impl<'a> Refiner<'a> {
                 // k ∈ [lo, hi], so the bisim signature must use the same
                 // range or the partition won't reflect the formulas the
                 // synthesizer actually sees.
-                let lo = self.ctx.eval_int_expr(items[1], env).unwrap_or(0).max(0) as usize;
-                let hi = self.ctx.eval_int_expr(items[2], env).unwrap_or(0).max(0) as usize;
+                let lo = self.ctx.eval_int_expr(&items[1], env).unwrap_or(0).max(0) as usize;
+                let hi = self.ctx.eval_int_expr(&items[2], env).unwrap_or(0).max(0) as usize;
                 if hi < lo {
-                    Rc::new(Vec::new())
+                    Arc::new(Vec::new())
                 } else {
-                    Rc::new((lo..=hi).map(AspectValue::Int).collect())
+                    Arc::new((lo..=hi).map(AspectValue::Int).collect())
                 }
             }
-            _ => Rc::new(Vec::new()),
+            _ => Arc::new(Vec::new()),
         }
     }
 
