@@ -653,40 +653,31 @@ impl<'a> SemanticContext<'a> {
                 {
                     return Err(String::new());
                 }
-                self.eval_model_bool_call(op, &items[1..], env)
+                self.eval_model_bool_call(sig, &items[1..], env)
             }
         }
     }
 
+    /// `sig` is the caller's `func_sigs` lookup — this is only reached from
+    /// `eval_bool_value`, which already resolved and Bool/arity-checked it.
     fn eval_model_bool_call(
         &self,
-        func: &str,
+        sig: &FuncSig,
         args: &[Value],
         env: &impl EnvView,
     ) -> Result<bool, String> {
-        let sig = self.func_sigs.get(func).ok_or_else(String::new)?;
-        if sig.ret_sort.as_simple_name() != Some("Bool") || sig.arg_sorts.len() != args.len() {
-            return Err(String::new());
-        }
         let model = self.current_model(env)?;
         let model_ref = self.model(model)?;
-        let mut arg_values = Vec::with_capacity(args.len());
-        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
-            let owned_sort;
-            let sort_str = if let Some(name) = sort.as_simple_name() {
-                name
-            } else {
-                owned_sort = sort.to_string();
-                &owned_sort
-            };
-            arg_values.push(self.eval_value_for_sort(arg, sort_str, env)?);
-        }
+        // Stream args straight into the key hash: the owned `Vec<AspectValue>`
+        // was an alloc+free per call on a >99%-hit cache (12.7M calls per
+        // quotient). Key writes are unchanged, so hashes are identical.
         let mut h = FxHasher::default();
         h.write_u64(model_ref.cache_id);
-        h.write(func.as_bytes());
+        h.write(sig.name.as_bytes());
         h.write_u8(0); // separator between func name and args
-        for v in &arg_values {
-            Self::hash_aspect_value(&mut h, v);
+        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
+            let v = self.eval_value_for_sort(arg, &simple_sort_name(sort), env)?;
+            Self::hash_aspect_value(&mut h, &v);
         }
         let key_hash = h.finish();
         if let Some(&cached) = self.eval_bool_cache.borrow().get(&key_hash) {
@@ -694,9 +685,18 @@ impl<'a> SemanticContext<'a> {
             return Ok(cached);
         }
         self.eval_misses.set(self.eval_misses.get() + 1);
-        let arg_names = arg_values.iter().map(|v| v.display()).collect::<Vec<_>>();
+        // ponytail: args re-evaluated on the miss path (~0.1% of calls) —
+        // cheaper than materializing an owned Vec on every hit.
+        let arg_names = args
+            .iter()
+            .zip(sig.arg_sorts.iter())
+            .map(|(arg, sort)| {
+                self.eval_value_for_sort(arg, &simple_sort_name(sort), env)
+                    .map(|v| v.display())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let value = model_ref
-            .eval_symbols(func, &arg_names)
+            .eval_symbols(&sig.name, &arg_names)
             .is_some_and(interped_bool);
         self.eval_bool_cache.borrow_mut().insert(key_hash, value);
         Ok(value)
