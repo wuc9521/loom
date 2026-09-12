@@ -101,6 +101,14 @@ pub struct SemanticContext<'a> {
     /// per-call allocations (two `Arc<str>` for Univ, one `String` for
     /// Symbol). `None` represents a model call that returned no value.
     eval_cache_hashed: RefCell<HashMap<u64, Option<AspectValue>>>,
+    /// Per-(model.cache_id, sort) universe as ready-built `AspectValue`s.
+    /// `eval_value_for_sort`'s Int/Symbol conversions allocated 3 heap
+    /// objects per call (element String + two `Arc::from`) and
+    /// `argument_univs` cloned a whole `Vec<String>` per call. Universes are
+    /// static for the run (same invariant as `lang/eval.rs`'s thread-local
+    /// `UNIV_CACHE`), so building once makes every conversion an Arc clone
+    /// or element clone — zero allocations.
+    univ_cache: RefCell<HashMap<u64, HashMap<String, Arc<Vec<AspectValue>>>>>,
     eval_hits: Cell<usize>,
     eval_misses: Cell<usize>,
 }
@@ -115,11 +123,7 @@ impl<'a> SemanticContext<'a> {
     ) -> Result<AspectValue, String> {
         let model_ref = self.model(model)?;
         if let Some(symbol) = arg.as_symbol() {
-            if sort != "Int"
-                && model_ref
-                    .univ_for_sort(sort)
-                    .is_some_and(|univ| univ.iter().any(|elem| elem == symbol))
-            {
+            if sort != "Int" && model_ref.univ_contains(sort, symbol) {
                 return Ok(AspectValue::Univ {
                     sort: Arc::from(sort),
                     name: Arc::from(symbol),
@@ -225,6 +229,7 @@ impl<'a> SemanticContext<'a> {
             eval_cache: RefCell::new(HashMap::default()),
             eval_bool_cache: RefCell::new(HashMap::default()),
             eval_cache_hashed: RefCell::new(HashMap::default()),
+            univ_cache: RefCell::new(HashMap::default()),
             eval_hits: Cell::new(0),
             eval_misses: Cell::new(0),
         })
@@ -335,28 +340,47 @@ impl<'a> SemanticContext<'a> {
             .ok_or_else(|| format!("unknown model {name}"))
     }
 
+    /// Shared `AspectValue` universe for (model, sort) — built once, then
+    /// one Arc clone per call.
+    fn univ_values(&self, model: &Model, sort: &str) -> Option<Arc<Vec<AspectValue>>> {
+        if let Some(cached) = self
+            .univ_cache
+            .borrow()
+            .get(&model.cache_id)
+            .and_then(|by_sort| by_sort.get(sort))
+        {
+            return Some(cached.clone());
+        }
+        let names = model.univ_for_sort_arc(sort)?;
+        let sort_arc: Arc<str> = Arc::from(sort);
+        let values: Arc<Vec<AspectValue>> = Arc::new(
+            names
+                .iter()
+                .map(|name| AspectValue::Univ {
+                    sort: sort_arc.clone(),
+                    name: Arc::from(name.as_str()),
+                })
+                .collect(),
+        );
+        self.univ_cache
+            .borrow_mut()
+            .entry(model.cache_id)
+            .or_default()
+            .insert(sort.to_string(), values.clone());
+        Some(values)
+    }
+
     pub fn argument_univs(
         &self,
         sig: &FuncSig,
         model: &Model,
-    ) -> Result<Vec<Vec<AspectValue>>, String> {
+    ) -> Result<Vec<Arc<Vec<AspectValue>>>, String> {
         sig.arg_sorts
             .iter()
             .map(|sort| {
-                let sort = sort.to_string();
-                let sort_arc: Arc<str> = Arc::from(sort.as_str());
-                model
-                    .univ_for_sort(&sort)
+                let sort = simple_sort_name(sort);
+                self.univ_values(model, &sort)
                     .ok_or_else(|| format!("model {} has no universe for sort {sort}", model.name))
-                    .map(|values| {
-                        values
-                            .into_iter()
-                            .map(|name| AspectValue::Univ {
-                                sort: sort_arc.clone(),
-                                name: Arc::from(name),
-                            })
-                            .collect()
-                    })
             })
             .collect()
     }
@@ -750,7 +774,7 @@ impl<'a> SemanticContext<'a> {
                 let model = self.eval_model_name(model_expr, env)?;
                 let model_ref = self.model(&model)?;
                 let values = model_ref
-                    .univ_for_sort(sort)
+                    .univ_for_sort_arc(sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;
                 Ok(values.len() as isize)
             }
@@ -893,25 +917,29 @@ impl<'a> SemanticContext<'a> {
         if sort == "Int" {
             return Ok(value);
         }
-        if let AspectValue::Int(idx) = &value {
-            let model = self.current_model(env)?;
-            let model_ref = self.model(model)?;
-            if let Some(name) = model_ref.univ_element_at(sort, *idx) {
-                return Ok(AspectValue::Univ {
-                    sort: Arc::from(sort),
-                    name: Arc::from(name),
-                });
+        match &value {
+            AspectValue::Int(idx) => {
+                let model_ref = self.model(self.current_model(env)?)?;
+                if let Some(hit) = self
+                    .univ_values(model_ref, sort)
+                    .and_then(|univ| univ.get(*idx).cloned())
+                {
+                    return Ok(hit);
+                }
             }
-        }
-        if let AspectValue::Symbol(symbol) = &value {
-            let model = self.current_model(env)?;
-            let model_ref = self.model(model)?;
-            if model_ref.univ_contains(sort, symbol) {
-                return Ok(AspectValue::Univ {
-                    sort: Arc::from(sort),
-                    name: Arc::from(symbol.as_str()),
-                });
+            AspectValue::Symbol(symbol) => {
+                let model_ref = self.model(self.current_model(env)?)?;
+                if let Some(hit) = self.univ_values(model_ref, sort).and_then(|univ| {
+                    univ.iter()
+                        .find(|v| {
+                            matches!(v, AspectValue::Univ { name, .. } if &**name == symbol.as_str())
+                        })
+                        .cloned()
+                }) {
+                    return Ok(hit);
+                }
             }
+            _ => {}
         }
         Ok(value)
     }
