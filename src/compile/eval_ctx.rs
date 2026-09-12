@@ -705,8 +705,7 @@ impl<'a> SemanticContext<'a> {
         h.write(sig.name.as_bytes());
         h.write_u8(0); // separator between func name and args
         for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
-            let v = self.eval_value_for_sort(arg, &simple_sort_name(sort), env)?;
-            Self::hash_aspect_value(&mut h, &v);
+            self.hash_value_for_sort(&mut h, arg, &simple_sort_name(sort), env)?;
         }
         let key_hash = h.finish();
         if let Some(&cached) = self.eval_bool_cache.borrow().get(&key_hash) {
@@ -814,33 +813,16 @@ impl<'a> SemanticContext<'a> {
         let model = self.current_model(env)?;
         let model_ref = self.model(model)?;
 
-        // Resolve args to AspectValues. We need these regardless of cache
-        // outcome (they're how we hash the key), but they're typically just
-        // a HashMap lookup + clone of a value already in `env.values`, not a
-        // recursive eval. The `as_simple_name()` fast path avoids a per-arg
-        // `sort.to_string()` allocation for `Sort::Simple` — the common case
-        // for declared funcs whose args are over simple sorts like `Pos`.
-        let mut arg_values: Vec<AspectValue> = Vec::with_capacity(args.len());
-        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
-            let owned_sort_name;
-            let sort_str: &str = if let Some(s) = sort.as_simple_name() {
-                s
-            } else {
-                owned_sort_name = sort.to_string();
-                &owned_sort_name
-            };
-            arg_values.push(self.eval_value_for_sort(arg, sort_str, env)?);
-        }
-
-        // Hash-keyed cache probe. Sidesteps the `EvalKey { func: String,
-        // args: Vec<String> }` allocation that every probe through
-        // `eval_model_symbols` requires.
+        // Stream args straight into the key hash (same trade as
+        // `eval_model_bool_call`): the owned `Vec<AspectValue>` was an alloc
+        // plus N entry clones + drops per call on a >99%-hit cache. Key
+        // writes are unchanged, so hashes are identical.
         let mut h = FxHasher::default();
         h.write_u64(model_ref.cache_id);
         h.write(sig.name.as_bytes());
         h.write_u8(0); // separator between func name and args
-        for v in &arg_values {
-            Self::hash_aspect_value(&mut h, v);
+        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
+            self.hash_value_for_sort(&mut h, arg, &simple_sort_name(sort), env)?;
         }
         let key_hash = h.finish();
 
@@ -850,12 +832,20 @@ impl<'a> SemanticContext<'a> {
             cached
         } else {
             self.eval_misses.set(self.eval_misses.get() + 1);
-            // Cache miss: materialise the String args for `Model::eval_symbols`
-            // (its inner exact-case index is `HashMap<Vec<String>, _>` so we
-            // can't avoid this on the miss path). Convert the InterpedValue
+            // ponytail: args re-evaluated on the miss path (~0.1% of calls) —
+            // cheaper than materializing an owned Vec on every hit.
+            // `Model::eval_symbols` needs String args (its inner exact-case
+            // index is `HashMap<Vec<String>, _>`). Convert the InterpedValue
             // to AspectValue here so the cache stores the already-interpreted
             // form — subsequent hits skip `interped_aspect_value`.
-            let arg_strings: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
+            let arg_strings: Vec<String> = args
+                .iter()
+                .zip(sig.arg_sorts.iter())
+                .map(|(arg, sort)| {
+                    self.eval_value_for_sort(arg, &simple_sort_name(sort), env)
+                        .map(|v| v.display())
+                })
+                .collect::<Result<_, String>>()?;
             let raw = model_ref.eval_symbols(&sig.name, &arg_strings).cloned();
             let owned_ret;
             let ret_str: &str = if let Some(s) = sig.ret_sort.as_simple_name() {
@@ -875,9 +865,17 @@ impl<'a> SemanticContext<'a> {
         };
 
         aspect_value.ok_or_else(|| {
-            // Format the friendly arg list lazily so the alloc only happens
-            // on real errors.
-            let parts: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
+            // ponytail: best-effort re-eval for the friendly arg list; only
+            // runs on real errors, and error text is not part of the output.
+            let parts: Vec<String> = args
+                .iter()
+                .zip(sig.arg_sorts.iter())
+                .filter_map(|(arg, sort)| {
+                    self.eval_value_for_sort(arg, &simple_sort_name(sort), env)
+                        .ok()
+                        .map(|v| v.display())
+                })
+                .collect();
             format!(
                 "model {model} has no value for {}({})",
                 sig.name,
@@ -921,31 +919,59 @@ impl<'a> SemanticContext<'a> {
         if sort == "Int" {
             return Ok(value);
         }
-        match &value {
-            AspectValue::Int(idx) => {
-                let model_ref = self.model(self.current_model(env)?)?;
-                if let Some(hit) = self
-                    .univ_values(model_ref, sort)
-                    .and_then(|univ| univ.get(*idx).cloned())
-                {
-                    return Ok(hit);
-                }
-            }
-            AspectValue::Symbol(symbol) => {
-                let model_ref = self.model(self.current_model(env)?)?;
-                if let Some(hit) = self.univ_values(model_ref, sort).and_then(|univ| {
-                    univ.iter()
-                        .find(|v| {
-                            matches!(v, AspectValue::Univ { name, .. } if &**name == symbol.as_str())
-                        })
-                        .cloned()
-                }) {
-                    return Ok(hit);
-                }
-            }
-            _ => {}
+        if let Some((univ, i)) = self.univ_index_of(&value, sort, env)? {
+            return Ok(univ[i].clone());
         }
         Ok(value)
+    }
+
+    /// The `univ_cache` entry (Arc + index) that `value` converts to under
+    /// `sort`, if any. Returning the index instead of a clone lets the key-
+    /// hashing paths borrow the entry in place; the Arc escape keeps the
+    /// borrow alive outside the RefCell guard. Model resolution is lazy so
+    /// non-convertible values keep `eval_value_for_sort`'s old semantics of
+    /// never touching the model.
+    fn univ_index_of(
+        &self,
+        value: &AspectValue,
+        sort: &str,
+        env: &impl EnvView,
+    ) -> Result<Option<(Arc<Vec<AspectValue>>, usize)>, String> {
+        if !matches!(value, AspectValue::Int(_) | AspectValue::Symbol(_)) {
+            return Ok(None);
+        }
+        let model_ref = self.model(self.current_model(env)?)?;
+        let Some(univ) = self.univ_values(model_ref, sort) else {
+            return Ok(None);
+        };
+        let found = match value {
+            AspectValue::Int(idx) => (*idx < univ.len()).then_some(*idx),
+            AspectValue::Symbol(symbol) => univ.iter().position(|v| {
+                matches!(v, AspectValue::Univ { name, .. } if &**name == symbol.as_str())
+            }),
+            _ => None,
+        };
+        Ok(found.map(|i| (univ, i)))
+    }
+
+    /// Hashes exactly what `eval_value_for_sort(expr, sort)` would return —
+    /// identical bytes, so cache keys are unchanged — without materializing
+    /// the owned universe conversion (an entry clone + drop per arg per call
+    /// on the 12.7M-call bisim path).
+    fn hash_value_for_sort<H: Hasher>(
+        &self,
+        h: &mut H,
+        expr: &Value,
+        sort: &str,
+        env: &impl EnvView,
+    ) -> Result<(), String> {
+        let value = self.eval_value(expr, env)?;
+        if sort != "Int" {
+            if let Some((univ, i)) = self.univ_index_of(&value, sort, env)? {
+                return Ok(Self::hash_aspect_value(h, &univ[i]));
+            }
+        }
+        Ok(Self::hash_aspect_value(h, &value))
     }
 
     pub fn eval_model_name(&self, expr: &Value, env: &impl EnvView) -> Result<String, String> {
