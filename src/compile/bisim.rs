@@ -450,7 +450,10 @@ struct Refiner<'a> {
     /// (range-expr ptr, model). The universe is static, but the refinement
     /// loop rebuilt it per expansion — a fresh `Arc::from(name)` per element,
     /// millions of allocations per quotient.
-    range_cache: RefCell<HashMap<(usize, String), Rc<Vec<AspectValue>>>>,
+    /// Nested so the hot probe needs no owned key: the outer usize (expr ptr)
+    /// and inner &str (model name) both borrow from live data, while the old
+    /// flat `(usize, String)` key materialized a String per expansion.
+    range_cache: RefCell<HashMap<usize, HashMap<String, Rc<Vec<AspectValue>>>>>,
 }
 
 impl<'a> Refiner<'a> {
@@ -1068,11 +1071,14 @@ impl<'a> Refiner<'a> {
     ) {
         out.write_u8(if quant == "exists" { b'E' } else { b'F' });
         out.write_u8(b'{');
+        // `as_slice` not `to_ref_vec`, and the name stays borrowed: this parse
+        // ran once per emit_quantifier call (millions per quotient) and the two
+        // Vec allocations plus the owned name String were pure hit-path cost.
         let parsed = binding
-            .to_ref_vec()
-            .and_then(|bs| bs.first().and_then(|b| b.to_ref_vec()))
+            .as_slice()
+            .and_then(|bs| bs.first().and_then(|b| b.as_slice()))
             .filter(|parts| parts.len() == 2)
-            .and_then(|parts| parts[0].as_symbol().map(|n| (n.to_string(), parts[1])));
+            .and_then(|parts| parts[0].as_symbol().map(|n| (n, &parts[1])));
         if let Some((name, range_expr)) = parsed {
             // Paper δ: `∃v:σ.E` / `∀v:σ.E` expand to `⋁_{d∈D_σ} E[v↦d]` /
             // `⋀_{d} E[v↦d]`, so the bound witness `d` disappears. A body that
@@ -1087,12 +1093,12 @@ impl<'a> Refiner<'a> {
             // Bind the key once and overwrite its slot per value: inserting
             // per iteration re-allocates the key String every time, and the
             // save/restore dance folds into one pair around the loop.
-            let prev = env.values.get(&name).cloned();
+            let prev = env.values.get(name).cloned();
             for val in range.iter() {
-                match env.values.get_mut(&name) {
+                match env.values.get_mut(name) {
                     Some(slot) => *slot = val.clone(),
                     None => {
-                        env.values.insert(name.clone(), val.clone());
+                        env.values.insert(name.to_string(), val.clone());
                     }
                 }
                 match (quant, self.ctx.eval_bool_value(body, env)) {
@@ -1106,10 +1112,10 @@ impl<'a> Refiner<'a> {
             }
             match prev {
                 Some(p) => {
-                    env.values.insert(name, p);
+                    env.values.insert(name.to_string(), p);
                 }
                 None => {
-                    env.values.remove(&name);
+                    env.values.remove(name);
                 }
             }
             if annihilated {
@@ -1132,14 +1138,25 @@ impl<'a> Refiner<'a> {
         // Bare sort symbol: resolve through the current model, matching the
         // compiler's and CHC backends' handling of `(forall ((k Pos)) …)`.
         if expr.as_symbol().is_some() {
+            // Probe with both key halves borrowed: for a bare sort the model
+            // is exactly the ambient current_model (what parse_univ_expr
+            // resolves), so hits allocate nothing. parse_univ_expr runs only
+            // on a miss, to own the model/sort Strings for build + insert.
+            let ptr = expr as *const Value as usize;
+            if let Ok(model_name) = self.ctx.current_model(env) {
+                if let Some(cached) = self
+                    .range_cache
+                    .borrow()
+                    .get(&ptr)
+                    .and_then(|by_model| by_model.get(model_name))
+                {
+                    return cached.clone();
+                }
+            }
             let Ok((model_name, sort)) = self.ctx.parse_univ_expr(expr, env) else {
                 return Rc::new(Vec::new());
             };
-            let key = (expr as *const Value as usize, model_name);
-            if let Some(cached) = self.range_cache.borrow().get(&key) {
-                return cached.clone();
-            }
-            let Ok(model) = self.ctx.model(&key.1) else {
+            let Ok(model) = self.ctx.model(&model_name) else {
                 return Rc::new(Vec::new());
             };
             let sort_arc: Arc<str> = Arc::from(sort.as_str());
@@ -1154,7 +1171,11 @@ impl<'a> Refiner<'a> {
                     })
                     .collect(),
             );
-            self.range_cache.borrow_mut().insert(key, values.clone());
+            self.range_cache
+                .borrow_mut()
+                .entry(ptr)
+                .or_default()
+                .insert(model_name, values.clone());
             return values;
         }
         let Some(items) = expr.to_ref_vec() else {
