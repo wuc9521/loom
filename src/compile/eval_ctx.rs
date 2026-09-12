@@ -589,8 +589,8 @@ impl<'a> SemanticContext<'a> {
                 }
             }
         }
-        if self.func_sigs.contains_key(op) {
-            return self.eval_model_value_call(op, &items[1..], env);
+        if let Some(sig) = self.func_sigs.get(op) {
+            return self.eval_model_value_call(sig, &items[1..], env);
         }
         match op {
             "ite" if items.len() == 4 => {
@@ -794,19 +794,19 @@ impl<'a> SemanticContext<'a> {
         Ok(AspectValue::Int(value as usize))
     }
 
+    /// `sig` is the caller's `func_sigs` lookup — the only call site
+    /// (`eval_value`) resolved it by `op`, and `func_sigs` is keyed by
+    /// `sig.name`, so hashing `sig.name` bytes matches the old `func` bytes.
     pub fn eval_model_value_call(
         &self,
-        func: &str,
+        sig: &FuncSig,
         args: &[Value],
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
-        let sig = self
-            .func_sigs
-            .get(func)
-            .ok_or_else(|| format!("unknown function {func}"))?;
         if sig.arg_sorts.len() != args.len() {
             return Err(format!(
-                "function {func} expects {} arguments, got {}",
+                "function {} expects {} arguments, got {}",
+                sig.name,
                 sig.arg_sorts.len(),
                 args.len()
             ));
@@ -837,7 +837,7 @@ impl<'a> SemanticContext<'a> {
         // `eval_model_symbols` requires.
         let mut h = FxHasher::default();
         h.write_u64(model_ref.cache_id);
-        h.write(func.as_bytes());
+        h.write(sig.name.as_bytes());
         h.write_u8(0); // separator between func name and args
         for v in &arg_values {
             Self::hash_aspect_value(&mut h, v);
@@ -856,7 +856,7 @@ impl<'a> SemanticContext<'a> {
             // to AspectValue here so the cache stores the already-interpreted
             // form — subsequent hits skip `interped_aspect_value`.
             let arg_strings: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
-            let raw = model_ref.eval_symbols(func, &arg_strings).cloned();
+            let raw = model_ref.eval_symbols(&sig.name, &arg_strings).cloned();
             let owned_ret;
             let ret_str: &str = if let Some(s) = sig.ret_sort.as_simple_name() {
                 s
@@ -878,7 +878,11 @@ impl<'a> SemanticContext<'a> {
             // Format the friendly arg list lazily so the alloc only happens
             // on real errors.
             let parts: Vec<String> = arg_values.iter().map(|v| v.display()).collect();
-            format!("model {model} has no value for {func}({})", parts.join(" "))
+            format!(
+                "model {model} has no value for {}({})",
+                sig.name,
+                parts.join(" ")
+            )
         })
     }
 
