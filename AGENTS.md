@@ -85,6 +85,12 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   (allocates a `Vec<&Value>` per call): `eval_bool_value`, `bisim::walk`.
 - `bisim.rs`: `signature()` takes caller-owned `WalkEnv`/`WalkCache` scratch
   and `clear()`s them per call — do not restore per-call construction.
+- `bisim.rs`: keep the `WalkCache` scoped per `signature()` call. A persistent
+  walk cache (per-round or per-quotient; soundness via recorded deps +
+  per-class split generations) was built and measured SLOWER — 0002 bisim
+  2.68s -> 3.11s — because the shared table grows to ~10M entries and every
+  probe becomes a DRAM random access, while per-call tables stay
+  cache-resident. Do not retry without fixing locality first.
 - `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
   constant-guard probe — a memo hit must NOT re-enumerate the domain
   (`const_guard_values` was ~69% of the encode phase).
