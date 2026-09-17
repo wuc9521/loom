@@ -430,8 +430,11 @@ impl SemanticProgram {
 /// inner conjuncts depend on only a subset of the enclosing quantifier vars
 /// — the cache collapses the cross-product enumeration down to the unique
 /// (free-var-restricted) bindings actually seen.
-struct Refiner<'a> {
-    ctx: &'a SemanticContext<'a>,
+/// `'p` is the problem-AST lifetime carried inside `SemanticContext` (kept
+/// separate from the borrow lifetime `'a`: the context is invariant in `'p`
+/// since its op memo stores borrowed `&'p FuncSig`s).
+struct Refiner<'a, 'p> {
+    ctx: &'a SemanticContext<'p>,
     cases_by_domain: &'a HashMap<SemKey, HashMap<String, Case>>,
     domain_kinds: &'a HashMap<SemKey, SemanticKind>,
     sem_ids: &'a HashMap<SemKey, usize>,
@@ -456,10 +459,10 @@ struct Refiner<'a> {
     range_cache: RefCell<HashMap<usize, HashMap<String, Arc<Vec<AspectValue>>>>>,
 }
 
-impl<'a> Refiner<'a> {
+impl<'a, 'p> Refiner<'a, 'p> {
     fn new(
         problem: &LoomProg,
-        ctx: &'a SemanticContext<'a>,
+        ctx: &'a SemanticContext<'p>,
         cases_by_domain: &'a HashMap<SemKey, HashMap<String, Case>>,
         domain_kinds: &'a HashMap<SemKey, SemanticKind>,
         sem_ids: &'a HashMap<SemKey, usize>,
@@ -615,7 +618,7 @@ impl EnvView for WalkEnv {
 
 const SELF_SUBTERM: usize = usize::MAX;
 
-impl<'a> Refiner<'a> {
+impl<'a, 'p> Refiner<'a, 'p> {
     fn signature(
         &self,
         sem: &SemKey,
@@ -790,7 +793,9 @@ impl<'a> Refiner<'a> {
         };
 
         // Relation calls and quantifiers always need bespoke handling.
-        if self.ctx.has_relation(op) && items.len() >= 3 {
+        // classify_op: memoized by op-node ptr — the string-keyed
+        // `has_relation` ran on all 20M+ walk calls.
+        if self.ctx.classify_op(&items[0], op).0 && items.len() >= 3 {
             self.emit_relation(out, op, &items[1], &items[2], env, classes, deps);
             return;
         }

@@ -72,7 +72,17 @@ impl EnvView for ConstraintModelEnv {
 
 pub struct SemanticContext<'a> {
     pub models: HashMap<String, &'a Model>,
-    pub func_sigs: HashMap<String, FuncSig>,
+    /// The AST's `DeclareFunc` signatures, borrowed — same keys and
+    /// last-wins build order as the owned map this replaced, and `sig.name`
+    /// is the key, so hashing by name or by sig is interchangeable.
+    pub func_sigs: HashMap<String, &'a FuncSig>,
+    /// (is-relation, declared-sig) per operator AST node. One usize probe
+    /// replaces the per-call string hash+memcmp against
+    /// `domains_by_relation` and `func_sigs` on the bisim walk/eval paths.
+    /// Sound for the same reason as bisim's `range_cache`: op nodes are
+    /// AST values that live for the whole run, and both maps are frozen
+    /// after `with_cases`.
+    op_memo: RefCell<HashMap<usize, (bool, Option<&'a FuncSig>)>>,
     spaces: HashMap<String, AspectSpace>,
     /// All values declared across `(enum ...)` aspect-space field domains.
     /// Used to recognize bare enum members appearing in semantic bodies
@@ -128,7 +138,7 @@ impl<'a> SemanticContext<'a> {
                     return Ok(univ[i].clone());
                 }
             }
-            if let Some(sig) = self.func_sigs.get(symbol) {
+            if let Some(sig) = self.classify_op(arg, symbol).1 {
                 if sig.arg_sorts.is_empty() {
                     let value = self
                         .eval_model_symbols(model_ref, symbol, &[])
@@ -137,10 +147,9 @@ impl<'a> SemanticContext<'a> {
                 }
             }
         }
-        if let Some(items) = arg.to_ref_vec() {
+        if let Some(items) = arg.as_slice() {
             if let Some(op) = items.first().and_then(|v| v.as_symbol()) {
-                if self.func_sigs.contains_key(op) {
-                    let sig = &self.func_sigs[op];
+                if let Some(sig) = self.classify_op(&items[0], op).1 {
                     let arg_values = items[1..]
                         .iter()
                         .zip(sig.arg_sorts.iter())
@@ -182,7 +191,7 @@ impl<'a> SemanticContext<'a> {
             .cmds
             .iter()
             .filter_map(|cmd| match cmd {
-                LoomCmd::DeclareFunc(sig) => Some((sig.name.clone(), sig.clone())),
+                LoomCmd::DeclareFunc(sig) => Some((sig.name.clone(), sig)),
                 _ => None,
             })
             .collect::<HashMap<_, _>>();
@@ -229,6 +238,7 @@ impl<'a> SemanticContext<'a> {
             eval_bool_cache: RefCell::new(HashMap::default()),
             eval_cache_hashed: RefCell::new(HashMap::default()),
             univ_cache: RefCell::new(HashMap::default()),
+            op_memo: RefCell::new(HashMap::default()),
             eval_hits: Cell::new(0),
             eval_misses: Cell::new(0),
         })
@@ -287,6 +297,25 @@ impl<'a> SemanticContext<'a> {
 
     pub fn has_func(&self, func: &str) -> bool {
         self.func_sigs.contains_key(func)
+    }
+
+    /// (is-relation, declared-sig) for an operator, memoized by the op
+    /// node's address — one usize probe replaces the per-call string
+    /// hash+memcmp against `domains_by_relation` and `func_sigs`. A tuple,
+    /// not an enum: `bisim::walk` checks relation-first while the eval
+    /// paths treat a name in both maps as a func, and callers must keep
+    /// seeing exactly the map they consulted before.
+    pub fn classify_op(&self, op_expr: &Value, op: &str) -> (bool, Option<&'a FuncSig>) {
+        let key = op_expr as *const Value as usize;
+        if let Some(&hit) = self.op_memo.borrow().get(&key) {
+            return hit;
+        }
+        let classified = (
+            self.domains_by_relation.contains_key(op),
+            self.func_sigs.get(op).copied(),
+        );
+        self.op_memo.borrow_mut().insert(key, classified);
+        classified
     }
 
     pub fn domains_for_sort(&self, sort: &str) -> Result<&[SemanticDomain], String> {
@@ -494,7 +523,7 @@ impl<'a> SemanticContext<'a> {
             // denotation flows through the structure. We never consult model
             // element names — those are arbitrary model-internal tokens and a
             // semantic body may mention only signature-level symbols.
-            if let Some(sig) = self.func_sigs.get(symbol) {
+            if let Some(sig) = self.classify_op(expr, symbol).1 {
                 if sig.arg_sorts.is_empty() {
                     let model = self.current_model(env)?;
                     let model_ref = self
@@ -530,8 +559,10 @@ impl<'a> SemanticContext<'a> {
         // signature function in an EXPLICITLY named structure. The model is
         // explicit (not from `current_model`), which is what lets constraints
         // and term-synthesis checks resolve example data without an ambient
-        // aspect. 0-ary form returns the element directly.
-        if op == "get-fun" {
+        // aspect. 0-ary form returns the element directly. First-byte guard:
+        // legacy String-benchmark-only form, but every list-form eval pays
+        // the compare (7-char ops memcmp before failing).
+        if op.as_bytes().first() == Some(&b'g') && op == "get-fun" {
             if items.len() < 3 {
                 return Err(format!(
                     "get-fun expects at least a function and a model: {expr}"
@@ -593,7 +624,7 @@ impl<'a> SemanticContext<'a> {
                 }
             }
         }
-        if let Some(sig) = self.func_sigs.get(op) {
+        if let Some(sig) = self.classify_op(&items[0], op).1 {
             return self.eval_model_value_call(sig, &items[1..], env);
         }
         match op {
@@ -680,7 +711,10 @@ impl<'a> SemanticContext<'a> {
                 // its truth pattern leaks absolute positions into the bisim
                 // signature. Non-model ops and non-ground args stay dynamic
                 // (Err), exactly as before.
-                let sig = self.func_sigs.get(op).ok_or_else(String::new)?;
+                let sig = self
+                    .classify_op(&items[0], op)
+                    .1
+                    .ok_or_else(String::new)?;
                 if sig.ret_sort.as_simple_name() != Some("Bool")
                     || sig.arg_sorts.len() != items.len() - 1
                 {
@@ -707,7 +741,9 @@ impl<'a> SemanticContext<'a> {
         h.write(sig.name.as_bytes());
         h.write_u8(0); // separator between func name and args
         for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
-            self.hash_value_for_sort(&mut h, arg, &simple_sort_name(sort), env)?;
+            // Some(model_ref): the caller resolved it from this same env, so
+            // per-arg conversion skips re-resolving current_model.
+            self.hash_value_for_sort(&mut h, arg, &simple_sort_name(sort), env, Some(model_ref))?;
         }
         Ok(h.finish())
     }
@@ -905,7 +941,7 @@ impl<'a> SemanticContext<'a> {
         sort: &str,
         env: &impl EnvView,
     ) -> Result<AspectValue, String> {
-        self.with_value_for_sort(expr, sort, env, |v| v.clone())
+        self.with_value_for_sort(expr, sort, env, None, |v| v.clone())
     }
 
     /// Hashes exactly what `eval_value_for_sort(expr, sort)` would return —
@@ -918,8 +954,11 @@ impl<'a> SemanticContext<'a> {
         expr: &Value,
         sort: &str,
         env: &impl EnvView,
+        model: Option<&Model>,
     ) -> Result<(), String> {
-        self.with_value_for_sort(expr, sort, env, |v| Self::hash_aspect_value(h, v))
+        self.with_value_for_sort(expr, sort, env, model, |v| {
+            Self::hash_aspect_value(h, v)
+        })
     }
 
     /// The one conversion site: evaluates `expr`, then hands `f` the value
@@ -930,11 +969,12 @@ impl<'a> SemanticContext<'a> {
         expr: &Value,
         sort: &str,
         env: &impl EnvView,
+        model: Option<&Model>,
         f: impl FnOnce(&AspectValue) -> R,
     ) -> Result<R, String> {
         let value = self.eval_value(expr, env)?;
         if sort != "Int" {
-            if let Some((univ, i)) = self.univ_index_of(&value, sort, env)? {
+            if let Some((univ, i)) = self.univ_index_of(&value, sort, env, model)? {
                 return Ok(f(&univ[i]));
             }
         }
@@ -943,24 +983,33 @@ impl<'a> SemanticContext<'a> {
 
     /// The `univ_cache` entry (Arc + index) that `value` converts to under
     /// `sort`, if any. The index lets callers borrow the entry in place; the
-    /// Arc escape keeps the borrow alive outside the RefCell guard. Model
-    /// resolution is lazy: values that can't convert never touch the model.
+    /// Arc escape keeps the borrow alive outside the RefCell guard.
+    /// `model` is the caller's already-resolved `current_model(env)` (model
+    /// callers pass it so per-arg conversion skips the name lookup); `None`
+    /// resolves lazily — values that can't convert never touch the model.
     fn univ_index_of(
         &self,
         value: &AspectValue,
         sort: &str,
         env: &impl EnvView,
+        model: Option<&Model>,
     ) -> Result<Option<(Arc<Vec<AspectValue>>, usize)>, String> {
         match value {
             AspectValue::Int(idx) => {
-                let model_ref = self.model(self.current_model(env)?)?;
+                let model_ref = match model {
+                    Some(model_ref) => model_ref,
+                    None => self.model(self.current_model(env)?)?,
+                };
                 let Some(univ) = self.univ_values(model_ref, sort) else {
                     return Ok(None);
                 };
                 Ok((*idx < univ.len()).then_some(*idx).map(|i| (univ, i)))
             }
             AspectValue::Symbol(symbol) => {
-                let model_ref = self.model(self.current_model(env)?)?;
+                let model_ref = match model {
+                    Some(model_ref) => model_ref,
+                    None => self.model(self.current_model(env)?)?,
+                };
                 Ok(self.univ_index_of_symbol(model_ref, sort, symbol))
             }
             _ => Ok(None),
