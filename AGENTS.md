@@ -120,6 +120,16 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   fits in shared L3 when single-threaded, so N workers thrash it N×.
   Output was verified byte-identical at every thread count — the fixpoint
   argument holds; only the performance died.
+- `compiler.rs`: `eval_model_bool_call`'s ground probe delegates to
+  `ctx.eval_model_bool_call` (u64 key over arg VALUES, allocation-free
+  probe) — do not restore the per-call `ground_arg_names` path there: it
+  rebuilt display Strings + per-arg `EnvId` fingerprints for every call
+  (~25% of the encode phase). `Err` = args not ground = fall through to
+  dynamic encoding, same as the old `None`. Value-keyed means equal
+  (func, args) calls hit across envs, unlike the env-keyed `eval_bool`
+  memo. `eval_model_finite_call_eq` still uses `ground_arg_names` (its
+  target match is `interped_value_matches`, not `values_equal` — do not
+  delegate it without checking that equivalence).
 - `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
   constant-guard probe — a memo hit must NOT re-enumerate the domain
   (`const_guard_values` was ~69% of the encode phase).

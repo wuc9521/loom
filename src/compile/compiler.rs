@@ -1431,11 +1431,13 @@ impl<'a> Compiler<'a> {
                 args.len()
             ));
         }
-        let model = self.ctx.current_model(env)?;
-        let model_ref = self.ctx.model(&model)?;
-        if let Some(arg_names) = self.ground_arg_names(sig, args, env) {
-            let value = self.ctx.eval_model_symbols(model_ref, func, &arg_names);
-            return Ok(BoolExpr::Const(value.as_ref().is_some_and(interped_bool)));
+        // Ground calls: ctx's u64-keyed bool cache probes allocation-free
+        // (no display Strings, no per-arg EnvId) and keys on arg VALUES, so
+        // equal (func, args) calls hit across envs. Err = args not ground;
+        // fall through to the dynamic encoding exactly as the old
+        // ground_arg_names `None` did.
+        if let Ok(value) = self.ctx.eval_model_bool_call(sig, args.iter().copied(), env) {
+            return Ok(BoolExpr::Const(value));
         }
         if let Some(native) = self.try_native_compare(func, args, env)? {
             return Ok(native);

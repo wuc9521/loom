@@ -642,18 +642,21 @@ impl<'a> SemanticContext<'a> {
     /// func name, converted args). `hash_value_for_sort` writes exactly the
     /// bytes `hash_aspect_value(&eval_value_for_sort(..))` would, so keys
     /// are unchanged from the pre-streaming code.
-    fn model_call_key(
+    fn model_call_key<'v, I>(
         &self,
         model_ref: &Model,
         sig: &FuncSig,
-        args: &[Value],
+        args: I,
         env: &impl EnvView,
-    ) -> Result<u64, String> {
+    ) -> Result<u64, String>
+    where
+        I: IntoIterator<Item = &'v Value>,
+    {
         let mut h = FxHasher::default();
         h.write_u64(model_ref.cache_id);
         h.write(sig.name.as_bytes());
         h.write_u8(0); // separator between func name and args
-        for (arg, sort) in args.iter().zip(sig.arg_sorts.iter()) {
+        for (arg, sort) in args.into_iter().zip(sig.arg_sorts.iter()) {
             // Some(model_ref): the caller resolved it from this same env, so
             // per-arg conversion skips re-resolving current_model.
             self.hash_value_for_sort(&mut h, arg, &simple_sort_name(sort), env, Some(model_ref))?;
@@ -664,13 +667,16 @@ impl<'a> SemanticContext<'a> {
     /// Owned arg names for `Model::eval_symbols` (its exact-case index is a
     /// `HashMap<Vec<String>, _>`). Miss/error paths only — the hit path
     /// streams through `model_call_key`.
-    fn model_call_args(
+    fn model_call_args<'v, I>(
         &self,
         sig: &FuncSig,
-        args: &[Value],
+        args: I,
         env: &impl EnvView,
-    ) -> Result<Vec<String>, String> {
-        args.iter()
+    ) -> Result<Vec<String>, String>
+    where
+        I: IntoIterator<Item = &'v Value>,
+    {
+        args.into_iter()
             .zip(sig.arg_sorts.iter())
             .map(|(arg, sort)| {
                 self.eval_value_for_sort(arg, &simple_sort_name(sort), env)
@@ -679,16 +685,22 @@ impl<'a> SemanticContext<'a> {
             .collect()
     }
 
-    /// `sig` is the caller's `func_sigs` lookup — this is only reached from
-    /// `eval_bool_value`, which already resolved and Bool/arity-checked it.
-    fn eval_model_bool_call(
+    /// `sig` is the caller's `func_sigs` lookup — reached from
+    /// `eval_bool_value` (which already resolved and Bool/arity-checked it)
+    /// and from `compiler::eval_model_bool_call`'s ground probe (also
+    /// arity-checked there). `Err` means "not a ground call on this env" —
+    /// the compiler caller falls through to dynamic encoding on it.
+    pub fn eval_model_bool_call<'v, I>(
         &self,
         sig: &FuncSig,
-        args: &[Value],
+        args: I,
         env: &impl EnvView,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, String>
+    where
+        I: IntoIterator<Item = &'v Value> + Clone,
+    {
         let model_ref = self.model(self.current_model(env)?)?;
-        let key_hash = self.model_call_key(model_ref, sig, args, env)?;
+        let key_hash = self.model_call_key(model_ref, sig, args.clone(), env)?;
         if let Some(&cached) = self.eval_bool_cache.borrow().get(&key_hash) {
             self.eval_hits.set(self.eval_hits.get() + 1);
             return Ok(cached);
