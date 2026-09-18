@@ -134,7 +134,7 @@ fn solve(loom_file: &mut LoomProg, args: &CLI, input: &str) -> Result<(), io::Er
                     // Expected portfolio behavior, not a failure.
                     log::info!("closure backend stopped: BV backend solved first");
                 } else {
-                    log::info!("closure backend failed; continuing with BV backend: {err}");
+                    log::info!("{err}; continuing with BV backend");
                 }
             }
             let _ = term_tx.send(BackendResult::Closure(result));
@@ -448,11 +448,19 @@ fn solver_stdout(child: Child, solver: &str) -> Result<String, io::Error> {
     let output = output?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let message = stderr.trim();
-        let detail = if message.is_empty() {
-            format!("{solver} exited with status {}", output.status)
-        } else {
-            format!("{solver} failed: {message}")
+        // A loom child interleaves INFO logs with its failure on stderr; the
+        // real message is the final "error: …" line printed by main(). Other
+        // solvers write plain diagnostics — fall back to the whole stderr.
+        let detail = match stderr.lines().rev().find_map(|l| l.strip_prefix("error: ")) {
+            Some(msg) => format!("{solver} failed: {msg}"),
+            None => {
+                let message = stderr.trim();
+                if message.is_empty() {
+                    format!("{solver} exited with status {}", output.status)
+                } else {
+                    format!("{solver} failed: {message}")
+                }
+            }
         };
         return Err(io::Error::other(detail));
     }
@@ -553,7 +561,16 @@ pub struct CLI {
 }
 
 /// Run the Loom CLI.
-fn main() -> Result<(), io::Error> {
+fn main() {
+    // `fn main() -> Result` Debug-prints failures as
+    // `Error: Custom { kind: Other, error: "…" }`; Display gives the message.
+    if let Err(err) = run() {
+        eprintln!("error: {err}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), io::Error> {
     let args = CLI::parse();
     env_logger::Builder::from_default_env()
         .format(|buf, record| {
