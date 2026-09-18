@@ -40,36 +40,6 @@ fn simple_sort_name(sort: &sygus_parser::Sort) -> std::borrow::Cow<'_, str> {
     }
 }
 
-struct ConstraintModelEnv {
-    current_model: String,
-}
-
-impl ConstraintModelEnv {
-    fn new(model: &str) -> Self {
-        Self {
-            current_model: model.to_string(),
-        }
-    }
-}
-
-impl EnvView for ConstraintModelEnv {
-    fn aspects(&self) -> &HashMap<String, AspectKey> {
-        static EMPTY: std::sync::LazyLock<HashMap<String, AspectKey>> =
-            std::sync::LazyLock::new(HashMap::default);
-        &EMPTY
-    }
-
-    fn values(&self) -> &HashMap<String, AspectValue> {
-        static EMPTY: std::sync::LazyLock<HashMap<String, AspectValue>> =
-            std::sync::LazyLock::new(HashMap::default);
-        &EMPTY
-    }
-
-    fn current_model(&self) -> Option<&str> {
-        Some(&self.current_model)
-    }
-}
-
 pub struct SemanticContext<'a> {
     pub models: HashMap<String, &'a Model>,
     /// The AST's `DeclareFunc` signatures, borrowed — same keys and
@@ -555,63 +525,6 @@ impl<'a> SemanticContext<'a> {
             .first()
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("value expression operator must be a symbol: {expr}"))?;
-        // `(get-fun FUNC MODEL)` reads FUNC^MODEL — the interpretation of a
-        // signature function in an EXPLICITLY named structure. The model is
-        // explicit (not from `current_model`), which is what lets constraints
-        // and term-synthesis checks resolve example data without an ambient
-        // aspect. 0-ary form returns the element directly. First-byte guard:
-        // legacy String-benchmark-only form, but every list-form eval pays
-        // the compare (7-char ops memcmp before failing).
-        if op.as_bytes().first() == Some(&b'g') && op == "get-fun" {
-            if items.len() < 3 {
-                return Err(format!(
-                    "get-fun expects at least a function and a model: {expr}"
-                ));
-            }
-            let func_item = &items[1];
-            let model_item = &items[2];
-            let func = func_item
-                .as_symbol()
-                .ok_or_else(|| format!("get-fun function must be a symbol: {func_item}"))?;
-            let model = model_item
-                .as_symbol()
-                .ok_or_else(|| format!("get-fun model must be a symbol: {model_item}"))?;
-            let sig = self
-                .func_sigs
-                .get(func)
-                .ok_or_else(|| format!("get-fun: unknown function {func}"))?;
-            let model_ref = self
-                .models
-                .get(model)
-                .ok_or_else(|| format!("get-fun: unknown model {model}"))?;
-            let extra_args = &items[3..];
-            if extra_args.len() != sig.arg_sorts.len() {
-                return Err(format!(
-                    "get-fun: {func} takes {} arguments, got {}",
-                    sig.arg_sorts.len(),
-                    extra_args.len()
-                ));
-            }
-            // Build a temporary env seeded with this model for arg evaluation.
-            let model_env = ConstraintModelEnv::new(model);
-            let arg_strs: Vec<String> = extra_args
-                .iter()
-                .zip(sig.arg_sorts.iter())
-                .map(|(arg, sort)| {
-                    let val = self.eval_value_for_sort(arg, &sort.to_string(), &model_env)?;
-                    Ok(val.display())
-                })
-                .collect::<Result<_, String>>()?;
-            let value = self
-                .eval_model_symbols(model_ref, func, &arg_strs)
-                .ok_or_else(|| {
-                    format!(
-                        "model {model} has no value for {func}({})",
-                        arg_strs.join(", ")
-                    )
-                })?;
-            return interped_aspect_value(&simple_sort_name(&sig.ret_sort), &value);
-        }
         if items.len() == 2 {
             if let Some(aspect_arg) = items[1].as_symbol() {
                 if let Some(aspect) = env.aspects().get(aspect_arg) {

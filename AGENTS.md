@@ -57,6 +57,16 @@ Changes:
 - FO benchmark `.sl` files: Migrated `(univ (Sort))` → bare `Sort`.
 - Python generator scripts (`fol2sl.py`, `gen_eqstyle.py`, `gen_eqstyle_v1.py`): Updated to emit bare sort names.
 
+### `(get-fun F M args)` syntax eliminated — COMPLETE
+
+The explicit-model accessor was redundant with `(with-model M (F args))` —
+every String benchmark already wrapped its get-funs in the matching
+`with-model`. All 149,410 occurrences across `benchmark/String/*.sl` were
+mechanically rewritten to bare model calls (script validated each rewrite
+against the enclosing `with-model`), and the `get-fun` branch plus its
+`ConstraintModelEnv` were deleted from `eval_ctx.rs`. Verified byte-identical
+`--dump-sygus` output on String samples (0001-0004, 0030, 0036, 0171).
+
 ### Vendored sygus-parser — supports zero-argument applications
 
 The `sygus-parser` crate is vendored at `sygus-parser/` and patched via `[patch.crates-io]` in `Cargo.toml`.
