@@ -106,6 +106,17 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   2.68s -> 3.11s — because the shared table grows to ~10M entries and every
   probe becomes a DRAM random access, while per-call tables stay
   cache-resident. Do not retry without fixing locality first.
+- `bisim.rs`: parallel refinement was built and measured SLOWER — do not
+  retry as-is. Batched (Jacobi) snapshot rounds tripled total work
+  (63 iters / 38.2M evals vs 22 / 12.7M; the within-round Gauss-Seidel
+  propagation is worth 3×), and signature evaluation does not scale with
+  threads: at 10 workers each signed 1/10 of a round's pairs in the SAME
+  wall time a single worker signs all of them (2 threads: 1.11×, 4: 1.34×,
+  8: 1.06×, 10: 0.94× total). Each worker's private working set (per-call
+  walk cache, eval caches, env maps) duplicates what fits in shared L3
+  when single-threaded, so N workers thrash it N×. Output was verified
+  byte-identical at every thread count — the fixpoint argument holds;
+  only the performance died.
 - `compiler.rs`: `guarded_projection_bits` returns `Option` and doubles as the
   constant-guard probe — a memo hit must NOT re-enumerate the domain
   (`const_guard_values` was ~69% of the encode phase).
