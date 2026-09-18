@@ -926,6 +926,11 @@ impl<'a, 'p> Refiner<'a, 'p> {
     }
 
     fn try_emit_value<H: Hasher>(&self, out: &mut H, expr: &Value, env: &WalkEnv) -> bool {
+        if let Some(v) = self.ctx.eval_value_ref(expr, env) {
+            out.write_u8(b'V');
+            self.emit_value(out, v);
+            return true;
+        }
         if let Ok(v) = self.ctx.eval_value(expr, env) {
             out.write_u8(b'V');
             self.emit_value(out, &v);

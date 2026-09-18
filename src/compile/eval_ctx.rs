@@ -480,6 +480,38 @@ impl<'a> SemanticContext<'a> {
         })
     }
 
+    /// Borrowed fast path for `eval_value`: when the value lives directly in
+    /// `env` (bare bound symbol, or `(field asp)` aspect field), return it by
+    /// reference — no clone, no drop. `None` means "not env-resident"; callers
+    /// fall back to `eval_value`, so semantics are exactly preserved (these
+    /// are the same two branches, checked in the same precedence order).
+    /// `op == "model"` yields an owned `Model(String)` clone in `eval_value`,
+    /// so it is excluded here. RefCell caches are excluded too: handing out
+    /// refs into them across recursive evals risks borrow panics.
+    pub fn eval_value_ref<'e>(
+        &self,
+        expr: &Value,
+        env: &'e impl EnvView,
+    ) -> Option<&'e AspectValue> {
+        if let Some(symbol) = expr.as_symbol() {
+            return env.values().get(symbol);
+        }
+        let items = expr.as_slice()?;
+        if items.len() != 2 {
+            return None;
+        }
+        let op = items.first()?.as_symbol()?;
+        if op == "model" {
+            return None;
+        }
+        let aspect = env.aspects().get(items[1].as_symbol()?)?;
+        aspect
+            .fields
+            .iter()
+            .find(|(name, _)| name == op)
+            .map(|(_, v)| v)
+    }
+
     pub fn eval_value(&self, expr: &Value, env: &impl EnvView) -> Result<AspectValue, String> {
         if let Some(value) = expr.as_i64() {
             return self.nonnegative_int_value(value as isize);
@@ -601,6 +633,15 @@ impl<'a> SemanticContext<'a> {
                 }
             }
             Some(b'=') if op == "=" && items.len() == 3 => {
+                // Borrowed first: both sides of a guard `(= k pos)` are
+                // typically env-resident, so the common case skips two
+                // clone+drop pairs. Mixed/None falls back to the owned path.
+                if let (Some(lhs), Some(rhs)) = (
+                    self.eval_value_ref(&items[1], env),
+                    self.eval_value_ref(&items[2], env),
+                ) {
+                    return self.values_equal(lhs, rhs, env);
+                }
                 if let (Ok(lhs), Ok(rhs)) = (
                     self.eval_value(&items[1], env),
                     self.eval_value(&items[2], env),
@@ -897,7 +938,16 @@ impl<'a> SemanticContext<'a> {
         model: Option<&Model>,
         f: impl FnOnce(&AspectValue) -> R,
     ) -> Result<R, String> {
-        let value = self.eval_value(expr, env)?;
+        // Borrowed when env-resident: saves the clone+drop per arg on the
+        // 12.7M-call model_call_key path (hash never needs an owned value).
+        let owned;
+        let value = match self.eval_value_ref(expr, env) {
+            Some(v) => v,
+            None => {
+                owned = self.eval_value(expr, env)?;
+                &owned
+            }
+        };
         if sort != "Int" {
             if let Some((univ, i)) = self.univ_index_of(&value, sort, env, model)? {
                 return Ok(f(&univ[i]));

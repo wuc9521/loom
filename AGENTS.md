@@ -144,6 +144,14 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   hit it, not rebuild via `univ_for_sort` (owned `Vec<String>` clone = N+1
   allocs per call; the cache cut 0002 bisim 2.18s -> 1.77s). Universes are
   static for the run — same invariant as `lang/eval.rs`'s `UNIV_CACHE`.
+- `eval_ctx.rs`: `eval_value_ref` is the borrowed fast path for env-resident
+  values (bare bound symbol, `(field asp)` field) — same branches, same
+  precedence as `eval_value`, `None` = fall back to owned. The `=` arm of
+  `eval_bool_value`, `with_value_for_sort` (so `model_call_key`'s per-arg
+  hashing on the 12.7M-call path), and bisim's `try_emit_value` are
+  ref-first; do not restore owned `eval_value` clones there. RefCell-backed
+  caches can never join this pattern (refs across recursive evals risk
+  borrow panics); `(model asp)` is excluded (owned String clone).
 - `eval_ctx.rs`: `eval_model_bool_call` / `eval_model_value_call` take the
   caller-resolved `&FuncSig` — do not re-fetch `func_sigs` inside (two
   string hash+memcmp per eval call). `sig.name` bytes == the map key, so
