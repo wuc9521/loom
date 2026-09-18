@@ -33,7 +33,7 @@ pub trait EnvView {
 
 /// Borrowed-name view of a `Sort`: avoids a Display allocation for the common
 /// `Sort::Simple` case on hot eval paths.
-fn simple_sort_name(sort: &sygus_parser::Sort) -> std::borrow::Cow<'_, str> {
+pub(crate) fn simple_sort_name(sort: &sygus_parser::Sort) -> std::borrow::Cow<'_, str> {
     match sort.as_simple_name() {
         Some(name) => std::borrow::Cow::Borrowed(name),
         None => std::borrow::Cow::Owned(sort.to_string()),

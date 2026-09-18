@@ -4,7 +4,7 @@ use crate::{
     compile::{
         bexpr::{arg_name, self_bit_name, BoolExpr},
         context::CompileContext,
-        eval_ctx::{EnvView, SemanticContext},
+        eval_ctx::{simple_sort_name, EnvView, SemanticContext},
         expr::sygus_term_to_value,
         semantics::{interped_bool, interped_value_matches, Case},
         syntax::{TermConstructor, TermSignature},
@@ -81,15 +81,16 @@ struct Compiler<'a> {
     recurrence: RecurrenceAnalysis,
     synth_name: String,
     synth_args: Vec<sygus_parser::SortedVar>,
-    bit_index: HashMap<(String, AspectKey, Option<AspectValue>), usize>,
+    /// Bit positions keyed by `BitKey::fingerprint`.
+    bit_index: HashMap<u64, usize>,
     bool_eval_cache: RefCell<HashMap<BoolMemoKey, BoolExpr>>,
-    finite_eq_cache: RefCell<HashMap<FiniteEqMemoKey, BoolExpr>>,
+    finite_eq_cache: RefCell<HashMap<ExprEnvMemoKey, BoolExpr>>,
     quantifier_values_cache: RefCell<HashMap<QuantifierValuesMemoKey, Vec<AspectValue>>>,
     guarded_projection_cache: RefCell<HashMap<GuardedProjectionMemoKey, Vec<usize>>>,
     value_eval_cache: RefCell<HashMap<ExprEnvMemoKey, AspectValue>>,
     int_eval_cache: RefCell<HashMap<ExprEnvMemoKey, isize>>,
-    aspect_eval_cache: RefCell<HashMap<AspectMemoKey, AspectKey>>,
-    value_for_sort_cache: RefCell<HashMap<ValueForSortMemoKey, AspectValue>>,
+    aspect_eval_cache: RefCell<HashMap<ExprEnvMemoKey, AspectKey>>,
+    value_for_sort_cache: RefCell<HashMap<ExprEnvMemoKey, AspectValue>>,
     expr_symbol_cache: RefCell<HashMap<usize, Vec<String>>>,
     num_table_cache: RefCell<HashMap<(String, String), Option<NumTable>>>,
     optimize: bool,
@@ -106,25 +107,52 @@ struct ConstructorStats {
 /// CTL instance, and the old structural key cloned a Vec<String> + AspectKey
 /// per probe. Collisions silently reuse a memo entry — the same u64-FxHash
 /// contract the eval_ctx caches already use.
-type EnvMemoKey = u64;
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct EnvId(u64);
+
+impl EnvId {
+    /// Fold one extra discriminator (relation name, sort name, target value)
+    /// into the fingerprint so cache probes allocate no key field. Each cache
+    /// folds exactly one kind of content, so distinct types can never
+    /// cross-contaminate a map.
+    fn mixing(self, extra: impl Hash) -> Self {
+        let mut h = FxHasher::default();
+        self.0.hash(&mut h);
+        extra.hash(&mut h);
+        Self(h.finish())
+    }
+}
+
+/// Borrowed `(relation, aspect, value)` bit key. One type feeds both the
+/// `bit_index` build and every probe through the same derived `Hash` stream,
+/// so the two sides cannot drift. The u64 fingerprint carries the `EnvId`
+/// collision contract (~6e-12 at 15K bits); the collision-free endgame is
+/// interning, where these components become u32 ids.
+#[derive(Hash)]
+struct BitKey<'a> {
+    relation: &'a str,
+    aspect: &'a AspectKey,
+    value: Option<&'a AspectValue>,
+}
+
+impl BitKey<'_> {
+    fn fingerprint(&self) -> u64 {
+        let mut h = FxHasher::default();
+        self.hash(&mut h);
+        h.finish()
+    }
+}
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct BoolMemoKey {
     expr_ptr: usize,
-    env: EnvMemoKey,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct FiniteEqMemoKey {
-    expr_ptr: usize,
-    target: AspectValue,
-    env: EnvMemoKey,
+    env: EnvId,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct QuantifierValuesMemoKey {
     expr_ptr: usize,
-    env: EnvMemoKey,
+    env: EnvId,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -138,30 +166,16 @@ struct GuardedProjectionMemoKey {
     /// evaluation, each of which may read different aspect fields (notably
     /// `aspect_expr` reads `depth` while CTL guards do not). Keying by the
     /// guard's view alone over-shares across depth levels.
-    env: EnvMemoKey,
-    domain_env: EnvMemoKey,
-    aspect_env: EnvMemoKey,
+    env: EnvId,
+    domain_env: EnvId,
+    aspect_env: EnvId,
 }
 
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct ExprEnvMemoKey {
     expr_ptr: usize,
-    env: EnvMemoKey,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct AspectMemoKey {
-    relation: String,
-    expr_ptr: usize,
-    env: EnvMemoKey,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct ValueForSortMemoKey {
-    sort: String,
-    expr_ptr: usize,
-    env: EnvMemoKey,
+    env: EnvId,
 }
 
 impl<'a> CompileContext<'a> {
@@ -235,11 +249,12 @@ impl<'a> Compiler<'a> {
             let offset = offsets.entry(domain.term_sort.clone()).or_insert(0);
             for bit in &domain.bits {
                 bit_index.insert(
-                    (
-                        domain.relation.clone(),
-                        bit.aspect.clone(),
-                        bit.value.clone(),
-                    ),
+                    BitKey {
+                        relation: &domain.relation,
+                        aspect: &bit.aspect,
+                        value: bit.value.as_ref(),
+                    }
+                    .fingerprint(),
                     *offset + bit.bit,
                 );
             }
@@ -1514,10 +1529,10 @@ impl<'a> Compiler<'a> {
         target: &AspectValue,
         env: &Env,
     ) -> Result<BoolExpr, String> {
-        let memo_key = FiniteEqMemoKey {
+        let memo_key = ExprEnvMemoKey {
             expr_ptr: expr as *const Value as usize,
-            target: target.clone(),
-            env: self.memo_env_key(expr, env),
+            // target folded into the fingerprint: no clone per probe.
+            env: self.memo_env_key(expr, env).mixing(target),
         };
         if let Some(cached) = self.finite_eq_cache.borrow().get(&memo_key) {
             return Ok(cached.clone());
@@ -1604,21 +1619,26 @@ impl<'a> Compiler<'a> {
         Err(format!("unsupported finite expression: {expr}"))
     }
 
-    fn memo_env_key(&self, expr: &Value, env: &Env) -> EnvMemoKey {
+    fn memo_env_key(&self, expr: &Value, env: &Env) -> EnvId {
         let referenced = self.expr_symbols(expr);
         let mut h = FxHasher::default();
         let mut captured_aspect = false;
         for name in referenced.iter() {
+            // The symbol-cache entry outlives the Compiler, so the name's data
+            // pointer is a per-name constant here and distinct names have
+            // distinct addresses — keys discriminate exactly as the byte hash
+            // did, without re-walking the string 10M+ times.
+            let name_id = name.as_ptr() as usize;
             if let Some(aspect) = env.aspect.get(name) {
                 captured_aspect = true;
                 // Whole aspect, every field: bodies pass the binder wholesale
                 // to Sem/Asp constructors (`(CTL.Sem phi asp)`), which resolve
                 // it to a bit via fields no projection ever names syntactically.
-                name.hash(&mut h);
+                name_id.hash(&mut h);
                 aspect.hash(&mut h);
             }
             if let Some(value) = env.values.get(name) {
-                name.hash(&mut h);
+                name_id.hash(&mut h);
                 value.hash(&mut h);
             }
         }
@@ -1631,7 +1651,7 @@ impl<'a> Compiler<'a> {
             env.aspect.values().next().map(|a| a.model.hash(&mut h));
         }
         env.current_model.hash(&mut h);
-        h.finish()
+        EnvId(h.finish())
     }
 
     fn expr_symbols(&self, expr: &Value) -> Ref<'_, Vec<String>> {
@@ -1763,7 +1783,7 @@ impl<'a> Compiler<'a> {
         value: Option<&AspectValue>,
     ) -> Result<usize, String> {
         self.bit_index
-            .get(&(relation.to_string(), aspect.clone(), value.cloned()))
+            .get(&BitKey { relation, aspect, value }.fingerprint())
             .copied()
             .ok_or_else(|| {
                 format!(
@@ -1787,7 +1807,8 @@ impl<'a> Compiler<'a> {
         args.iter()
             .zip(sig.arg_sorts.iter())
             .map(|arg| {
-                self.cached_eval_value_for_sort(arg.0, &arg.1.to_string(), env)
+                let sort = simple_sort_name(arg.1);
+                self.cached_eval_value_for_sort(arg.0, &sort, env)
                     .ok()
                     .map(|value| value.display())
             })
@@ -1828,10 +1849,10 @@ impl<'a> Compiler<'a> {
         relation: &str,
         env: &Env,
     ) -> Result<AspectKey, String> {
-        let key = AspectMemoKey {
-            relation: relation.to_string(),
+        let key = ExprEnvMemoKey {
             expr_ptr: expr as *const Value as usize,
-            env: self.memo_env_key(expr, env),
+            // relation folded into the fingerprint: no String alloc per probe.
+            env: self.memo_env_key(expr, env).mixing(relation),
         };
         if let Some(cached) = self.aspect_eval_cache.borrow().get(&key) {
             return Ok(cached.clone());
@@ -1849,10 +1870,10 @@ impl<'a> Compiler<'a> {
         sort: &str,
         env: &Env,
     ) -> Result<AspectValue, String> {
-        let key = ValueForSortMemoKey {
-            sort: sort.to_string(),
+        let key = ExprEnvMemoKey {
             expr_ptr: expr as *const Value as usize,
-            env: self.memo_env_key(expr, env),
+            // sort folded into the fingerprint: no String alloc per probe.
+            env: self.memo_env_key(expr, env).mixing(sort),
         };
         if let Some(cached) = self.value_for_sort_cache.borrow().get(&key) {
             return Ok(cached.clone());

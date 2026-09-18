@@ -124,8 +124,12 @@ bisim phase was 98.5% of worst-case runtime). Rules:
   caller-resolved `&FuncSig` — do not re-fetch `func_sigs` inside (two
   string hash+memcmp per eval call). `sig.name` bytes == the map key, so
   key hashes are unchanged.
-- `compiler.rs`: `EnvMemoKey` is a u64 FxHash fingerprint (built by
-  `memo_env_key`), not structure. Two soundness rules, both violations of
+- `compiler.rs`: `EnvId` is a u64 FxHash fingerprint (built by
+  `memo_env_key`), not structure. Extra discriminators (relation, sort,
+  finite-eq target) fold into the same u64 via `EnvId::mixing`, `bit_index`
+  is keyed by the `BitKey::fingerprint` u64 of (relation, aspect, value),
+  and `memo_env_key` hashes symbol names by cache-entry pointer, not bytes —
+  no probe allocates a key field. Two soundness rules, both violations of
   which were caught only by byte-diffing output:
   1. Hash the FULL `AspectKey` of a referenced binder — never restrict to
      syntactically-referenced field names. Bodies pass `asp` wholesale to
