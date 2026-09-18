@@ -791,14 +791,16 @@ impl<'a> SemanticContext<'a> {
                 Ok(total)
             }
             "size" if items.len() == 2 => {
-                let Some([sort_expr, model_expr]) = items[1].as_slice() else {
-                    return Err(format!("size expects (Sort model), got {}", items[1]));
-                };
-                let sort = sort_expr
+                // Bare sort, resolved via the current model — same shape as a
+                // bare-sort quantifier range (`parse_univ_expr`). The old
+                // `(Sort model)` list form was the last remnant of the
+                // eliminated `(univ ...)` syntax: every use passed the
+                // synthetic `model` binding, i.e. exactly `current_model(env)`.
+                let sort = items[1]
                     .as_symbol()
-                    .ok_or_else(|| format!("size sort must be a symbol: {sort_expr}"))?;
-                let model = self.eval_model_name(model_expr, env)?;
-                let model_ref = self.model(&model)?;
+                    .ok_or_else(|| format!("size expects a sort symbol, got {}", items[1]))?;
+                let model = self.current_model(env)?;
+                let model_ref = self.model(model)?;
                 let values = model_ref
                     .univ_for_sort_arc(sort)
                     .ok_or_else(|| format!("model {model} has no universe for sort {sort}"))?;

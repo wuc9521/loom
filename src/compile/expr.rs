@@ -188,47 +188,6 @@ fn raw_value_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<AspectV
     Err(format!("expected finite value expression, got {expr}"))
 }
 
-fn model_name_expr(expr: &Value, env: &[(String, AspectValue)]) -> Result<String, String> {
-    match raw_value_expr(expr, env)? {
-        AspectValue::Model(model) => Ok(model),
-        AspectValue::Symbol(symbol)
-            if env.iter().any(|(_, value)| {
-                matches!(value, AspectValue::Model(model_name) if model_name == &symbol)
-            }) =>
-        {
-            Ok(symbol)
-        }
-        other => Err(format!("expected Model expression, got {other:?}")),
-    }
-}
-
-fn sorted_model_univ_expr(
-    expr: &Value,
-    env: &[(String, AspectValue)],
-    models: &HashMap<String, &Model>,
-) -> Result<(String, String, Vec<String>), String> {
-    let items = expr
-        .to_ref_vec()
-        .ok_or_else(|| format!("expected sorted model univ expression (Sort model), got {expr}"))?;
-    let [sort_expr, model_expr] = items.as_slice() else {
-        return Err(format!(
-            "sorted model univ expression must have shape (Sort model), got {expr}"
-        ));
-    };
-    let sort = sort_expr
-        .as_symbol()
-        .ok_or_else(|| format!("univ sort must be a symbol: {sort_expr}"))?
-        .to_string();
-    let model_name = model_name_expr(model_expr, env)?;
-    let model = models
-        .get(&model_name)
-        .ok_or_else(|| format!("unknown model {model_name}"))?;
-    let univ = model
-        .univ_for_sort(&sort)
-        .ok_or_else(|| format!("model {model_name} has no universe for sort {sort}"))?;
-    Ok((sort, model_name, univ))
-}
-
 fn enum_value_expr(
     expr: &Value,
     env: &[(String, AspectValue)],
@@ -305,7 +264,21 @@ fn eval_int(
                 .try_fold(init, |acc, expr| Ok(acc - eval_int(expr, env, models)?))
         }
         "size" if list.len() == 2 => {
-            let (_sort, _model_name, univ) = sorted_model_univ_expr(list[1], env, models)?;
+            // Bare sort; the model comes from the env's synthetic `model`
+            // binding — same contract as eval_ctx's size branch. The old
+            // `(Sort model)` list form died with the String migration.
+            let sort = list[1]
+                .as_symbol()
+                .ok_or_else(|| format!("size expects a sort symbol, got {}", list[1]))?;
+            let Some(AspectValue::Model(model_name)) = lookup(env, "model") else {
+                return Err(format!("size has no current model binding in {expr}"));
+            };
+            let model = models
+                .get(model_name)
+                .ok_or_else(|| format!("unknown model {model_name}"))?;
+            let univ = model
+                .univ_for_sort(sort)
+                .ok_or_else(|| format!("model {model_name} has no universe for sort {sort}"))?;
             Ok(univ.len() as isize)
         }
         _ => Err(format!("unsupported integer operator {op} in {expr}")),

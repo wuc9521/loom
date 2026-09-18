@@ -556,8 +556,8 @@ fn parse_aspect_term(
 
     let mut assignment = Vec::new();
     // Make the current model available under the generic name `model` before
-    // evaluating field values, so expressions like `(size (Pos model))` work
-    // for aspect records without a `(model Model)` field.
+    // evaluating field values, so expressions like `(size Pos)` resolve via
+    // the synthetic binding for aspect records without a `(model Model)` field.
     assignment.push(("model".to_string(), AspectValue::Model(model_name.clone())));
     for (field, arg) in aspect_space.fields.iter().zip(args.iter()) {
         let value = match &field.domain {

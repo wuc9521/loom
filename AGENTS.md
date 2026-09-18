@@ -67,6 +67,28 @@ against the enclosing `with-model`), and the `get-fun` branch plus its
 `ConstraintModelEnv` were deleted from `eval_ctx.rs`. Verified byte-identical
 `--dump-sygus` output on String samples (0001-0004, 0030, 0036, 0171).
 
+### `(size (Sort model))` eliminated — bare sorts only — COMPLETE
+
+`(size Sort)` takes a bare sort symbol and resolves it through the current
+model — the same contract as bare-sort quantifier ranges (`parse_univ_expr`).
+The two-item list form was the last remnant of the eliminated `(univ ...)`
+syntax: all 209 uses across `benchmark/String/*.sl` passed the synthetic
+`model` binding, i.e. exactly the current model.
+
+- Both size evaluators are bare-only: `eval_ctx.rs` `eval_int_expr` (EnvView
+  envs; `current_model(env)`) and `expr.rs` `eval_int` (Vec-assignment envs;
+  reads the synthetic `("model", Model(..))` binding both `aspects.rs` call
+  sites push). Helpers `sorted_model_univ_expr` / `model_name_expr` deleted.
+- Constraint-level `(size Sort)` needs a `(with-model M ...)` wrapper: a
+  record's own `(m Model)` field is NOT visible to `current_model` on the
+  eval_ctx path — `eval_explicit_aspect_field` threads its `model` param into
+  model calls only, not into the env. (The expr.rs path does see it: the
+  synthetic binding is pushed from the field-derived model name.)
+- tests.rs: size syntax migrated in all tests;
+  `parses_direct_semantic_constraints` deleted — verbatim-identical parse
+  body to `enumerates_subword_aspects_and_constraint_polarities`, asserts a
+  strict subset.
+
 ### Vendored sygus-parser — supports zero-argument applications
 
 The `sygus-parser` crate is vendored at `sygus-parser/` and patched via `[patch.crates-io]` in `Cargo.toml`.

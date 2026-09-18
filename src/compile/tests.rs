@@ -147,13 +147,13 @@ fn enumerates_subword_aspects_and_constraint_polarities() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (RegLan.Asp w1 0 (size (Pos w1)))))
-(constraint (not (Regex.Sem r (RegLan.Asp w5 0 (size (Pos w5))))))
+(constraint (with-model w1 (Regex.Sem r (RegLan.Asp w1 0 (size Pos)))))
+(constraint (not (with-model w5 (Regex.Sem r (RegLan.Asp w5 0 (size Pos))))))
 (check-synth)
 "#,
     );
@@ -187,12 +187,12 @@ fn aspect_fields_are_not_named_primitives() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-aspects Span
   (record (m Model) (left Int) (right Int))
-  :where (and (<= 0 left) (<= left right) (<= right (size (Pos m)))))
+  :where (and (<= 0 left) (<= left right) (<= right (size Pos))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp Span)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (Span w 0 (size (Pos w)))))
+(constraint (with-model w (Regex.Sem r (Span w 0 (size Pos)))))
 (check-synth)
 "#,
     );
@@ -233,13 +233,13 @@ fn model_less_aspects_use_with_model_context() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-aspects RegLan.Asp
   (record (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r ((a) true))))
 (synth-fun r () Regex)
-(constraint (with-model w1 (Regex.Sem r (RegLan.Asp 0 (size (Pos model))))))
-(constraint (not (with-model w5 (Regex.Sem r (RegLan.Asp 0 (size (Pos model)))))))
+(constraint (with-model w1 (Regex.Sem r (RegLan.Asp 0 (size Pos)))))
+(constraint (not (with-model w5 (Regex.Sem r (RegLan.Asp 0 (size Pos))))))
 (check-synth)
 "#,
     );
@@ -288,47 +288,6 @@ fn enum_aspect_symbols_compare_as_finite_values() {
 }
 
 #[test]
-fn parses_direct_semantic_constraints() {
-    let problem = parse(
-        r#"
-
-(declare-sort Pos 0)
-(declare-fun a (Pos) Bool)
-(define-model w1
-  (interp-sort Pos ($0 $1))
-  (interp-fun a (match (((_) true)))))
-(define-model w5
-  (interp-sort Pos ($0 $1 $2))
-  (interp-fun a (match (((_) true)))))
-(declare-term-types ((Regex 0)) (((a))))
-(define-aspects RegLan.Asp
-  (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
-(define-semantics
-  ((Regex.Sem (r Regex) (asp RegLan.Asp)))
-  ((match r ((a) true))))
-(synth-fun r () Regex)
-(constraint (Regex.Sem r (RegLan.Asp w1 0 (size (Pos w1)))))
-(constraint (not (Regex.Sem r (RegLan.Asp w5 0 (size (Pos w5))))))
-(check-synth)
-"#,
-    );
-
-    let summary = problem.encode().expect("compilation should summarize");
-
-    assert_eq!(summary.bit_mappings.len(), 16);
-    assert_eq!(summary.constraint_bits.len(), 2);
-    assert_eq!(summary.constraint_bits[0].relation, "Regex.Sem");
-    assert_eq!(summary.constraint_bits[0].model, "w1");
-    assert!(summary.constraint_bits[0].expected);
-    assert_eq!(summary.constraint_bits[0].bit, 2);
-    assert_eq!(summary.constraint_bits[1].relation, "Regex.Sem");
-    assert_eq!(summary.constraint_bits[1].model, "w5");
-    assert!(!summary.constraint_bits[1].expected);
-    assert_eq!(summary.constraint_bits[1].bit, 9);
-}
-
-#[test]
 fn semantic_predicates_use_aspect_projection() {
     let problem = parse(
         r#"
@@ -347,7 +306,7 @@ fn semantic_predicates_use_aspect_projection() {
 (declare-term-types ((Regex 0)) (((a) (b) (re.++ Regex Regex))))
 (define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r
@@ -358,8 +317,8 @@ fn semantic_predicates_use_aspect_projection() {
     (and (Regex.Sem x (RegLan.Asp (model asp) (i asp) k))
          (Regex.Sem y (RegLan.Asp (model asp) k (j asp)))))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (RegLan.Asp w1 0 (size (Pos w1)))))
-(constraint (not (Regex.Sem r (RegLan.Asp w5 0 (size (Pos w5))))))
+(constraint (with-model w1 (Regex.Sem r (RegLan.Asp w1 0 (size Pos)))))
+(constraint (not (with-model w5 (Regex.Sem r (RegLan.Asp w5 0 (size Pos))))))
 (check-synth)
 "#,
     );
@@ -427,12 +386,12 @@ fn detects_two_way_navigation() {
 (declare-term-types ((Root 0)) (((cfg.top.S Root Root))))
 (define-aspects CfgAsp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((Cfg.Sem (r Root) (asp CfgAsp)))
   ((match r ((cfg.top.S x y) (Cfg.Sem (parent r) asp)))))
 (synth-fun r () Root)
-(constraint (Cfg.Sem r (CfgAsp w1 0 (size (Pos w1)))))
+(constraint (with-model w1 (Cfg.Sem r (CfgAsp w1 0 (size Pos)))))
 (check-synth)
 "#,
     );
@@ -462,7 +421,7 @@ fn parent_bearing_negatives_require_manual_dual() {
 (declare-term-types ((Root 0)) (((leaf) (cfg.top.S Root Root))))
 (define-aspects CfgAsp
   (record (i Int))
-  :where (and (<= 0 i) (<= i (size (Pos model)))))
+  :where (and (<= 0 i) (<= i (size Pos))))
 (define-semantics
   ((Cfg.Sem (r Root) (asp CfgAsp)))
   ((match r
@@ -494,7 +453,7 @@ fn parent_navigation_to_sygus_uses_parent_encoding() {
 (declare-term-types ((Root 0)) (((leaf) (cfg.top.S Root Root))))
 (define-aspects CfgAsp
   (record (model Model) (i Int))
-  :where (and (<= 0 i) (<= i (size (Pos model)))))
+  :where (and (<= 0 i) (<= i (size Pos))))
 (define-semantics
   ((Cfg.Sem (r Root) (asp CfgAsp)))
   ((match r
@@ -902,7 +861,7 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
     (i Int)
     (j Int)
     (mode (enum base reset.S find.S reset.T find.T)))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((CFG.Sem (n CFG) (asp CFG.Asp)))
   ((match n
@@ -940,7 +899,7 @@ fn typed_cfg_semantics_with_parent_navigation_compile_to_chc() {
              (Rules.Sem y (CFG.Asp (model asp) (i asp) (j asp) find.T)))))
      ((end) false))))
 (synth-fun g () CFG)
-(constraint (CFG.Sem g (CFG.Asp w1 0 (size (Pos w1)) reset.S)))
+(constraint (with-model w1 (CFG.Sem g (CFG.Asp w1 0 (size Pos) reset.S))))
 (check-synth)
 "#,
     );
@@ -967,13 +926,13 @@ fn rejects_wrong_aspect_constructor_in_semantic_body() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r
      ((a) (Regex.Sem r (WrongAsp (model asp) (i asp) (j asp)))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (RegLan.Asp w 0 (size (Pos w)))))
+(constraint (with-model w (Regex.Sem r (RegLan.Asp w 0 (size Pos)))))
 (check-synth)
 "#,
     );
@@ -998,13 +957,13 @@ fn rejects_wrong_aspect_arity_in_semantic_body() {
 (declare-term-types ((Regex 0)) (((a))))
 (define-aspects RegLan.Asp
   (record (model Model) (i Int) (j Int))
-  :where (and (<= 0 i) (<= i j) (<= j (size (Pos model)))))
+  :where (and (<= 0 i) (<= i j) (<= j (size Pos))))
 (define-semantics
   ((Regex.Sem (r Regex) (asp RegLan.Asp)))
   ((match r
      ((a) (Regex.Sem r (RegLan.Asp (model asp) (i asp)))))))
 (synth-fun r () Regex)
-(constraint (Regex.Sem r (RegLan.Asp w 0 (size (Pos w)))))
+(constraint (with-model w (Regex.Sem r (RegLan.Asp w 0 (size Pos)))))
 (check-synth)
 "#,
     );
