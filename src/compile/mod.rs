@@ -1,8 +1,9 @@
 use crate::backends::smt2::ast::HornProg;
+use crate::fxmap::HashMap;
 use crate::parser::LoomProg;
 use std::cell::RefCell;
 use std::time::Instant;
-use sygus_parser::SyGuSCmd;
+use sygus_parser::{Identifier, Sort, SyGuSCmd, SyGuSTerm};
 
 mod aspects;
 mod bexpr;
@@ -141,34 +142,34 @@ impl LoomProg {
             log::debug!("state quotient: {before} -> {after} states");
         }
         let (sygus, sort) = parent::parent_sygus(&horn, &synth_name, parent::QueryKind::Refuter);
-        let sygus = self.with_axiom_assumes(sygus);
+        let sygus = self.with_axiom_assumes(sygus)?;
         Ok((sygus, sort, synth_name))
     }
 
-    fn with_axiom_assumes(&self, sygus: String) -> String {
-        // Carry the program's `declare-axiom` operator laws to the solver as
-        // `(assume ...)` commands: the synthesis backend uses them to recognize
-        // semantically-equivalent candidates and dedup the search.
-        let assumes: String = self
-            .axioms()
-            .iter()
-            .map(|a| format!("(assume {a})\n"))
-            .collect();
-        if assumes.is_empty() {
-            sygus
-        } else {
-            sygus.replace("(check-synth)\n", &format!("{assumes}(check-synth)\n"))
+    /// String twin of `axiom_assume_cmds` for the parent-refuter dump: same
+    /// declare-var + renamed-assume block, spliced before `(check-synth)`.
+    fn with_axiom_assumes(&self, sygus: String) -> Result<String, String> {
+        let axioms = self.axioms();
+        if axioms.is_empty() {
+            return Ok(sygus);
         }
+        // ponytail: reparse for signatures; main.rs parses the same string again.
+        let file = sygus_parser::SyGuSFile::from_str(&sygus)
+            .map_err(|e| format!("reparse of generated parent dump failed: {e}"))?;
+        let sigs = axiom_sigs(&file.cmds);
+        let (declared, assumes) = axiom_decls_and_assumes(axioms, &sigs)?;
+        let mut block = String::new();
+        for (name, sort) in &declared {
+            block.push_str(&format!("(declare-var {name} {sort})\n"));
+        }
+        for term in &assumes {
+            block.push_str(&format!("(assume {term})\n"));
+        }
+        Ok(sygus.replace("(check-synth)\n", &format!("{block}(check-synth)\n")))
     }
 
-    fn with_axiom_assume_cmds(&self, mut cmds: Vec<SyGuSCmd>) -> Result<Vec<SyGuSCmd>, String> {
-        let assumes = self.axioms().into_iter().map(SyGuSCmd::Assume);
-        let insert_at = cmds
-            .iter()
-            .position(|cmd| matches!(cmd, SyGuSCmd::CheckSynth))
-            .unwrap_or(cmds.len());
-        cmds.splice(insert_at..insert_at, assumes);
-        Ok(cmds)
+    fn with_axiom_assume_cmds(&self, cmds: Vec<SyGuSCmd>) -> Result<Vec<SyGuSCmd>, String> {
+        axiom_assume_cmds(self.axioms(), cmds)
     }
 
     pub fn parent_eval_bench(&self, max_size: usize) -> Result<(), String> {
@@ -183,6 +184,153 @@ impl LoomProg {
 /// term (the synth-fun named `synth_name`, with annotation args stripped).
 pub fn decode_parent_term(stdout: &str, synth_name: &str) -> Option<String> {
     parent::decode_term(stdout, synth_name)
+}
+
+/// SyGuS 2.1: an `(assume t)` must be well-sorted, and an axiom law's free
+/// variables need `(declare-var x Sort)`. Sorts come from the dump's own
+/// operator signatures; a name reused under a different sort by a later law
+/// is alpha-renamed — each law is its own ∀-closure, and the backend's law
+/// matchers only compare names within one law.
+fn axiom_assume_cmds(
+    axioms: Vec<SyGuSTerm>,
+    mut cmds: Vec<SyGuSCmd>,
+) -> Result<Vec<SyGuSCmd>, String> {
+    if axioms.is_empty() {
+        return Ok(cmds);
+    }
+    let sigs = axiom_sigs(&cmds);
+    let (declared, assumes) = axiom_decls_and_assumes(axioms, &sigs)?;
+    let insert_at = cmds
+        .iter()
+        .position(|cmd| matches!(cmd, SyGuSCmd::CheckSynth))
+        .unwrap_or(cmds.len());
+    let decls = declared
+        .into_iter()
+        .map(|(name, sort)| SyGuSCmd::DeclareVar(name, sort));
+    let assumes = assumes.into_iter().map(SyGuSCmd::Assume);
+    cmds.splice(insert_at..insert_at, decls.chain(assumes));
+    Ok(cmds)
+}
+
+fn axiom_sigs(cmds: &[SyGuSCmd]) -> HashMap<String, Vec<Sort>> {
+    let mut sigs: HashMap<String, Vec<Sort>> = HashMap::default();
+    for cmd in cmds {
+        let (name, args) = match cmd {
+            SyGuSCmd::DefineFun(name, args, _, _)
+            | SyGuSCmd::DefineFunRec(name, args, _, _)
+            | SyGuSCmd::SynthFun(name, args, _, _) => (name, args),
+            _ => continue,
+        };
+        sigs.entry(name.clone())
+            .or_insert_with(|| args.iter().map(|v| v.sort.clone()).collect());
+    }
+    sigs
+}
+
+/// Per axiom: infer free-variable sorts, alpha-rename sort collisions with
+/// earlier laws. Returns the declare-var list and the renamed assume terms.
+fn axiom_decls_and_assumes(
+    axioms: Vec<SyGuSTerm>,
+    sigs: &HashMap<String, Vec<Sort>>,
+) -> Result<(Vec<(String, Sort)>, Vec<SyGuSTerm>), String> {
+    let mut declared: Vec<(String, Sort)> = Vec::new();
+    let mut assumes = Vec::with_capacity(axioms.len());
+    for axiom in axioms {
+        let mut vars: Vec<(String, Sort)> = Vec::new();
+        let mut unresolved: Vec<String> = Vec::new();
+        axiom_var_sorts(&axiom, &sigs, &mut vars, &mut unresolved)?;
+        for name in &unresolved {
+            if !vars.iter().any(|(n, _)| n == name) {
+                return Err(format!(
+                    "cannot infer sort for axiom variable `{name}` in `{axiom}`: it never occurs under a declared operator"
+                ));
+            }
+        }
+        let mut renames: HashMap<String, String> = HashMap::default();
+        for (name, sort) in &vars {
+            match declared.iter().find(|(n, _)| n == name) {
+                Some((_, prev)) if prev == sort => {}
+                Some(_) => {
+                    let fresh = (2..)
+                        .map(|i| format!("{name}{i}"))
+                        .find(|cand| {
+                            !sigs.contains_key(cand) && !declared.iter().any(|(n, _)| n == cand)
+                        })
+                        .expect("candidate names are unbounded");
+                    declared.push((fresh.clone(), sort.clone()));
+                    renames.insert(name.clone(), fresh);
+                }
+                None => declared.push((name.clone(), sort.clone())),
+            }
+        }
+        let axiom = if renames.is_empty() {
+            axiom
+        } else {
+            rename_axiom_vars(axiom, &renames)
+        };
+        assumes.push(axiom);
+    }
+    Ok((declared, assumes))
+}
+
+/// Collect (name, sort) for the axiom variables under declared operators.
+/// Names in untyped positions (the right-hand `x` of `(= (re.union x x) x)`)
+/// go to `unresolved` for the caller to match against the collected sorts.
+fn axiom_var_sorts(
+    term: &SyGuSTerm,
+    sigs: &HashMap<String, Vec<Sort>>,
+    vars: &mut Vec<(String, Sort)>,
+    unresolved: &mut Vec<String>,
+) -> Result<(), String> {
+    if let SyGuSTerm::Annotated(inner, _) = term {
+        return axiom_var_sorts(inner, sigs, vars, unresolved);
+    }
+    let SyGuSTerm::Application(head, args) = term else {
+        return Ok(());
+    };
+    let sig = sigs.get(head.get_name()).map(Vec::as_slice).unwrap_or(&[]);
+    for (i, arg) in args.iter().enumerate() {
+        let SyGuSTerm::Identifier(Identifier::Symbol(name)) = arg else {
+            axiom_var_sorts(arg, sigs, vars, unresolved)?;
+            continue;
+        };
+        if sigs.contains_key(name) {
+            continue; // declared operator or constant
+        }
+        let Some(sort) = sig.get(i) else {
+            unresolved.push(name.clone());
+            continue;
+        };
+        match vars.iter().find(|(n, _)| n == name) {
+            Some((_, prev)) if prev != sort => {
+                return Err(format!(
+                    "axiom variable `{name}` occurs at conflicting sorts `{prev}` and `{sort}` in `{term}`"
+                ))
+            }
+            Some(_) => {}
+            None => vars.push((name.clone(), sort.clone())),
+        }
+    }
+    Ok(())
+}
+
+fn rename_axiom_vars(term: SyGuSTerm, renames: &HashMap<String, String>) -> SyGuSTerm {
+    match term {
+        SyGuSTerm::Identifier(Identifier::Symbol(name)) => match renames.get(&name) {
+            Some(fresh) => SyGuSTerm::Identifier(Identifier::Symbol(fresh.clone())),
+            None => SyGuSTerm::Identifier(Identifier::Symbol(name)),
+        },
+        SyGuSTerm::Application(head, args) => SyGuSTerm::Application(
+            head,
+            args.into_iter()
+                .map(|arg| rename_axiom_vars(arg, renames))
+                .collect(),
+        ),
+        SyGuSTerm::Annotated(inner, attrs) => {
+            SyGuSTerm::Annotated(Box::new(rename_axiom_vars(*inner, renames)), attrs)
+        }
+        other => other,
+    }
 }
 
 #[cfg(test)]

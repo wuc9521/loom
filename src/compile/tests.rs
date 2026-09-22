@@ -1015,3 +1015,62 @@ fn aspect_field_accepts_model_function_expression() {
     let key = &summary.bit_mappings[summary.constraint_bits[0].bit].aspect;
     assert_eq!(key.display_fields(), "state=s0,depth=$2");
 }
+
+#[test]
+fn axiom_assumes_declare_vars_and_rename_sort_collisions() {
+    let sort = |s: &str| Sort::Simple(Identifier::Symbol(s.to_string()));
+    let sym = |s: &str| SyGuSTerm::Identifier(Identifier::Symbol(s.to_string()));
+    let app = |head: &str, args: Vec<SyGuSTerm>| {
+        SyGuSTerm::Application(Identifier::Symbol(head.to_string()), args)
+    };
+    let op = |name: &str, args: &[&str], ret: &str| {
+        SyGuSCmd::DefineFun(
+            name.to_string(),
+            args.iter()
+                .map(|s| sygus_parser::SortedVar {
+                    name: "a".to_string(),
+                    sort: sort(s),
+                })
+                .collect(),
+            sort(ret),
+            sym("a"),
+        )
+    };
+    let cmds = vec![
+        op("str.++", &["Str", "Str"], "Str"),
+        op("int.+", &["SInt", "SInt"], "SInt"),
+        SyGuSCmd::CheckSynth,
+    ];
+    let out = super::axiom_assume_cmds(
+        vec![
+            app("=", vec![app("str.++", vec![sym("x"), sym("y")]), sym("x")]),
+            app("=", vec![app("int.+", vec![sym("x"), sym("y")]), sym("y")]),
+        ],
+        cmds,
+    )
+    .expect("axiom sorts should infer");
+    let decls: Vec<String> = out
+        .iter()
+        .filter_map(|c| match c {
+            SyGuSCmd::DeclareVar(n, s) => Some(format!("{n}:{s}")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(decls, ["x:Str", "y:Str", "x2:SInt", "y2:SInt"]);
+    let assumes: Vec<String> = out
+        .iter()
+        .filter_map(|c| match c {
+            SyGuSCmd::Assume(t) => Some(t.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(assumes[0], "(= (str.++ x y) x)");
+    assert_eq!(assumes[1], "(= (int.+ x2 y2) y2)");
+    assert!(matches!(out.last(), Some(SyGuSCmd::CheckSynth)));
+    // a variable that never occurs under a declared operator is an error
+    assert!(super::axiom_assume_cmds(
+        vec![app("=", vec![sym("q"), sym("q")])],
+        vec![SyGuSCmd::CheckSynth],
+    )
+    .is_err());
+}

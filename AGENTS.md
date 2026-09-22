@@ -89,6 +89,27 @@ syntax: all 209 uses across `benchmark/String/*.sl` passed the synthetic
   body to `enumerates_subword_aspects_and_constraint_polarities`, asserts a
   strict subset.
 
+### Axiom assumes are standard SyGuS — COMPLETE
+
+On the AST dump path (`to_sygus`), `declare-axiom` laws are emitted as
+`(assume ...)` preceded by `(declare-var x Sort)` for their free variables:
+SyGuS 2.1 requires well-sorted assumes, and `declare-var` is the only
+universal-quantifier mechanism (terms stay quantifier-free under `set-logic`).
+`axiom_assume_cmds` in `compile/mod.rs` infers each variable's sort from the
+dump's own `define-fun`/`synth-fun` signatures; a name reused under a
+different sort by a later law (String quantifies `x` over both `Str` and
+`SInt`) is alpha-renamed per law (`x2`, …) — each law is its own ∀-closure,
+and dryadsynth-bv's law matchers compare names only within one law, so
+renames are inert. An uninferable variable is a hard error, never a silent
+undeclared symbol. Both dump paths share one implementation
+(`axiom_sigs`/`axiom_decls_and_assumes`); the parent-refuter string path
+(`with_axiom_assumes`) reparses the dump for signatures and splices the same
+block as text. dryadsynth-bv enforces the contract from the other side:
+`ProgramEnv::validate_assumes` rejects any assume containing a symbol that
+is neither declare-var'd nor a defined/synth fun, at both solve entry points.
+This intentionally changed every axiom-bearing dump (435 benchmark files):
+declare-var lines everywhere, plus renames in multi-sort families.
+
 ### Vendored sygus-parser — supports zero-argument applications
 
 The `sygus-parser` crate is vendored at `sygus-parser/` and patched via `[patch.crates-io]` in `Cargo.toml`.
