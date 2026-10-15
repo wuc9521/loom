@@ -93,54 +93,28 @@ fn parse_extract_arg_bit(term: &SyGuSTerm, arg_index: &HashMap<String, usize>) -
     })
 }
 
-fn parse_eq_as_formula(
-    lhs: &SyGuSTerm,
-    rhs: &SyGuSTerm,
-    arg_index: &HashMap<String, usize>,
-) -> Option<BitFormula> {
-    if let (Some(bit_ref), Some(bit)) = (
-        parse_extract_arg_bit(lhs, arg_index),
-        rhs.as_single_bit_bv_const(),
-    ) {
-        return Some(if bit {
-            BitFormula::Var(bit_ref)
-        } else {
-            BitFormula::Not(Box::new(BitFormula::Var(bit_ref)))
-        });
-    }
-    if let (Some(bit_ref), Some(bit)) = (
-        parse_extract_arg_bit(rhs, arg_index),
-        lhs.as_single_bit_bv_const(),
-    ) {
-        return Some(if bit {
-            BitFormula::Var(bit_ref)
-        } else {
-            BitFormula::Not(Box::new(BitFormula::Var(bit_ref)))
-        });
-    }
-    None
-}
-
 fn parse_bit_formula(term: &SyGuSTerm, arg_index: &HashMap<String, usize>) -> Option<BitFormula> {
-    if let Some(value) = term.as_bool_const() {
+    if let Some(value) = term.as_single_bit_bv_const() {
         return Some(BitFormula::Const(value));
+    }
+    if let Some(bit_ref) = parse_extract_arg_bit(term, arg_index) {
+        return Some(BitFormula::Var(bit_ref));
     }
     let (op, args) = term.as_op()?;
     match op {
-        BuiltinOp::Not if args.len() == 1 => Some(BitFormula::Not(Box::new(parse_bit_formula(
+        BuiltinOp::BvNot if args.len() == 1 => Some(BitFormula::Not(Box::new(parse_bit_formula(
             &args[0], arg_index,
         )?))),
-        BuiltinOp::And => Some(BitFormula::And(
+        BuiltinOp::BvAnd => Some(BitFormula::And(
             args.iter()
                 .map(|arg| parse_bit_formula(arg, arg_index))
                 .collect::<Option<Vec<_>>>()?,
         )),
-        BuiltinOp::Or => Some(BitFormula::Or(
+        BuiltinOp::BvOr => Some(BitFormula::Or(
             args.iter()
                 .map(|arg| parse_bit_formula(arg, arg_index))
                 .collect::<Option<Vec<_>>>()?,
         )),
-        BuiltinOp::Eq if args.len() == 2 => parse_eq_as_formula(&args[0], &args[1], arg_index),
         _ => None,
     }
 }

@@ -7,15 +7,11 @@ LOOM_SOURCES := $(shell find . \
 	-path ./dist -prune -o \
 	-path ./.git -prune -o \
 	-type f -print)
-SYGUS_SOURCES := $(shell cd $(PARENT_DIR)/sygus-parser-rs && find . \
-	-path ./target -prune -o \
-	-path ./.git -prune -o \
-	-type f -print | sed 's|^\./|$(PARENT_DIR)/sygus-parser-rs/|')
 DRYAD_SOURCES := $(shell cd $(PARENT_DIR)/dryadsynth-bv && find . \
 	-path ./target -prune -o \
 	-path ./.git -prune -o \
 	-type f -print | sed 's|^\./|$(PARENT_DIR)/dryadsynth-bv/|')
-DOCKER_INPUTS := Dockerfile $(LOOM_SOURCES) $(SYGUS_SOURCES) $(DRYAD_SOURCES)
+DOCKER_INPUTS := Dockerfile $(LOOM_SOURCES) $(DRYAD_SOURCES)
 
 .PHONY: docker docker-archive
 
