@@ -203,7 +203,7 @@ impl<'a> Compiler<'a> {
             .as_symbol()
             .ok_or_else(|| format!("semantic call term must be a symbol: {term_expr}"))?;
         if let Some(child) = env.children.get(child_name) {
-            return Ok(bit_is_one(extract_arg_bit(child.arg_idx, bit)));
+            return Ok(extract_arg_bit(child.arg_idx, bit));
         }
         if env.self_var.as_deref() == Some(child_name) {
             let mode = env
@@ -230,11 +230,7 @@ impl<'a> Compiler<'a> {
             };
         }
         if child_name == self.synth_name {
-            return Ok(bit_is_one(BitVec::extract(
-                bit,
-                bit,
-                Term::var(&self.synth_name),
-            )));
+            return Ok(BitVec::extract(bit, bit, Term::var(&self.synth_name)));
         }
         Err(format!("unknown semantic term variable {child_name}"))
     }
@@ -915,10 +911,7 @@ impl<'a> Compiler<'a> {
             .and_then(|item| item.as_symbol())
             .ok_or_else(|| format!("Bool expression operator must be a symbol: {expr}"))?;
         match op {
-            "not" if items.len() == 2 => Ok(match self.eval_bool(items[1], env)? {
-                BoolExpr::Const(value) => BoolExpr::Const(!value),
-                BoolExpr::Dynamic(term) => BoolExpr::Dynamic(Bool::not(term)),
-            }),
+            "not" if items.len() == 2 => Ok(self.eval_bool(items[1], env)?.not()),
             "and" => self.eval_and(&items[1..], env),
             "or" => self.eval_or(&items[1..], env),
             "ite" if items.len() == 4 => match self.eval_bool(items[1], env)? {
@@ -990,16 +983,12 @@ impl<'a> Compiler<'a> {
             }
         }
         match op {
-            "forall" => Ok(match dynamic.len() {
-                0 => BoolExpr::Const(true),
-                1 => BoolExpr::Dynamic(dynamic.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::and(dynamic)),
-            }),
-            "exists" => Ok(match dynamic.len() {
-                0 => BoolExpr::Const(false),
-                1 => BoolExpr::Dynamic(dynamic.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::or(dynamic)),
-            }),
+            "forall" => Ok(BoolExpr::and(
+                dynamic.into_iter().map(BoolExpr::Dynamic).collect(),
+            )),
+            "exists" => Ok(BoolExpr::or(
+                dynamic.into_iter().map(BoolExpr::Dynamic).collect(),
+            )),
             _ => unreachable!(),
         }
     }
@@ -1134,16 +1123,8 @@ impl<'a> Compiler<'a> {
             terms.push(self.semantic_term_bit(term_expr, bit, env)?);
         }
         Ok(Some(match op {
-            "exists" => match terms.len() {
-                0 => BoolExpr::Const(false),
-                1 => BoolExpr::Dynamic(terms.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::or(terms)),
-            },
-            "forall" => match terms.len() {
-                0 => BoolExpr::Const(true),
-                1 => BoolExpr::Dynamic(terms.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::and(terms)),
-            },
+            "exists" => BoolExpr::or(terms.into_iter().map(BoolExpr::Dynamic).collect()),
+            "forall" => BoolExpr::and(terms.into_iter().map(BoolExpr::Dynamic).collect()),
             _ => unreachable!(),
         }))
     }
@@ -1244,16 +1225,8 @@ impl<'a> Compiler<'a> {
             }
         }
         Ok(match op {
-            "exists" => match dynamic.len() {
-                0 => BoolExpr::Const(false),
-                1 => BoolExpr::Dynamic(dynamic.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::or(dynamic)),
-            },
-            "forall" => match dynamic.len() {
-                0 => BoolExpr::Const(true),
-                1 => BoolExpr::Dynamic(dynamic.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::and(dynamic)),
-            },
+            "exists" => BoolExpr::or(dynamic.into_iter().map(BoolExpr::Dynamic).collect()),
+            "forall" => BoolExpr::and(dynamic.into_iter().map(BoolExpr::Dynamic).collect()),
             _ => unreachable!(),
         })
     }
@@ -1290,16 +1263,8 @@ impl<'a> Compiler<'a> {
             terms.push(self.semantic_term_bit(term_expr, bit, &next)?);
         }
         Ok(Some(match op {
-            "exists" => match terms.len() {
-                0 => BoolExpr::Const(false),
-                1 => BoolExpr::Dynamic(terms.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::or(terms)),
-            },
-            "forall" => match terms.len() {
-                0 => BoolExpr::Const(true),
-                1 => BoolExpr::Dynamic(terms.remove(0)),
-                _ => BoolExpr::Dynamic(Bool::and(terms)),
-            },
+            "exists" => BoolExpr::or(terms.into_iter().map(BoolExpr::Dynamic).collect()),
+            "forall" => BoolExpr::and(terms.into_iter().map(BoolExpr::Dynamic).collect()),
             _ => unreachable!(),
         }))
     }
@@ -1313,11 +1278,9 @@ impl<'a> Compiler<'a> {
                 BoolExpr::Dynamic(term) => dynamic.push(term),
             }
         }
-        Ok(match dynamic.len() {
-            0 => BoolExpr::Const(true),
-            1 => BoolExpr::Dynamic(dynamic.remove(0)),
-            _ => BoolExpr::Dynamic(Bool::and(dynamic)),
-        })
+        Ok(BoolExpr::and(
+            dynamic.into_iter().map(BoolExpr::Dynamic).collect(),
+        ))
     }
 
     fn eval_or(&self, items: &[&Value], env: &Env) -> Result<BoolExpr, String> {
@@ -1329,11 +1292,9 @@ impl<'a> Compiler<'a> {
                 BoolExpr::Dynamic(term) => dynamic.push(term),
             }
         }
-        Ok(match dynamic.len() {
-            0 => BoolExpr::Const(false),
-            1 => BoolExpr::Dynamic(dynamic.remove(0)),
-            _ => BoolExpr::Dynamic(Bool::or(dynamic)),
-        })
+        Ok(BoolExpr::or(
+            dynamic.into_iter().map(BoolExpr::Dynamic).collect(),
+        ))
     }
 
     fn quantifier_values(
@@ -2613,7 +2574,7 @@ impl<'a> Compiler<'a> {
         Ok(Some(match term {
             t if t == bool_lit(true) => BoolExpr::Const(true),
             t if t == bool_lit(false) => BoolExpr::Const(false),
-            t => BoolExpr::Dynamic(t),
+            t => BoolExpr::from_bool(t),
         }))
     }
 
@@ -2671,7 +2632,7 @@ impl<'a> Compiler<'a> {
         Ok(Some(match term {
             t if t == bool_lit(true) => BoolExpr::Const(true),
             t if t == bool_lit(false) => BoolExpr::Const(false),
-            t => BoolExpr::Dynamic(t),
+            t => BoolExpr::from_bool(t),
         }))
     }
 }

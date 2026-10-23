@@ -1,10 +1,13 @@
-//! Per-bit Boolean formula IR shared by every SyGuS-BV emit path.
+//! Per-bit `(_ BitVec 1)` formula IR shared by every SyGuS-BV emit path.
 //!
 //! A constructor's output bitvector is described as a `Vec<BoolExpr>`, one
-//! `BoolExpr` per bit position. From there:
+//! `BoolExpr` (an `i1`, despite the historical name) per bit position. From
+//! there:
 //!
 //! - `BoolExpr::compact` produces a SyGuS BV term in the standard layout
-//!   (concat-of-ite, with constant runs folded into `BinConst` literals).
+//!   (concat-of-i1 bit-vectors, with constant runs folded into `BinConst`
+//!   literals). Boolean disjunctions are represented with `bvor` rather than
+//!   a single `ite (or ...) #b1 #b0`.
 //!   Used when the constructor's bits are closed in its arg-bits alone.
 //! - `BoolExpr::resolve_closure` first eliminates intra-constructor
 //!   `loom.self.<bit>` self-references via a topo-sorted let chain, then
@@ -17,7 +20,7 @@
 //! propagate.
 
 use crate::fxmap::HashSet;
-use sygus_parser::{BitVec, Bool, Identifier, Literal, SyGuSTerm, Term};
+use sygus_parser::{BitVec, Identifier, Literal, SyGuSTerm, Term};
 
 /// Identifier prefix for self-bit placeholders. The chc/compiler lowerings
 /// emit `loom.self.<i>` as a `SyGuSTerm::Identifier` standing for bit `i`
@@ -27,6 +30,7 @@ pub const SELF_BIT_PREFIX: &str = "loom.self.";
 #[derive(Clone)]
 pub enum BoolExpr {
     Const(bool),
+    /// A term whose SyGuS sort is always `(_ BitVec 1)`.
     Dynamic(SyGuSTerm),
 }
 
@@ -43,7 +47,7 @@ impl BoolExpr {
         match dynamic.len() {
             0 => Self::Const(true),
             1 => Self::Dynamic(dynamic.remove(0)),
-            _ => Self::Dynamic(Bool::and(dynamic)),
+            _ => Self::Dynamic(fold_i1(dynamic, BitVec::bvand, true)),
         }
     }
 
@@ -59,19 +63,29 @@ impl BoolExpr {
         match dynamic.len() {
             0 => Self::Const(false),
             1 => Self::Dynamic(dynamic.remove(0)),
-            _ => Self::Dynamic(Bool::or(dynamic)),
+            _ => Self::Dynamic(fold_i1(dynamic, BitVec::bvor, false)),
         }
     }
 
     pub fn not(self) -> Self {
         match self {
             Self::Const(value) => Self::Const(!value),
-            Self::Dynamic(term) => Self::Dynamic(Bool::not(term)),
+            Self::Dynamic(term) => Self::Dynamic(BitVec::bvnot(term)),
+        }
+    }
+
+    /// Convert an SMT-LIB Boolean expression to the internal `(_ BitVec 1)`
+    /// representation. This is the only Boolean-to-bit-vector boundary for
+    /// formula leaves which cannot themselves be represented as an i1.
+    pub fn from_bool(term: SyGuSTerm) -> Self {
+        match term {
+            SyGuSTerm::Literal(Literal::Bool(value)) => Self::Const(value),
+            term => Self::Dynamic(to_i1_term(term)),
         }
     }
 
     /// Concat bits (LSB-first) into a single SyGuS BV term. Constant runs
-    /// collapse to a `BinConst`; dynamic bits become 1-bit ites.
+    /// collapse to a `BinConst`; dynamic bits become i1 bit-vectors.
     pub fn compact(bits: Vec<Self>) -> SyGuSTerm {
         let mut chunks: Vec<SyGuSTerm> = Vec::new();
         let mut const_bits: Vec<bool> = Vec::new();
@@ -86,7 +100,9 @@ impl BoolExpr {
                             chunks.push(bitvec_literal_from_lsb(&const_bits));
                             const_bits.clear();
                         }
-                        chunks.push(Term::ite(term, BitVec::const_(1, 1), BitVec::const_(0, 1)));
+                        // `Dynamic` is always an i1; Boolean source terms
+                        // cross the boundary through `from_bool` instead.
+                        chunks.push(term);
                     }
                 }
             }
@@ -179,6 +195,91 @@ impl BoolExpr {
     }
 }
 
+/// Encode a Boolean term as a one-bit bit-vector.
+///
+/// Bit-vector `bvor` is equivalent to Boolean `or` once each operand has
+/// been encoded as `#b0` or `#b1`. Keeping an `or` as the condition of one
+/// large `ite` prevents bit-vector simplifiers from seeing that structure:
+///
+/// ```text
+/// (ite (or p q) #b1 #b0)
+/// ```
+///
+/// becomes (using the SMT-LIB spelling, `bvor`):
+///
+/// ```text
+/// (bvor (ite p #b1 #b0) (ite q #b1 #b0))
+/// ```
+///
+/// A Boolean leaf that cannot be decomposed into i1 operations retains an
+/// `ite` conversion at this single boundary.
+fn to_i1_term(term: SyGuSTerm) -> SyGuSTerm {
+    match term {
+        SyGuSTerm::Literal(Literal::Bool(value)) => BitVec::const_(u64::from(value), 1),
+        SyGuSTerm::Application(Identifier::Symbol(op), args) if op == "or" => fold_i1(
+            args.into_iter().map(to_i1_term).collect(),
+            BitVec::bvor,
+            false,
+        ),
+        SyGuSTerm::Application(Identifier::Symbol(op), args) if op == "and" => fold_i1(
+            args.into_iter().map(to_i1_term).collect(),
+            BitVec::bvand,
+            true,
+        ),
+        SyGuSTerm::Application(Identifier::Symbol(op), mut args)
+            if op == "not" && args.len() == 1 =>
+        {
+            BitVec::bvnot(to_i1_term(args.remove(0)))
+        }
+        SyGuSTerm::Application(Identifier::Symbol(op), mut args)
+            if op == "=" && args.len() == 2 =>
+        {
+            // Loom's semantic leaves are normally `((_ extract i i) arg)`,
+            // written as a Boolean equality with `#b1` by older emitters.
+            // Preserve the bit directly (or invert it for `#b0`) so the
+            // generated constructor body never needs a Boolean node.
+            let rhs = args.pop().expect("checked equality arity");
+            let lhs = args.pop().expect("checked equality arity");
+            match (lhs.as_single_bit_bv_const(), rhs.as_single_bit_bv_const()) {
+                (Some(true), _) => rhs,
+                (Some(false), _) => BitVec::bvnot(rhs),
+                (_, Some(true)) => lhs,
+                (_, Some(false)) => BitVec::bvnot(lhs),
+                _ => Term::ite(
+                    Term::app("=", vec![lhs, rhs]),
+                    BitVec::const_(1, 1),
+                    BitVec::const_(0, 1),
+                ),
+            }
+        }
+        SyGuSTerm::Application(Identifier::Symbol(op), args)
+            if matches!(op.as_str(), "bvand" | "bvor") =>
+        {
+            // `BoolExpr::and`/`or` have already produced i1 operands.
+            SyGuSTerm::Application(Identifier::Symbol(op), args)
+        }
+        SyGuSTerm::Application(Identifier::Symbol(op), args) if op == "bvnot" => {
+            SyGuSTerm::Application(Identifier::Symbol(op), args)
+        }
+        term => Term::ite(term, BitVec::const_(1, 1), BitVec::const_(0, 1)),
+    }
+}
+
+fn fold_i1(
+    mut terms: Vec<SyGuSTerm>,
+    op: fn(SyGuSTerm, SyGuSTerm) -> SyGuSTerm,
+    identity: bool,
+) -> SyGuSTerm {
+    match terms.len() {
+        0 => BitVec::const_(u64::from(identity), 1),
+        1 => terms.remove(0),
+        _ => {
+            let first = terms.remove(0);
+            terms.into_iter().fold(first, op)
+        }
+    }
+}
+
 pub fn arg_name(idx: usize) -> String {
     format!("arg{idx}")
 }
@@ -215,17 +316,17 @@ fn resolve_self_refs(term: &SyGuSTerm, resolved: &[BoolExpr]) -> BoolExpr {
         SyGuSTerm::Application(id, args) => {
             let op = id.get_name();
             match op {
-                "and" => BoolExpr::and(
+                "bvand" => BoolExpr::and(
                     args.iter()
                         .map(|a| resolve_self_refs(a, resolved))
                         .collect(),
                 ),
-                "or" => BoolExpr::or(
+                "bvor" => BoolExpr::or(
                     args.iter()
                         .map(|a| resolve_self_refs(a, resolved))
                         .collect(),
                 ),
-                "not" if args.len() == 1 => resolve_self_refs(&args[0], resolved).not(),
+                "bvnot" if args.len() == 1 => resolve_self_refs(&args[0], resolved).not(),
                 _ => BoolExpr::Dynamic(term.clone()),
             }
         }
@@ -387,4 +488,55 @@ fn topo_sort_bits(deps: &[HashSet<usize>]) -> Result<Vec<usize>, String> {
         return Err("cyclic self-bit dependency".to_string());
     }
     Ok(order)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_encodes_boolean_or_with_bvor() {
+        let p = Term::var("p");
+        let q = Term::var("q");
+        let r = Term::var("r");
+        let term = Term::app("or", vec![p.clone(), q.clone(), r.clone()]);
+
+        let actual = BoolExpr::compact(vec![BoolExpr::from_bool(term)]);
+        let i1 = |condition| Term::ite(condition, BitVec::const_(1, 1), BitVec::const_(0, 1));
+        let expected = BitVec::bvor(BitVec::bvor(i1(p), i1(q)), i1(r));
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn compact_encodes_boolean_and_with_bvand() {
+        let p = Term::var("p");
+        let q = Term::var("q");
+        let term = Term::app("and", vec![p.clone(), q.clone()]);
+
+        let actual = BoolExpr::compact(vec![BoolExpr::from_bool(term)]);
+        assert_eq!(
+            actual,
+            BitVec::bvand(
+                Term::ite(p, BitVec::const_(1, 1), BitVec::const_(0, 1)),
+                Term::ite(q, BitVec::const_(1, 1), BitVec::const_(0, 1)),
+            )
+        );
+    }
+
+    #[test]
+    fn compact_keeps_an_i1_extract_as_an_i1_extract() {
+        let bit = BitVec::extract(4, 4, Term::var("arg0"));
+        assert_eq!(BoolExpr::compact(vec![BoolExpr::Dynamic(bit.clone())]), bit);
+    }
+
+    #[test]
+    fn from_bool_turns_bit_test_into_the_bit() {
+        let bit = BitVec::extract(4, 4, Term::var("arg0"));
+        let bool_test = Term::app("=", vec![bit.clone(), BitVec::const_(1, 1)]);
+        match BoolExpr::from_bool(bool_test) {
+            BoolExpr::Dynamic(actual) => assert_eq!(actual, bit),
+            BoolExpr::Const(_) => panic!("a dynamic bit test must remain dynamic"),
+        }
+    }
 }

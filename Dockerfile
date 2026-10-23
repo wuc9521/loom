@@ -7,12 +7,10 @@ RUN rustup toolchain install ${RUST_TOOLCHAIN} --profile minimal --component car
 
 WORKDIR /workspace
 
-# `loom` depends on sibling path crates, so the Docker build context must
-# contain `loom`, `sygus-parser-rs`, and `dryadsynth-bv`.
+# `loom` depends on the sibling dryadsynth-bv path crate, so the Docker build
+# context contains both projects. sygus-parser is now resolved from crates.io.
 COPY loom/Cargo.toml loom/Cargo.lock loom/build.rs loom/README.md /workspace/loom/
 COPY loom/src /workspace/loom/src
-COPY sygus-parser-rs/Cargo.toml /workspace/sygus-parser-rs/
-COPY sygus-parser-rs/src /workspace/sygus-parser-rs/src
 COPY dryadsynth-bv/Cargo.toml dryadsynth-bv/Cargo.lock dryadsynth-bv/build.rs dryadsynth-bv/README.md dryadsynth-bv/rust-toolchain.toml /workspace/dryadsynth-bv/
 COPY dryadsynth-bv/src /workspace/dryadsynth-bv/src
 
