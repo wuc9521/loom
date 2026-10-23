@@ -92,6 +92,14 @@ fn relevant_states(prog: &HornProg, seeds: &HashSet<String>) -> HashSet<String> 
             .map(|i| i.polarity == PredicatePolarity::Positive)
             .unwrap_or(false)
     };
+    if !super::opts().coi {
+        return prog
+            .predicates
+            .keys()
+            .filter(|p| positive(p))
+            .cloned()
+            .collect();
+    }
     let mut deps: HashMap<String, HashSet<String>> = HashMap::default();
     for r in &prog.rules {
         if !matches!(&r.head.arg, HT::App { .. }) || !positive(&r.head.pred) {
@@ -731,11 +739,26 @@ fn concat_terms(terms: &[String]) -> String {
 }
 
 impl crate::compile::context::CompileContext<'_> {
+    pub(super) fn compile_parent_horn(&self) -> Result<HornProg, String> {
+        let mut horn = self.compile_chc()?;
+        let before = horn.live_predicates().len();
+        let after = if super::opts().bisim {
+            horn.quotient_bisim()
+        } else {
+            before
+        };
+        log::info!(
+            "parent quotient: {before} -> {after} predicates (bisim={})",
+            super::opts().bisim
+        );
+        Ok(horn)
+    }
+
     /// The parent path's encoder, mirroring the direct [`CompileContext::compile`]:
     /// lower to CHC, emit the crossing-relation certificate SyGuS, and parse it
     /// back into commands. Dispatched to by `compile` for parent-bearing programs.
     pub(super) fn compile_parent(&self) -> Result<Vec<sygus_parser::SyGuSCmd>, String> {
-        let horn = self.compile_chc()?;
+        let horn = self.compile_parent_horn()?;
         let (sygus, _) = parent_sygus(&horn, &self.synth_name, QueryKind::Solution);
         // ponytail: parse the emitted text back into cmds; parent_sygus builds
         // SMT-BV text directly. Native-cmd emission would avoid the round-trip
@@ -776,10 +799,20 @@ pub(crate) struct ParentInput {
 }
 
 impl ParentInput {
-    fn from_horn(prog: &HornProg) -> Self {
+    pub(super) fn from_horn(prog: &HornProg) -> Self {
         let (start, constraints) = goal(prog);
         let seeds: HashSet<String> = constraints.iter().map(|(q, _)| q.clone()).collect();
         let relevant = relevant_states(prog, &seeds);
+        let before = prog
+            .predicates
+            .values()
+            .filter(|p| p.polarity == PredicatePolarity::Positive)
+            .count();
+        log::info!(
+            "parent relevance: {before} -> {} states (coi={})",
+            relevant.len(),
+            super::opts().coi
+        );
         let (states, ctors) = build_sig(prog, &relevant);
         let gcs = general_clauses(prog, &relevant);
         Self {
@@ -812,7 +845,7 @@ impl ParentInput {
         (ir, self.start)
     }
 
-    fn max_bv_width(&self, kind: QueryKind) -> usize {
+    pub(super) fn max_bv_width(&self, kind: QueryKind) -> usize {
         let plan = CertPlan::from_constraints(&self.constraints, kind);
         let e = Enc::new(&self.states, &self.ctors, &self.gcs, &plan);
         self.states
@@ -826,6 +859,11 @@ impl ParentInput {
             )
             .max()
             .unwrap_or(1)
+    }
+
+    #[cfg(test)]
+    pub(super) fn state_count(&self) -> usize {
+        self.states.values().map(Vec::len).sum()
     }
 }
 
@@ -2541,6 +2579,49 @@ mod tests {
             body_atoms: body,
             head,
         }
+    }
+
+    #[test]
+    fn reduction_flags_preserve_parent_lfp_verdicts() {
+        if !cvc5_available() {
+            eprintln!("cvc5 not found; skipping");
+            return;
+        }
+        let top = |x: HT| f("top", vec![x]);
+        let tree = top(c("leaf"));
+        for founded in [false, true] {
+            let mut prog = HornProg::default();
+            prog.rules = vec![
+                rule(atom("A", c("leaf")), vec![atom("B", top(c("leaf")))]),
+                rule(atom("B", top(v("x"))), vec![atom("A", v("x"))]),
+                rule(atom("Junk", c("leaf")), vec![atom("Junk", c("leaf"))]),
+                rule(atom("Goal", v("t")), vec![atom("B", v("t"))]),
+            ];
+            if founded {
+                prog.rules.push(rule(atom("A", c("leaf")), vec![]));
+            }
+            for name in ["A", "B", "Junk"] {
+                prog.register_predicate(name, name, PredicatePolarity::Positive, "T");
+            }
+            for bisim in [false, true] {
+                for coi in [false, true] {
+                    super::super::init_options(super::super::CompileOptions { optimize: true, bisim, coi });
+                    let mut reduced = prog.clone();
+                    if bisim {
+                        reduced.quotient_bisim();
+                    }
+                    let (_, constraints) = goal(&reduced);
+                    let keep = relevant_states(&reduced, &constraints.iter().map(|(q, _)| q.clone()).collect());
+                    let (mut states, ctors) = single_sort_sig(&reduced.rules, &tree);
+                    states.get_mut("T").unwrap().retain(|q| keep.contains(q));
+                    let gcs = general_clauses(&reduced, &keep);
+                    let ground = build_ground(&tree);
+                    assert_eq!(local_check_sat(&states, &ctors, &gcs, &constraints, &ground), founded,
+                               "founded={founded} bisim={bisim} coi={coi}");
+                }
+            }
+        }
+        super::super::init_options(super::super::CompileOptions::default());
     }
 
     fn load_chc_prog(path: &str) -> HornProg {

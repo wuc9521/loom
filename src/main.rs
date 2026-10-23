@@ -299,7 +299,7 @@ fn parent_solve(loom_file: &LoomProg, verbose: u8) -> Result<(), io::Error> {
         parse_start.elapsed()
     );
     let solve_start = Instant::now();
-    let out = dryadsynth_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose, true)
+    let out = dryadsynth_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose)
         .map_err(|e| io::Error::other(format!("parent backend (dryadsynth-bv): {e}")))?;
     log::info!(
         "parent: dryadsynth-bv refuter solved in {:?}",
@@ -499,7 +499,7 @@ pub struct CLI {
     )]
     optimize: bool,
 
-    /// Enable semantic candidate deduplication and relevance/circuit pruning in dryadsynth-bv; --coi=false disables both.
+    /// Enable dependency/relevance pruning; on the direct BV path, also enable semantic candidate deduplication.
     #[arg(
         long = "coi",
         default_value_t = true,
@@ -611,6 +611,7 @@ fn run() -> Result<(), io::Error> {
     compile::init_options(compile::CompileOptions {
         optimize: args.optimize,
         bisim: args.bisim,
+        coi: args.coi,
     });
 
     // Read input from stdin or file

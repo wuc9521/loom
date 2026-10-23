@@ -4,6 +4,7 @@ fn ensure_opts() {
     init_options(CompileOptions {
         optimize: false,
         bisim: false,
+        coi: true,
     });
 }
 
@@ -28,10 +29,49 @@ fn bisim_false_preserves_equivalent_states() {
     );
     assert_eq!(problem.bv_sz().unwrap(), 2);
     assert_eq!(problem.max_bv_width().unwrap(), 2);
-    init_options(CompileOptions { optimize: false, bisim: true });
+    init_options(CompileOptions { optimize: false, bisim: true, coi: true });
     let reduced = problem.bv_sz();
     ensure_opts();
     assert_eq!(reduced.unwrap(), 1);
+}
+
+#[test]
+fn parent_reductions_follow_independent_flags() {
+    let problem = parse(
+        r#"
+(declare-sort Pos 0)
+(define-model w (interp-sort Pos ($0 $1 $2)))
+(declare-term-types ((Term 0)) (((leaf) (up Term))))
+(define-aspects Asp (record (p Pos)))
+(define-semantics ((Sem (t Term) (asp Asp)))
+  ((match t
+    ((leaf) (= (p asp) $0))
+    ((up x) (or (Sem x asp) (and false (Sem (parent x) asp)))))))
+(define-semantics ((Unused (t Term) (asp Asp)))
+  ((match t ((leaf) false) ((up x) (Unused x asp)))))
+(synth-fun t () Term)
+(constraint (with-model w (Sem t (Asp $0))))
+(check-synth)
+"#,
+    );
+    let mut counts = Vec::new();
+    for bisim in [false, true] {
+        for coi in [false, true] {
+            init_options(CompileOptions { optimize: false, bisim, coi });
+            let ctx = CompileContext::new(&problem).unwrap();
+            let horn = ctx.compile_parent_horn().unwrap();
+            let input = parent::ParentInput::from_horn(&horn);
+            counts.push(input.state_count());
+            let (dump, _, _) = problem.parent_refuter_sygus().unwrap();
+            let width = problem.max_bv_width().unwrap();
+            assert_eq!(width, input.max_bv_width(parent::QueryKind::Refuter));
+            assert!(dump.contains(&format!("(_ BitVec {width})")));
+        }
+    }
+    ensure_opts();
+    assert!(counts[1] < counts[0], "COI must prune irrelevant states: {counts:?}");
+    assert!(counts[2] < counts[0], "bisim must merge equivalent states: {counts:?}");
+    assert!(counts[3] <= counts[1] && counts[3] <= counts[2]);
 }
 
 #[test]

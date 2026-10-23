@@ -30,6 +30,7 @@ pub use types::AspectKey;
 pub struct CompileOptions {
     pub optimize: bool,
     pub bisim: bool,
+    pub coi: bool,
 }
 
 impl Default for CompileOptions {
@@ -37,6 +38,7 @@ impl Default for CompileOptions {
         Self {
             optimize: true,
             bisim: true,
+            coi: true,
         }
     }
 }
@@ -78,10 +80,7 @@ impl LoomProg {
                 .max()
                 .unwrap_or(1));
         }
-        let mut horn = ctx.compile_chc()?;
-        if std::env::var("LOOM_MIN_STATES").map_or(true, |v| v != "0") {
-            horn.quotient_bisim();
-        }
+        let horn = ctx.compile_parent_horn()?;
         Ok(parent::parent_max_bv_width(
             &horn,
             parent::QueryKind::Refuter,
@@ -132,15 +131,7 @@ impl LoomProg {
     pub fn parent_refuter_sygus(&self) -> Result<(String, String, String), String> {
         let ctx = CompileContext::new(self)?;
         let synth_name = ctx.synth_name.clone();
-        let mut horn = ctx.compile_chc()?;
-        // Sound bisimulation quotient: merge predicate states with identical
-        // least-model behaviour before encoding (set LOOM_MIN_STATES=0 to skip,
-        // for A/B verdict checks).
-        if std::env::var("LOOM_MIN_STATES").map_or(true, |v| v != "0") {
-            let before = horn.live_predicates().len();
-            let after = horn.quotient_bisim();
-            log::debug!("state quotient: {before} -> {after} states");
-        }
+        let horn = ctx.compile_parent_horn()?;
         let (sygus, sort) = parent::parent_sygus(&horn, &synth_name, parent::QueryKind::Refuter);
         let sygus = self.with_axiom_assumes(sygus)?;
         Ok((sygus, sort, synth_name))
