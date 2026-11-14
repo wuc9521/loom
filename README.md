@@ -11,7 +11,7 @@ Requires nightly Rust ([`rust-toolchain.toml`](rust-toolchain.toml)).
 [`sygus-parser`](https://github.com/wuc9521/sygus-parser-rs) comes from crates.io.
 
 ```bash
-git clone --recursive git@github.com:wuc9521/loom.git
+git clone --recursive https://github.com/wuc9521/loom.git
 cd loom
 cargo install --path . --locked
 ```
