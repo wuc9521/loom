@@ -3,7 +3,6 @@
 .qoder/
 .DS_Store
 Icon?
-Cargo.lock
 src/.antlr
 target
 .vscode/

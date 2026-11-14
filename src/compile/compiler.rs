@@ -223,7 +223,7 @@ impl<'a> Compiler<'a> {
                     // `compile()` collects these placeholders, topo-sorts the
                     // bit dependency graph, and wraps the constructor body in
                     // nested let-bindings — statically unrolling the LFP so
-                    // dryadsynth-bv sees a pure nullary problem (no synth-fun
+                    // loom-bv sees a pure nullary problem (no synth-fun
                     // reference in any define-fun body).
                     Ok(Term::var(&self_bit_name(bit)))
                 }
@@ -2060,7 +2060,7 @@ fn strongly_connected_components(
 // ===========================================================================
 // Native-BV templates for numeric finite-universe tables.
 //
-// See docs/native-bv-design.md. A 2-ary model table that is exactly `<=`,
+// A 2-ary model table that is exactly `<=`,
 // `<`, "`<` with the trailing invalid element acting as +infinity on the
 // right", saturating `+`, or saturating `-` over the *listed* universe order
 // is recognized here, and call sites over one-hot value fields emit
@@ -2256,7 +2256,7 @@ impl<'a> Compiler<'a> {
     fn numeric_table_uncached(&self, model_name: &str, func: &str) -> Option<NumTable> {
         // Rides the -O/--optimize flag (default on). The emitted gadgets are
         // pure 1-bit and/or/not circuits with shared suffix-OR chains, so
-        // define-funs stay on dryadsynth-bv's bitsliced BitCircuit plan.
+        // define-funs stay on loom-bv's bitsliced BitCircuit plan.
         // LOOM_NO_TABLE_CIRCUITS=1 disables the pass for differential runs.
         if !self.optimize || std::env::var_os("LOOM_NO_TABLE_CIRCUITS").is_some() {
             return None;

@@ -269,10 +269,10 @@ fn spawn_enum_child(args: &CLI, input: &str) -> Result<Child, io::Error> {
 }
 
 /// Sound parent path for parent-bearing programs: emit the founded
-/// annotation SyGuS and solve it with dryadsynth-bv, whose const-hole mode
+/// annotation SyGuS and solve it with loom-bv, whose const-hole mode
 /// enumerates the syntax tree and SMT-solves the `Constant` annotation holes
 /// per skeleton (the sound, terminating route — cvc5's monolithic SyGuS search
-/// hangs on this encoding). dryadsynth-bv is a path dependency, so we solve
+/// hangs on this encoding). loom-bv is a path dependency, so we solve
 /// in-process via its library — no external binary on PATH, no env var.
 fn parent_solve(loom_file: &LoomProg, verbose: u8) -> Result<(), io::Error> {
     if let Ok(max_size) = std::env::var("LOOM_PARENT_EVAL_BENCH") {
@@ -289,7 +289,7 @@ fn parent_solve(loom_file: &LoomProg, verbose: u8) -> Result<(), io::Error> {
         sygus.len()
     );
     // Solve the emitted refuter encoding in-process through the
-    // dryadsynth-bv library. The const-hole search prunes skeletons with a SAT
+    // loom-bv library. The const-hole search prunes skeletons with a SAT
     // refuter and returns the first skeleton whose refuter query is UNSAT.
     let parse_start = Instant::now();
     let file = sygus_parser::SyGuSFile::from_str(&sygus)
@@ -299,10 +299,10 @@ fn parent_solve(loom_file: &LoomProg, verbose: u8) -> Result<(), io::Error> {
         parse_start.elapsed()
     );
     let solve_start = Instant::now();
-    let out = dryadsynth_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose)
-        .map_err(|e| io::Error::other(format!("parent backend (dryadsynth-bv): {e}")))?;
+    let out = loom_bv::solve_refuter_sygus_file(&file, None, &synth_name, verbose)
+        .map_err(|e| io::Error::other(format!("parent backend (loom-bv): {e}")))?;
     log::info!(
-        "parent: dryadsynth-bv refuter solved in {:?}",
+        "parent: loom-bv refuter solved in {:?}",
         solve_start.elapsed()
     );
     match compile::decode_parent_term(&out, &synth_name) {
@@ -311,7 +311,7 @@ fn parent_solve(loom_file: &LoomProg, verbose: u8) -> Result<(), io::Error> {
             Ok(())
         }
         None => Err(io::Error::other(
-            "parent backend (dryadsynth-bv): no solution decoded. If a deeper solution \
+            "parent backend (loom-bv): no solution decoded. If a deeper solution \
              is expected, raise DRYAD_HOLE_MAX_SIZE.",
         )),
     }
@@ -346,7 +346,7 @@ fn external_solver_args(path: &str) -> Vec<String> {
         .and_then(|name| name.to_str())
         .unwrap_or(path);
     match name {
-        "dryadsynth-bv" => vec!["-in".to_string()],
+        "loom-bv" => vec!["-in".to_string()],
         "cvc5" => vec!["--lang=sygus2".to_string()],
         _ => Vec::new(),
     }
@@ -360,7 +360,7 @@ fn spawn_solver(solver: &Solver, cmds: &[SyGuSCmd], min: bool) -> Result<Child, 
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(&solver.0);
-        if name == "dryadsynth-bv" {
+        if name == "loom-bv" {
             args.push("--min=false".to_string());
         }
     }
@@ -395,7 +395,7 @@ fn solve_cmds_with_backend(
 ) -> Result<String, io::Error> {
     match backend {
         SygusBackend::InProcessDryadSynth => {
-            dryadsynth_bv::solve_sygus_cmds(cmds, None, "", verbose, min).map_err(io::Error::other)
+            loom_bv::solve_sygus_cmds(cmds, None, "", verbose, min).map_err(io::Error::other)
         }
         SygusBackend::External(solver) => {
             let child = spawn_solver(solver, cmds, min)?;
@@ -530,7 +530,7 @@ pub struct CLI {
     #[arg(short, long = "dump-sygus", default_value_t = false)]
     dump_sygus: bool,
 
-    /// Translate to SyGuS BV, but print only machine-readable stats:
+    /// [EXPERTS ONLY] Translate to SyGuS BV, but print only machine-readable stats:
     /// `SYGUS_STATS<TAB>ms<TAB>bytes<TAB>lines<TAB>max-bv-width`
     #[arg(long = "sygus-stats", default_value_t = false)]
     dump_sygus_stats: bool,
@@ -539,10 +539,11 @@ pub struct CLI {
     #[arg(long = "bv-width", default_value_t = false)]
     dump_bv_width: bool,
 
+    /// [EXPERTS ONLY] Translate to CHC (HORN) and print to stdout.
     #[arg(long = "dump-chc", default_value_t = false)]
     dump_chc: bool,
 
-    /// Use counterexample-guided subset solving for the external SyGuS backend,
+    /// [EXPERTS ONLY] Use counterexample-guided subset solving for the external SyGuS backend,
     /// seeding with up to N constraints. Off by default; pass `--cegis` to
     /// enable with the default seed size, or `--cegis=N` to set the seed.
     #[arg(
@@ -555,7 +556,7 @@ pub struct CLI {
     )]
     cegis: usize,
 
-    /// Use an explicit external SyGuS solver executable instead of the in-process dryadsynth-bv backend.
+    /// [EXPERTS ONLY] Use an explicit external SyGuS solver executable (e.g. cvc5) instead of the in-process loom-bv backend.
     #[arg(long = "solver", value_name = "PATH")]
     solver: Option<String>,
 }

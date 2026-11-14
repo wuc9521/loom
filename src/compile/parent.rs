@@ -27,7 +27,7 @@
 //!
 //! This is the default (and only) loom path for parent-bearing programs. The
 //! `Constant` holes need an SMT backend; the in-process enumerator solves them
-//! via the dryadsynth-bv `constant-via-smt` branch.
+//! via the loom-bv `constant-via-smt` branch.
 
 use crate::backends::smt2::ast::{HornDecl, HornProg, HornRule, HornTerm as HT, PredicatePolarity};
 use crate::fxmap::{HashMap, HashSet};
