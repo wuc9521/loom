@@ -2,7 +2,7 @@
 
 Loom learns logic formulas from finite models. It lowers a Loom specification
 to SyGuS bit-vectors, races its internal enumerator against the in-process
-[`loom-bv`](loom-bv) solver, and prints the first result.
+[`loom-bv`](https://github.com/wuc9521/loom-bv) solver, and prints the first result.
 
 ## Build
 
