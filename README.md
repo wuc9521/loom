@@ -56,12 +56,3 @@ $ loom benchmark/Reg/0003.sl
 | `--cegis[=N]` | CEGIS subset solving (external solver only) |
 
 Run `loom --help` for the full list.
-
-## Docker
-
-```bash
-docker build -t loom .
-docker run --rm -v "$PWD:/work" -w /work loom benchmark/Reg/0003.sl
-```
-
-The image includes `cvc5`. `make docker` exports it to `dist/loom.tar.gz`.
